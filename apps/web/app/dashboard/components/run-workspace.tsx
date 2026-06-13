@@ -217,7 +217,7 @@ export function RunWorkspace({
   );
 }
 
-function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
+export function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [stream, setStream] = useState<"stdout" | "stderr">("stdout");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
@@ -356,7 +356,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   );
 }
 
-function RunEvidenceExplorer({
+export function RunEvidenceExplorer({
   artifacts,
   objects,
   rowsByObjectId,
@@ -457,7 +457,7 @@ function EvidencePreview({ item, rowsByObjectId, run }: { item: any; rowsByObjec
   return <div className="empty">Select evidence to preview it.</div>;
 }
 
-function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: RunSummary }) {
+export function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: RunSummary }) {
   const commit = metadataValue(run.metadata, "git_commit")
     ?? metadataValue(run.metadata, "commit")
     ?? nestedMetadataValue(run.metadata, ["_rlobs", "source", "git", "commit"]);
@@ -541,7 +541,7 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
   );
 }
 
-function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
+export function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [lineage, setLineage] = useState<RunLineage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

@@ -8,13 +8,15 @@ import { shortMetricName } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import type { TableColumns } from "../../dashboard-types";
 
+// Keys are persisted (TableColumns); labels track the parity table columns
+// each key now controls: notes drives Owner, duration drives Step.
 const tableColumnLabels: Array<[keyof TableColumns, string]> = [
   ["status", "Status"],
   ["tags", "Tags"],
-  ["notes", "Notes"],
+  ["notes", "Owner"],
   ["started", "Started"],
-  ["duration", "Duration"],
-  ["latest", "Latest metric"],
+  ["duration", "Step"],
+  ["latest", "Metric"],
 ];
 
 export function RunsCommandbar({

@@ -10,10 +10,16 @@ import { accountDisplayLabel, accountInitials, safeAccountAvatarUrl } from "../.
 import { roleCapabilities, roleLabel } from "../../../src/roles.js";
 import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
+import type { ShellTabId } from "../../dashboard-config";
+import { TickerStrip } from "./ticker";
 import { CustomSelect } from "../ui/select";
 import type { SelectOption } from "../ui/select";
-import type { Overview, TabId } from "../../dashboard-types";
+import type { Overview, RunSummary, TabId } from "../../dashboard-types";
 import { useFocusTrap } from "../ui/use-focus-trap";
+
+// Custom event dispatched by the nav rail's PROJECT card; the topbar owns the
+// filter-bar visibility state, so it listens and opens the project picker.
+export const OPEN_PROJECT_PICKER_EVENT = "instantml:open-project-picker";
 
 export type OrgMembershipSummary = {
   org_id: string;
@@ -399,7 +405,7 @@ function WorkspaceCreateModal({
   );
 }
 
-function AccountWorkspaceMenu({
+export function AccountWorkspaceMenu({
   accountUser,
   busy,
   current,
@@ -413,6 +419,7 @@ function AccountWorkspaceMenu({
   onSignOut,
   onToggleTheme,
   theme,
+  variant = "topbar",
 }: {
   accountUser: AccountUser | null;
   busy: boolean;
@@ -427,6 +434,7 @@ function AccountWorkspaceMenu({
   onSignOut: () => void;
   onToggleTheme: () => void;
   theme: "dark" | "light";
+  variant?: "topbar" | "rail";
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -516,25 +524,37 @@ function AccountWorkspaceMenu({
     );
   }
 
+  const menuId = variant === "rail" ? "account-workspace-menu-rail" : "account-workspace-menu";
+  const railUserName = (accountUser?.display_name ?? "").trim() || (accountUser?.primary_email ?? "").split("@")[0] || "account";
+
   return (
-    <div className="account-workspace" ref={rootRef}>
+    <div className={`account-workspace ${variant === "rail" ? "account-workspace--rail" : ""}`} ref={rootRef}>
       <button
-        aria-controls="account-workspace-menu"
+        aria-controls={menuId}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label={`Account and workspace menu. Current workspace: ${currentName}.`}
-        className="account-workspace-trigger"
+        className={variant === "rail" ? "rail-foot-trigger" : "account-workspace-trigger"}
         disabled={busy}
         onClick={() => setOpen((value) => !value)}
         ref={triggerRef}
         type="button"
       >
         <AccountAvatar user={accountUser} />
-        <span className="account-workspace-current">{currentName}</span>
-        <ChevronDown size={13} aria-hidden="true" />
+        {variant === "rail" ? (
+          <>
+            <span className="rail-foot-name">{railUserName}</span>
+            <span className="rail-foot-version">v3.0.0</span>
+          </>
+        ) : (
+          <>
+            <span className="account-workspace-current">{currentName}</span>
+            <ChevronDown size={13} aria-hidden="true" />
+          </>
+        )}
       </button>
       {open ? (
-        <div className="account-workspace-menu" id="account-workspace-menu" ref={menuRef} role="dialog" aria-label="Account and workspace">
+        <div className={`account-workspace-menu ${variant === "rail" ? "account-workspace-menu--rail" : ""}`} id={menuId} ref={menuRef} role="dialog" aria-label="Account and workspace">
           <div className="account-workspace-identity">
             <AccountAvatar user={accountUser} />
             <span>
@@ -622,6 +642,9 @@ export function DashboardTopbar({
   orgSwitchError,
   onSwitchOrg,
   overview,
+  metricKey,
+  runningRuns,
+  tickerSparkValues,
   planLabel,
   project,
   projects,
@@ -643,7 +666,7 @@ export function DashboardTopbar({
   workspaceId,
 }: {
   activeIcon: LucideIcon;
-  activeTab: TabId;
+  activeTab: ShellTabId;
   accountUser: AccountUser | null;
   detailRunName: string;
   message: string;
@@ -661,7 +684,7 @@ export function DashboardTopbar({
   onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
   onOpenBilling: () => void;
   onOpenSettings: () => void;
-  onSelectTab: (tabId: TabId) => void;
+  onSelectTab: (tabId: ShellTabId) => void;
   onSignOut: () => void;
   onShortcutHelp: () => void;
   onSortBy: (value: string) => void;
@@ -674,6 +697,9 @@ export function DashboardTopbar({
   orgSwitchError: string;
   onSwitchOrg: (orgId: string) => void;
   overview: Overview;
+  metricKey: string;
+  runningRuns: RunSummary[];
+  tickerSparkValues: Record<string, number[]>;
   planLabel: string;
   project: string;
   projects: string[];
@@ -705,7 +731,9 @@ export function DashboardTopbar({
   const viewActionsTriggerRef = useRef<HTMLButtonElement>(null);
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
-  const showWorkbar = activeTab !== "detail";
+  // Overview is the composed cockpit page: the mock shows only the telemetry
+  // ticker above it, so the run filter bar stays hidden there too.
+  const showWorkbar = activeTab !== "detail" && activeTab !== "overview";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
   const workbarInert = compactFilters && !mobileFiltersOpen;
@@ -740,7 +768,8 @@ export function DashboardTopbar({
       if (media.matches) {
         return "56px";
       }
-      return showWorkbar && !desktopFiltersCollapsed ? "92px" : "48px";
+      // Desktop chrome is the 38px telemetry ticker plus the optional workbar.
+      return showWorkbar && !desktopFiltersCollapsed ? "82px" : "38px";
     }
     function syncHeight() {
       const height = topbarRef.current?.getBoundingClientRect().height;
@@ -766,6 +795,21 @@ export function DashboardTopbar({
       root.style.removeProperty("--topbar-height");
     };
   }, [desktopFiltersCollapsed, showWorkbar]);
+
+  // 3.4 + rail parity: both the breadcrumb project button and the nav rail's
+  // PROJECT card reveal the filter bar and open the (single) project selector.
+  useEffect(() => {
+    function openProjectPicker() {
+      if (compactFilters) setMobileFiltersOpen(true);
+      else setDesktopFiltersCollapsed(false);
+      window.requestAnimationFrame(() => {
+        const trigger = document.getElementById("project-filter")?.closest(".custom-select-control")?.querySelector(".select-trigger");
+        if (trigger instanceof HTMLElement) trigger.click();
+      });
+    }
+    window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker);
+    return () => window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker);
+  }, [compactFilters]);
 
   useEffect(() => {
     if (!searchHelpOpen) return undefined;
@@ -804,6 +848,13 @@ export function DashboardTopbar({
 
   return (
     <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`} ref={topbarRef}>
+      <TickerStrip
+        metricKey={metricKey}
+        onQuickSearch={onQuickSearch}
+        overview={overview}
+        runningRuns={runningRuns}
+        sparkValues={tickerSparkValues}
+      />
       <div className="brandbar">
         <button
           type="button"

@@ -47,3 +47,8 @@
 @import "./styles/docs.css";
 @import "./styles/reports.css";
 @import "./styles/instrument.css";
+@import "./styles/parity-shell.css";
+@import "./styles/parity-runs.css";
+@import "./styles/parity-detail.css";
+@import "./styles/parity-metrics.css";
+@import "./styles/parity-health.css";

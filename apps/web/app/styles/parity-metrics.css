@@ -1,0 +1,429 @@
+/* parity-metrics — mockup-parity layer for the Metrics tab.
+ * Ported from docs/design/reimagine/metrics.html + app.css, remapped onto the
+ * app token set (tokens.css) so light and dark themes both hold. Classes are
+ * mx- prefixed (like parity-health's hp-) to stay independent of the legacy
+ * analysis/chart panel styles. Layout: col-3 metric browser tree on the left,
+ * col-9 chart panel + SERIES legend table on the right. */
+
+/* ---- 12-col layout grid (mockup .grid / .col-*) -------------------------- */
+.metrics-parity .mx-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.metrics-parity .mx-browser { grid-column: span 3; }
+.metrics-parity .mx-main {
+  grid-column: span 9;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ---- Panel — the instrument bezel with corner registration ticks --------- */
+.metrics-parity .mx-panel {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.metrics-parity .mx-panel::before,
+.metrics-parity .mx-panel::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: var(--line-strong);
+  border-style: solid;
+  transition: border-color 0.2s ease;
+  pointer-events: none;
+}
+.metrics-parity .mx-panel::before { top: 4px; left: 4px; border-width: 1px 0 0 1px; border-top-left-radius: 3px; }
+.metrics-parity .mx-panel::after { bottom: 4px; right: 4px; border-width: 0 1px 1px 0; border-bottom-right-radius: 3px; }
+.metrics-parity .mx-panel:hover::before,
+.metrics-parity .mx-panel:hover::after { border-color: var(--accent); }
+
+.metrics-parity .mx-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  min-height: 36px;
+  flex-wrap: wrap;
+}
+
+/* ---- Micro-label + unit (mockup .mlabel / .panel__unit) ------------------- */
+.metrics-parity .mx-mlabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.metrics-parity .mx-panel-head > .mx-mlabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metrics-parity .mx-chart-title { text-transform: none; letter-spacing: 0.08em; }
+.metrics-parity .mx-unit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* ---- Metric browser: search well ------------------------------------------ */
+.metrics-parity .mx-search {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.metrics-parity .mx-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.13s;
+}
+.metrics-parity .mx-input::placeholder { color: var(--dim); }
+.metrics-parity .mx-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.metrics-parity .mx-hint {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--warm);
+}
+
+/* ---- Namespace tree (mockup .mtree) --------------------------------------- */
+.metrics-parity .mx-tree {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding-bottom: 4px;
+}
+.metrics-parity .mx-tree-ns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+.metrics-parity .mx-tree-ns:hover { color: var(--text-2); }
+.metrics-parity .mx-tree-caret { width: 10px; flex: none; }
+.metrics-parity .mx-tree-n { margin-left: auto; color: var(--dim); letter-spacing: 0; }
+.metrics-parity .mx-tree-leaf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 22px;
+  color: var(--text-2);
+  border-left: 2px solid transparent;
+  transition: color 0.1s, background 0.1s;
+}
+.metrics-parity .mx-tree-leaf:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.metrics-parity .mx-tree-leaf.is-active {
+  color: var(--accent);
+  background: linear-gradient(90deg, var(--accent-soft), transparent 80%);
+  border-left-color: var(--accent);
+}
+.metrics-parity .mx-tree-leaf-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.metrics-parity .mx-leaf-pin {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 2px;
+  color: var(--dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+.metrics-parity .mx-tree-leaf:hover .mx-leaf-pin,
+.metrics-parity .mx-leaf-pin:focus-visible,
+.metrics-parity .mx-leaf-pin.is-pinned { opacity: 1; }
+.metrics-parity .mx-leaf-pin:hover { color: var(--text); }
+.metrics-parity .mx-leaf-pin.is-pinned { color: var(--warm); }
+.metrics-parity .mx-leaf-pin.is-pinned svg { fill: currentColor; }
+.metrics-parity .mx-leaf-dot { margin-left: auto; opacity: 0.7; font-size: 9px; flex: none; }
+.metrics-parity .mx-tree-leaf .mx-leaf-pin + .mx-leaf-dot { margin-left: 0; }
+
+/* ---- Chart panel head controls -------------------------------------------- */
+.metrics-parity .mx-smooth {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.metrics-parity .mx-mlabel-tight {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.metrics-parity .mx-smooth input[type="range"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 90px;
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 2px;
+  outline: none;
+}
+.metrics-parity .mx-smooth input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 6px var(--accent-soft);
+}
+.metrics-parity .mx-smooth input[type="range"]::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 6px var(--accent-soft);
+}
+.metrics-parity .mx-smooth-val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--faint);
+  min-width: 20px;
+}
+
+/* ---- Segmented control (mockup .seg) --------------------------------------- */
+.metrics-parity .mx-seg {
+  display: inline-flex;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px;
+  gap: 2px;
+}
+.metrics-parity .mx-seg button {
+  height: 22px;
+  padding: 0 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.metrics-parity .mx-seg button:hover { color: var(--text-2); }
+.metrics-parity .mx-seg button.is-active {
+  background: var(--surface-hover);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+/* ---- Ghost button (mockup .btn--ghost) ------------------------------------- */
+.metrics-parity .mx-ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  cursor: pointer;
+  transition: border-color 0.13s, color 0.13s;
+}
+.metrics-parity .mx-ghost-btn:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.metrics-parity .mx-ghost-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---- Chart body: hairline alignment with the mockup ------------------------ */
+.metrics-parity .mx-chart-body {
+  padding: 8px 12px 12px;
+}
+/* The SERIES table is the legend; the in-chart chip legend duplicates it. */
+.metrics-parity .mx-chart-panel .mx-chart-body .chart-legend { display: none; }
+/* Scrubber aligned under the plot gutter like the mockup (chart pad 56,
+ * MiniRange pad 12 -> 44px each side). */
+.metrics-parity .mx-chart-panel .chart-range-row {
+  margin-top: 8px;
+  padding-left: 44px;
+  padding-right: 44px;
+}
+
+/* ---- Secondary scope controls (folded selects) ------------------------------ */
+.metrics-parity .mx-secondary-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ---- Pinned chart grid ------------------------------------------------------ */
+.metrics-parity .mx-pinned-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 12px;
+}
+.metrics-parity .mx-unpin { margin-left: auto; }
+.metrics-parity .mx-panel-head .mx-unpin { flex: none; }
+
+/* ---- SERIES legend table (mockup .dtable) ----------------------------------- */
+.metrics-parity .mx-series-scroll { overflow-x: auto; }
+.metrics-parity .mx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.metrics-parity .mx-table th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+  user-select: none;
+}
+.metrics-parity .mx-table .mx-th-tick { width: 32px; }
+.metrics-parity .mx-table .mx-th-num { text-align: right; }
+.metrics-parity .mx-table .mx-th-eye { width: 40px; }
+.metrics-parity .mx-table td {
+  padding: 0 12px;
+  height: 36px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.metrics-parity .mx-table tbody tr { transition: background 0.1s; }
+.metrics-parity .mx-table tbody tr:hover { background: var(--surface-hover); }
+.metrics-parity .mx-table tbody tr.is-hidden td { opacity: 0.45; }
+.metrics-parity .mx-tick {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  border-radius: 1px;
+}
+.metrics-parity .mx-td-name {
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-weight: 500;
+}
+.metrics-parity .mx-td-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-2);
+}
+.metrics-parity .mx-td-num.mx-td-last { color: var(--text); }
+.metrics-parity .mx-td-num.is-best { color: var(--accent); font-weight: 600; }
+.metrics-parity .mx-td-num.mx-td-dim { color: var(--faint); }
+.metrics-parity .mx-td-eye { text-align: center; }
+.metrics-parity .mx-chip-live {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.metrics-parity .mx-eye {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--faint);
+  cursor: pointer;
+  transition: color 0.1s;
+}
+.metrics-parity .mx-eye:hover { color: var(--text); }
+.metrics-parity .mx-eye.is-off { color: var(--dim); }
+
+/* ---- Empty state -------------------------------------------------------------- */
+.metrics-parity .mx-empty {
+  padding: 24px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--faint);
+  text-align: center;
+}
+
+/* ---- Responsive collapse -------------------------------------------------------- */
+@media (max-width: 1100px) {
+  .metrics-parity .mx-browser,
+  .metrics-parity .mx-main { grid-column: span 12; }
+}

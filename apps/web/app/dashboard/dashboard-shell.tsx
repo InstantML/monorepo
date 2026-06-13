@@ -22,10 +22,13 @@ import { ArtifactsTabPane } from "./artifacts/tab-pane";
 import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
+import type { NavBadge } from "./chrome/nav-rail";
 import { SelectionTray } from "./chrome/selection-tray";
-import { DashboardTopbar } from "./chrome/topbar";
+import { AccountWorkspaceMenu, DashboardTopbar, OPEN_PROJECT_PICKER_EVENT } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
+import { compactCount } from "./chrome/ticker";
 import { DatasetsTabPane } from "./datasets/tab-pane";
+import { OverviewTabPane } from "./overview/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
@@ -37,7 +40,8 @@ import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { useFocusTrap } from "./ui/use-focus-trap";
-import { isTabId, tabs } from "../dashboard-config";
+import { isOverviewPath, isTabId, OVERVIEW_PATH, shellTabFromPath, shellTabPath, tabs } from "../dashboard-config";
+import type { ShellTabId } from "../dashboard-config";
 import {
   artifactTotalsForRuns,
   buildAlertRows,
@@ -183,7 +187,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
+const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
 
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
@@ -228,7 +232,7 @@ function isWarehouseStartingError(error: unknown) {
   return error instanceof ApiError && error.code === "warehouse_unavailable";
 }
 
-function shouldSurfaceRunLoadMessage(tab: TabId) {
+function shouldSurfaceRunLoadMessage(tab: ShellTabId) {
   return RUN_LOAD_STATUS_TABS.has(tab);
 }
 
@@ -500,13 +504,13 @@ function safeSavedView(raw: string | null) {
   }
 }
 
-function initialActiveTab(initialTab: TabId) {
+function initialActiveTab(initialTab: ShellTabId) {
   if (typeof window === "undefined") return initialTab;
   const legacyPath = pathFromLegacyHash(window.location.hash);
-  return legacyPath ? tabFromPath(legacyPath) as TabId : tabFromPath(window.location.pathname) as TabId;
+  return legacyPath ? shellTabFromPath(legacyPath) : shellTabFromPath(window.location.pathname);
 }
 
-export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) {
+export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabId }) {
   const api = useMemo(() => new ApiClient(), []);
   const clerk = useClerk();
   const dashboardRequestRef = useRef(0);
@@ -556,7 +560,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
   const compareArtifactCacheVersionRef = useRef(0);
   const messageRef = useRef("Loading runs...");
-  const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
+  const [activeTab, setActiveTab] = useState<ShellTabId>(() => initialActiveTab(initialTab));
   const activeTabRef = useRef(activeTab);
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardSessionChecked, setDashboardSessionChecked] = useState(false);
@@ -702,6 +706,28 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const columnMetricOptionsForControls = useMemo(() => boundedOptions(columnMetricOptions, "", 80), [columnMetricOptions]);
 
   const sortedRuns = summary.runs;
+  // Running runs on the current page power the telemetry ticker chips and the
+  // Overview cockpit (chart, table). Real data only — no synthetic runs.
+  const runningRuns = useMemo(() => sortedRuns.filter((run) => run.status === "running"), [sortedRuns]);
+  // Ticker sparklines: downsample each running run's loaded series for the
+  // active metric to ~24 points. Runs without loaded series simply get no spark.
+  const tickerSparkValues = useMemo<Record<string, number[]>>(() => {
+    const out: Record<string, number[]> = {};
+    for (const run of runningRuns) {
+      const series = workspaceSeries[run.id]?.find((item) => item.group === metricKey || item.name === metricKey)
+        ?? workspaceSeries[run.id]?.[0];
+      const points = series?.points ?? [];
+      if (points.length < 2) continue;
+      const stride = Math.max(1, Math.floor(points.length / 24));
+      const values: number[] = [];
+      for (let i = 0; i < points.length; i += stride) {
+        const value = Number(points[i]?.value);
+        if (Number.isFinite(value)) values.push(value);
+      }
+      if (values.length >= 2) out[run.id] = values;
+    }
+    return out;
+  }, [metricKey, runningRuns, workspaceSeries]);
   const selectedRuns = useMemo(() => {
     const directory = runDirectoryRef.current;
     return selectedRunIds
@@ -727,11 +753,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   // set. Always fetch its series on the detail tab so the curve renders instead
   // of the empty "select runs" state.
   const seriesFetchRuns = useMemo(() => {
+    // Overview charts the running runs regardless of selection — that is the
+    // page's whole premise ("eval/return_mean — active runs").
+    if (activeTab === "overview") return runningRuns.slice(0, MAX_SELECTED_RUNS);
     if (activeTab === "detail" && primaryRun && !metricSeriesRuns.some((run) => run.id === primaryRun.id)) {
       return [primaryRun, ...metricSeriesRuns].slice(0, MAX_SELECTED_RUNS);
     }
     return metricSeriesRuns;
-  }, [activeTab, metricSeriesRuns, primaryRun?.id]);
+  }, [activeTab, metricSeriesRuns, primaryRun?.id, runningRuns]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
@@ -860,6 +889,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
+  // Rail count badges: total runs on Runs, open-alert count on Run Health.
+  const navBadges = useMemo<Partial<Record<ShellTabId, NavBadge>>>(() => {
+    const badges: Partial<Record<ShellTabId, NavBadge>> = {};
+    if (overview.total_runs > 0) badges.runs = { value: compactCount(overview.total_runs) };
+    if (alertRows.length > 0) badges.alerts = { value: String(alertRows.length), tone: "alert" };
+    return badges;
+  }, [alertRows.length, overview.total_runs]);
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
@@ -1587,11 +1623,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const legacyPath = pathFromLegacyHash(window.location.hash);
       if (legacyPath) {
         window.history.replaceState(null, "", legacyPath + search);
-      } else {
+      } else if (!isOverviewPath(window.location.pathname)) {
+        // Overview routes through its own static segment and is not in the
+        // canonical tab set — leave its path untouched.
         const canonicalPath = canonicalDashboardPath(window.location.pathname);
         if (window.location.pathname !== canonicalPath) window.history.replaceState(null, "", canonicalPath + search);
       }
-      const nextTab = tabFromPath(window.location.pathname) as TabId;
+      const nextTab = shellTabFromPath(window.location.pathname);
       setActiveTab(nextTab);
       // Sync project state from the URL on popstate so back/forward restores
       // the previously-selected project.
@@ -3615,6 +3653,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       <DashboardTopbar
         activeIcon={ActiveIcon}
         activeTab={activeTab}
+        metricKey={metricKey}
+        runningRuns={runningRuns}
+        tickerSparkValues={tickerSparkValues}
         accountUser={sessionPayload?.user ?? null}
         overview={overview}
         detailRunName={primaryRun?.name ?? ""}
@@ -3677,15 +3718,35 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
         <DashboardNav
           activeTab={activeTab}
+          badges={navBadges}
           compactNav={isMobile}
           mobileOpen={mobileNavOpen}
           onAutoOpenChange={setNavAutoOpen}
           onMobileClose={closeMobileNav}
           onPinnedChange={setNavPinned}
+          onProjectPicker={() => window.dispatchEvent(new CustomEvent(OPEN_PROJECT_PICKER_EVENT))}
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
           pinned={navPinned}
+          project={project}
         />
+
+        <section className={`tab-pane ${activeTab === "overview" ? "active" : ""}`} aria-label="Overview">
+          {activeTab === "overview" ? (
+            <OverviewTabPane
+              alertRows={alertRows}
+              initialLoadDone={initialLoadDone}
+              metricKey={metricKey}
+              onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
+              onSelectTab={selectTab}
+              overview={overview}
+              project={project}
+              runningRuns={runningRuns}
+              series={displaySeries}
+              sparkValues={tickerSparkValues}
+            />
+          ) : null}
+        </section>
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
           {activeTab === "runs" ? (

@@ -393,15 +393,28 @@ export function RunsTabPane({
         <div className="runs-table-view">
           <RunsTable
             columns={tableColumns}
+            hasNextPage={hasNextPage}
+            hasPreviousPage={hasPreviousPage}
             metricKey={metricKey}
             onClearFilters={onClearFilters}
+            onClearSelection={onClearSelection}
             onInspectRun={onInspectRun}
+            onNextPage={onNextPage}
             onOpenRun={onOpenRun}
+            onPreviousPage={onPreviousPage}
+            onSelectAllVisible={onSelectAllVisible}
             onToggleRun={(runId) => onToggleRun(runId)}
+            pageSize={pageSize}
+            pageStart={pageStart}
+            paginationBusy={paginationBusy}
             pinnedMetrics={pinnedMetrics}
             primaryRunId={primaryRunId}
+            query={query}
             runs={sortedRuns}
             selectedRunIds={selectedRunIds}
+            status={status}
+            summaryTotal={summaryTotal}
+            workspaceSeries={workspaceSeries}
           />
         </div>
       ) : (

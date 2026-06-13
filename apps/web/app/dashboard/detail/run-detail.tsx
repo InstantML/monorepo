@@ -61,7 +61,7 @@ function RunTimeline({ rows }: { rows: RunTimelineRow[] }) {
   );
 }
 
-function RunMetricTable({ rows }: { rows: RunMetricRow[] }) {
+export function RunMetricTable({ rows }: { rows: RunMetricRow[] }) {
   if (!rows.length) return <div className="empty compact-empty">No metric aggregates are available for this run.</div>;
   return (
     <div className="metric-summary-table">

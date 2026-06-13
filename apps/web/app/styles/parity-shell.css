@@ -1,0 +1,249 @@
+/* ── parity-shell.css — telemetry ticker + Instrument rail (mockup parity) ──
+ * Ports docs/design/reimagine/app.css shell sections onto the app's chrome.
+ * Loaded last; desktop-only layout gated to ≥900px so the mobile drawer is
+ * untouched.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+@media (min-width: 900px) {
+  /* ── Topbar: ticker (38px) + slim account strip + optional filter workbar.
+   *    Brand mark / wordmark / workspace label / breadcrumb are owned by the
+   *    rail + ticker + page-head now, so they're hidden — but the account &
+   *    search cluster stays (its popovers anchor here) right-aligned. ── */
+  .topbar {
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    box-shadow: none;
+    backdrop-filter: none;
+    /* Stack ticker + slim brandbar + workbar at their natural heights; the
+     * ResizeObserver in DashboardTopbar re-syncs --topbar-height to match,
+     * keeping rail/content sticky offsets correct. */
+    height: auto;
+    min-height: 0;
+  }
+  .topbar > .ticker,
+  .topbar > .brandbar,
+  .topbar > .workbar {
+    flex: none;
+  }
+
+  .topbar .brandbar {
+    min-height: 0;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar .brand-cell,
+  .topbar .brand-wordmark,
+  .topbar .org-switcher-label,
+  .topbar .brandbar .breadcrumb,
+  .topbar .mobile-menu-button {
+    display: none;
+  }
+  /* Push the surviving account/search actions to the right. */
+  .topbar .brandbar-row { margin-left: auto; }
+  .topbar .brandbar-actions { margin-left: auto; }
+
+  /* ── Telemetry ticker ── */
+  .ticker {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 38px;
+    padding: 0 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .ticker__brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 16px;
+    border-right: 1px solid var(--line);
+    flex: none;
+  }
+
+  .ticker__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: var(--tracking-eyebrow);
+    flex: none;
+  }
+
+  .ticker__feed {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex: 1;
+    min-width: 0;
+  }
+  .ticker__feed::-webkit-scrollbar { display: none; }
+
+  .tick-run {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    flex: none;
+  }
+  .tick-run b { color: var(--text); font-weight: 500; }
+  .tick-run .delta-up { color: var(--accent); }
+  .tick-run .delta-down { color: var(--danger); }
+  .tick-run .tick-flat { color: var(--muted); }
+  .tick-spark { display: inline-flex; align-items: center; }
+  .tick-spark svg { display: block; }
+
+  .ticker__sys {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-left: 16px;
+    border-left: 1px solid var(--line);
+    color: var(--muted);
+    flex: none;
+    margin-left: auto;
+  }
+  .ticker__sys b { color: var(--text); font-weight: 500; }
+  .ticker__pts { display: inline-flex; gap: 5px; }
+  .ticker__clock { font-variant-numeric: tabular-nums; }
+  .ticker__search {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .ticker__search:hover { color: var(--text); border-color: var(--line-strong); }
+
+  /* ── Live pulse dot ── */
+  .ticker .pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    position: relative;
+    flex: none;
+  }
+  .ticker .pulse::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    animation: ticker-ping 2.2s cubic-bezier(0.2, 0.9, 0.25, 1) infinite;
+  }
+  @keyframes ticker-ping {
+    0% { transform: scale(0.5); opacity: 0.9; }
+    70%, 100% { transform: scale(1.6); opacity: 0; }
+  }
+
+  /* ── Rail brand + project card (Instrument layout) ── */
+  .rail-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px 14px;
+  }
+  .rail-brandmark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
+    border-radius: var(--radius-sm);
+    color: var(--accent);
+    flex: none;
+  }
+  .rail-brandmark svg { display: block; }
+  .rail-brand-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--text);
+  }
+
+  .rail-project {
+    margin: 0 12px 14px;
+    padding: 7px 12px;
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    width: calc(100% - 24px);
+    text-align: left;
+  }
+  .rail-project:hover { border-color: var(--line-strong); color: var(--text); }
+  .rail-project-body { display: grid; gap: 1px; min-width: 0; }
+  .rail-project-label {
+    font-size: 9px;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .rail-project-name {
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Nav group labels always visible (mockup keeps them in the pinned rail) ── */
+  .tabs .tab-group-label {
+    display: block;
+    padding: 12px 16px 4px;
+    font: 500 10px/1 var(--font-mono);
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .tabs .tab-button {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 7px 16px;
+  }
+  .tabs .tab-label { max-width: none; opacity: 1; }
+  .tab-count {
+    margin-left: auto;
+    font: 500 10px/1 var(--font-mono);
+    color: var(--muted);
+  }
+  .tab-count.is-alert { color: var(--danger); font-weight: 600; }
+
+  /* ── Rail footer: avatar + user + version ── */
+  .rail-foot {
+    margin-top: auto;
+    padding: 12px 16px 0;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+}

@@ -213,6 +213,7 @@ export type CompareRunSort =
   | "config";
 
 export type TabId =
+  | "overview"
   | "runs"
   | "metrics"
   | "distributed"

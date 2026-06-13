@@ -1,13 +1,14 @@
+"use client";
+
 import { X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChartControls } from "./chart-controls";
-import { HoverDetail } from "./hover-detail";
 import { MetricCatalog } from "./metric-catalog";
 import { MetricChart } from "./metric-chart";
-import { MetricLeaderboard } from "./metric-leaderboard";
-import { SeriesSummary } from "./series-summary";
-import { formatNumber, metricGoalLabel } from "../../../src/state.js";
-import { metricTitle } from "../../dashboard-models";
+import { SeriesTable, siStep } from "./series-table";
+import { PageHead } from "../ui/page-head";
+import { formatNumber } from "../../../src/state.js";
 import type { HoverPoint, MetricCatalogRow, MetricSeries, RunSummary } from "../../dashboard-types";
 
 type ChartZoomRange = { min: number; max: number } | null;
@@ -61,8 +62,8 @@ export function MetricsTabPane({
   chartZoomRange,
   groupAverage,
   groupBy,
-  hover,
-  hoverMetricKey,
+  hover: _hover,
+  hoverMetricKey: _hoverMetricKey,
   metricCatalogRows,
   metricFilter,
   metricFilterValid,
@@ -90,103 +91,184 @@ export function MetricsTabPane({
   visibleMetricCatalogRows,
   xMode,
 }: Props) {
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const exportApiRef = useRef<{ downloadSvg: () => void; downloadCsv: () => void } | null>(null);
+  const [yScale, setYScale] = useState<"linear" | "log">("linear");
+  const [hiddenRunIds, setHiddenRunIds] = useState<string[]>([]);
+
+  // Mockup parity: "/" focuses the metric search from anywhere on the page
+  // (unless the user is already typing somewhere).
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "/" || event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const visibleSeries = useMemo(
+    () => (hiddenRunIds.length ? series.filter((item) => !hiddenRunIds.includes(item.id)) : series),
+    [hiddenRunIds, series],
+  );
+  const seriesRuns = selectedRuns.length ? selectedRuns : sortedRuns;
+  const windowLabel = chartZoomRange
+    ? `window ${siStep(chartZoomRange.min)} – ${siStep(chartZoomRange.max)}`
+    : `${series.length} series`;
+
+  function toggleSeriesVisibility(id: string) {
+    setHiddenRunIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
   return (
-    <div className="analysis-page metrics-analysis">
-      <header className="analysis-header">
-        <div className="analysis-title-block">
-          <span className="analysis-eyebrow eyebrow--accent">Metrics</span>
-          <h2>{metricTitle(metricKey)} over time</h2>
-          <p>
-            {/* Denominator matches the RUNS PLOTTED stat; runs without this
-                metric are called out instead of silently shrinking the count. */}
-            {activeMetricCatalogRow
-              ? `${chartSummaries.length} runs plotted${
-                  chartSummaries.length > activeMetricCatalogRow.selectedCount
-                    ? ` · ${chartSummaries.length - activeMetricCatalogRow.selectedCount} without data`
-                    : ""
-                } · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points · ${metricGoalLabel(metricKey)} objective`
-              : `${selectedRuns.length || sortedRuns.length} runs in scope · ${metricGoalLabel(metricKey)} objective`}
-          </p>
-        </div>
-        <div className="analysis-stat-strip">
-          <div className="analysis-stat"><span>Metrics</span><strong>{formatNumber(metricCatalogRows.length, 0)}</strong></div>
-          <div className="analysis-stat"><span>Pinned charts</span><strong>{formatNumber(pinnedMetrics.length, 0)}</strong></div>
-          <div className="analysis-stat"><span>Runs plotted</span><strong>{formatNumber(chartSummaries.length, 0)}</strong></div>
-        </div>
-      </header>
-      <div className="metrics-grid metrics-workbench">
-        <section className="panel analysis-card metric-catalog-panel">
-          <div className="panel-head"><h2>Metric Catalog <span>({visibleMetricCatalogRows.length}/{metricCatalogRows.length})</span></h2></div>
-          <div className="panel-body">
-            <MetricCatalog activeMetric={metricKey} rows={visibleMetricCatalogRows} pinnedMetrics={pinnedMetrics} onMetricKey={onMetricKey} onPinnedMetric={onPinnedMetric} />
+    <div className="analysis-page metrics-analysis metrics-parity">
+      <PageHead
+        eyebrow="Workspace"
+        title="Metrics"
+        lede={activeMetricCatalogRow
+          ? `${chartSummaries.length} runs plotted · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points`
+          : `${seriesRuns.length} runs in scope`}
+      />
+      <div className="mx-grid">
+        <section className="mx-panel mx-browser" aria-label="Metric browser">
+          <div className="mx-panel-head">
+            <span className="mx-mlabel">Metric browser</span>
+            <span className="mx-unit">{formatNumber(metricCatalogRows.length, 0)}</span>
           </div>
+          <div className="mx-search">
+            <input
+              aria-label="Search metrics"
+              className="mx-input"
+              id="metric-filter"
+              onChange={(event) => onMetricFilter(event.target.value)}
+              placeholder="Search  /  to focus"
+              ref={searchRef}
+              type="search"
+              value={metricFilter}
+            />
+            {metricFilterValid ? null : <small className="mx-hint">Invalid regex — matching as plain text.</small>}
+          </div>
+          <MetricCatalog
+            activeMetric={metricKey}
+            onMetricKey={onMetricKey}
+            onPinnedMetric={onPinnedMetric}
+            pinnedMetrics={pinnedMetrics}
+            rows={visibleMetricCatalogRows}
+          />
         </section>
-        <section className="chart-card analysis-card metrics-chart-surface">
-          <div className="analysis-toolbar chart-analysis-toolbar">
+        <div className="mx-main">
+          <section className="mx-panel mx-chart-panel" aria-label="Metric chart">
+            <div className="mx-panel-head">
+              <span className="mx-mlabel mx-chart-title">{metricKey || "metric"} · {chartSummaries.length} {chartSummaries.length === 1 ? "run" : "runs"}</span>
+              <div className="mx-smooth">
+                <span className="mx-mlabel-tight">Smooth</span>
+                <input
+                  aria-label="Smoothing"
+                  id="smoothing"
+                  max={90}
+                  min={0}
+                  onChange={(event) => onSmoothing(Number(event.currentTarget.value))}
+                  onInput={(event) => onSmoothing(Number(event.currentTarget.value))}
+                  step={10}
+                  type="range"
+                  value={smoothing}
+                />
+                <span className="mx-smooth-val">{smoothing ? `.${smoothing}` : "0"}</span>
+              </div>
+              <div className="mx-seg" role="group" aria-label="X axis">
+                <button aria-pressed={xMode !== "time"} className={xMode !== "time" ? "is-active" : ""} id="x-mode-step" onClick={() => onXMode("step")} type="button">Step</button>
+                <button aria-pressed={xMode === "time"} className={xMode === "time" ? "is-active" : ""} id="x-mode-time" onClick={() => onXMode("time")} type="button">Time</button>
+              </div>
+              <div className="mx-seg" role="group" aria-label="Y scale">
+                <button aria-pressed={yScale === "linear"} className={yScale === "linear" ? "is-active" : ""} id="y-scale-lin" onClick={() => setYScale("linear")} type="button">Lin</button>
+                <button aria-pressed={yScale === "log"} className={yScale === "log" ? "is-active" : ""} id="y-scale-log" onClick={() => setYScale("log")} type="button">Log</button>
+              </div>
+              <button
+                aria-label={`Download ${metricKey} chart image as SVG`}
+                className="mx-ghost-btn"
+                disabled={!visibleSeries.length}
+                onClick={() => exportApiRef.current?.downloadSvg()}
+                type="button"
+              >
+                ⤓ SVG
+              </button>
+            </div>
+            <div className="mx-chart-body">
+              <MetricChart
+                exportApiRef={exportApiRef}
+                exportFilenameBase={`instantml-${metricKey}`}
+                height={320}
+                metricKey={metricKey}
+                onPointHover={(point) => onPointHoverChange(point, metricKey)}
+                onLeave={onChartLeave}
+                onZoomRangeChange={onZoomRangeChange}
+                series={visibleSeries}
+                showExportActions={false}
+                showYAxisControls={false}
+                xMode={xMode}
+                yScale={yScale}
+                zoomRange={chartZoomRange}
+              />
+            </div>
             <ChartControls
-              metricFilter={metricFilter}
-              metricFilterValid={metricFilterValid}
               metricKey={metricKey}
               metricOptions={metricOptionsForControls}
               groupBy={groupBy}
-              xMode={xMode}
-              smoothing={smoothing}
               groupAverage={groupAverage}
               identifierMode={identifierMode}
               pinnedMetrics={pinnedMetrics}
-              onMetricFilter={onMetricFilter}
               onMetricKey={onMetricKey}
               onGroupBy={onGroupBy}
-              onXMode={onXMode}
-              onSmoothing={onSmoothing}
               onIdentifierMode={onIdentifierMode}
               onGroupAverage={onGroupAverage}
               onPinnedMetric={onPinnedMetric}
             />
-          </div>
-          <MetricChart
-            exportFilenameBase={`instantml-${metricKey}`}
-            height={400}
-            metricKey={metricKey}
-            onPointHover={(point) => onPointHoverChange(point, metricKey)}
-            onLeave={onChartLeave}
-            onZoomRangeChange={onZoomRangeChange}
-            series={series}
-            xMode={xMode}
-            zoomRange={chartZoomRange}
-          />
+          </section>
           {pinnedChartPanels.length ? (
-            <div className="pinned-chart-grid">
+            <div className="mx-pinned-grid">
               {pinnedChartPanels.map((panel) => (
-                <article className="metric-panel" key={panel.metric}>
-                  <div className="metric-panel-head">
-                    <h3>{metricTitle(panel.metric)}</h3>
-                    <button className="icon-button" type="button" aria-label={`Unpin ${panel.metric}`} onClick={() => onPinnedMetric(panel.metric)}><X size={14} /></button>
+                <section className="mx-panel mx-pinned-panel" key={panel.metric} aria-label={`Pinned chart ${panel.metric}`}>
+                  <div className="mx-panel-head">
+                    <span className="mx-mlabel">{panel.metric}</span>
+                    <button className="icon-button mx-unpin" type="button" aria-label={`Unpin ${panel.metric}`} onClick={() => onPinnedMetric(panel.metric)}><X size={13} /></button>
                   </div>
-                  <MetricChart
-                    exportFilenameBase={`instantml-${panel.metric}`}
-                    height={300}
-                    metricKey={panel.metric}
-                    onPointHover={(point) => onPointHoverChange(point, panel.metric)}
-                    onLeave={onChartLeave}
-                    onZoomRangeChange={(range) => onPinnedChartZoomRangeChange(panel.metric, range)}
-                    series={panel.series}
-                    xMode={xMode}
-                    zoomRange={panel.zoomRange}
-                  />
-                </article>
+                  <div className="mx-chart-body">
+                    <MetricChart
+                      exportFilenameBase={`instantml-${panel.metric}`}
+                      height={260}
+                      metricKey={panel.metric}
+                      onPointHover={(point) => onPointHoverChange(point, panel.metric)}
+                      onLeave={onChartLeave}
+                      onZoomRangeChange={(range) => onPinnedChartZoomRangeChange(panel.metric, range)}
+                      series={panel.series}
+                      xMode={xMode}
+                      zoomRange={panel.zoomRange}
+                    />
+                  </div>
+                </section>
               ))}
             </div>
           ) : null}
-        </section>
-        <section className="panel analysis-card metric-insights-panel">
-          <div className="panel-head"><h2>Signal Context</h2></div>
-          <div className="panel-body">
-            <HoverDetail hover={hover} metricKey={hover ? hoverMetricKey : metricKey} />
-            <MetricLeaderboard metricKey={metricKey} runs={selectedRuns.length ? selectedRuns : sortedRuns} />
-            <SeriesSummary summaries={chartSummaries} />
-          </div>
-        </section>
+          <section className="mx-panel mx-series-panel" aria-label="Series">
+            <div className="mx-panel-head">
+              <span className="mx-mlabel">Series</span>
+              <span className="mx-unit">{windowLabel}</span>
+            </div>
+            <div className="mx-series-scroll">
+              <SeriesTable
+                hiddenIds={hiddenRunIds}
+                metricKey={metricKey}
+                onToggleVisibility={toggleSeriesVisibility}
+                runs={seriesRuns}
+                series={series}
+              />
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );

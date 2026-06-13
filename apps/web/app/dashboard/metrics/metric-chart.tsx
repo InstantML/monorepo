@@ -258,6 +258,7 @@ function MiniRange({
  */
 export function MetricChart({
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
+  exportApiRef,
   exportFilenameBase,
   height = chartHeight,
   highlightRunId = null,
@@ -268,13 +269,17 @@ export function MetricChart({
   onSmoothingChange,
   padding = chartPadding,
   series,
+  showExportActions = true,
   showRange = true,
   showYAxisControls = true,
   smoothing,
   xMode,
+  yScale: yScaleProp,
   zoomRange = null,
 }: {
   emptyMessage?: string;
+  /** Imperative export handle for owners that render their own export UI. */
+  exportApiRef?: { current: { downloadSvg: () => void; downloadCsv: () => void } | null };
   exportFilenameBase?: string;
   /** Frame height in CSS px; the width always tracks the container. */
   height?: number;
@@ -288,11 +293,15 @@ export function MetricChart({
   padding?: number;
   /** Display series — smoothing already applied by the owner. */
   series: any[];
+  /** Hide the in-chart actions row when the owner renders its own controls. */
+  showExportActions?: boolean;
   showRange?: boolean;
   /** Per-panel log toggle + manual y-range; on by default everywhere. */
   showYAxisControls?: boolean;
   smoothing?: number;
   xMode: string;
+  /** Controlled y-scale; when set, the owner owns the lin/log toggle. */
+  yScale?: "linear" | "log";
   zoomRange?: ChartZoomRange;
 }) {
   const chartAreaRef = useRef<HTMLDivElement | null>(null);
@@ -305,7 +314,8 @@ export function MetricChart({
 
   // Per-panel y-axis settings (P0-9): log10 toggle + manual range. State is
   // chart-local so every panel gets the control without owner plumbing.
-  const [yScale, setYScale] = useState<"linear" | "log">("linear");
+  const [yScaleState, setYScaleState] = useState<"linear" | "log">("linear");
+  const yScale = yScaleProp ?? yScaleState;
   const [yRange, setYRange] = useState<{ min: number; max: number } | null>(null);
   const [yMinDraft, setYMinDraft] = useState("");
   const [yMaxDraft, setYMaxDraft] = useState("");
@@ -507,7 +517,7 @@ export function MetricChart({
   const smoothingControlId = `${chartInstanceId}-chart-smoothing`;
   const showSmoothing = typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
-  const showActions = Boolean(exportFilenameBase) || showSmoothing || showYAxisControls;
+  const showActions = showExportActions && (Boolean(exportFilenameBase) || showSmoothing || showYAxisControls);
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
@@ -584,8 +594,29 @@ export function MetricChart({
     const next = yScale === "log" ? "linear" : "log";
     // A manual floor at or below zero can't survive the switch to log.
     if (next === "log" && yRange && yRange.min <= 0) setYRange(null);
-    setYScale(next);
+    setYScaleState(next);
   }
+
+  function downloadChartCsv() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.csv`, chartSeriesToCsv({ metricKey, series: normalizedSeries, xMode }), "text/csv;charset=utf-8");
+  }
+
+  function downloadChartSvg() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height: frameHeight, padding: pad, xMode }), "image/svg+xml;charset=utf-8");
+  }
+
+  // Owners with their own export UI (e.g. the metrics panel head) trigger the
+  // same exports through this handle; refreshed every render so it always
+  // closes over the latest normalized series.
+  useEffect(() => {
+    if (!exportApiRef) return undefined;
+    exportApiRef.current = { downloadSvg: downloadChartSvg, downloadCsv: downloadChartCsv };
+    return () => {
+      exportApiRef.current = null;
+    };
+  });
 
   // One-sided entries fall back to the current domain bound, so "cap the top
   // at 1" doesn't require typing the floor too.
@@ -767,16 +798,6 @@ export function MetricChart({
     ? `${hiddenLegendSeries.length} additional plotted series${hiddenLegendSample.length ? `: ${hiddenLegendSample.join(", ")}${hiddenLegendSeries.length > hiddenLegendSample.length ? ", ..." : ""}` : ""}`
     : "";
   const hoverClassFor = (item: any) => activeRunId ? (item.id === activeRunId ? (drawFocusOverlay ? " series-muted" : " series-active") : " series-muted") : "";
-
-  function downloadChartCsv() {
-    if (exportBlockedReason) return;
-    downloadTextFile(`${exportFileBase}.csv`, chartSeriesToCsv({ metricKey, series: normalizedSeries, xMode }), "text/csv;charset=utf-8");
-  }
-
-  function downloadChartSvg() {
-    if (exportBlockedReason) return;
-    downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height: frameHeight, padding: pad, xMode }), "image/svg+xml;charset=utf-8");
-  }
 
   return (
     <div

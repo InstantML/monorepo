@@ -45,12 +45,16 @@ test("number-key tab navigation exists and respects rail order", () => {
   assert.ok(editableGuard > -1 && numberBranch > editableGuard, "editable-element guard must run before number-key navigation");
 });
 
-// Section 3 — nav regroup: rarely-daily tabs live under "More"; ids unchanged.
-test("nav groups demote adoption tabs under More without changing ids", () => {
+// Mockup parity (2026-06): nav regrouped to OPERATE / DATA / SYSTEM with an
+// Overview landing tab; ids unchanged so routes/deep-links survive.
+test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", () => {
   const configSrc = read("app/dashboard-config.tsx");
-  assert.match(configSrc, /id: "more"/);
-  assert.match(configSrc, /id: "alerts", label: "Run health"/);
-  for (const id of ["runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "settings", "api"]) {
+  assert.match(configSrc, /id: "operate"/);
+  assert.match(configSrc, /id: "data"/);
+  assert.match(configSrc, /id: "system"/);
+  assert.match(configSrc, /id: "overview", label: "Overview"/);
+  assert.match(configSrc, /id: "alerts", label: "Run Health"/);
+  for (const id of ["overview", "runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "settings", "api"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
   // CK2: the Checkpoints tab merged into Run Detail; its nav slot is gone but
@@ -139,7 +143,9 @@ test("runs workspace header no longer duplicates the run health cards", () => {
   const paneSrc = read("app/dashboard/runs/tab-pane.tsx");
   assert.doesNotMatch(paneSrc, /runs-health-cards/);
   const alertsSrc = read("app/dashboard/alerts/tab-pane.tsx");
-  assert.match(alertsSrc, /label="Failed runs"/);
+  // Mockup-parity stat strip (parity-health): failed/active run stats live in
+  // hp-panel stat cards instead of MetricCards.
+  assert.match(alertsSrc, /<span className="hp-mlabel">Failed runs<\/span>/);
   assert.match(alertsSrc, /overview\.active_runs/);
 });
 
