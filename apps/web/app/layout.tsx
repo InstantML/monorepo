@@ -33,12 +33,12 @@ const themeBootstrap = `
 (() => {
   try {
     const stored = localStorage.getItem("instantml:next:theme");
-    const theme = stored === "dark" || stored === "light" ? stored : "dark";
+    const theme = stored === "dark" || stored === "light" ? stored : "light";
     document.documentElement.dataset.theme = theme;
     document.documentElement.style.backgroundColor = theme === "dark" ? "#0d0f0c" : "#f6f7f3";
   } catch {
-    document.documentElement.dataset.theme = "dark";
-    document.documentElement.style.backgroundColor = "#0d0f0c";
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.backgroundColor = "#f6f7f3";
   }
 })();
 `;

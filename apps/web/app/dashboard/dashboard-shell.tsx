@@ -1754,7 +1754,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     const storedTheme = localStorage.getItem(THEME_KEY);
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
       ? storedTheme
-      : "dark";
+      : "light";
     setTheme(nextTheme);
     setThemeReady(true);
   }, [localSavedViewProjectScope]);

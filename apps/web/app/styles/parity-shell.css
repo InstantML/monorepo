@@ -30,6 +30,12 @@
     min-height: 0;
     padding: 6px 16px;
     border-bottom: 1px solid var(--line);
+    /* The base brandbar is a grid that pins the (now-hidden) brand cell left and
+     * the actions into a left column. With only the account cluster surviving on
+     * desktop, lay it out as a flex row aligned to the right edge. */
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
   }
   .topbar .brand-cell,
   .topbar .brand-wordmark,
