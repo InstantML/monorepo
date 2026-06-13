@@ -373,7 +373,14 @@
   font-family: var(--font-mono);
   color: var(--text);
   font-weight: 500;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+/* Name column flexes; numeric columns stay snug so POINTS never clips. */
+.metrics-parity .mx-table .mx-th-num,
+.metrics-parity .mx-table td.mx-td-num { width: 1%; padding-left: 10px; padding-right: 10px; }
 .metrics-parity .mx-td-num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;

@@ -544,7 +544,7 @@ export function AccountWorkspaceMenu({
         {variant === "rail" ? (
           <>
             <span className="rail-foot-name">{railUserName}</span>
-            <span className="rail-foot-version">v3.0.0</span>
+            {currentName ? <span className="rail-foot-version">{currentName}</span> : null}
           </>
         ) : (
           <>

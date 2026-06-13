@@ -548,7 +548,7 @@ button.compare-row-head.active {
 
 .api-row span {
   justify-self: start;
-  border: 1px solid #d3e8ec;
+  border: 1px solid var(--line);
   border-radius: var(--tight-radius);
   background: var(--accent-soft);
   color: var(--accent-strong);
@@ -560,7 +560,7 @@ button.compare-row-head.active {
 .api-row code {
   min-width: 0;
   overflow: hidden;
-  color: #22261d;
+  color: var(--text);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -589,9 +589,9 @@ button.compare-row-head.active {
 }
 
 .copy-button:hover {
-  border-color: #c8ccbc;
-  background: #f6f7f3;
-  color: #22261d;
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .copy-button.unavailable,

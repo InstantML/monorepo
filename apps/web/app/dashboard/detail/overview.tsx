@@ -447,7 +447,7 @@ function dotTone(tone: string) {
   if (tone === "bad") return "pd-dot--crit";
   if (tone === "warn") return "pd-dot--warn";
   if (tone === "live" || tone === "good") return "pd-dot--ok";
-  return "pd-dot--info";
+  return "pd-dot--neutral";
 }
 
 export function RunAlertsPanel({ metricKey, run }: { metricKey: string; run: RunSummary }) {

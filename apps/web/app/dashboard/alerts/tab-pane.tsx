@@ -28,7 +28,9 @@ const RULE_LABELS: Record<string, string> = {
   metric: "missing-metric",
 };
 
-const SEV_PILL: Record<Sev, string> = { crit: "bad", warn: "warn", info: "live" };
+// INFO is informational (blue), never live-green — green stays reserved for
+// live/best markers per the design language.
+const SEV_PILL: Record<Sev, string> = { crit: "bad", warn: "warn", info: "info" };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -158,7 +160,7 @@ export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Pro
           <div className="hp-panel-head"><span className="hp-mlabel">Open alerts</span></div>
           <div className="hp-panel-body hp-stat">
             <span className="hp-stat-value">
-              <span className="hp-crit">{critCount}</span><small> crit</small> · <span className="hp-warnc">{warnCount}</span><small> warn</small>
+              <span className={critCount ? "hp-crit" : ""}>{critCount}</span><small> crit</small> · <span className={warnCount ? "hp-warnc" : ""}>{warnCount}</span><small> warn</small>
             </span>
             <span className="hp-stat-delta">{formatNumber(alertRows.length, 0)} findings in view</span>
           </div>

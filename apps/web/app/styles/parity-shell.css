@@ -265,10 +265,12 @@
 .ov-page-head h1, .ov-page-head .ov-title {
   font: 650 20px/1.2 var(--font-display); letter-spacing: -0.01em; color: var(--text);
 }
-.ov-mlabel {
+.ov-mlabel,
+.ov .mlabel {
   font: 500 10px/1.3 var(--font-mono); letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase; color: var(--muted);
 }
+.ov .mlabel.ov-link { color: var(--accent); }
 .ov-link { color: var(--accent); }
 .ov-unit { font: 500 10px/1 var(--font-mono); letter-spacing: var(--tracking-eyebrow); color: var(--dim); }
 

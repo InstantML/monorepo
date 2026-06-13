@@ -422,6 +422,78 @@ button:disabled,
   font-size: 11.5px;
 }
 
+/* 30 — Visual-bug nitpick pass: design-system discipline.
+ *      green stays reserved for live/best; informational state is blue/neutral. */
+
+/* INFO severity pill — blue, not live-green. */
+.pill.info,
+:root[data-theme="dark"] .pill.info {
+  border-color: rgba(77, 163, 255, 0.35);
+  background: var(--info-soft, rgba(77, 163, 255, 0.13));
+  color: var(--info);
+}
+
+/* Neutral timeline dot (Created and other non-severity events were blue). */
+.pd-dot--neutral { background: var(--dim); }
+
+/* Run-detail KPI deltas are informational — neutral, not green/red.
+ * The arrow glyph carries direction; green is for the explicit best marker. */
+.pd-kpi-delta.up,
+.pd-kpi-delta.down,
+.pd-kpi-delta.flat { color: var(--muted); }
+
+/* Datasets table: uppercase-mono heads + right-aligned numerics, like every
+ * other Instrument data table. */
+.tab-grid .panel-head h2,
+.dataset-table th,
+.datasets-table th {
+  font-family: var(--font-mono);
+}
+.datasets-table td.num,
+.datasets-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Legacy panel heads were Archivo prose; bring them to the uppercase-mono
+ * micro-label convention used across the refactor. Scoped to dashboard panels. */
+.tab-pane .panel-head h2,
+.tab-pane .panel-head h3,
+.tab-pane .drawer-head h2 {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tab-pane .panel-head h2 svg,
+.tab-pane .panel-head h3 svg { color: var(--muted); }
+
+/* Imports stepper + copy action: green only marks completion of the LIVE/best
+ * sense — the stepper progress and a generic copy button are neutral. */
+.imports-command,
+.imports-copy {
+  border-color: var(--line-strong);
+  color: var(--muted);
+  background: transparent;
+}
+.imports-command:hover,
+.imports-copy:hover { border-color: var(--dim); color: var(--text); }
+
+/* 29 — API surface: HTTP method is a neutral mono tag (green = live/best
+ *      only), and endpoint descriptions are body copy, not micro-labels. */
+.api-row span {
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+}
+.api-row small {
+  font: 500 12px/1.4 var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
 /* 11 — Chart furniture: axis type is mono micro-labeling. */
 .tick-label {
   font-family: var(--font-mono);

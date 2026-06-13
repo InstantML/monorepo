@@ -15,10 +15,17 @@ import type { AlertRow, MetricSeries, Overview, RunSummary } from "../../dashboa
 
 const ALERT_FEED_LIMIT = 5;
 
+const SEVERITY_WEIGHT: Record<string, number> = { critical: 0, warning: 1, active: 2, info: 3 };
+
+function alertSeverityRank(row: AlertRow) {
+  return SEVERITY_WEIGHT[row.severity] ?? 3;
+}
+
 function alertDotTone(row: AlertRow) {
   if (row.tone === "bad") return "crit";
   if (row.tone === "warn") return "warn";
-  if (row.tone === "live") return "ok";
+  // "still running" rows are informational in a health feed — blue, not green
+  // (green stays reserved for live/best markers).
   return "info";
 }
 
@@ -122,9 +129,11 @@ export function OverviewTabPane({
         <section className="ov-panel ov-col-3">
           <div className="ov-panel-head"><span className="mlabel">Open alerts</span></div>
           <div className="ov-panel-body ov-stat">
+            {/* Count only actionable findings (crit + warn) so the headline
+                reconciles with its breakdown; "still running" is informational. */}
             <span className={`ov-stat-value ${critCount ? "is-crit" : ""}`}>
-              {formatNumber(alertRows.length, 0)}
-              {alertRows.length ? <small> {critCount} crit · {warnCount} warn</small> : null}
+              {formatNumber(critCount + warnCount, 0)}
+              {critCount + warnCount ? <small> {critCount} crit · {warnCount} warn</small> : null}
             </span>
           </div>
         </section>
@@ -155,7 +164,7 @@ export function OverviewTabPane({
                 {chartSeries.map((item, index) => (
                   <span className="ov-legend-item" key={item.id}>
                     <i style={{ background: chartColor(styleIndexes[index] ?? index) }} />
-                    {tickerShortRunName(item.name)}
+                    {item.name}
                   </span>
                 ))}
               </div>
@@ -169,7 +178,7 @@ export function OverviewTabPane({
           </div>
           <div className="ov-panel-body ov-panel-body--flush">
             {alertRows.length ? (
-              alertRows.slice(0, ALERT_FEED_LIMIT).map((row) => (
+              [...alertRows].sort((a, b) => alertSeverityRank(a) - alertSeverityRank(b)).slice(0, ALERT_FEED_LIMIT).map((row) => (
                 <div className="ov-feed-row" key={row.id}>
                   <span className={`ov-dot ov-dot--${alertDotTone(row)}`} aria-hidden="true" />
                   <div className="ov-feed-body">
