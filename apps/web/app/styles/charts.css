@@ -331,6 +331,17 @@
 
 .settings-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+/* Each settings column is an independent tight stack so a tall panel in one
+   column (Plan Usage) doesn't leave a void beside a short panel in the other
+   (Billing) the way a row-paired grid did. */
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .panel,

@@ -285,10 +285,28 @@ export function formatAxisTick(value) {
   const num = Number(value);
   if (num === 0) return "0";
   const abs = Math.abs(num);
-  // Sub-0.01 (and very large) magnitudes use compact scientific notation so the
-  // labels stay narrow enough to clear the rotated axis title. The hover tooltip
-  // / readout keep full decimal precision via formatMetricValue.
-  if (abs < 1e-2 || abs >= 1e5) {
+  // Sub-0.01 magnitudes use trimmed scientific notation so the labels stay narrow
+  // enough to clear the rotated axis title. The hover tooltip / readout keep full
+  // decimal precision via formatMetricValue.
+  if (abs < 1e-2) {
+    return num.toExponential(2).replace(/\.?0+e/, "e").replace("e+", "e");
+  }
+  // Large magnitudes (5+ digits) use compact k/M/B/T suffixes so the right-anchored
+  // y-axis ticks stay narrow enough not to clip against the axis inset — e.g.
+  // tokens/sec around 40k previously rendered as "40000" and ran off the left edge.
+  if (abs >= 1e4) {
+    const units = [
+      { value: 1e12, suffix: "T" },
+      { value: 1e9, suffix: "B" },
+      { value: 1e6, suffix: "M" },
+      { value: 1e3, suffix: "k" },
+    ];
+    const unit = units.find((entry) => abs >= entry.value);
+    if (unit) {
+      const scaled = num / unit.value;
+      const digits = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+      return `${parseFloat(scaled.toFixed(digits))}${unit.suffix}`;
+    }
     return num.toExponential(2).replace(/\.?0+e/, "e").replace("e+", "e");
   }
   return formatMetricValue(num, 4);

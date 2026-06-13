@@ -702,7 +702,13 @@ test("formatAxisTick stays compact: scientific for tiny/huge, plain for mid-rang
   assert.equal(formatAxisTick(0.00899), "8.99e-3");
   assert.equal(formatAxisTick(0.0000366), "3.66e-5");
   assert.equal(formatAxisTick(0.0000155), "1.55e-5");
-  assert.equal(formatAxisTick(150000), "1.5e5");
+  // 5-digit-plus magnitudes use compact k/M/B suffixes so right-anchored y-axis
+  // ticks don't run off the left edge (e.g. tokens/sec ~40k).
+  assert.equal(formatAxisTick(9999), "9999");
+  assert.equal(formatAxisTick(40000), "40k");
+  assert.equal(formatAxisTick(12500), "12.5k");
+  assert.equal(formatAxisTick(150000), "150k");
+  assert.equal(formatAxisTick(1250000), "1.25M");
 });
 
 test("identifierForRun resolves name, notes and tags with fallbacks", () => {
