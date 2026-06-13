@@ -1900,7 +1900,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     const isLiveRefresh = signature === seriesSignatureRef.current;
     seriesSignatureRef.current = signature;
     async function loadMetricSeries() {
-      const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
+      const shouldLoad = activeTab === "metrics" || activeTab === "overview" || (activeTab === "detail" && runWorkspaceTab === "data");
       const runsForFetch = seriesFetchRuns;
       if (!shouldLoad || !metricKey || !runsForFetch.length) {
         if (hasSeriesRef.current) setSeries([]);
