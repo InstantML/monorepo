@@ -488,11 +488,16 @@ function ParallelCoordinatesCard({
               <g key={field}>
                 <line className={`parallel-axis${constant ? " constant" : ""}`} x1={xFor(index)} x2={xFor(index)} y1={PARALLEL_AXIS_TOP} y2={PARALLEL_AXIS_BOTTOM} />
                 {constant ? (
+                  // Run the constant readout vertically along its own axis so
+                  // neighbouring constant labels can't collide horizontally — with
+                  // every config field constant (a single hyperparameter sweep)
+                  // the old horizontal labels overran each other.
                   <text
                     className="analysis-tick constant"
-                    x={index === fields.length - 1 ? xFor(index) - 6 : xFor(index) + 6}
-                    y={PARALLEL_AXIS_MID - 4}
-                    textAnchor={index === fields.length - 1 ? "end" : "start"}
+                    x={xFor(index) - 4}
+                    y={PARALLEL_AXIS_MID}
+                    textAnchor="middle"
+                    transform={`rotate(-90 ${xFor(index) - 4} ${PARALLEL_AXIS_MID})`}
                   >
                     constant · {formatNumber(domain.max, 2)}
                   </text>
