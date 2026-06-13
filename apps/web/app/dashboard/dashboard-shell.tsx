@@ -3674,7 +3674,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           onPinnedChange={setNavPinned}
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
+          onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
           pinned={navPinned}
+          theme={theme}
         />
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">

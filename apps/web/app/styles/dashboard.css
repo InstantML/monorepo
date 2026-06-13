@@ -522,6 +522,10 @@
   display: none;
 }
 
+.nav-mobile-actions {
+  display: none;
+}
+
 .tab-scroll,
 .tab-group {
   display: grid;
