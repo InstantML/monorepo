@@ -62,6 +62,21 @@ test("workspace chart visual polish preserves geometry and dark-mode marker outl
   assert.match(panelsCss, /\.scatter-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
 });
 
+test("metric charts expose an accessible summary table view", () => {
+  const metricChartSrc = read("app/dashboard/metrics/metric-chart.tsx");
+  const chartsSrc = read("src/charts.js");
+  const chartsCss = read("app/styles/charts.css");
+
+  assert.match(metricChartSrc, /chart-view-toggle/);
+  assert.match(metricChartSrc, /aria-pressed=\{chartView === "summary"\}/);
+  assert.match(metricChartSrc, /<caption>\{metricTitle\(metricKey\)\} summary table<\/caption>/);
+  assert.match(metricChartSrc, /<th scope="col">Run<\/th>/);
+  assert.match(metricChartSrc, /<th scope="row" title=\{row\.name\}>/);
+  assert.match(chartsSrc, /export function chartSummaryRows/);
+  assert.match(chartsSrc, /export function chartSummaryTakeaway/);
+  assert.match(chartsCss, /\.chart-summary-table-wrap[\s\S]*?overflow: auto/);
+});
+
 test("runs workspace exposes a visible select-all-on-page control with a count", () => {
   const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
   assert.match(workspaceSrc, /workspace-rail-page-select/);

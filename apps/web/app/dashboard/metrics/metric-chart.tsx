@@ -4,7 +4,7 @@ import { FileText, ImageDown, RefreshCw } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
-import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, svgPointFromClient } from "../../../src/charts.js";
+import { axisTicks, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, svgPointFromClient } from "../../../src/charts.js";
 import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
@@ -31,6 +31,7 @@ const TOOLTIP_OFFSET = 12;
 const TOOLTIP_MARGIN = 8;
 
 type TooltipPlacement = { left: number; top: number; side: "left" | "right"; vertical: "above" | "below" };
+type ChartView = "chart" | "summary";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -87,6 +88,68 @@ function renderedSvgPoint(point: { x: number; y: number }, frameRect: DOMRect, w
     x: (frameRect.width - renderedWidth) / 2 + point.x * scale,
     y: (frameRect.height - renderedHeight) / 2 + point.y * scale,
   };
+}
+
+function formatSummaryPercent(value: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatMetricValue(value, 4)}%`;
+}
+
+function formatSummaryStep(value: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
+  return formatNumber(Number(value), 0);
+}
+
+function ChartSummaryTable({
+  metricKey,
+  rows,
+  tableId,
+  takeaway,
+}: {
+  metricKey: string;
+  rows: any[];
+  tableId: string;
+  takeaway: string;
+}) {
+  return (
+    <section className="chart-summary-panel" id={tableId} aria-label={`${metricKey} summary table`}>
+      <p className="chart-summary-takeaway">{takeaway}</p>
+      <div className="chart-summary-table-wrap">
+        <table className="chart-summary-table">
+          <caption>{metricTitle(metricKey)} summary table</caption>
+          <thead>
+            <tr>
+              <th scope="col">Run</th>
+              <th scope="col">Final</th>
+              <th scope="col">Best</th>
+              <th scope="col">Best step</th>
+              <th scope="col">Change</th>
+              <th scope="col">Rank</th>
+              <th scope="col">Trend</th>
+              <th scope="col">Points</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row" title={row.name}>{row.name}</th>
+                <td>{formatMetricValue(row.final)}</td>
+                <td>{formatMetricValue(row.best)}</td>
+                <td>{formatSummaryStep(row.bestStep)}</td>
+                <td>{formatSummaryPercent(row.changePercent)}</td>
+                <td>{row.rank ?? "-"}</td>
+                <td>{row.trend}</td>
+                <td>{formatNumber(row.points, 0)}</td>
+                <td>{row.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
@@ -303,6 +366,7 @@ export function MetricChart({
   xMode: string;
   zoomRange?: ChartZoomRange;
 }) {
+  const [chartView, setChartView] = useState<ChartView>("chart");
   const denseChart = shouldUseDenseChart(normalizedSeries);
   const useLineStyles = normalizedSeries.length > CHART_PALETTE.length;
   // With many overlapping SVG lines, full opacity merges them into an opaque
@@ -398,11 +462,14 @@ export function MetricChart({
   const exportFileBase = safeExportFilename(exportFilenameBase ?? metricKey, "metric-chart");
   const chartInstanceId = useId();
   const exportHelpId = `${chartInstanceId}-chart-export-help`;
+  const chartPanelId = `${chartInstanceId}-chart-panel`;
   const smoothingControlId = `${chartInstanceId}-chart-smoothing`;
-  const showSmoothing = typeof onSmoothingChange === "function";
+  const showSmoothing = chartView === "chart" && typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
-  const showActions = Boolean(exportFilenameBase) || showSmoothing;
+  const showActions = true;
   const displaySmoothing = smoothingValue;
+  const summaryRows = useMemo(() => chartSummaryRows(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
+  const summaryTakeaway = useMemo(() => chartSummaryTakeaway(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
   const hoverRows = visibleHover ? tooltipRows(normalizedSeries, styleIndexes, visibleHover.point.xValue, xMode, useLineStyles, visibleHover.runId) : [];
   const hiddenHoverRows = visibleHover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
@@ -510,34 +577,48 @@ export function MetricChart({
     downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height, padding, xMode }), "image/svg+xml;charset=utf-8");
   }
 
-  return (
-    <div
-      ref={chartAreaRef}
-      className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
-      onMouseLeave={onLeave}
-    >
-      {showActions ? (
-        <div className="chart-export-actions" aria-label="Chart actions">
-          {showSmoothing ? (
-            <label className="chart-smoothing-control" htmlFor={smoothingControlId} title={`Line smoothing: ${displaySmoothing ? displaySmoothing : "off"}`}>
-              <span className="chart-smoothing-label">Smooth</span>
-              <input
-                aria-label={`Line smoothing for ${metricKey}`}
-                aria-valuetext={displaySmoothing ? String(displaySmoothing) : "off"}
-                className="chart-smoothing-slider"
-                id={smoothingControlId}
-                max={90}
-                min={0}
-                onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
-                onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
-                step={10}
-                type="range"
-                value={displaySmoothing}
-              />
-            </label>
-          ) : null}
-          {exportFilenameBase ? (
-          <>
+  const chartActions = showActions ? (
+    <div className="chart-export-actions" aria-label="Chart actions">
+      <div className="chart-view-toggle" role="group" aria-label={`${metricKey} view`}>
+        <button
+          aria-controls={chartPanelId}
+          aria-pressed={chartView === "chart"}
+          className={chartView === "chart" ? "selected" : ""}
+          onClick={() => setChartView("chart")}
+          type="button"
+        >
+          Chart
+        </button>
+        <button
+          aria-controls={chartPanelId}
+          aria-pressed={chartView === "summary"}
+          className={chartView === "summary" ? "selected" : ""}
+          onClick={() => setChartView("summary")}
+          type="button"
+        >
+          Summary table
+        </button>
+      </div>
+      {showSmoothing ? (
+        <label className="chart-smoothing-control" htmlFor={smoothingControlId} title={`Line smoothing: ${displaySmoothing ? displaySmoothing : "off"}`}>
+          <span className="chart-smoothing-label">Smooth</span>
+          <input
+            aria-label={`Line smoothing for ${metricKey}`}
+            aria-valuetext={displaySmoothing ? String(displaySmoothing) : "off"}
+            className="chart-smoothing-slider"
+            id={smoothingControlId}
+            max={90}
+            min={0}
+            onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+            onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+            step={10}
+            type="range"
+            value={displaySmoothing}
+          />
+        </label>
+      ) : null}
+      {exportFilenameBase ? (
+        <>
           <button
             aria-label={`Download ${metricKey} plotted data CSV`}
             aria-describedby={exportBlockedReason ? exportHelpId : undefined}
@@ -561,10 +642,24 @@ export function MetricChart({
             <ImageDown size={14} />
           </button>
           {exportBlockedReason ? <span className="chart-export-helper" id={exportHelpId}>{exportBlockedReason}</span> : null}
-          </>
-          ) : null}
-        </div>
+        </>
       ) : null}
+    </div>
+  ) : null;
+
+  return (
+    <div
+      id={chartPanelId}
+      ref={chartAreaRef}
+      className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
+      onMouseLeave={onLeave}
+    >
+      {chartActions}
+      <span className="visually-hidden" role="status" aria-live="polite">{chartView === "summary" ? `${metricKey} summary table selected.` : `${metricKey} chart selected.`}</span>
+      {chartView === "summary" ? (
+        <ChartSummaryTable metricKey={metricKey} rows={summaryRows} tableId={`${chartInstanceId}-summary-table`} takeaway={summaryTakeaway} />
+      ) : (
+        <>
       <div className="chart-legend">
         {legendSeries.map((item, index) => {
           const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
@@ -708,6 +803,8 @@ export function MetricChart({
           ) : null}
         </div>
       ) : null}
+        </>
+      )}
     </div>
   );
 }
