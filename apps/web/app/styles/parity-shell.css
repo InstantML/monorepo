@@ -157,6 +157,20 @@
   }
 
   /* ── Rail brand + project card (Instrument layout) ── */
+  /* The base .tabs rail is a two-row grid (minmax(0,1fr) auto) tuned for the old
+     icon-only nav. The Instrument rail adds a brand block and PROJECT card above
+     the scroller, and the grid squeezed the brand row to its 1fr min — collapsing
+     it so the 22px brandmark overflowed down onto the project card. Lay the rail
+     out as a simple flex column: brand + project size to content, the tab list
+     takes the remaining height and scrolls, and .rail-foot (margin-top:auto)
+     stays pinned to the bottom. */
+  .tabs {
+    display: flex;
+    flex-direction: column;
+  }
+  .tab-scroll {
+    flex: 1 1 auto;
+  }
   .rail-brand {
     display: flex;
     align-items: center;
