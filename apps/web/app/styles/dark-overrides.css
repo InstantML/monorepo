@@ -917,9 +917,16 @@
   color: var(--text);
 }
 
-.run-workspace-tab.active,
-.segment-button.active {
+/* Tabs use the accent underline as their active indicator (matching the primary
+   nav). The stdout/stderr segmented control is a pill toggle, not a tab — its
+   fill + border + brighter text already mark the active segment, so it skips the
+   green underline (which read as a stray link rule and broke green = live/best). */
+.run-workspace-tab.active {
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.segment-button.active {
+  border-color: var(--line-strong);
 }
 
 .run-workspace-panel {
