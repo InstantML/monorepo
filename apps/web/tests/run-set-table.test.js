@@ -83,7 +83,7 @@ test("Runset default colors intentionally mirror the shared dashboard palette", 
     "#7a5fe0",
     "#1b9c8f",
     "#e06a38",
-    "#8f9a1f",
+    "#6f9a3f",
   ]);
   assert.match(typesSrc, /RUN_COLOR_PALETTE:\s*string\[\]\s*=\s*CHART_PALETTE\.slice\(0,\s*8\)/);
   assert.match(tableSrc, /settings\.color\s*\?\?\s*RUN_COLOR_PALETTE\[index\s*%\s*RUN_COLOR_PALETTE\.length\]/);

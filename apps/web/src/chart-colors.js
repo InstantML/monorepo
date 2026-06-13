@@ -9,7 +9,7 @@ export const CHART_PALETTE = [
   "#7a5fe0",
   "#1b9c8f",
   "#e06a38",
-  "#8f9a1f",
+  "#6f9a3f",
   "#d6447e",
   "#3f9ec9",
   "#6f7d8c",

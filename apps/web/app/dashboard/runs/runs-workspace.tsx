@@ -467,7 +467,8 @@ export function RunsWorkspace({
                       <span className={`workspace-run-status ${runStatusClass(statusLabel)}`}>{statusLabel}</span>
                       {hasLatestMetricValue ? (
                         <span className="workspace-run-metric-chip" title={`${metricKey}: ${latestMetricValue}`}>
-                          {shortMetricName(metricKey)} {compactRailMetricValue(latestMetricValue)}
+                          <span className="wrm-name">{shortMetricName(metricKey)}</span>
+                          <span className="wrm-value">{compactRailMetricValue(latestMetricValue)}</span>
                         </span>
                       ) : null}
                       {/* Exception-only: synced is the unmarked default. */}

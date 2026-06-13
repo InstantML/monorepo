@@ -672,6 +672,24 @@
   flex: 1 1 auto;
   min-width: 0;
   color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Protect the value from truncation — the metric name yields first since it is
+   redundant with the page's active-metric selector, the number is what matters. */
+.workspace-run-metric-chip .wrm-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.workspace-run-metric-chip .wrm-value {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .workspace-eye {
