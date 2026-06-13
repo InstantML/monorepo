@@ -38,9 +38,14 @@
   .topbar .mobile-menu-button {
     display: none;
   }
-  /* Push the surviving account/search actions to the right. */
+  /* Push the surviving account actions to the right; drop the plan chip and
+   * the duplicate ⌘K search button (search already lives in the ticker). */
   .topbar .brandbar-row { margin-left: auto; }
   .topbar .brandbar-actions { margin-left: auto; }
+  .topbar .plan-usage-badge,
+  .topbar .brandbar-actions .ghost-kbd {
+    display: none;
+  }
 
   /* ── Telemetry ticker ── */
   .ticker {
