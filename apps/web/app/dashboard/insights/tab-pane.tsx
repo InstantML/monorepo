@@ -260,10 +260,22 @@ function ScatterCard({
             >
               <line className="analysis-axis-line" x1="48" x2="488" y1="200" y2="200" />
               <line className="analysis-axis-line" x1="48" x2="48" y1="16" y2="200" />
-              <text className="analysis-tick" x="48" y="214">{formatNumber(geometry.minX, 3)}</text>
-              <text className="analysis-tick" x="488" y="214" textAnchor="end">{formatNumber(geometry.maxX, 3)}</text>
-              <text className="analysis-tick" x="44" y="200" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
-              <text className="analysis-tick" x="44" y="24" textAnchor="end">{formatNumber(geometry.maxY, 2)}</text>
+              {geometry.xDegenerate ? (
+                <text className="analysis-tick" x="268" y="214" textAnchor="middle">{formatNumber(geometry.minX, 3)}</text>
+              ) : (
+                <>
+                  <text className="analysis-tick" x="48" y="214">{formatNumber(geometry.minX, 3)}</text>
+                  <text className="analysis-tick" x="488" y="214" textAnchor="end">{formatNumber(geometry.maxX, 3)}</text>
+                </>
+              )}
+              {geometry.yDegenerate ? (
+                <text className="analysis-tick" x="44" y="112" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
+              ) : (
+                <>
+                  <text className="analysis-tick" x="44" y="200" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
+                  <text className="analysis-tick" x="44" y="24" textAnchor="end">{formatNumber(geometry.maxY, 2)}</text>
+                </>
+              )}
               <text className="analysis-axis-title" x="270" y="228" textAnchor="middle">{shortLabel(fields[0])}</text>
               <text className="analysis-axis-title" x="16" y="108" textAnchor="middle" transform="rotate(-90 16 108)">{shortLabel(fields[1])}</text>
               {visiblePoints.map((point) => {
@@ -525,12 +537,18 @@ function pointGeometry(points: Array<{ x: number; y: number }>) {
   const maxX = Math.max(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const maxY = Math.max(...points.map((point) => point.y));
+  // A field with no spread (every run shares the value, e.g. a constant
+  // batch_size) would otherwise pin every point to the axis origin and print the
+  // same number at both ends. Center those points and flag the axis so the
+  // renderer can show a single tick instead of a duplicated min/max pair.
+  const xDegenerate = maxX - minX < 1e-9;
+  const yDegenerate = maxY - minY < 1e-9;
   const xSpan = Math.max(1e-9, maxX - minX);
   const ySpan = Math.max(1e-9, maxY - minY);
   return {
-    x: (value: number) => 48 + ((value - minX) / xSpan) * 440,
-    y: (value: number) => 200 - ((value - minY) / ySpan) * 176,
-    minX, maxX, minY, maxY,
+    x: (value: number) => (xDegenerate ? 268 : 48 + ((value - minX) / xSpan) * 440),
+    y: (value: number) => (yDegenerate ? 108 : 200 - ((value - minY) / ySpan) * 176),
+    minX, maxX, minY, maxY, xDegenerate, yDegenerate,
   };
 }
 
