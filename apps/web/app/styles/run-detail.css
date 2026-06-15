@@ -447,7 +447,7 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--tight-radius);
-  background: var(--surface-muted);
+  background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
   font-style: normal;

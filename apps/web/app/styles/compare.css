@@ -60,7 +60,7 @@
   object-fit: contain;
   border: 1px solid var(--line-soft);
   border-radius: var(--control-radius);
-  background: #050a12;
+  background: var(--color-ink);
 }
 
 .artifact-image {
@@ -1664,7 +1664,7 @@ button.compare-row-head.active {
 .cmp-anchor.on{color:var(--accent)}
 
 /* status pills — distinct from the green=better / coral=worse delta semantics */
-.pill.cmp-status{font-family:var(--font-sans);font-size: 12px;font-weight:600;padding:2px 7px;border-radius:var(--radius-pill);text-transform:capitalize;border:1px solid transparent;flex:none}
+.pill.cmp-status{font-family:var(--font-mono);font-size: 11.5px;font-weight:600;padding:2px 7px;border-radius:var(--radius-pill);text-transform:capitalize;border:1px solid transparent;flex:none}
 .pill.cmp-status.good{background:var(--surface-3);color:var(--text-2);border-color:var(--line-strong)}
 .pill.cmp-status.live{background:rgba(125,161,232,0.16);color:var(--blue);border-color:rgba(125,161,232,0.4)}
 .pill.cmp-status.bad{background:var(--danger-soft);color:var(--coral);border-color:rgba(248,113,113,0.38)}

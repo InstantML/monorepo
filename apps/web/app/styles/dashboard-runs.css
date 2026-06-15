@@ -302,11 +302,11 @@
   align-items: flex-start;
   gap: 4px;
   padding: 10px 12px;
-  background: var(--surface-muted, #f5f7fa);
+  background: var(--surface-soft);
   border-bottom: 1px solid var(--line-soft);
   font-size: 12px;
   line-height: 1.4;
-  color: var(--text-muted, #4a5568);
+  color: var(--muted);
 }
 
 .workspace-rail-select-banner .link-button {
@@ -1073,7 +1073,8 @@
 
 .project-card:hover,
 .project-card:focus-visible {
-  border-color: var(--accent);
+  /* Neutral hover lift — green is reserved for live/best, not generic hover. */
+  border-color: var(--line-strong);
   box-shadow: 0 10px 26px rgba(23, 33, 43, 0.1);
   transform: translateY(-1px);
 }
@@ -1106,7 +1107,7 @@
 }
 
 .project-card-stat.is-failed b {
-  color: var(--red, #b3372f);
+  color: var(--danger);
 }
 
 .project-card-best {

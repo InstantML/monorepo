@@ -734,9 +734,11 @@
 }
 
 .chart-type-segment button.active {
-  border-color: rgba(18, 160, 105, 0.45);
-  background: var(--accent-soft);
-  color: var(--accent);
+  /* Neutral active segment (fill + border + bright text); green is reserved for
+     live/best, not a chart-type toggle. */
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--text);
 }
 
 .drawer-group {
