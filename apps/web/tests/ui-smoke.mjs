@@ -1168,8 +1168,8 @@ try {
   await selectVisibleRunForMetrics(page);
 
   await page.getByRole("link", { name: /Metrics/ }).click();
-  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Metric Catalog"));
-  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Leaderboard"));
+  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Metric browser"));
+  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Series"));
   await page.fill("#metric-filter", "train/.*");
   await page.waitForFunction(() => [...document.querySelectorAll("#metric-select option")].some((option) => option.textContent === "train/loss"));
   await chooseSelect(page, "#metric-select", "train/loss");
@@ -1177,7 +1177,8 @@ try {
   const pinMetric = page.locator("#pin-metric");
   if (!(await pinMetric.innerText()).includes("Pinned")) await pinMetric.click();
   await chooseSelect(page, "#group-select", "seed");
-  await chooseSelect(page, "#x-mode", "time");
+  await page.locator("#x-mode-time").click();
+  await page.waitForFunction(() => document.querySelector("#x-mode-time")?.getAttribute("aria-pressed") === "true");
   await page.locator("#smoothing").focus();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction(() => document.querySelector("#smoothing")?.value === "10");
@@ -1187,10 +1188,10 @@ try {
   await page.check("#group-average");
   await page.waitForSelector(".tab-pane.active .series-point", { timeout: 10000 });
   await page.locator(".tab-pane.active .series-point").first().hover({ force: true });
-  await page.waitForSelector(".tab-pane.active .readout-card", { timeout: 10000 });
-  const metricsReadoutText = await page.locator(".tab-pane.active .readout-card").innerText();
-  assert.match(metricsReadoutText, /step/);
-  assert.match(metricsReadoutText, /Smoothed/);
+  await page.waitForSelector(".tab-pane.active .chart-tooltip", { timeout: 10000 });
+  const metricsReadoutText = await page.locator(".tab-pane.active .chart-tooltip").innerText();
+  assert.match(metricsReadoutText, /Raw \/ EMA/i);
+  assert.match(metricsReadoutText, /EMA/);
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
@@ -1399,14 +1400,14 @@ try {
   await page.getByRole("link", { name: /^Metrics$/ }).click();
   await page.waitForSelector(".tab-pane.active .metrics-analysis", { timeout: 10000 });
   await page.fill("#metric-filter", "");
-  await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .metric-catalog-row").length >= 3);
-  await page.waitForFunction(() => [...document.querySelectorAll(".tab-pane.active .metric-catalog-row")]
-    .some((row) => row.textContent?.includes("Loss")));
-  await page.locator(".tab-pane.active .metric-catalog-row", { hasText: "Loss" }).locator(".metric-catalog-main").click();
+  await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .mx-tree-leaf").length >= 3);
+  await page.waitForFunction(() => [...document.querySelectorAll(".tab-pane.active .mx-tree-leaf")]
+    .some((row) => /loss/i.test(row.textContent ?? "")));
+  await page.locator(".tab-pane.active .mx-tree-leaf", { hasText: "loss" }).first().locator(".mx-tree-leaf-main").click();
   await page.waitForSelector(".tab-pane.active .metric-chart", { timeout: 10000 }).catch(async (error) => {
     const state = await page.evaluate(() => ({
       activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
-      catalogRows: [...document.querySelectorAll(".tab-pane.active .metric-catalog-row")].slice(0, 5).map((row) => row.textContent?.replace(/\s+/g, " ").trim() ?? ""),
+      catalogRows: [...document.querySelectorAll(".tab-pane.active .mx-tree-leaf")].slice(0, 5).map((row) => row.textContent?.replace(/\s+/g, " ").trim() ?? ""),
       empty: document.querySelector(".tab-pane.active .chart-area .empty")?.textContent ?? "",
       metricSelect: document.querySelector("#metric-select")?.textContent ?? "",
       tabText: document.querySelector(".tab-pane.active")?.textContent?.slice(0, 800) ?? "",
@@ -1420,12 +1421,12 @@ try {
     chartPointRadius: document.querySelector(".tab-pane.active .series-point")?.getAttribute("r") ?? "",
     points: document.querySelectorAll(".tab-pane.active .series-point").length,
     axisLabels: [...document.querySelectorAll(".tab-pane.active .axis-label")].map((node) => node.textContent),
-    metricCatalogRows: document.querySelectorAll(".tab-pane.active .metric-catalog-row").length,
-    leaderboardRows: document.querySelectorAll(".tab-pane.active .leaderboard-row").length,
-    leaderboardEmpty: document.querySelector(".tab-pane.active")?.textContent?.includes("No selected runs have") ?? false,
+    metricCatalogRows: document.querySelectorAll(".tab-pane.active .mx-tree-leaf").length,
+    seriesRows: document.querySelectorAll(".tab-pane.active .mx-table tbody tr").length,
+    seriesEmpty: document.querySelector(".tab-pane.active")?.textContent?.includes("No runs have logged") ?? false,
     controls: {
       group: document.querySelector("#group-select")?.value,
-      x: document.querySelector("#x-mode")?.value,
+      x: document.querySelector("#x-mode-time")?.getAttribute("aria-pressed") === "true" ? "time" : "step",
       smooth: document.querySelector("#smoothing")?.value,
       average: document.querySelector("#group-average")?.checked,
     },
@@ -1517,7 +1518,7 @@ try {
   assert.ok(data.notePreviews.some((note) => /Synthetic|note/i.test(note)), "workspace rows should expose note previews");
   assert.ok(data.tagPreviews.some((tags) => /demo|qa-smoke|compare-smoke/i.test(tags)), "workspace rows should expose tag previews");
   assert.ok(data.metricCatalogRows >= 3);
-  assert.ok(data.leaderboardRows >= 1 || data.leaderboardEmpty);
+  assert.ok(data.seriesRows >= 1 || data.seriesEmpty);
   assert.ok(data.runTimelineRows >= 3);
   assert.ok(data.runMetricRows >= 3);
   assert.equal(data.runDetailChart, true);

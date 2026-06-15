@@ -30,7 +30,17 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
     const filtered = range ? item.points.filter((point) => pointInRange(point, xKey, range)) : item.points;
     // Log scale can only place positive values; non-positive points drop from
     // the plot (counted so the UI can say so) while `points` keeps the raw set.
-    const plottable = yScale === "log" ? filtered.filter((point) => Number(point.value) > 0) : filtered;
+    const positive = yScale === "log" ? filtered.filter((point) => Number(point.value) > 0) : filtered;
+    // Points arrive in step order; wall-clock timestamps from concurrent runs
+    // interleave, so time mode must re-sort or the path sweeps back and forth.
+    // Decorate-sort-undecorate keeps the comparator cheap (one Date parse per
+    // point here; the render loop below re-derives xValue as it always has).
+    const plottable = xKey === "time"
+      ? positive
+          .map((point) => [xValue(point, xKey), point])
+          .sort((left, right) => left[0] - right[0])
+          .map((pair) => pair[1])
+      : positive;
     const smoothed = Boolean(item.smoothed);
     // Single pass builds normalizedPoints + both path strings, and computes
     // xValue once per point (it parses a Date in time mode — calling it twice
@@ -275,10 +285,28 @@ export function formatAxisTick(value) {
   const num = Number(value);
   if (num === 0) return "0";
   const abs = Math.abs(num);
-  // Sub-0.01 (and very large) magnitudes use compact scientific notation so the
-  // labels stay narrow enough to clear the rotated axis title. The hover tooltip
-  // / readout keep full decimal precision via formatMetricValue.
-  if (abs < 1e-2 || abs >= 1e5) {
+  // Sub-0.01 magnitudes use trimmed scientific notation so the labels stay narrow
+  // enough to clear the rotated axis title. The hover tooltip / readout keep full
+  // decimal precision via formatMetricValue.
+  if (abs < 1e-2) {
+    return num.toExponential(2).replace(/\.?0+e/, "e").replace("e+", "e");
+  }
+  // Large magnitudes (5+ digits) use compact k/M/B/T suffixes so the right-anchored
+  // y-axis ticks stay narrow enough not to clip against the axis inset — e.g.
+  // tokens/sec around 40k previously rendered as "40000" and ran off the left edge.
+  if (abs >= 1e4) {
+    const units = [
+      { value: 1e12, suffix: "T" },
+      { value: 1e9, suffix: "B" },
+      { value: 1e6, suffix: "M" },
+      { value: 1e3, suffix: "k" },
+    ];
+    const unit = units.find((entry) => abs >= entry.value);
+    if (unit) {
+      const scaled = num / unit.value;
+      const digits = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+      return `${parseFloat(scaled.toFixed(digits))}${unit.suffix}`;
+    }
     return num.toExponential(2).replace(/\.?0+e/, "e").replace("e+", "e");
   }
   return formatMetricValue(num, 4);

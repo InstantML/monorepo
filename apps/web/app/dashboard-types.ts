@@ -213,6 +213,7 @@ export type CompareRunSort =
   | "config";
 
 export type TabId =
+  | "overview"
   | "runs"
   | "metrics"
   | "distributed"
@@ -227,7 +228,7 @@ export type TabId =
   | "settings"
   | "api";
 
-export type Tone = "good" | "bad" | "live" | "neutral";
+export type Tone = "good" | "bad" | "live" | "neutral" | "warn";
 
 export type AlertRow = {
   id: string;

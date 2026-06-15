@@ -23,7 +23,7 @@ import {
   Undo2,
 } from "lucide-react";
 
-import { ApiClient, isAbortError } from "../../../src/api.js";
+import { ApiClient, ApiError, isAbortError } from "../../../src/api.js";
 import {
   createReport,
   deleteReport,
@@ -90,6 +90,7 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
   const [activeReport, setActiveReport] = useState<ReportRecord | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unsupported, setUnsupported] = useState(false);
   const [autoSave, setAutoSave] = useState<AutoSaveStatus>({ state: "idle" });
 
   // Per-editor auto-save scheduler. Recreated each time we open a new
@@ -126,8 +127,16 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
     try {
       const { reports } = await listReports(api);
       setSummaries(reports);
+      setUnsupported(false);
     } catch (loadError) {
-      setError(messageFromError(loadError));
+      // A 404 on the collection means this backend doesn't serve reports at
+      // all (route not mounted) — degrade quietly instead of alarming.
+      if (loadError instanceof ApiError && loadError.status === 404) {
+        setUnsupported(true);
+        setSummaries([]);
+      } else {
+        setError(messageFromError(loadError));
+      }
     } finally {
       setBusy(false);
     }
@@ -285,11 +294,15 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
           openReport(created.id, { autoFocus: true });
         }
       } catch (createError) {
-        setError(
-          isAbortError(createError)
-            ? "Creating the report timed out. Try again in a moment."
-            : messageFromError(createError),
-        );
+        if (createError instanceof ApiError && createError.status === 404) {
+          setUnsupported(true);
+        } else {
+          setError(
+            isAbortError(createError)
+              ? "Creating the report timed out. Try again in a moment."
+              : messageFromError(createError),
+          );
+        }
       } finally {
         window.clearTimeout(timeout);
         setBusy(false);
@@ -488,15 +501,18 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
     <>
       <PageHead eyebrow="Workspace" title="Reports" />
       {error ? <div className="report-error" role="alert">{error}</div> : null}
+      {/* The unsupported state is conveyed by the empty-state card below (which
+          is unsupported-aware) — no separate banner, to avoid duplicate copy. */}
       {mode.kind === "list" ? (
         <ReportsListPane
           summaries={summaries}
           busy={busy}
+          unsupported={unsupported}
           onOpen={(reportId) => openReport(reportId)}
           onCreate={() => void handleCreate()}
           onCreateFromTemplate={() => void handleCreateFromTemplate()}
           onDuplicate={(reportId) => void handleDuplicate(reportId)}
-          canEditReports={canEditReports}
+          canEditReports={canEditReports && !unsupported}
           onDelete={(reportId, title) => {
             if (!canEditReports) return;
             if (!window.confirm(`Delete "${title || "Untitled report"}"? This cannot be undone.`)) {
@@ -627,6 +643,7 @@ function ReportToolbar({
 function ReportsListPane({
   summaries,
   busy,
+  unsupported = false,
   canEditReports,
   onOpen,
   onCreate,
@@ -636,6 +653,7 @@ function ReportsListPane({
 }: {
   summaries: ReportSummary[];
   busy: boolean;
+  unsupported?: boolean;
   canEditReports: boolean;
   onOpen: (reportId: string) => void;
   onCreate: () => void;
@@ -690,7 +708,7 @@ function ReportsListPane({
             <div className="report-list__empty">
               <FileText size={22} aria-hidden="true" />
               <strong>No reports yet</strong>
-              <span>{canEditReports ? "Create the first writeup for this workspace." : "This workspace is read-only. Shared reports will appear here."}</span>
+              <span>{unsupported ? "This backend doesn't serve reports yet. Existing writeups will appear here once it does." : canEditReports ? "Create the first writeup for this workspace." : "This workspace is read-only. Shared reports will appear here."}</span>
               {canEditReports ? (
                 <div className="report-list__empty-actions">
                   <button

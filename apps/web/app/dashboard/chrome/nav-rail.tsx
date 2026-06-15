@@ -3,21 +3,23 @@
 import { BookOpen, CircleHelp, Moon, PanelLeftClose, PanelLeftOpen, Sun, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
-import { tabToPath } from "../../../src/routes.js";
-import { navGroups } from "../../dashboard-config";
-import type { TabId } from "../../dashboard-types";
+import { navGroups, shellTabPath } from "../../dashboard-config";
+import type { ShellTabId } from "../../dashboard-config";
 
 const navGroupLabels: Record<(typeof navGroups)[number]["id"], string> = {
-  admin: "Admin",
-  core: "Analyze",
-  more: "More",
-  workspace: "Workspace",
+  operate: "Operate",
+  data: "Data",
+  system: "System",
 };
 
+export type NavBadge = { value: string; tone?: "alert" };
+
 export function DashboardNav({
+  accountMenu,
   activeTab,
+  badges = {},
   compactNav = false,
   mobileOpen = false,
   onAutoOpenChange,
@@ -29,13 +31,15 @@ export function DashboardNav({
   pinned,
   theme,
 }: {
-  activeTab: TabId;
+  accountMenu?: ReactNode;
+  activeTab: ShellTabId;
+  badges?: Partial<Record<ShellTabId, NavBadge>>;
   compactNav?: boolean;
   mobileOpen?: boolean;
   onAutoOpenChange: (open: boolean) => void;
   onMobileClose?: () => void;
   onPinnedChange: (pinned: boolean) => void;
-  onSelect: (tabId: TabId) => void;
+  onSelect: (tabId: ShellTabId) => void;
   onShortcutHelp?: () => void;
   onThemeToggle: () => void;
   pinned: boolean;
@@ -66,7 +70,7 @@ export function DashboardNav({
     window.setTimeout(resetNavScroll, 0);
   }
 
-  function handleTabSelect(event: MouseEvent<HTMLAnchorElement>, tabId: TabId) {
+  function handleTabSelect(event: MouseEvent<HTMLAnchorElement>, tabId: ShellTabId) {
     event.preventDefault();
     onMobileClose?.();
     onSelect(tabId);
@@ -79,9 +83,15 @@ export function DashboardNav({
       className={`tabs ${pinned ? "pinned" : ""}`}
       aria-hidden={hiddenCompactNav ? true : undefined}
       aria-label="Dashboard sections"
+      onMouseEnter={() => { if (!pinned && !compactNav) onAutoOpenChange(true); }}
+      onMouseLeave={() => {
+        // Don't collapse out from under a focused rail item (keyboard user
+        // tabbing through while the pointer drifts off); onBlur handles those.
+        if (!pinned && !compactNav && !navRef.current?.contains(document.activeElement)) onAutoOpenChange(false);
+      }}
       onFocus={(event) => {
-        // Expand for keyboard focus only. Mouse clicks also focus the anchors,
-        // and expanding mid-click shifts the target before mouseup lands.
+        // Also expand for keyboard focus. Both hover and focus expand on enter —
+        // before any click — so an icon click still lands on its first press.
         if (event.target instanceof HTMLElement && event.target.matches(":focus-visible")) onAutoOpenChange(true);
       }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onAutoOpenChange(false); }}
@@ -99,18 +109,20 @@ export function DashboardNav({
             <span className="tab-group-label">{navGroupLabels[group.id]}</span>
             {group.items.map((tab) => {
               const Icon = tab.icon;
+              const badge = badges[tab.id];
               return (
                 <a
                   aria-label={tab.label}
                   aria-current={activeTab === tab.id ? "page" : undefined}
                   className={`tab-button ${activeTab === tab.id ? "active" : ""}`}
-                  href={tabToPath(tab.id)}
+                  href={shellTabPath(tab.id)}
                   key={tab.id}
                   onClick={(event) => handleTabSelect(event, tab.id)}
                   tabIndex={compactTabIndex}
                   title={pinned ? undefined : tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
+                  {badge ? <span className={`tab-count ${badge.tone === "alert" ? "is-alert" : ""}`}>{badge.value}</span> : null}
                 </a>
               );
             })}
@@ -141,6 +153,7 @@ export function DashboardNav({
           {pinned ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
           <span className="tab-label">{pinned ? "Unpin" : "Pin"}</span>
         </button>
+        {accountMenu ? <div className="rail-foot">{accountMenu}</div> : null}
       </div>
       <div className="nav-mobile-actions">
         <Link className="tab-button" href="/docs" aria-label="Docs" tabIndex={compactTabIndex}>

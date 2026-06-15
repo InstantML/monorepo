@@ -232,7 +232,12 @@ export function SettingsTabPane({
   return (
     <>
       <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace settings" />
+      {/* Two independent column stacks instead of a row-paired grid: Plan Usage
+          is much taller than Billing, so a row grid left a large void under the
+          short Billing card before Workspace. Stacking each column lets the right
+          column pack tight against the top. */}
       <div className="tab-grid settings-grid">
+        <div className="settings-col">
         <section className="panel">
           <div className="panel-head">
             <h2><Gauge size={15} /> Plan Usage</h2>
@@ -271,6 +276,8 @@ export function SettingsTabPane({
             ) : null}
           </div>
         </section>
+        </div>
+        <div className="settings-col">
         <section className="panel">
           <div className="panel-head"><h2><CreditCard size={15} /> Billing</h2></div>
           <div className="panel-body settings-list">
@@ -422,6 +429,7 @@ export function SettingsTabPane({
             <SettingRow label="Metric point limit" value="1,000 per selected run" />
           </div>
         </section>
+        </div>
       </div>
     </>
   );

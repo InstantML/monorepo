@@ -275,7 +275,7 @@
 }
 
 .detail-row.highlight {
-  border-color: rgba(31, 184, 119, 0.32);
+  border-color: rgba(43, 224, 130, 0.32);
   background: var(--surface-tint);
 }
 
@@ -429,7 +429,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #273542;
+  color: #22261d;
   font-size: 13px;
   font-weight: 760;
 }
@@ -447,7 +447,7 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--tight-radius);
-  background: var(--surface-muted);
+  background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
   font-style: normal;
@@ -470,8 +470,8 @@ pre {
   margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
-  background: #fbfcfd;
-  color: #223142;
+  background: #fdfdfb;
+  color: #22261d;
   padding: 10px;
   font-size: 12px;
   line-height: 1.55;
@@ -497,7 +497,7 @@ pre {
 .inspector .detail-row strong {
   max-width: 62%;
   overflow: hidden;
-  color: #273542;
+  color: #22261d;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -508,7 +508,7 @@ pre {
 }
 
 .inspector pre {
-  background: #fbfcfd;
+  background: #fdfdfb;
   font-size: 12px;
 }
 
@@ -804,7 +804,7 @@ pre {
   display: grid;
   min-height: 140px;
   place-items: center;
-  border: 1px dashed #cbd6e1;
+  border: 1px dashed #c8ccbc;
   border-radius: var(--radius);
   color: var(--muted);
   padding: 16px;
@@ -839,7 +839,7 @@ pre {
   border: 1px solid var(--line);
   border-radius: var(--tight-radius);
   background: #ffffff;
-  color: #344251;
+  color: #3a3f33;
   padding: 4px 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -875,8 +875,8 @@ pre {
   display: grid;
   gap: 2px;
   overflow: hidden;
-  background: #fbfcfd;
-  color: #4b5967;
+  background: #fdfdfb;
+  color: #555b4c;
   font-size: 12px;
   font-weight: 760;
 }
@@ -943,7 +943,7 @@ pre {
   z-index: 1;
   display: grid;
   gap: 2px;
-  background: #fbfcfd;
+  background: #fdfdfb;
 }
 
 .compare-head.compare-attribute {
@@ -960,7 +960,7 @@ pre {
 .compare-attribute strong {
   min-width: 0;
   overflow: hidden;
-  color: #1f2f3f;
+  color: #22261d;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -975,7 +975,7 @@ pre {
   align-items: center;
   gap: 4px;
   overflow: hidden;
-  color: #344251;
+  color: #3a3f33;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;

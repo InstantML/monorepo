@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
 import { formatMetricValue } from "../../../src/charts.js";
+import { identityColor } from "../../../src/chart-colors.js";
 import { formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import {
   artifactHasStoredBytes,
@@ -35,22 +36,11 @@ type CompareRowView = {
   values: Record<string, unknown>;
 };
 
-// Run-identity palette: deliberately excludes the brand green, amber, and coral —
-// those hues are reserved for delta semantics (green=better, coral=worse, amber=
-// differs), so a run's identity swatch can never be mistaken for a value judgement.
-// Reference identity is conveyed by the row tint + REF tag, not by swatch color.
-const IDENTITY_PALETTE = [
-  "#7da1e8", // blue
-  "#c084fc", // violet
-  "#5eead4", // teal
-  "#7c5cc4", // indigo
-  "#38bdf8", // sky
-  "#f0abfc", // orchid
-  "#22d3ee", // cyan
-  "#818cf8", // periwinkle
-  "#a3b3cc", // slate
-  "#2dd4bf", // aqua
-];
+// Run-identity swatch colors come from `identityColor()` (src/chart-colors.js),
+// which is the canonical chart palette with the reserved delta-semantic families
+// (green=better, amber=differs, coral=worse) removed — so a run's identity swatch
+// can never be mistaken for a value judgement. Reference identity is conveyed by
+// the row tint + REF tag, not by swatch color.
 
 type SortDir = "asc" | "desc";
 type SortState = { col: string; dir: SortDir };
@@ -669,7 +659,7 @@ export function SideBySide({
 
   // Stable run-identity color by selected order (independent of sort), so a run
   // keeps the same swatch across re-sorts and matches the charts' color identity.
-  const colorByRunId = new Map(rawRuns.map((run, index) => [run.id, IDENTITY_PALETTE[index % IDENTITY_PALETTE.length]]));
+  const colorByRunId = new Map(rawRuns.map((run, index) => [run.id, identityColor(index)]));
 
   const searchTokens = compareSearchTokens(search);
   const runMatches = searchTokens.length
@@ -698,7 +688,9 @@ export function SideBySide({
   const anyArtifacts = visibleRuns.some((run) => artifactTotalForRun(run) > 0 || (artifactsByRun[run.id]?.length ?? 0) > 0);
   const columns: CompareColumn[] = [
     ...metricTableKeys.map((key): MetricColumn => ({ kind: "metric", key: `metric:${key}`, metricKey: key, goal: metricGoal(key) })),
-    { kind: "status", key: "status" },
+    // Status lives in the sticky identity column (always visible while scrolling
+    // wide metric tables), so it deliberately has no standalone column here —
+    // a second Status column just printed every run's status twice.
     { kind: "duration", key: "duration" },
     ...(anyArtifacts ? [{ kind: "artifacts", key: "artifacts" } as AttrColumn] : []),
     ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),

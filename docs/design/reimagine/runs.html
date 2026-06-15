@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runs · InstantML</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .runs-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line-hair);
+    flex-wrap: wrap;
+  }
+  .runs-toolbar .input { flex: 1; min-width: 200px; }
+  .sel-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-flood);
+    border-bottom: 1px solid rgba(43, 224, 130, 0.25);
+    font-family: var(--font-mono); font-size: 11px; color: var(--signal);
+  }
+  .table-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px;
+    border-top: 1px solid var(--line-hair);
+  }
+</style>
+</head>
+<body data-page="runs">
+<div class="shell">
+  <header class="ticker"></header>
+  <nav class="rail" aria-label="Primary"></nav>
+
+  <main class="main">
+    <div class="page-head rise">
+      <div>
+        <div class="page-head__crumb mlabel">instantml<span class="sep">/</span>atlas-rl</div>
+        <h1>Runs</h1>
+      </div>
+      <div class="page-head__actions">
+        <button class="btn btn--ghost">Columns</button>
+        <button class="btn btn--ghost">Export CSV</button>
+        <button class="btn">Save view</button>
+        <button class="btn btn--primary">+ New Run</button>
+      </div>
+    </div>
+
+    <div class="panel rise">
+      <!-- query bar -->
+      <div class="runs-toolbar">
+        <span class="query-token"><b>status:</b>running <span class="x">×</span></span>
+        <span class="query-token"><b>tag:</b>rlhf|grpo|dpo <span class="x">×</span></span>
+        <input class="input" placeholder="Filter… try  metric.eval/return_mean > 300" aria-label="Filter runs">
+        <div class="seg" role="group" aria-label="Group by">
+          <button>Flat</button><button class="is-active">Group: Tag</button><button>Owner</button>
+        </div>
+        <span class="mlabel" style="letter-spacing:.08em">12 of 1,847</span>
+      </div>
+
+      <!-- selection action bar -->
+      <div class="sel-bar">
+        <span><b>2 selected</b></span>
+        <span style="color:var(--text-dim)">·</span>
+        <button class="btn btn--primary" style="height:22px">Compare <kbd style="border-color:rgba(43,224,130,.4);color:var(--signal)">⌘K</kbd></button>
+        <button class="btn" style="height:22px">Overlay in Metrics</button>
+        <button class="btn btn--ghost" style="height:22px">Tag</button>
+        <button class="btn btn--ghost" style="height:22px">Archive</button>
+      </div>
+
+      <div style="overflow-x:auto">
+        <table class="dtable" id="runs-table">
+          <thead><tr>
+            <th style="width:32px"><input type="checkbox" class="cbx" aria-label="Select all"></th>
+            <th style="width:24px"></th>
+            <th>Run</th>
+            <th>Trend</th>
+            <th class="is-sorted" style="text-align:right">eval/return <span class="sort">▾</span></th>
+            <th style="text-align:right">train/loss</th>
+            <th style="text-align:right">Step</th>
+            <th style="text-align:right">GPU·h</th>
+            <th>Owner</th>
+            <th>Tags</th>
+            <th style="text-align:right">Started</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="table-foot">
+        <span class="mlabel" style="letter-spacing:.08em">Page 1 / 154</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn--icon btn--ghost" aria-label="Previous page">‹</button>
+          <button class="btn btn--icon" aria-label="Page 1" style="border-color:var(--signal);color:var(--signal)">1</button>
+          <button class="btn btn--icon btn--ghost" aria-label="Page 2">2</button>
+          <button class="btn btn--icon btn--ghost" aria-label="Page 3">3</button>
+          <button class="btn btn--icon btn--ghost" aria-label="Next page">›</button>
+        </div>
+        <span class="mlabel" style="letter-spacing:.08em">36 px rows · <a href="#" style="color:var(--signal)">Dense</a></span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="data.js"></script>
+<script src="charts.js"></script>
+<script src="shell.js"></script>
+<script>
+(function () {
+  const root = getComputedStyle(document.documentElement);
+  const palette = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"].map(v => root.getPropertyValue(v).trim());
+
+  const STATUS = {
+    running:  '<span class="dot dot--ok"></span>',
+    finished: '<span class="dot dot--idle"></span>',
+    crashed:  '<span class="dot dot--crit"></span>',
+    killed:   '<span class="dot dot--warn"></span>',
+    queued:   '<span class="dot dot--queued"></span>',
+  };
+
+  /* group by leading tag */
+  const groups = {};
+  IM.RUNS.forEach(r => {
+    const g = r.tags[0] || "untagged";
+    (groups[g] = groups[g] || []).push(r);
+  });
+
+  const bestRet = Math.max(...IM.RUNS.map(r => r.ret));
+  let html = "";
+  let si = 0;
+  const selected = new Set(["run-7f3a", "run-9c21"]);
+
+  Object.entries(groups).forEach(([tag, runs]) => {
+    const groupBest = Math.max(...runs.map(r => r.ret));
+    html += `<tr class="group-row"><td colspan="11"><b>${tag}</b> · ${runs.length} runs${groupBest > 0 ? ` · best ${groupBest.toFixed(1)}` : ""}</td></tr>`;
+    runs.forEach(r => {
+      const sel = selected.has(r.id);
+      html += `<tr class="${sel ? "is-selected" : ""}" onclick="location.href='run-detail.html'">
+        <td><input type="checkbox" class="cbx" ${sel ? "checked" : ""} aria-label="Select ${r.name}" onclick="event.stopPropagation()"></td>
+        <td>${STATUS[r.status]}</td>
+        <td class="td-name">${r.name}<span class="td-dim" style="margin-left:8px;font-weight:400">${r.id}</span></td>
+        <td><span class="rspark" data-si="${si}" data-id="${r.id}"></span></td>
+        <td class="td-num ${r.ret === bestRet ? "is-best" : ""}">${r.ret ? r.ret.toFixed(1) : "—"}</td>
+        <td class="td-num">${r.loss ? r.loss.toFixed(3) : "—"}</td>
+        <td class="td-num">${r.step.toLocaleString()}<span class="td-dim">/${(r.total/1000)}k</span></td>
+        <td class="td-num">${r.gpuh ? r.gpuh.toFixed(1) : "—"}</td>
+        <td class="td-dim">${r.owner}</td>
+        <td>${r.tags.map(t => `<span class="tag">${t}</span>`).join(" ")}</td>
+        <td class="td-num td-dim">${r.started}</td>
+      </tr>`;
+      si++;
+    });
+  });
+  document.querySelector("#runs-table tbody").innerHTML = html;
+
+  document.querySelectorAll(".rspark").forEach(el => {
+    const run = IM.RUNS.find(r => r.id === el.dataset.id);
+    if (!run || run.status === "queued") { el.innerHTML = '<span class="td-dim">—</span>'; return; }
+    const curve = run.ret ? IM.curvesFor(run).ret : IM.curvesFor(run).loss;
+    Charts.spark(el, IM.sparkOf(curve, 26), {
+      w: 72, h: 18,
+      color: run.status === "running" ? palette[+el.dataset.si % palette.length] : root.getPropertyValue("--text-faint").trim(),
+      live: run.status === "running",
+    });
+  });
+})();
+</script>
+</body>
+</html>

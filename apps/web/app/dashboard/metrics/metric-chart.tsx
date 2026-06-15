@@ -258,6 +258,7 @@ function MiniRange({
  */
 export function MetricChart({
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
+  exportApiRef,
   exportFilenameBase,
   height = chartHeight,
   highlightRunId = null,
@@ -268,13 +269,18 @@ export function MetricChart({
   onSmoothingChange,
   padding = chartPadding,
   series,
+  showExportActions = true,
+  showLegend = true,
   showRange = true,
   showYAxisControls = true,
   smoothing,
   xMode,
+  yScale: yScaleProp,
   zoomRange = null,
 }: {
   emptyMessage?: string;
+  /** Imperative export handle for owners that render their own export UI. */
+  exportApiRef?: { current: { downloadSvg: () => void; downloadCsv: () => void } | null };
   exportFilenameBase?: string;
   /** Frame height in CSS px; the width always tracks the container. */
   height?: number;
@@ -288,11 +294,17 @@ export function MetricChart({
   padding?: number;
   /** Display series — smoothing already applied by the owner. */
   series: any[];
+  /** Hide the in-chart actions row when the owner renders its own controls. */
+  showExportActions?: boolean;
+  /** Hide the built-in legend when the owner renders its own (e.g. Overview). */
+  showLegend?: boolean;
   showRange?: boolean;
   /** Per-panel log toggle + manual y-range; on by default everywhere. */
   showYAxisControls?: boolean;
   smoothing?: number;
   xMode: string;
+  /** Controlled y-scale; when set, the owner owns the lin/log toggle. */
+  yScale?: "linear" | "log";
   zoomRange?: ChartZoomRange;
 }) {
   const chartAreaRef = useRef<HTMLDivElement | null>(null);
@@ -305,7 +317,8 @@ export function MetricChart({
 
   // Per-panel y-axis settings (P0-9): log10 toggle + manual range. State is
   // chart-local so every panel gets the control without owner plumbing.
-  const [yScale, setYScale] = useState<"linear" | "log">("linear");
+  const [yScaleState, setYScaleState] = useState<"linear" | "log">("linear");
+  const yScale = yScaleProp ?? yScaleState;
   const [yRange, setYRange] = useState<{ min: number; max: number } | null>(null);
   const [yMinDraft, setYMinDraft] = useState("");
   const [yMaxDraft, setYMaxDraft] = useState("");
@@ -355,8 +368,9 @@ export function MetricChart({
   // isolate one line on hover — so fade each line as the count grows, and dim
   // the non-hovered lines harder when the band is busy.
   const seriesCount = normalizedSeries.length;
-  const seriesStrokeOpacity = seriesCount > 60 ? 0.5 : seriesCount > 24 ? 0.68 : seriesCount > 8 ? 0.85 : 0.92;
-  const seriesMutedOpacity = seriesCount > 60 ? 0.07 : seriesCount > 24 ? 0.1 : seriesCount > 8 ? 0.16 : 0.24;
+  const seriesStrokeOpacity =
+    seriesCount > 60 ? 0.45 : seriesCount > 24 ? 0.6 : seriesCount > 8 ? 0.72 : seriesCount > 4 ? 0.82 : 0.92;
+  const seriesMutedOpacity = seriesCount > 60 ? 0.06 : seriesCount > 24 ? 0.09 : seriesCount > 8 ? 0.13 : 0.2;
   const seriesHoverCanvasOpacity = seriesCount > 60 ? 0.38 : seriesCount > 24 ? 0.48 : 0.58;
   const chartFrameStyle = {
     "--chart-frame-height": `${height}px`,
@@ -506,7 +520,7 @@ export function MetricChart({
   const smoothingControlId = `${chartInstanceId}-chart-smoothing`;
   const showSmoothing = typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
-  const showActions = Boolean(exportFilenameBase) || showSmoothing || showYAxisControls;
+  const showActions = showExportActions && (Boolean(exportFilenameBase) || showSmoothing || showYAxisControls);
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
@@ -583,8 +597,29 @@ export function MetricChart({
     const next = yScale === "log" ? "linear" : "log";
     // A manual floor at or below zero can't survive the switch to log.
     if (next === "log" && yRange && yRange.min <= 0) setYRange(null);
-    setYScale(next);
+    setYScaleState(next);
   }
+
+  function downloadChartCsv() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.csv`, chartSeriesToCsv({ metricKey, series: normalizedSeries, xMode }), "text/csv;charset=utf-8");
+  }
+
+  function downloadChartSvg() {
+    if (exportBlockedReason) return;
+    downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height: frameHeight, padding: pad, xMode }), "image/svg+xml;charset=utf-8");
+  }
+
+  // Owners with their own export UI (e.g. the metrics panel head) trigger the
+  // same exports through this handle; refreshed every render so it always
+  // closes over the latest normalized series.
+  useEffect(() => {
+    if (!exportApiRef) return undefined;
+    exportApiRef.current = { downloadSvg: downloadChartSvg, downloadCsv: downloadChartCsv };
+    return () => {
+      exportApiRef.current = null;
+    };
+  });
 
   // One-sided entries fall back to the current domain bound, so "cap the top
   // at 1" doesn't require typing the floor too.
@@ -767,16 +802,6 @@ export function MetricChart({
     : "";
   const hoverClassFor = (item: any) => activeRunId ? (item.id === activeRunId ? (drawFocusOverlay ? " series-muted" : " series-active") : " series-muted") : "";
 
-  function downloadChartCsv() {
-    if (exportBlockedReason) return;
-    downloadTextFile(`${exportFileBase}.csv`, chartSeriesToCsv({ metricKey, series: normalizedSeries, xMode }), "text/csv;charset=utf-8");
-  }
-
-  function downloadChartSvg() {
-    if (exportBlockedReason) return;
-    downloadTextFile(`${exportFileBase}.svg`, chartSeriesToSvg({ metricKey, series: normalizedSeries, width, height: frameHeight, padding: pad, xMode }), "image/svg+xml;charset=utf-8");
-  }
-
   return (
     <div
       ref={chartAreaRef}
@@ -784,6 +809,7 @@ export function MetricChart({
       onMouseLeave={handleLeave}
     >
       {actionsRow}
+      {showLegend ? (
       <div className={`chart-legend${activeRunId ? " has-active" : ""}`}>
         {legendSeries.map((item, index) => {
           const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
@@ -814,6 +840,7 @@ export function MetricChart({
           </span>
         ) : null}
       </div>
+      ) : null}
       <div ref={chartFrameRef} className={`metric-chart-frame${denseChart ? " dense" : ""}${activeSeries ? " is-hovering-series" : ""}`} style={chartFrameStyle} onMouseLeave={handleLeave}>
         {denseChart ? <canvas ref={canvasRef} className="metric-chart-canvas" aria-hidden="true" /> : null}
         <svg className={`metric-chart${denseChart ? " metric-chart-overlay" : ""}`} viewBox={`0 0 ${width} ${frameHeight}`} role="img" aria-label={`${metricKey} metric chart`} onMouseMove={handleMove} onMouseLeave={handleLeave}>

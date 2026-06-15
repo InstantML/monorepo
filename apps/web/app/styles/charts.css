@@ -331,6 +331,17 @@
 
 .settings-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+/* Each settings column is an independent tight stack so a tall panel in one
+   column (Plan Usage) doesn't leave a void beside a short panel in the other
+   (Billing) the way a row-paired grid did. */
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .panel,
@@ -362,7 +373,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #111922;
+  color: #121511;
   font-size: 14px;
   font-weight: 760;
 }
@@ -424,17 +435,17 @@ tbody tr:hover {
 }
 
 tr.selected {
-  background: rgba(31, 184, 119, 0.028);
-  box-shadow: inset 2px 0 0 rgba(31, 184, 119, 0.48);
+  background: rgba(43, 224, 130, 0.028);
+  box-shadow: inset 2px 0 0 rgba(43, 224, 130, 0.48);
 }
 
 tr.inspected {
-  background: rgba(31, 184, 119, 0.045);
+  background: rgba(43, 224, 130, 0.045);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
 tr.selected.inspected {
-  background: rgba(31, 184, 119, 0.055);
+  background: rgba(43, 224, 130, 0.055);
 }
 
 .col-select {
@@ -513,13 +524,13 @@ tr.selected.inspected {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
-  color: #004f59;
+  color: #14605a;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .run-name-button:focus-visible {
-  outline: 2px solid rgba(31, 184, 119, 0.22);
+  outline: 2px solid rgba(43, 224, 130, 0.22);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -586,7 +597,7 @@ small {
 }
 
 .pill.live {
-  border-color: #c7d9f7;
+  border-color: #d8dccd;
   background: #f4f8ff;
   color: var(--blue);
 }
@@ -624,7 +635,7 @@ small {
 }
 
 .table-footer strong {
-  color: #4b5967;
+  color: #555b4c;
   font-weight: 650;
 }
 
@@ -646,7 +657,7 @@ small {
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: #fff;
-  color: #344251;
+  color: #3a3f33;
   padding: 4px 8px;
   font-size: 12px;
 }
@@ -656,7 +667,7 @@ small {
   min-height: 30px;
   height: 30px;
   padding: 4px 8px;
-  color: #344251;
+  color: #3a3f33;
   font-size: 12px;
 }
 
@@ -670,7 +681,7 @@ small {
 }
 
 .table-empty strong {
-  color: #1a2632;
+  color: #1d211b;
   font-size: 14px;
 }
 
@@ -711,7 +722,7 @@ small {
 }
 
 .smoothing-control strong {
-  color: #4b5967;
+  color: #555b4c;
   font-size: 12px;
   font-weight: 650;
 }
@@ -780,7 +791,7 @@ small {
 }
 
 .pin-button.active {
-  border-color: #c7d9f7;
+  border-color: #d8dccd;
   background: #f4f8ff;
   color: var(--blue);
 }
@@ -793,7 +804,7 @@ small {
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: var(--surface);
-  color: #344251;
+  color: #3a3f33;
   padding: 6px 10px;
   font-size: 12px;
   font-weight: 700;
@@ -1046,7 +1057,7 @@ small {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fbfcfd;
+  background: #fdfdfb;
 }
 
 .metric-panel-head {
@@ -1061,7 +1072,7 @@ small {
 
 .metric-panel-head h3 {
   overflow: hidden;
-  color: #111922;
+  color: #121511;
   font-size: 12px;
   font-weight: 760;
   text-overflow: ellipsis;
@@ -1305,7 +1316,7 @@ small {
 }
 
 .series-point {
-  stroke: #fff;
+  stroke: var(--chart-card-bg);
   stroke-width: 1;
   opacity: 0.78;
   cursor: crosshair;
@@ -1371,60 +1382,60 @@ small {
 
 .hover-ring {
   fill: none;
-  stroke: var(--chart-tick, #94a3b8);
+  stroke: var(--chart-tick, #8b9280);
   stroke-width: 1.5;
   opacity: 0.65;
 }
 
 .hover-guide {
-  stroke: #9099a5;
+  stroke: #8b9280;
   stroke-dasharray: 4 4;
   stroke-width: 1;
 }
 
 .series-0,
 .point-0 {
-  stroke: #8a5ccf;
+  stroke: #15a35d;
 }
 
 .point-0 {
-  fill: #8a5ccf;
+  fill: #15a35d;
 }
 
 .series-1,
 .point-1 {
-  stroke: #2e8b57;
+  stroke: #3b82e0;
 }
 
 .point-1 {
-  fill: #2e8b57;
+  fill: #3b82e0;
 }
 
 .series-2,
 .point-2 {
-  stroke: #2a7fbd;
+  stroke: #bd8113;
 }
 
 .point-2 {
-  fill: #2a7fbd;
+  fill: #bd8113;
 }
 
 .series-3,
 .point-3 {
-  stroke: #c26300;
+  stroke: #c44fb2;
 }
 
 .point-3 {
-  fill: #c26300;
+  fill: #c44fb2;
 }
 
 .series-4,
 .point-4 {
-  stroke: #d04a3a;
+  stroke: #7a5fe0;
 }
 
 .point-4 {
-  fill: #d04a3a;
+  fill: #7a5fe0;
 }
 
 /* Light, wandb/neptune-style readout: a clean card with a step header, a
@@ -1439,10 +1450,10 @@ small {
   gap: 2px;
   min-width: 248px;
   border-radius: 12px;
-  border: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.1));
+  border: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.1));
   background: var(--chart-tooltip-bg, rgba(255, 255, 255, 0.98));
-  color: var(--chart-tooltip-text, #1e2933);
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+  color: var(--chart-tooltip-text, #1e2218);
+  box-shadow: 0 14px 34px rgba(23, 26, 20, 0.16);
   padding: 9px 11px 8px;
   font-size: 12px;
   backdrop-filter: blur(6px);
@@ -1503,7 +1514,7 @@ small {
   gap: 10px;
   padding: 3px 0 4px;
   margin-bottom: 2px;
-  border-bottom: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
+  border-bottom: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.08));
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1530,7 +1541,7 @@ small {
   gap: 7px;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--chart-tooltip-text, #1e2933);
+  color: var(--chart-tooltip-text, #1e2218);
 }
 
 .chart-tooltip-row.active {
@@ -1558,7 +1569,7 @@ small {
 .chart-tooltip-more {
   margin-top: 4px;
   padding-top: 6px;
-  border-top: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
+  border-top: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.08));
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
@@ -1594,9 +1605,9 @@ small {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  border: 1px solid #cbd6e1;
+  border: 1px solid #c8ccbc;
   border-radius: var(--tight-radius);
-  background: #f3f7fa;
+  background: #f4f6f0;
 }
 
 .chart-range svg {
@@ -1627,7 +1638,7 @@ small {
 
 .range-window {
   fill: rgba(255, 255, 255, 0.5);
-  stroke: #8fa2b5;
+  stroke: #8b9280;
   stroke-width: 1;
 }
 
@@ -1989,7 +2000,7 @@ small {
 }
 
 .metric-catalog-row.active .metric-catalog-main {
-  border-color: rgba(31, 184, 119, 0.36);
+  border-color: rgba(43, 224, 130, 0.36);
   background: var(--surface-tint);
 }
 

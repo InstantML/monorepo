@@ -152,7 +152,7 @@ function ClassificationEvalPreview({ object }: { object: LoggedObject }) {
               {cells.filter((cell) => cell.rowIndex === rowIndex).map((cell) => (
                 <span
                   key={`${cell.rowIndex}-${cell.columnIndex}`}
-                  style={{ backgroundColor: `rgba(47, 128, 237, ${0.08 + (cell.value / maxCell) * 0.34})` }}
+                  style={{ backgroundColor: `color-mix(in srgb, var(--info) ${((0.08 + (cell.value / maxCell) * 0.34) * 100).toFixed(1)}%, transparent)` }}
                 >
                   {cell.value}
                 </span>

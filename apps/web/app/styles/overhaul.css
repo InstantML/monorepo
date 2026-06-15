@@ -163,7 +163,7 @@
 }
 :root[data-theme="light"] .tabs.pinned,
 :root[data-theme="light"] .shell.nav-auto-open .tabs {
-  box-shadow: 2px 0 16px 0 rgba(15, 23, 42, 0.08);
+  box-shadow: 2px 0 16px 0 rgba(23, 26, 20, 0.08);
 }
 .tab-button {
   border-radius: var(--radius);
@@ -1030,7 +1030,7 @@ textarea:focus {
 .empty-workspace-snippet__code {
   padding: 14px 16px;
   font: 500 12.5px/1.65 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  color: #e2e8f0;
+  color: #e0e3d8;
   white-space: pre;
   overflow-x: auto;
   margin: 0;
@@ -1559,7 +1559,7 @@ textarea:focus {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--line-soft);
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.18), 0 0 0 1px var(--line-soft);
   color: var(--text);
 }
 :root[data-theme="dark"] .workbar-search-popover {
@@ -1741,7 +1741,7 @@ textarea:focus {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--line-soft);
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.18), 0 0 0 1px var(--line-soft);
 }
 :root[data-theme="dark"] .view-actions-popover {
   background: color-mix(in srgb, var(--surface) 92%, var(--bg));
@@ -2277,7 +2277,7 @@ textarea:focus {
 :root[data-theme="dark"] .compare-run-cell.changed,
 .compare-cell.changed,
 .compare-run-cell.changed {
-  background: rgba(31, 184, 119, 0.07);
+  background: rgba(43, 224, 130, 0.07);
   color: var(--accent-strong);
   font-weight: 600;
 }
@@ -2416,14 +2416,14 @@ button.compare-row-head.active {
 
 :root[data-theme="dark"] button.compare-row-head:hover,
 :root[data-theme="dark"] button.compare-row-head.active {
-  background: rgba(31, 184, 119, 0.13);
+  background: rgba(43, 224, 130, 0.13);
   color: var(--accent-strong);
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
 :root[data-theme="dark"] .compare-row-head,
 :root[data-theme="dark"] .compare-run-identity {
-  background: #0b121e;
+  background: #0d0f0c;
 }
 
 :root[data-theme="dark"] .compare-row-head {
@@ -2455,14 +2455,16 @@ button.compare-row-head.active {
   border-right: 1px solid var(--line);
   padding: 12px 8px 10px;
   overflow: visible;
-  transition: box-shadow 140ms ease;
+  transition: width 160ms ease, box-shadow 140ms ease;
 }
 :root[data-theme="dark"] .tabs { background: var(--color-ink); }
 
 /* Auto-open expands the .tabs element itself to 212px so its opaque
  * background covers tab labels without leaking page content through gaps
- * between buttons. Keyboard focus only — hover never expands the rail, so
- * icon clicks always navigate on the first click. */
+ * between buttons. The grid column stays 56px, so the expanded rail slides
+ * out as an overlay rather than reflowing the page. Triggered by hover
+ * (nav-auto-open) and by keyboard focus; hover expands on pointer-enter —
+ * before any click — so icon clicks still land on their first press. */
 .shell:not(.nav-pinned).nav-auto-open .tabs,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) {
   width: 212px;
@@ -2470,7 +2472,7 @@ button.compare-row-head.active {
 }
 :root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs,
 :root[data-theme="light"] .shell:not(.nav-pinned) .tabs:has(:focus-visible) {
-  box-shadow: 22px 0 46px -12px rgba(15, 23, 42, 0.18);
+  box-shadow: 22px 0 46px -12px rgba(23, 26, 20, 0.18);
 }
 
 .tab-scroll {
@@ -2877,7 +2879,7 @@ button.compare-row-head.active {
 .breadcrumb .crumb-link:hover { color: var(--text); text-decoration-color: currentColor; }
 
 /* Tokenize row-hover wash so light theme stays visible */
-:root { --row-hover: rgba(15, 23, 42, 0.04); }
+:root { --row-hover: rgba(23, 26, 20, 0.04); }
 :root[data-theme="dark"] { --row-hover: rgba(255, 255, 255, 0.03); }
 .table tr:hover td,
 :root[data-theme="dark"] tbody tr:hover,
@@ -2997,7 +2999,7 @@ button.compare-row-head.active {
   white-space: nowrap;
 }
 .upload-health-chip.good {
-  border-color: rgba(31, 184, 119, 0.24);
+  border-color: rgba(43, 224, 130, 0.24);
   color: var(--accent-strong);
 }
 .upload-health-chip.live {

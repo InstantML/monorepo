@@ -106,7 +106,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--control-radius);
   background: var(--chart-card-bg);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.045), 0 10px 28px rgba(15, 23, 42, 0.035);
+  box-shadow: 0 1px 2px rgba(23, 26, 20, 0.045), 0 10px 28px rgba(23, 26, 20, 0.035);
   overflow-anchor: none;
   scroll-margin-top: calc(var(--topbar-height) + var(--runs-filter-sticky-height) + 74px);
 }
@@ -338,7 +338,7 @@
 }
 
 .histogram-bar {
-  fill: #3b9ba7;
+  fill: var(--series-6);
   opacity: 0.56;
 }
 
@@ -439,11 +439,11 @@
   min-width: min(220px, calc(100% - 24px));
   max-width: calc(100% - 24px);
   transform: translate(-50%, -50%);
-  border: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.1));
+  border: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.1));
   border-radius: 10px;
   background: var(--chart-tooltip-bg, rgba(255, 255, 255, 0.98));
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-  color: var(--chart-tooltip-text, #1e2933);
+  box-shadow: 0 12px 28px rgba(23, 26, 20, 0.14);
+  color: var(--chart-tooltip-text, #1e2218);
   padding: 8px 10px;
   pointer-events: none;
 }
@@ -521,7 +521,7 @@
 .panel-resize-handle:hover,
 .panel-resize-handle:focus-visible {
   border-color: transparent;
-  background: rgba(31, 184, 119, 0.08);
+  background: rgba(43, 224, 130, 0.08);
   color: var(--accent-strong);
   outline: 0;
   box-shadow: none;
@@ -734,9 +734,11 @@
 }
 
 .chart-type-segment button.active {
-  border-color: rgba(18, 160, 105, 0.45);
-  background: var(--accent-soft);
-  color: var(--accent);
+  /* Neutral active segment (fill + border + bright text); green is reserved for
+     live/best, not a chart-type toggle. */
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--text);
 }
 
 .drawer-group {
@@ -1007,7 +1009,7 @@ kbd {
 
 .quick-search-row:hover,
 .quick-search-row.active {
-  border-color: rgba(31, 184, 119, 0.24);
+  border-color: rgba(43, 224, 130, 0.24);
   background: var(--surface-tint);
   color: var(--text);
 }

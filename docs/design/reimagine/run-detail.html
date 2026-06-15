@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ppo-atlas-70b-rlhf-042 · InstantML</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<style>
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    border: 1px solid var(--line-hair);
+    border-radius: var(--r);
+    background: var(--bg-panel);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .kpi {
+    padding: 12px 16px;
+    border-right: 1px solid var(--line-hair);
+  }
+  .kpi:last-child { border-right: 0; }
+  .kpi .stat__value { font-size: 19px; }
+  .art-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line-hair);
+    font-family: var(--font-mono); font-size: 11.5px;
+  }
+  .art-row:last-child { border-bottom: 0; }
+  .art-row:hover { background: var(--bg-panel-raised); cursor: pointer; }
+  .art-glyph {
+    width: 24px; height: 24px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-inset); border: 1px solid var(--line-hair); border-radius: var(--r);
+    color: var(--text-dim); font-size: 9px;
+  }
+</style>
+</head>
+<body data-page="runs">
+<div class="shell">
+  <header class="ticker"></header>
+  <nav class="rail" aria-label="Primary"></nav>
+
+  <main class="main">
+    <div class="page-head rise">
+      <div>
+        <div class="page-head__crumb mlabel"><a href="runs.html">runs</a><span class="sep">/</span>run-7f3a</div>
+        <h1 style="display:flex;align-items:center;gap:10px">
+          <span class="mono">ppo-atlas-70b-rlhf-042</span>
+          <span class="chip chip--live"><span class="pulse" style="width:5px;height:5px"></span>Live</span>
+        </h1>
+        <div class="mlabel" style="margin-top:4px;letter-spacing:.08em">
+          forked from <a href="#" style="color:var(--signal)">rlhf-041 @ 12.5k</a> · seed 1337 · bwong · started 07:42 UTC
+        </div>
+      </div>
+      <div class="page-head__actions">
+        <button class="btn btn--ghost">Fork</button>
+        <button class="btn">Add to report</button>
+        <button class="btn btn--primary">Compare</button>
+        <button class="btn" style="border-color:rgba(242,85,85,.4);color:var(--crit)">Stop</button>
+      </div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip rise">
+      <div class="kpi">
+        <div class="mlabel" style="margin-bottom:4px">Step</div>
+        <div class="stat__value num">31,250<small> /40k</small></div>
+        <div class="meter" style="margin-top:6px"><i style="width:78%"></i></div>
+      </div>
+      <div class="kpi">
+        <div class="mlabel" style="margin-bottom:4px">eval/return_mean</div>
+        <div class="stat__value num" style="color:var(--signal)">482.3</div>
+        <div class="stat__delta up">▲ 8.1 best yet</div>
+      </div>
+      <div class="kpi">
+        <div class="mlabel" style="margin-bottom:4px">train/loss</div>
+        <div class="stat__value num">0.412</div>
+        <div class="stat__delta flat">— 0.002 / 1k steps</div>
+      </div>
+      <div class="kpi">
+        <div class="mlabel" style="margin-bottom:4px">Throughput</div>
+        <div class="stat__value num">41.2<small>k tok/s</small></div>
+        <div class="stat__delta up">▲ 2.4%</div>
+      </div>
+      <div class="kpi">
+        <div class="mlabel" style="margin-bottom:4px">GPU util</div>
+        <div class="stat__value num">91.4<small>%</small></div>
+        <div class="stat__delta flat">64 × H100</div>
+      </div>
+      <div class="kpi">
+        <div class="mlabel" style="margin-bottom:4px">ETA</div>
+        <div class="stat__value num">2h 14m</div>
+        <div class="stat__delta flat">ckpt in 750 steps</div>
+      </div>
+    </div>
+
+    <!-- tabs -->
+    <div class="tabs rise" role="tablist">
+      <button class="tab is-active" role="tab" aria-selected="true">Overview</button>
+      <button class="tab" role="tab" aria-selected="false">Metrics<span class="tab__n">214</span></button>
+      <button class="tab" role="tab" aria-selected="false">Artifacts<span class="tab__n">38</span></button>
+      <button class="tab" role="tab" aria-selected="false">Logs</button>
+      <button class="tab" role="tab" aria-selected="false">Config</button>
+      <button class="tab" role="tab" aria-selected="false">Lineage</button>
+    </div>
+
+    <div class="grid">
+      <!-- chart grid -->
+      <div class="col-8" style="display:flex;flex-direction:column;gap:12px">
+        <div class="grid" style="grid-template-columns:1fr 1fr">
+          <div class="panel rise">
+            <div class="panel__head"><span class="mlabel">eval/return_mean</span><span class="panel__unit">vs rlhf-041</span></div>
+            <div class="panel__body panel__body--chart"><div class="chart-host" id="ch-ret"></div></div>
+          </div>
+          <div class="panel rise">
+            <div class="panel__head"><span class="mlabel">train/loss</span><span class="panel__unit">smoothed .6</span></div>
+            <div class="panel__body panel__body--chart"><div class="chart-host" id="ch-loss"></div></div>
+          </div>
+          <div class="panel rise">
+            <div class="panel__head"><span class="mlabel">train/grad_norm</span><span class="chip chip--warn" style="height:18px">alert @ 50</span></div>
+            <div class="panel__body panel__body--chart"><div class="chart-host" id="ch-grad"></div></div>
+          </div>
+          <div class="panel rise">
+            <div class="panel__head"><span class="mlabel">train/lr</span><span class="panel__unit">cosine</span></div>
+            <div class="panel__body panel__body--chart"><div class="chart-host" id="ch-lr"></div></div>
+          </div>
+        </div>
+        <div class="panel rise">
+          <div class="panel__head"><span class="mlabel">sys/tokens_per_sec</span><span class="panel__unit">per-step</span></div>
+          <div class="panel__body panel__body--chart"><div class="chart-host" id="ch-tput"></div></div>
+        </div>
+        <div class="panel rise">
+          <div class="panel__head">
+            <span class="mlabel">Log tail</span>
+            <span class="chip chip--live" style="height:18px">following</span>
+            <button class="btn btn--ghost" style="height:20px">Open logs</button>
+          </div>
+          <div class="loglines">
+<span class="t">12:46:58.102</span> <span class="ok">INFO</span>  step 31,250 · loss 0.4118 · kl 0.041 · ret 482.3 · 41,204 tok/s
+<span class="t">12:46:55.871</span> <span class="ok">INFO</span>  rollout batch 977 complete · 2,048 episodes · mean_len 412
+<span class="t">12:46:51.440</span> <span class="wr">WARN</span>  ingest lag 94s behind wall clock (buffer 71%)
+<span class="t">12:46:48.012</span> <span class="ok">INFO</span>  step 31,200 · loss 0.4131 · kl 0.043 · ret 481.0 · 41,378 tok/s
+<span class="t">12:46:44.395</span> <span class="ok">INFO</span>  checkpoint policy/step-31000 uploaded · 132.4 GB · sha256 ✓</div>
+        </div>
+      </div>
+
+      <!-- sidebar -->
+      <div class="col-4" style="display:flex;flex-direction:column;gap:12px">
+        <div class="panel rise">
+          <div class="panel__head"><span class="mlabel">Config</span><button class="btn btn--ghost" style="height:20px">Diff vs 041</button></div>
+          <div class="codewell"><span class="k">model:</span>        <span class="s">atlas-70b-base</span>
+<span class="k">algo:</span>         <span class="s">ppo</span>
+<span class="k">lr:</span>           <span class="n">3.0e-4</span>   <span class="c"># ↑ was 2.5e-4 in 041</span>
+<span class="k">kl_coef:</span>      <span class="n">0.12</span>
+<span class="k">clip_ratio:</span>   <span class="n">0.2</span>
+<span class="k">batch_size:</span>   <span class="n">2048</span>
+<span class="k">rollout_len:</span>  <span class="n">512</span>
+<span class="k">dataset:</span>      <span class="s">rlhf-prefs-v12</span>
+<span class="k">reward_model:</span> <span class="s">rm-atlas-7b-v4</span>
+<span class="k">seed:</span>         <span class="n">1337</span></div>
+        </div>
+
+        <div class="panel rise">
+          <div class="panel__head"><span class="mlabel">Checkpoints</span><span class="panel__unit">38 total</span></div>
+          <div class="panel__body panel__body--flush">
+            <div class="art-row">
+              <span class="art-glyph">CKPT</span>
+              <span style="flex:1;color:var(--text-hi)">policy/step-31000</span>
+              <span class="chip chip--live" style="height:18px">best</span>
+              <span class="td-dim num">132.4 GB</span>
+            </div>
+            <div class="art-row">
+              <span class="art-glyph">CKPT</span>
+              <span style="flex:1;color:var(--text-hi)">policy/step-30000</span>
+              <span class="td-dim num">132.4 GB</span>
+            </div>
+            <div class="art-row">
+              <span class="art-glyph">CKPT</span>
+              <span style="flex:1;color:var(--text-hi)">policy/step-29000</span>
+              <span class="td-dim num">132.4 GB</span>
+            </div>
+            <div class="art-row">
+              <span class="art-glyph">ROLL</span>
+              <span style="flex:1;color:var(--text-hi)">rollouts/batch-0977</span>
+              <span class="td-dim num">8.1 GB</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel rise">
+          <div class="panel__head"><span class="mlabel">Alerts on this run</span></div>
+          <div class="panel__body panel__body--flush">
+            <div class="feed-row">
+              <span class="dot dot--warn" style="margin-top:5px"></span>
+              <div class="feed-row__body">
+                <div class="feed-row__title">Ingest lag 94s behind wall clock</div>
+                <div class="feed-row__meta"><span class="tag">ingest-lag</span></div>
+              </div>
+              <span class="feed-row__time">11m</span>
+            </div>
+            <div class="feed-row">
+              <span class="dot dot--info" style="margin-top:5px"></span>
+              <div class="feed-row__body">
+                <div class="feed-row__title">New best eval/return_mean: 482.3</div>
+                <div class="feed-row__meta"><span class="tag">new-best</span></div>
+              </div>
+              <span class="feed-row__time">1h</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="data.js"></script>
+<script src="charts.js"></script>
+<script src="shell.js"></script>
+<script>
+(function () {
+  const root = getComputedStyle(document.documentElement);
+  const c = (v) => root.getPropertyValue(v).trim();
+  const me = IM.RUNS[0];                       // rlhf-042
+  const parent = IM.RUNS[1];                   // rlhf-041
+  const A = IM.curvesFor(me), B = IM.curvesFor(parent);
+
+  Charts.line(document.getElementById("ch-ret"), {
+    series: [
+      { name: "rlhf-042", color: c("--s1"), points: A.ret, live: true },
+      { name: "rlhf-041", color: c("--text-faint"), points: B.ret, dash: "4 4" },
+    ],
+    height: 150, smooth: 0.5,
+  });
+  Charts.line(document.getElementById("ch-loss"), {
+    series: [{ name: "train/loss", color: c("--s2"), points: A.loss, live: true }],
+    height: 150, smooth: 0.6, area: true,
+  });
+  Charts.line(document.getElementById("ch-grad"), {
+    series: [{ name: "grad_norm", color: c("--s3"), points: A.grad, live: true }],
+    height: 150, band: 50,
+  });
+  Charts.line(document.getElementById("ch-lr"), {
+    series: [{ name: "lr", color: c("--s5"), points: A.lr }],
+    height: 150,
+  });
+  Charts.line(document.getElementById("ch-tput"), {
+    series: [{ name: "tok/s", color: c("--s7"), points: A.tput, live: true }],
+    height: 120, smooth: 0.2, area: true,
+  });
+})();
+</script>
+</body>
+</html>

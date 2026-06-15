@@ -234,7 +234,7 @@ export function CompareTabPane({
           ) : (
             <div className="empty compare-empty-state">
               <p>No runs selected yet. Add runs with the picker above, or select them from the Runs workspace. Selections are saved to the link, so a compare view can be shared or reopened later.</p>
-              <button className="primary-button" onClick={onOpenRunsTab} type="button">Select runs in the Runs tab</button>
+              <button className="secondary compact-button" onClick={onOpenRunsTab} type="button">Select runs in the Runs tab</button>
             </div>
           )
         ) : (

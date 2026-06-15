@@ -1,11 +1,10 @@
 "use client";
 
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, LayoutGrid, Table2, X } from "lucide-react";
 
 import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
-import { MetricCard } from "../ui/metric-card";
 import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
 import { ProjectsOverview } from "./projects-overview";
@@ -13,11 +12,8 @@ import { RunsCommandbar } from "./runs-commandbar";
 import { RunsTable } from "./runs-table";
 import { RunsWorkspace } from "./runs-workspace";
 import { WorkspacePanelCard } from "./workspace-panel-card";
-import { formatMetricValue } from "../../../src/charts.js";
 import { fieldLabel } from "../../../src/dashboard-panels.js";
 import { shouldShowProjectsOverview } from "../../../src/projects-overview.js";
-import { formatNumber, metricGoalLabel } from "../../../src/state.js";
-import { metricTitle } from "../../dashboard-models";
 import type { HistogramTimelineState, Overview, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
@@ -49,6 +45,7 @@ type Props = {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   initialLoadDone: boolean;
+  filterBar?: ReactNode;
   metricKey: string;
   metricOptionsForControls: string[];
   onAddPanel: (sectionId: string, panelMetric: string, type?: WorkspacePanelType) => void;
@@ -105,7 +102,6 @@ type Props = {
   orgMemberships: OrgMembershipSummary[];
   orgName: string;
   orgSwitchBusy: boolean;
-  overview: Overview;
   pageEnd: number;
   pageSize: number;
   pageStart: number;
@@ -152,6 +148,7 @@ export function RunsTabPane({
   hasNextPage,
   hasPreviousPage,
   initialLoadDone,
+  filterBar,
   metricKey,
   metricOptionsForControls,
   onAddPanel,
@@ -197,7 +194,6 @@ export function RunsTabPane({
   orgMemberships,
   orgName,
   orgSwitchBusy,
-  overview,
   pageEnd,
   pageSize,
   pageStart,
@@ -311,22 +307,12 @@ export function RunsTabPane({
         />
       ) : (
       <>
-      {/* AL2: the Run health side cards promoted to the workspace header,
-          scoped to the active project/status/search filters like the charts.
-          Hidden on the brand-new-workspace callout — four zero cards are
-          noise before the first run exists. */}
-      {!showEmptyCallout ? (
-        <div className="runs-health-cards" role="group" aria-label="Run health summary">
-          <MetricCard label="Failed runs" value={formatNumber(overview.failed_runs, 0)} tone={overview.failed_runs ? "bad" : "good"} />
-          <MetricCard label="Active runs" value={formatNumber(overview.active_runs, 0)} tone={overview.active_runs ? "live" : "neutral"} />
-          <MetricCard label="Metric points" value={formatNumber(overview.metric_points, 0)} tone="neutral" />
-          <MetricCard
-            label={`${metricGoalLabel(metricKey)} ${metricTitle(metricKey)}`}
-            value={formatMetricValue(overview.best_eval_return)}
-            tone={Number.isFinite(Number(overview.best_eval_return)) ? "good" : "neutral"}
-          />
-        </div>
-      ) : null}
+      {/* The run filter row (status / search / sort / saved views) lives in the
+          Runs tab, between the page head and the metric/Runs-actions row. */}
+      {filterBar}
+      {/* The Run health summary cards were removed from this header (2026-06):
+          they duplicated the Run health tab and pushed the actual run list
+          below the fold. Health stats live on /dashboard/alerts. */}
       {showEmptyCallout ? (
         <>
           {nonCurrentMemberships.length ? (
@@ -412,14 +398,28 @@ export function RunsTabPane({
         <div className="runs-table-view">
           <RunsTable
             columns={tableColumns}
+            hasNextPage={hasNextPage}
+            hasPreviousPage={hasPreviousPage}
             metricKey={metricKey}
             onClearFilters={onClearFilters}
+            onClearSelection={onClearSelection}
             onInspectRun={onInspectRun}
+            onNextPage={onNextPage}
+            onOpenRun={onOpenRun}
+            onPreviousPage={onPreviousPage}
+            onSelectAllVisible={onSelectAllVisible}
             onToggleRun={(runId) => onToggleRun(runId)}
+            pageSize={pageSize}
+            pageStart={pageStart}
+            paginationBusy={paginationBusy}
             pinnedMetrics={pinnedMetrics}
             primaryRunId={primaryRunId}
+            query={query}
             runs={sortedRuns}
             selectedRunIds={selectedRunIds}
+            status={status}
+            summaryTotal={summaryTotal}
+            workspaceSeries={workspaceSeries}
           />
         </div>
       ) : (

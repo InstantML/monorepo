@@ -1,1 +1,1 @@
-export { AlertList } from "./alert-list";
+export { AlertsTabPane } from "./tab-pane";

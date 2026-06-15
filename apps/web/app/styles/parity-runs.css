@@ -1,0 +1,518 @@
+/* parity-runs — mockup-parity layer for the Runs table view.
+ * Source of truth: docs/design/reimagine/runs.html + app.css.
+ * Tokens only: colors/lines come from app/styles/tokens.css semantics so the
+ * light theme and the dark default both harmonize. Mockup primitives ported:
+ * 36px data rows, 28px group headers, micro-label (10px tracked mono caps)
+ * column heads, hairline row rules, mono tabular numerics. */
+
+.runs-table-view .runs-table-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* ── Query bar: tokens + ghost filter input + group seg + count ─────────── */
+.runs-table-view .runs-tablebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex-wrap: wrap;
+}
+
+.runs-table-view .query-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.runs-table-view .query-token b {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.runs-table-view .query-token .x {
+  border: 0;
+  background: none;
+  padding: 0 0 0 2px;
+  font: inherit;
+  line-height: 1;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.runs-table-view .query-token .x:hover {
+  color: var(--danger);
+}
+
+.runs-table-view .runs-tablebar-input {
+  flex: 1;
+  min-width: 200px;
+  height: 28px;
+  padding: 0 12px;
+  background: var(--surface-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.13s;
+}
+
+.runs-table-view .runs-tablebar-input::placeholder {
+  color: var(--faint);
+}
+
+.runs-table-view .runs-tablebar-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+.runs-table-view .seg {
+  display: inline-flex;
+  background: var(--surface-soft);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+
+.runs-table-view .seg button {
+  height: 22px;
+  padding: 0 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.runs-table-view .seg button:hover {
+  color: var(--text-2);
+}
+
+.runs-table-view .seg button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+.runs-table-view .mlabel {
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── Selection action bar ────────────────────────────────────────────────── */
+.runs-table-view .runs-selbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-line);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--accent-strong);
+}
+
+.runs-table-view .runs-selbar b {
+  font-weight: 600;
+}
+
+.runs-table-view .runs-selbar-sep {
+  color: var(--muted);
+}
+
+.runs-table-view .parity-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color 0.13s, color 0.13s, background 0.13s;
+}
+
+.runs-table-view .parity-btn:hover:not(:disabled) {
+  border-color: var(--dim);
+  color: var(--text);
+}
+
+.runs-table-view .parity-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.runs-table-view .parity-btn--primary {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-strong);
+}
+
+.runs-table-view .parity-btn--primary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.runs-table-view .parity-btn--ghost {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.runs-table-view .parity-btn--ghost:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.runs-table-view .parity-btn--icon {
+  width: 24px;
+  padding: 0;
+  justify-content: center;
+}
+
+.runs-table-view .parity-btn--icon.is-current {
+  border-color: var(--accent);
+  color: var(--accent);
+  cursor: default;
+}
+
+/* ── Table: dense, hairline, mono data ───────────────────────────────────── */
+.runs-table-view .runs-dtable-scroll {
+  overflow-x: auto;
+}
+
+/* charts.css sets table { min-width: 960px; table-layout: fixed } and
+   tr { height: 56px } globally; the parity table sizes columns to content
+   (mono data, nowrap) on 36px rows. */
+.runs-table-view .runs-dtable {
+  width: 100%;
+  min-width: 880px;
+  table-layout: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.runs-table-view .runs-dtable tr {
+  height: 36px;
+}
+
+.runs-table-view .runs-dtable tr.group-row {
+  height: 28px;
+}
+
+.runs-table-view .runs-dtable th {
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.runs-table-view .runs-dtable th.is-num {
+  text-align: right;
+}
+
+.runs-table-view .runs-dtable th.is-sorted {
+  color: var(--text);
+}
+
+.runs-table-view .runs-dtable td {
+  padding: 0 12px;
+  height: 36px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.runs-table-view .runs-dtable tbody tr {
+  transition: background 0.1s;
+}
+
+.runs-table-view .runs-dtable tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+.runs-table-view .runs-dtable tbody tr.selected {
+  background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* The shell-wide tr.inspected flood reads as a second selection here; in the
+   parity table the inspected run is marked on the name instead. */
+.runs-table-view .runs-dtable tbody tr.inspected {
+  background: transparent;
+  box-shadow: none;
+}
+
+.runs-table-view .runs-dtable tbody tr.inspected:hover {
+  background: var(--surface-hover);
+}
+
+.runs-table-view .runs-dtable tbody tr.inspected.selected,
+.runs-table-view .runs-dtable tbody tr.selected {
+  background: var(--surface-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.runs-table-view .runs-dtable tbody tr.inspected .run-name-button {
+  color: var(--accent-strong);
+}
+
+.runs-table-view .runs-dtable .col-check {
+  width: 32px;
+}
+
+.runs-table-view .runs-dtable .col-dot {
+  width: 24px;
+  padding-right: 0;
+}
+
+.runs-table-view .runs-dtable .td-num {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-2);
+}
+
+.runs-table-view .runs-dtable .td-num.is-best {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.runs-table-view .runs-dtable .td-dim {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+}
+
+.runs-table-view .runs-dtable .td-name .run-name-button {
+  /* charts.css .run-name-button truncates via inline-flex + overflow hidden;
+     the auto-layout column sizes to the name, so let it breathe. */
+  display: inline;
+  overflow: visible;
+  max-width: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.runs-table-view .runs-dtable .td-name .run-name-button:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.runs-table-view .runs-dtable .run-id {
+  margin-left: 8px;
+  font-family: var(--font-mono), monospace;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.runs-table-view .runs-dtable .td-owner {
+  color: var(--muted);
+}
+
+.runs-table-view .runs-dtable .col-trend {
+  width: 76px;
+}
+
+.runs-table-view .run-trend-spark {
+  display: block;
+}
+
+/* ── Group headers: 28px inset micro-label rows ──────────────────────────── */
+.runs-table-view .runs-dtable .group-row td {
+  height: 28px;
+  background: var(--surface-soft);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.runs-table-view .runs-dtable .group-row b {
+  color: var(--text-2);
+}
+
+/* ── Status dots ─────────────────────────────────────────────────────────── */
+.runs-table-view .run-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  position: relative;
+  vertical-align: middle;
+}
+
+.runs-table-view .run-dot--ok {
+  background: var(--accent);
+}
+
+.runs-table-view .run-dot--ok::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  animation: runs-dot-ping 2.2s ease-out infinite;
+}
+
+@keyframes runs-dot-ping {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  70%, 100% { transform: scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runs-table-view .run-dot--ok::after {
+    animation: none;
+    display: none;
+  }
+}
+
+.runs-table-view .run-dot--idle {
+  background: var(--dim);
+}
+
+.runs-table-view .run-dot--crit {
+  background: var(--danger);
+}
+
+.runs-table-view .run-dot--warn {
+  background: var(--warm);
+}
+
+.runs-table-view .run-dot--queued {
+  background: transparent;
+  border: 1.5px solid var(--dim);
+}
+
+/* ── Checkbox (mockup .cbx) ──────────────────────────────────────────────── */
+.runs-table-view .cbx {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: var(--surface-soft);
+  cursor: pointer;
+  position: relative;
+  vertical-align: middle;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.runs-table-view .cbx:hover:not(:disabled) {
+  border-color: var(--dim);
+}
+
+.runs-table-view .cbx:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.runs-table-view .cbx:checked::after {
+  content: "";
+  position: absolute;
+  inset: 3px 2px 4px;
+  border: solid var(--surface);
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+.runs-table-view .cbx:indeterminate {
+  border-color: var(--accent);
+}
+
+.runs-table-view .cbx:indeterminate::after {
+  content: "";
+  position: absolute;
+  inset: 5px 2px;
+  background: var(--accent);
+}
+
+.runs-table-view .cbx:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Tags ────────────────────────────────────────────────────────────────── */
+.runs-table-view .run-tag-list {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.runs-table-view .run-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  border: 1px solid var(--line-soft);
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.runs-table-view .runs-tablefoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.runs-table-view .runs-tablefoot-pager {
+  display: flex;
+  gap: 4px;
+}
+
+/* Empty state inherits .table-empty from charts.css; keep it centered inside
+   the parity panel. */
+.runs-table-view .runs-dtable .empty-row td {
+  height: auto;
+  padding: 24px 12px;
+}

@@ -224,7 +224,7 @@
   border: 1px solid var(--line);
   border-radius: var(--control-radius, 8px);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  box-shadow: 0 8px 24px rgba(23, 26, 20, 0.16);
   color: var(--text);
   font: 400 12px/1.45 var(--font-sans);
   text-align: left;
@@ -538,7 +538,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.analysis-row strong { font: 600 12.5px/1 var(--font-sans); color: var(--text); }
+.analysis-row strong { font: 600 12.5px/1 var(--font-mono); color: var(--text); }
 .analysis-row .pos { color: var(--coral); }
 .analysis-row .neg { color: var(--series-2); }
 /* Z-scores read by magnitude, not sign — deviation direction is neutral. */

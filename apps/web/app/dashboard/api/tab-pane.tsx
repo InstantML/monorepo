@@ -105,7 +105,10 @@ export function ApiTabPane({
           <div className="panel-head"><h2><Code2 size={15} /> API Surface</h2></div>
           <div className="panel-body">
             <ApiTable rows={apiRows} />
-            <pre>{JSON.stringify({ org_id: activeOrgId || null, project: project || null, status: status || null, metric_key: metricKey, inspected_run_id: primaryRunId ?? null, selected_run_ids: selectedRunIds }, null, 2)}</pre>
+            <details className="detail-section api-context-detail">
+              <summary>Current query context</summary>
+              <pre>{JSON.stringify({ org_id: activeOrgId || null, project: project || null, status: status || null, metric_key: metricKey, inspected_run_id: primaryRunId ?? null, selected_run_ids: selectedRunIds }, null, 2)}</pre>
+            </details>
           </div>
         </section>
       </div>

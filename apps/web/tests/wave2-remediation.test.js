@@ -45,11 +45,16 @@ test("number-key tab navigation exists and respects rail order", () => {
   assert.ok(editableGuard > -1 && numberBranch > editableGuard, "editable-element guard must run before number-key navigation");
 });
 
-// Section 3 — nav regroup: rarely-daily tabs live under "More"; ids unchanged.
-test("nav groups demote adoption tabs under More without changing ids", () => {
+// Mockup parity (2026-06): nav regrouped to OPERATE / DATA / SYSTEM; ids
+// unchanged so routes/deep-links survive. The Overview landing tab was later
+// removed (OPERATE now leads with Runs), so it must be absent from the config.
+test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", () => {
   const configSrc = read("app/dashboard-config.tsx");
-  assert.match(configSrc, /id: "more"/);
-  assert.match(configSrc, /id: "alerts", label: "Run health"/);
+  assert.match(configSrc, /id: "operate"/);
+  assert.match(configSrc, /id: "data"/);
+  assert.match(configSrc, /id: "system"/);
+  assert.doesNotMatch(configSrc, /id: "overview"/);
+  assert.match(configSrc, /id: "alerts", label: "Run Health"/);
   for (const id of ["runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "settings", "api"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
@@ -132,13 +137,17 @@ test("distributed visuals avoid red/green-only and signed z coloring", () => {
   assert.match(css, /var\(--blue\), var\(--surface-2\), var\(--amber\)/);
 });
 
-// AL2 — overview health cards promoted to the Runs workspace header.
-test("runs workspace header shows the run health cards", () => {
+// AL2 (reverted 2026-06): the health cards were removed from the Runs header —
+// they duplicated the Run health tab and pushed the run list below the fold.
+// The cards (and their stats) remain on the Run health tab.
+test("runs workspace header no longer duplicates the run health cards", () => {
   const paneSrc = read("app/dashboard/runs/tab-pane.tsx");
-  assert.match(paneSrc, /runs-health-cards/);
-  assert.match(paneSrc, /label="Failed runs"/);
-  assert.match(paneSrc, /overview\.active_runs/);
-  assert.match(read("app/styles/dashboard-runs.css"), /\.runs-health-cards/);
+  assert.doesNotMatch(paneSrc, /runs-health-cards/);
+  const alertsSrc = read("app/dashboard/alerts/tab-pane.tsx");
+  // Mockup-parity stat strip (parity-health): failed/active run stats live in
+  // hp-panel stat cards instead of MetricCards.
+  assert.match(alertsSrc, /<span className="hp-mlabel">Failed runs<\/span>/);
+  assert.match(alertsSrc, /overview\.active_runs/);
 });
 
 // A2 — landing demo entry routes to the spotlighted shared-demo action.
