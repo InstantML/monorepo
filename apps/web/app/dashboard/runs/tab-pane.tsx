@@ -1,12 +1,18 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
+"use client";
+
+import { useEffect, useState } from "react";
+import type { Dispatch, FormEvent, RefObject, SetStateAction } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
 import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
 import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
 import { RunsCommandbar } from "./runs-commandbar";
+import type { RunsViewMode } from "./runs-commandbar";
+import { RunsTable } from "./runs-table";
 import { RunsWorkspace } from "./runs-workspace";
 import { WorkspacePanelCard } from "./workspace-panel-card";
+import { CustomSelect } from "../ui/select";
 import { fieldLabel } from "../../../src/dashboard-panels.js";
 import type { HistogramTimelineState, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
@@ -97,6 +103,7 @@ type Props = {
   paginationBusy: boolean;
   panelSearch: string;
   pinnedMetrics: string[];
+  primaryRunId: string | null;
   project: string;
   projects: string[];
   query: string;
@@ -184,6 +191,7 @@ export function RunsTabPane({
   paginationBusy,
   panelSearch,
   pinnedMetrics,
+  primaryRunId,
   project,
   projects,
   query,
@@ -205,6 +213,7 @@ export function RunsTabPane({
   workspaceSeries,
   workspaceView,
 }: Props) {
+  const [runsViewMode, setRunsViewMode] = useState<RunsViewMode>("panels");
   const showEmptyCallout = initialLoadDone && !dashboardLoading && summaryTotal === 0 && projects.length === 0 && !project && !query && !status;
   const nonCurrentMemberships = orgMemberships.filter((m) => !m.is_current);
   const fullscreenPanelSubtitle = fullscreenPanelContext
@@ -270,59 +279,90 @@ export function RunsTabPane({
           selectedRunExportDisabled={selectedRunExportDisabled}
           selectedRunExportTitle={selectedRunExportTitle}
           tableColumns={tableColumns}
+          viewMode={runsViewMode}
+          onViewMode={setRunsViewMode}
         />
       </div>
-      <RunsWorkspace
-        addPanelSectionId={addPanelSectionId}
-        availableMetricKeys={availableWorkspaceMetrics}
-        onAddPanel={onAddPanel}
-        onAddSection={onAddSection}
-        onClearFilters={onClearFilters}
-        onColumnsOpen={onColumnsOpen}
-        onDuplicatePanel={onDuplicatePanel}
-        onEditPanel={onEditPanel}
-        onFullscreenPanel={onFullscreenPanel}
-        onInspectRun={onInspectRun}
-        onOpenRun={onOpenRun}
-        onMode={onMode}
-        onMovePanel={onMovePanel}
-        onPanelSearch={onPanelSearch}
-        onRefresh={onRefresh}
-        onRemovePanel={onRemovePanel}
-        onResetWorkspace={onResetWorkspace}
-        onResizePanel={onResizePanel}
-        onRunRailCollapsed={onRunRailCollapsed}
-        onSelectAllMatching={onSelectAllMatching}
-        onSelectAllVisible={onSelectAllVisible}
-        onSetAddPanelSection={onSetAddPanelSection}
-        onTableColumns={onTableColumns}
-        onToggleRun={onToggleRun}
-        onToggleSection={onToggleSection}
-        selectAllMatchingBusy={selectAllMatchingBusy}
-        selectAllMatchingDisabled={selectAllMatchingDisabled}
-        hasNextPage={hasNextPage}
-        hasPreviousPage={hasPreviousPage}
-        onGoToPage={onGoToPage}
-        onNextPage={onNextPage}
-        onPageSize={onPageSize}
-        onPreviousPage={onPreviousPage}
-        paginationBusy={paginationBusy}
-        pageEnd={pageEnd}
-        pageSize={pageSize}
-        pageStart={pageStart}
-        panelSearch={panelSearch}
-        runSearch={queryInput}
-        runRailCollapsed={runsRailCollapsed}
-        selectedRunIds={selectedRunIds}
-        showAddPanelDrawer={Boolean(addPanelSectionId)}
-        summaryTotal={summaryTotal}
-        tableColumns={tableColumns}
-        view={workspaceView}
-        workspaceHistogramTimelines={workspaceHistogramTimelines}
-        workspacePanelRuns={workspacePanelRuns}
-        workspaceRuns={sortedRuns}
-        workspaceSeries={workspaceSeries}
-      />
+      {runsViewMode === "panels" ? (
+        <RunsWorkspace
+          addPanelSectionId={addPanelSectionId}
+          availableMetricKeys={availableWorkspaceMetrics}
+          onAddPanel={onAddPanel}
+          onAddSection={onAddSection}
+          onClearFilters={onClearFilters}
+          onColumnsOpen={onColumnsOpen}
+          onDuplicatePanel={onDuplicatePanel}
+          onEditPanel={onEditPanel}
+          onFullscreenPanel={onFullscreenPanel}
+          onInspectRun={onInspectRun}
+          onOpenRun={onOpenRun}
+          onMode={onMode}
+          onMovePanel={onMovePanel}
+          onPanelSearch={onPanelSearch}
+          onRefresh={onRefresh}
+          onRemovePanel={onRemovePanel}
+          onResetWorkspace={onResetWorkspace}
+          onResizePanel={onResizePanel}
+          onRunRailCollapsed={onRunRailCollapsed}
+          onSelectAllMatching={onSelectAllMatching}
+          onSelectAllVisible={onSelectAllVisible}
+          onSetAddPanelSection={onSetAddPanelSection}
+          onTableColumns={onTableColumns}
+          onToggleRun={onToggleRun}
+          onToggleSection={onToggleSection}
+          selectAllMatchingBusy={selectAllMatchingBusy}
+          selectAllMatchingDisabled={selectAllMatchingDisabled}
+          hasNextPage={hasNextPage}
+          hasPreviousPage={hasPreviousPage}
+          onGoToPage={onGoToPage}
+          onNextPage={onNextPage}
+          onPageSize={onPageSize}
+          onPreviousPage={onPreviousPage}
+          paginationBusy={paginationBusy}
+          pageEnd={pageEnd}
+          pageSize={pageSize}
+          pageStart={pageStart}
+          panelSearch={panelSearch}
+          runSearch={queryInput}
+          runRailCollapsed={runsRailCollapsed}
+          selectedRunIds={selectedRunIds}
+          showAddPanelDrawer={Boolean(addPanelSectionId)}
+          summaryTotal={summaryTotal}
+          tableColumns={tableColumns}
+          view={workspaceView}
+          workspaceHistogramTimelines={workspaceHistogramTimelines}
+          workspacePanelRuns={workspacePanelRuns}
+          workspaceRuns={sortedRuns}
+          workspaceSeries={workspaceSeries}
+        />
+      ) : (
+        <section className="runs-table-surface" aria-label="Runs table">
+          <RunsTable
+            columns={tableColumns}
+            metricKey={metricKey}
+            onClearFilters={onClearFilters}
+            onInspectRun={onInspectRun}
+            onToggleRun={(runId) => onToggleRun(runId)}
+            pinnedMetrics={pinnedMetrics}
+            primaryRunId={primaryRunId ?? ""}
+            runs={sortedRuns}
+            selectedRunIds={selectedRunIds}
+          />
+          <RunsTableFooter
+            disabled={paginationBusy}
+            hasNextPage={hasNextPage}
+            hasPreviousPage={hasPreviousPage}
+            onGoToPage={onGoToPage}
+            onNextPage={onNextPage}
+            onPageSize={onPageSize}
+            onPreviousPage={onPreviousPage}
+            pageEnd={pageEnd}
+            pageSize={pageSize}
+            pageStart={pageStart}
+            summaryTotal={summaryTotal}
+          />
+        </section>
+      )}
       {editingPanelContext ? (
         <PanelEditDrawer
           categoricalFieldOptions={workspaceCategoricalFieldOptions}
@@ -404,5 +444,84 @@ export function RunsTabPane({
         </div>
       ) : null}
     </>
+  );
+}
+
+function RunsTableFooter({
+  disabled,
+  hasNextPage,
+  hasPreviousPage,
+  onGoToPage,
+  onNextPage,
+  onPageSize,
+  onPreviousPage,
+  pageEnd,
+  pageSize,
+  pageStart,
+  summaryTotal,
+}: {
+  disabled: boolean;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  onGoToPage: (page: number) => void;
+  onNextPage: () => void;
+  onPageSize: (size: number) => void;
+  onPreviousPage: () => void;
+  pageEnd: number;
+  pageSize: number;
+  pageStart: number;
+  summaryTotal: number;
+}) {
+  const totalPages = Math.max(1, Math.ceil(summaryTotal / Math.max(1, pageSize)));
+  const currentPage = summaryTotal ? Math.floor((pageStart - 1) / Math.max(1, pageSize)) + 1 : 1;
+  const [draft, setDraft] = useState(String(currentPage));
+  useEffect(() => {
+    setDraft(String(currentPage));
+  }, [currentPage]);
+
+  function commit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    const parsed = Number.parseInt(draft, 10);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(currentPage));
+      return;
+    }
+    const clamped = Math.min(Math.max(1, parsed), totalPages);
+    setDraft(String(clamped));
+    if (clamped !== currentPage) onGoToPage(clamped);
+  }
+
+  return (
+    <div className="runs-table-footer">
+      <CustomSelect
+        className="table-footer-select"
+        disabled={disabled}
+        id="runs-table-rows-per-page"
+        label="Rows"
+        menuPlacement="top"
+        onChange={(nextPageSize) => onPageSize(Number(nextPageSize))}
+        options={[10, 25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
+        value={String(pageSize)}
+      />
+      <strong>{`${pageStart}-${pageEnd} of ${summaryTotal}`}</strong>
+      <div className="runs-table-pager">
+        <button className="icon-button framed" disabled={disabled || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page"><ChevronRight className="rotate-180" size={15} /></button>
+        <form className="runs-table-page-jump" onSubmit={commit}>
+          <input
+            aria-label={`Page number, ${currentPage} of ${totalPages}`}
+            disabled={disabled || summaryTotal === 0}
+            inputMode="numeric"
+            max={totalPages}
+            min={1}
+            onBlur={() => commit()}
+            onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ""))}
+            type="text"
+            value={draft}
+          />
+          <span>/ {totalPages}</span>
+        </form>
+        <button className="icon-button framed" disabled={disabled || !hasNextPage} onClick={onNextPage} type="button" aria-label="Next page"><ChevronRight size={15} /></button>
+      </div>
+    </div>
   );
 }

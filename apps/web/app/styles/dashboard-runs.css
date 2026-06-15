@@ -4,7 +4,7 @@
 
 .runs-commandbar {
   display: grid;
-  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) auto auto auto auto;
   gap: 8px;
   align-items: end;
   min-height: 34px;
@@ -38,6 +38,47 @@
 
 .command-spacer {
   min-width: 0;
+}
+
+.runs-view-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(88px, 1fr));
+  align-self: end;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface-hover);
+  padding: 2px;
+}
+
+.runs-view-switch__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  border-radius: calc(var(--control-radius) - 2px);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.runs-view-switch__button:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.runs-view-switch__button[aria-pressed="true"] {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(23, 33, 43, 0.10);
 }
 
 .columns-menu {
@@ -134,7 +175,7 @@
 .runs-workspace {
   display: grid;
   grid-template-columns: 270px minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
   gap: 0;
   min-height: calc(100vh - var(--topbar-height) - 132px);
   border: 1px solid var(--line);
@@ -158,7 +199,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: min(720px, calc(100vh - var(--topbar-height) - var(--runs-filter-sticky-height) - 12px));
+  height: calc(100vh - var(--topbar-height) - var(--runs-filter-sticky-height) - 12px);
+  max-height: calc(100vh - var(--topbar-height) - var(--runs-filter-sticky-height) - 12px);
   min-height: 0;
   overflow: hidden;
   border-right: 1px solid var(--line);
@@ -575,6 +617,126 @@
 
 .rotate-neg-90 {
   transform: rotate(-90deg);
+}
+
+.rotate-180 {
+  transform: rotate(180deg);
+}
+
+.runs-table-surface {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: calc(100vh - var(--topbar-height) - 132px);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.runs-table-surface .table-wrap {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.runs-table-surface table {
+  min-width: 920px;
+}
+
+.runs-table-surface .table-empty {
+  position: sticky;
+  left: 0;
+  width: min(100%, calc(100vw - 48px));
+  min-height: 220px;
+  padding: 28px 16px;
+}
+
+.runs-table-surface .table-empty strong {
+  color: var(--text);
+}
+
+.runs-table-surface thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.runs-table-footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.runs-table-footer strong {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 720;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runs-table-footer .table-footer-select {
+  min-width: 88px;
+}
+
+.runs-table-footer .table-footer-select .select-trigger {
+  width: 68px;
+  height: 30px;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.runs-table-pager,
+.runs-table-page-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.runs-table-pager .icon-button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+}
+
+.runs-table-page-jump {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.runs-table-page-jump input {
+  width: 38px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: center;
+}
+
+.runs-table-page-jump input:focus {
+  border-color: rgba(31, 184, 119, 0.48);
+  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.12);
+  outline: none;
+}
+
+.runs-table-page-jump input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .workspace-canvas {

@@ -1,12 +1,14 @@
 "use client";
 
-import { Columns3, Download, RefreshCw, Search } from "lucide-react";
+import { Columns3, Download, LayoutPanelTop, RefreshCw, Search, Table2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef } from "react";
 
 import { shortMetricName } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import type { TableColumns } from "../../dashboard-types";
+
+export type RunsViewMode = "panels" | "table";
 
 const tableColumnLabels: Array<[keyof TableColumns, string]> = [
   ["status", "Status"],
@@ -37,6 +39,8 @@ export function RunsCommandbar({
   selectedRunExportDisabled,
   selectedRunExportTitle,
   tableColumns,
+  viewMode,
+  onViewMode,
 }: {
   columnsOpen: boolean;
   exportSelectedBusy: boolean;
@@ -57,6 +61,8 @@ export function RunsCommandbar({
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
   tableColumns: TableColumns;
+  viewMode: RunsViewMode;
+  onViewMode: (mode: RunsViewMode) => void;
 }) {
   const columnsMenuRef = useRef<HTMLDivElement>(null);
   const columnsTriggerRef = useRef<HTMLButtonElement>(null);
@@ -96,6 +102,26 @@ export function RunsCommandbar({
         value={metricOptions.length ? metricKey : ""}
       />
       <div className="command-spacer" />
+      <div className="runs-view-switch" aria-label="Runs view" role="group">
+        <button
+          aria-pressed={viewMode === "panels"}
+          className="runs-view-switch__button"
+          onClick={() => onViewMode("panels")}
+          title="Show panels workspace"
+          type="button"
+        >
+          <LayoutPanelTop size={15} /> Panels
+        </button>
+        <button
+          aria-pressed={viewMode === "table"}
+          className="runs-view-switch__button"
+          onClick={() => onViewMode("table")}
+          title="Show runs table"
+          type="button"
+        >
+          <Table2 size={15} /> Table
+        </button>
+      </div>
       <div className="columns-menu" ref={columnsMenuRef}>
         <button className="secondary compact-button" type="button" aria-expanded={columnsOpen} aria-controls="columns-popover" onClick={() => onColumnsOpen((current) => !current)} ref={columnsTriggerRef}><Columns3 size={15} /> Columns</button>
         {columnsOpen ? (
