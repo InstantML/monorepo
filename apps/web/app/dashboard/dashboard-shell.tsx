@@ -24,7 +24,7 @@ import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
 import type { NavBadge } from "./chrome/nav-rail";
 import { SelectionTray } from "./chrome/selection-tray";
-import { AccountWorkspaceMenu, DashboardTopbar, OPEN_PROJECT_PICKER_EVENT } from "./chrome/topbar";
+import { AccountWorkspaceMenu, DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { compactCount } from "./chrome/ticker";
 import { DatasetsTabPane } from "./datasets/tab-pane";
@@ -3760,12 +3760,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
           onAutoOpenChange={setNavAutoOpen}
           onMobileClose={closeMobileNav}
           onPinnedChange={setNavPinned}
-          onProjectPicker={() => window.dispatchEvent(new CustomEvent(OPEN_PROJECT_PICKER_EVENT))}
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
           onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
           pinned={navPinned}
-          project={project}
           theme={theme}
         />
 

@@ -2549,18 +2549,17 @@ button.compare-row-head.active {
   max-width: 120px;
   opacity: 1;
 }
-/* Brand wordmark + PROJECT card collapse with the rail. In the 56px icon state
- * only the brandmark shows (centered like the tab icons); the wordmark and the
- * PROJECT card are hidden so they can't overflow the rail and cover the page
- * header. They reappear when the rail expands (pinned, hover, or keyboard
- * focus), matching the .tab-label behavior above. */
+/* Brand wordmark collapses with the rail. In the 56px icon state only the
+ * brandmark shows (centered like the tab icons); the wordmark is hidden so it
+ * can't overflow the rail and cover the page header. It reappears when the rail
+ * expands (pinned, hover, or keyboard focus), matching the .tab-label behavior
+ * above. */
 .shell:not(.nav-pinned) .rail-brand {
   justify-content: center;
   padding-left: 0;
   padding-right: 0;
 }
-.shell:not(.nav-pinned) .rail-brand-name,
-.shell:not(.nav-pinned) .rail-project {
+.shell:not(.nav-pinned) .rail-brand-name {
   display: none;
 }
 .shell:not(.nav-pinned).nav-auto-open .rail-brand,
@@ -2572,10 +2571,6 @@ button.compare-row-head.active {
 .shell:not(.nav-pinned).nav-auto-open .rail-brand-name,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .rail-brand-name {
   display: block;
-}
-.shell:not(.nav-pinned).nav-auto-open .rail-project,
-.shell:not(.nav-pinned) .tabs:has(:focus-visible) .rail-project {
-  display: flex;
 }
 .tab-button {
   min-height: 36px;

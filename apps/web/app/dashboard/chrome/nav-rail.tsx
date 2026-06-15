@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, ChevronDown, CircleHelp, Moon, PanelLeftClose, PanelLeftOpen, Sun, X } from "lucide-react";
+import { BookOpen, CircleHelp, Moon, PanelLeftClose, PanelLeftOpen, Sun, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import type { MouseEvent, ReactNode } from "react";
@@ -26,12 +26,10 @@ export function DashboardNav({
   onAutoOpenChange,
   onMobileClose,
   onPinnedChange,
-  onProjectPicker,
   onSelect,
   onShortcutHelp,
   onThemeToggle,
   pinned,
-  project,
   theme,
 }: {
   accountMenu?: ReactNode;
@@ -42,12 +40,10 @@ export function DashboardNav({
   onAutoOpenChange: (open: boolean) => void;
   onMobileClose?: () => void;
   onPinnedChange: (pinned: boolean) => void;
-  onProjectPicker?: () => void;
   onSelect: (tabId: ShellTabId) => void;
   onShortcutHelp?: () => void;
   onThemeToggle: () => void;
   pinned: boolean;
-  project?: string;
   theme: "light" | "dark";
 }) {
   const navRef = useRef<HTMLElement>(null);
@@ -108,26 +104,12 @@ export function DashboardNav({
           <X size={15} />
         </button>
       </div>
-      {/* Rail brand block + PROJECT selector card (desktop, per shell mock). */}
+      {/* Rail brand block (desktop, per shell mock). The PROJECT card was removed
+          — the workbar's project filter is the single project control. */}
       <div className="rail-brand" aria-hidden={hiddenCompactNav ? true : undefined}>
         <span className="rail-brandmark"><InstantMlMark size={13} /></span>
         <span className="rail-brand-name">InstantML</span>
       </div>
-      {onProjectPicker ? (
-        <button
-          className="rail-project"
-          onClick={onProjectPicker}
-          tabIndex={compactTabIndex}
-          title="Change project"
-          type="button"
-        >
-          <span className="rail-project-body">
-            <span className="rail-project-label">Project</span>
-            <span className="rail-project-name">{project || "All projects"}</span>
-          </span>
-          <ChevronDown size={13} aria-hidden="true" />
-        </button>
-      ) : null}
       <div className="tab-scroll">
         {navGroups.map((group) => (
           <div className="tab-group" key={group.id}>

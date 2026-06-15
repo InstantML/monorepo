@@ -17,10 +17,6 @@ import type { SelectOption } from "../ui/select";
 import type { Overview, RunSummary, TabId } from "../../dashboard-types";
 import { useFocusTrap } from "../ui/use-focus-trap";
 
-// Custom event dispatched by the nav rail's PROJECT card; the topbar owns the
-// filter-bar visibility state, so it listens and opens the project picker.
-export const OPEN_PROJECT_PICKER_EVENT = "instantml:open-project-picker";
-
 export type OrgMembershipSummary = {
   org_id: string;
   name: string;
@@ -793,21 +789,6 @@ export function DashboardTopbar({
       root.style.removeProperty("--topbar-height");
     };
   }, [desktopFiltersCollapsed, showWorkbar]);
-
-  // 3.4 + rail parity: both the breadcrumb project button and the nav rail's
-  // PROJECT card reveal the filter bar and open the (single) project selector.
-  useEffect(() => {
-    function openProjectPicker() {
-      if (compactFilters) setMobileFiltersOpen(true);
-      else setDesktopFiltersCollapsed(false);
-      window.requestAnimationFrame(() => {
-        const trigger = document.getElementById("project-filter")?.closest(".custom-select-control")?.querySelector(".select-trigger");
-        if (trigger instanceof HTMLElement) trigger.click();
-      });
-    }
-    window.addEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker);
-    return () => window.removeEventListener(OPEN_PROJECT_PICKER_EVENT, openProjectPicker);
-  }, [compactFilters]);
 
   useEffect(() => {
     if (!searchHelpOpen) return undefined;
