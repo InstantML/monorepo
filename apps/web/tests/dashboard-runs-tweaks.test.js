@@ -88,6 +88,21 @@ test("initial dashboard data load renders shell with Runs skeletons", () => {
   assert.match(workspaceSrc, /<WorkspaceCanvasSkeleton \/>/);
 });
 
+test("dashboard sidebar exposes the persisted theme toggle", () => {
+  const navSrc = read("app/dashboard/chrome/nav-rail.tsx");
+  const shellSrc = read("app/dashboard/dashboard-shell.tsx");
+  const dashboardCss = read("app/styles/dashboard.css");
+
+  assert.match(navSrc, /onThemeToggle: \(\) => void/);
+  assert.match(navSrc, /theme: "light" \| "dark"/);
+  assert.match(navSrc, /aria-label=\{themeLabel\}/);
+  assert.match(navSrc, /aria-pressed=\{dark\}/);
+  assert.match(navSrc, /<span className="tab-label">\{dark \? "Light mode" : "Dark mode"\}<\/span>/);
+  assert.match(shellSrc, /onThemeToggle=\{\(\) => setTheme\(\(current\) => current === "dark" \? "light" : "dark"\)\}/);
+  assert.match(shellSrc, /theme=\{theme\}/);
+  assert.match(dashboardCss, /\.nav-mobile-actions \{\s*display: none;\s*\}/);
+});
+
 test("runs workspace lets you jump to a specific page", () => {
   const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
   assert.match(workspaceSrc, /function RunPageJumper/);

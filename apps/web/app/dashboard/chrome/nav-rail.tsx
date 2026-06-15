@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, ChevronDown, CircleHelp, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { BookOpen, ChevronDown, CircleHelp, Moon, PanelLeftClose, PanelLeftOpen, Sun, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import type { MouseEvent, ReactNode } from "react";
@@ -29,8 +29,10 @@ export function DashboardNav({
   onProjectPicker,
   onSelect,
   onShortcutHelp,
+  onThemeToggle,
   pinned,
   project,
+  theme,
 }: {
   accountMenu?: ReactNode;
   activeTab: ShellTabId;
@@ -43,12 +45,16 @@ export function DashboardNav({
   onProjectPicker?: () => void;
   onSelect: (tabId: ShellTabId) => void;
   onShortcutHelp?: () => void;
+  onThemeToggle: () => void;
   pinned: boolean;
   project?: string;
+  theme: "light" | "dark";
 }) {
   const navRef = useRef<HTMLElement>(null);
   const hiddenCompactNav = compactNav && !mobileOpen;
   const compactTabIndex = hiddenCompactNav ? -1 : undefined;
+  const dark = theme === "dark";
+  const themeLabel = dark ? "Switch to light mode" : "Switch to dark mode";
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -144,6 +150,18 @@ export function DashboardNav({
       </div>
       <div className="nav-footer">
         <button
+          aria-label={themeLabel}
+          aria-pressed={dark}
+          className="tab-button nav-theme-button"
+          onClick={onThemeToggle}
+          tabIndex={compactTabIndex}
+          title={pinned ? undefined : themeLabel}
+          type="button"
+        >
+          {dark ? <Sun size={15} /> : <Moon size={15} />}
+          <span className="tab-label">{dark ? "Light mode" : "Dark mode"}</span>
+        </button>
+        <button
           aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
           aria-pressed={pinned}
           className={`tab-button nav-pin-button ${pinned ? "active" : ""}`}
@@ -167,6 +185,10 @@ export function DashboardNav({
             <span className="tab-label">Shortcuts</span>
           </button>
         ) : null}
+        <button className="tab-button" type="button" onClick={onThemeToggle} aria-label={themeLabel} aria-pressed={dark} tabIndex={compactTabIndex}>
+          {dark ? <Sun size={15} /> : <Moon size={15} />}
+          <span className="tab-label">{dark ? "Light mode" : "Dark mode"}</span>
+        </button>
       </div>
     </nav>
   );

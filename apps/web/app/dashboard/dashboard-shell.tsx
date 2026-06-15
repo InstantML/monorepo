@@ -3769,8 +3769,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
           onProjectPicker={() => window.dispatchEvent(new CustomEvent(OPEN_PROJECT_PICKER_EVENT))}
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
+          onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
           pinned={navPinned}
           project={project}
+          theme={theme}
         />
 
         <section className={`tab-pane ${activeTab === "overview" ? "active" : ""}`} aria-label="Overview">
