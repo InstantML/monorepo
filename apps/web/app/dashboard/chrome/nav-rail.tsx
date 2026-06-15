@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, CircleHelp, Moon, PanelLeftClose, PanelLeftOpen, Sun, X } from "lucide-react";
+import { BookOpen, CircleHelp, Moon, Sun, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 import type { MouseEvent, ReactNode } from "react";
@@ -14,17 +14,13 @@ const navGroupLabels: Record<(typeof navGroups)[number]["id"], string> = {
   system: "System",
 };
 
-export type NavBadge = { value: string; tone?: "alert" };
-
 export function DashboardNav({
   accountMenu,
   activeTab,
-  badges = {},
   compactNav = false,
   mobileOpen = false,
   onAutoOpenChange,
   onMobileClose,
-  onPinnedChange,
   onSelect,
   onShortcutHelp,
   onThemeToggle,
@@ -33,12 +29,10 @@ export function DashboardNav({
 }: {
   accountMenu?: ReactNode;
   activeTab: ShellTabId;
-  badges?: Partial<Record<ShellTabId, NavBadge>>;
   compactNav?: boolean;
   mobileOpen?: boolean;
   onAutoOpenChange: (open: boolean) => void;
   onMobileClose?: () => void;
-  onPinnedChange: (pinned: boolean) => void;
   onSelect: (tabId: ShellTabId) => void;
   onShortcutHelp?: () => void;
   onThemeToggle: () => void;
@@ -57,18 +51,6 @@ export function DashboardNav({
       navRef.current?.querySelector<HTMLElement>(".tab-button.active")?.scrollIntoView({ block: "center" });
     }, 0);
   }, [activeTab, mobileOpen]);
-
-  function handlePinnedChange(nextPinned: boolean) {
-    function resetNavScroll() {
-      navRef.current?.scrollTo({ top: 0 });
-      navRef.current?.querySelector<HTMLElement>(".tab-scroll")?.scrollTo({ top: 0 });
-    }
-    resetNavScroll();
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    if (!nextPinned) onAutoOpenChange(false);
-    onPinnedChange(nextPinned);
-    window.setTimeout(resetNavScroll, 0);
-  }
 
   function handleTabSelect(event: MouseEvent<HTMLAnchorElement>, tabId: ShellTabId) {
     event.preventDefault();
@@ -109,7 +91,6 @@ export function DashboardNav({
             <span className="tab-group-label">{navGroupLabels[group.id]}</span>
             {group.items.map((tab) => {
               const Icon = tab.icon;
-              const badge = badges[tab.id];
               return (
                 <a
                   aria-label={tab.label}
@@ -122,7 +103,6 @@ export function DashboardNav({
                   title={pinned ? undefined : tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
-                  {badge ? <span className={`tab-count ${badge.tone === "alert" ? "is-alert" : ""}`}>{badge.value}</span> : null}
                 </a>
               );
             })}
@@ -141,17 +121,6 @@ export function DashboardNav({
         >
           {dark ? <Sun size={15} /> : <Moon size={15} />}
           <span className="tab-label">{dark ? "Light mode" : "Dark mode"}</span>
-        </button>
-        <button
-          aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
-          aria-pressed={pinned}
-          className={`tab-button nav-pin-button ${pinned ? "active" : ""}`}
-          onClick={() => handlePinnedChange(!pinned)}
-          tabIndex={compactTabIndex}
-          type="button"
-        >
-          {pinned ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-          <span className="tab-label">{pinned ? "Unpin" : "Pin"}</span>
         </button>
         {accountMenu ? <div className="rail-foot">{accountMenu}</div> : null}
       </div>

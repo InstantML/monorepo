@@ -22,11 +22,9 @@ import { ArtifactsTabPane } from "./artifacts/tab-pane";
 import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
-import type { NavBadge } from "./chrome/nav-rail";
 import { SelectionTray } from "./chrome/selection-tray";
 import { AccountWorkspaceMenu, DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
-import { compactCount } from "./chrome/ticker";
 import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
@@ -69,7 +67,7 @@ import {
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HistogramTimelineState, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
 import type { RunWorkspaceTabId } from "./components/run-workspace";
-import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
+import { LEGACY_SAVED_VIEW_PREFIX, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
 import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "./state/workspace-view-api";
 import type { components } from "../../src/types/api.generated";
@@ -656,8 +654,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [tableColumns, setTableColumns] = useState<TableColumns>(defaultTableColumns);
   const [pinnedMetrics, setPinnedMetrics] = useState<string[]>([]);
-  // Pinned (labeled) nav is the default; collapsing to icons is an explicit choice.
-  const [navPinned, setNavPinned] = useState(true);
+  // The nav rail is always pinned (labeled); the collapse/pin control was removed.
+  const navPinned = true;
   const [navAutoOpen, setNavAutoOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -883,12 +881,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   // Rail count badges: total runs on Runs, open-alert count on Run Health.
-  const navBadges = useMemo<Partial<Record<ShellTabId, NavBadge>>>(() => {
-    const badges: Partial<Record<ShellTabId, NavBadge>> = {};
-    if (overview.total_runs > 0) badges.runs = { value: compactCount(overview.total_runs) };
-    if (alertRows.length > 0) badges.alerts = { value: String(alertRows.length), tone: "alert" };
-    return badges;
-  }, [alertRows.length, overview.total_runs]);
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
@@ -1712,8 +1704,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
 
   useEffect(() => {
     setSavedViews(localSavedViewOptions(localSavedViewProjectScope));
-    // Default to the pinned (labeled) rail; only an explicit unpin collapses it.
-    setNavPinned(localStorage.getItem(NAV_PINNED_KEY) !== "false");
     setRunsRailCollapsed(localStorage.getItem(RUNS_RAIL_COLLAPSED_KEY) === "true");
     const storedTheme = localStorage.getItem(THEME_KEY);
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
@@ -1787,10 +1777,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     if (workspaceView.project !== (project || null)) return;
     localStorage.setItem(scopedWorkspaceStorageKey, JSON.stringify({ ...workspaceView, updatedAt: new Date().toISOString() }));
   }, [project, scopedWorkspaceStorageKey, workspaceReady, workspaceView]);
-
-  useEffect(() => {
-    localStorage.setItem(NAV_PINNED_KEY, String(navPinned));
-  }, [navPinned]);
 
   // Mirror explicit run selections into ?runs=… (replaceState, capped) so the
   // current compare/chart context survives reloads and can be shared.
@@ -3701,12 +3687,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
         <DashboardNav
           activeTab={activeTab}
-          badges={navBadges}
           compactNav={isMobile}
           mobileOpen={mobileNavOpen}
           onAutoOpenChange={setNavAutoOpen}
           onMobileClose={closeMobileNav}
-          onPinnedChange={setNavPinned}
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
           onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
