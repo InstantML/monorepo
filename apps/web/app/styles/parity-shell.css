@@ -5,22 +5,21 @@
  * ─────────────────────────────────────────────────────────────────────────── */
 
 @media (min-width: 900px) {
-  /* ── Topbar: ticker (38px) + slim account strip + optional filter workbar.
+  /* ── Topbar: slim account/search strip + optional filter workbar.
    *    Brand mark / wordmark / workspace label / breadcrumb are owned by the
-   *    rail + ticker + page-head now, so they're hidden — but the account &
-   *    search cluster stays (its popovers anchor here) right-aligned. ── */
+   *    rail + page-head now, so they're hidden — but the account & search
+   *    cluster stays (its popovers anchor here) right-aligned. ── */
   .topbar {
     background: var(--bg);
     border-bottom: 1px solid var(--line);
     box-shadow: none;
     backdrop-filter: none;
-    /* Stack ticker + slim brandbar + workbar at their natural heights; the
+    /* Stack the slim brandbar + workbar at their natural heights; the
      * ResizeObserver in DashboardTopbar re-syncs --topbar-height to match,
      * keeping rail/content sticky offsets correct. */
     height: auto;
     min-height: 0;
   }
-  .topbar > .ticker,
   .topbar > .brandbar,
   .topbar > .workbar {
     flex: none;
@@ -44,119 +43,17 @@
   .topbar .mobile-menu-button {
     display: none;
   }
-  /* Push the surviving account actions to the right; drop the plan chip and
-   * the duplicate ⌘K search button (search already lives in the ticker). */
+  /* Push the surviving account/search actions to the right. The ⌘K search button
+   * is the primary search affordance now that the ticker is gone; the plan chip
+   * stays hidden on desktop (it's reachable from Settings). */
   .topbar .brandbar-row { margin-left: auto; }
   .topbar .brandbar-actions { margin-left: auto; }
-  .topbar .plan-usage-badge,
-  .topbar .brandbar-actions .ghost-kbd {
+  .topbar .plan-usage-badge {
     display: none;
   }
 
-  /* ── Telemetry ticker ── */
-  .ticker {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    height: 38px;
-    padding: 0 16px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--line);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-
-  .ticker__brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding-right: 16px;
-    border-right: 1px solid var(--line);
-    flex: none;
-  }
-
-  .ticker__live {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--accent);
-    font-weight: 600;
-    letter-spacing: var(--tracking-eyebrow);
-    flex: none;
-  }
-
-  .ticker__feed {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    flex: 1;
-    min-width: 0;
-  }
-  .ticker__feed::-webkit-scrollbar { display: none; }
-
-  .tick-run {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    flex: none;
-  }
-  .tick-run b { color: var(--text); font-weight: 500; }
-  .tick-run .delta-up { color: var(--accent); }
-  .tick-run .delta-down { color: var(--danger); }
-  .tick-run .tick-flat { color: var(--muted); }
-  .tick-spark { display: inline-flex; align-items: center; }
-  .tick-spark svg { display: block; }
-
-  .ticker__sys {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding-left: 16px;
-    border-left: 1px solid var(--line);
-    color: var(--muted);
-    flex: none;
-    margin-left: auto;
-  }
-  .ticker__sys b { color: var(--text); font-weight: 500; }
-  .ticker__pts { display: inline-flex; gap: 5px; }
-  .ticker__clock { font-variant-numeric: tabular-nums; }
-  .ticker__search {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: color 0.12s, border-color 0.12s;
-  }
-  .ticker__search:hover { color: var(--text); border-color: var(--line-strong); }
-
-  /* ── Live pulse dot ── */
-  .ticker .pulse {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--accent);
-    position: relative;
-    flex: none;
-  }
-  .ticker .pulse::after {
-    content: "";
-    position: absolute;
-    inset: -3px;
-    border-radius: 50%;
-    border: 1px solid var(--accent);
-    animation: ticker-ping 2.2s cubic-bezier(0.2, 0.9, 0.25, 1) infinite;
-  }
+  /* The telemetry ticker ("live" bar) was removed; the ticker-ping keyframe is
+     kept here because the run-detail live pulse (parity-detail.css) still uses it. */
   @keyframes ticker-ping {
     0% { transform: scale(0.5); opacity: 0.9; }
     70%, 100% { transform: scale(1.6); opacity: 0; }

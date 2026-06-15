@@ -723,37 +723,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const columnMetricOptionsForControls = useMemo(() => boundedOptions(columnMetricOptions, "", 80), [columnMetricOptions]);
 
   const sortedRuns = summary.runs;
-  // Running runs on the current page power the telemetry ticker chips and the
-  // Overview cockpit (chart, table). Real data only — no synthetic runs.
-  const runningRuns = useMemo(() => sortedRuns.filter((run) => run.status === "running"), [sortedRuns]);
-  // Ticker sparklines: downsample each running run's loaded series for the
-  // active metric to ~24 points. The series feeding the ticker depends on the
-  // active tab — `series` is loaded on Metrics/Overview/Detail, while the Runs
-  // tab loads `workspaceSeries` keyed by metric. Both store one MetricSeries per
-  // run with `id === run.id`, so we look the run up by id across whichever
-  // source is populated. Runs with no loaded series simply get no spark.
-  const tickerSparkValues = useMemo<Record<string, number[]>>(() => {
-    const byRun = new Map<string, MetricSeries>();
-    for (const item of workspaceSeries[metricKey] ?? []) {
-      if (!byRun.has(item.id)) byRun.set(item.id, item);
-    }
-    for (const item of series) {
-      if (!byRun.has(item.id)) byRun.set(item.id, item);
-    }
-    const out: Record<string, number[]> = {};
-    for (const run of runningRuns) {
-      const points = byRun.get(run.id)?.points ?? [];
-      if (points.length < 2) continue;
-      const stride = Math.max(1, Math.floor(points.length / 24));
-      const values: number[] = [];
-      for (let i = 0; i < points.length; i += stride) {
-        const value = Number(points[i]?.value);
-        if (Number.isFinite(value)) values.push(value);
-      }
-      if (values.length >= 2) out[run.id] = values;
-    }
-    return out;
-  }, [metricKey, runningRuns, series, workspaceSeries]);
   const selectedRuns = useMemo(() => {
     const directory = runDirectoryRef.current;
     return selectedRunIds
@@ -3689,9 +3658,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       <DashboardTopbar
         activeIcon={ActiveIcon}
         activeTab={activeTab}
-        metricKey={metricKey}
-        runningRuns={runningRuns}
-        tickerSparkValues={tickerSparkValues}
         accountUser={sessionPayload?.user ?? null}
         overview={overview}
         detailRunName={primaryRun?.name ?? ""}

@@ -11,10 +11,9 @@ import { roleCapabilities, roleLabel } from "../../../src/roles.js";
 import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import type { ShellTabId } from "../../dashboard-config";
-import { TickerStrip } from "./ticker";
 import { CustomSelect } from "../ui/select";
 import type { SelectOption } from "../ui/select";
-import type { Overview, RunSummary, TabId } from "../../dashboard-types";
+import type { Overview, TabId } from "../../dashboard-types";
 import { useFocusTrap } from "../ui/use-focus-trap";
 
 export type OrgMembershipSummary = {
@@ -638,9 +637,6 @@ export function DashboardTopbar({
   orgSwitchError,
   onSwitchOrg,
   overview,
-  metricKey,
-  runningRuns,
-  tickerSparkValues,
   planLabel,
   project,
   projects,
@@ -693,9 +689,6 @@ export function DashboardTopbar({
   orgSwitchError: string;
   onSwitchOrg: (orgId: string) => void;
   overview: Overview;
-  metricKey: string;
-  runningRuns: RunSummary[];
-  tickerSparkValues: Record<string, number[]>;
   planLabel: string;
   project: string;
   projects: string[];
@@ -762,8 +755,9 @@ export function DashboardTopbar({
       if (media.matches) {
         return "56px";
       }
-      // Desktop chrome is the 38px telemetry ticker plus the optional workbar.
-      return showWorkbar && !desktopFiltersCollapsed ? "82px" : "38px";
+      // Desktop chrome is the slim account brandbar (~44px) plus the optional
+      // filter workbar (~44px).
+      return showWorkbar && !desktopFiltersCollapsed ? "88px" : "44px";
     }
     function syncHeight() {
       const height = topbarRef.current?.getBoundingClientRect().height;
@@ -827,13 +821,6 @@ export function DashboardTopbar({
 
   return (
     <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`} ref={topbarRef}>
-      <TickerStrip
-        metricKey={metricKey}
-        onQuickSearch={onQuickSearch}
-        overview={overview}
-        runningRuns={runningRuns}
-        sparkValues={tickerSparkValues}
-      />
       <div className="brandbar">
         <button
           type="button"
