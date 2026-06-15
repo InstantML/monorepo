@@ -2455,14 +2455,16 @@ button.compare-row-head.active {
   border-right: 1px solid var(--line);
   padding: 12px 8px 10px;
   overflow: visible;
-  transition: box-shadow 140ms ease;
+  transition: width 160ms ease, box-shadow 140ms ease;
 }
 :root[data-theme="dark"] .tabs { background: var(--color-ink); }
 
 /* Auto-open expands the .tabs element itself to 212px so its opaque
  * background covers tab labels without leaking page content through gaps
- * between buttons. Keyboard focus only — hover never expands the rail, so
- * icon clicks always navigate on the first click. */
+ * between buttons. The grid column stays 56px, so the expanded rail slides
+ * out as an overlay rather than reflowing the page. Triggered by hover
+ * (nav-auto-open) and by keyboard focus; hover expands on pointer-enter —
+ * before any click — so icon clicks still land on their first press. */
 .shell:not(.nav-pinned).nav-auto-open .tabs,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) {
   width: 212px;
@@ -2546,6 +2548,34 @@ button.compare-row-head.active {
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-label {
   max-width: 120px;
   opacity: 1;
+}
+/* Brand wordmark + PROJECT card collapse with the rail. In the 56px icon state
+ * only the brandmark shows (centered like the tab icons); the wordmark and the
+ * PROJECT card are hidden so they can't overflow the rail and cover the page
+ * header. They reappear when the rail expands (pinned, hover, or keyboard
+ * focus), matching the .tab-label behavior above. */
+.shell:not(.nav-pinned) .rail-brand {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+.shell:not(.nav-pinned) .rail-brand-name,
+.shell:not(.nav-pinned) .rail-project {
+  display: none;
+}
+.shell:not(.nav-pinned).nav-auto-open .rail-brand,
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .rail-brand {
+  justify-content: flex-start;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.shell:not(.nav-pinned).nav-auto-open .rail-brand-name,
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .rail-brand-name {
+  display: block;
+}
+.shell:not(.nav-pinned).nav-auto-open .rail-project,
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .rail-project {
+  display: flex;
 }
 .tab-button {
   min-height: 36px;

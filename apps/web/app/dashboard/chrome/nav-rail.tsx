@@ -88,9 +88,15 @@ export function DashboardNav({
       className={`tabs ${pinned ? "pinned" : ""}`}
       aria-hidden={hiddenCompactNav ? true : undefined}
       aria-label="Dashboard sections"
+      onMouseEnter={() => { if (!pinned && !compactNav) onAutoOpenChange(true); }}
+      onMouseLeave={() => {
+        // Don't collapse out from under a focused rail item (keyboard user
+        // tabbing through while the pointer drifts off); onBlur handles those.
+        if (!pinned && !compactNav && !navRef.current?.contains(document.activeElement)) onAutoOpenChange(false);
+      }}
       onFocus={(event) => {
-        // Expand for keyboard focus only. Mouse clicks also focus the anchors,
-        // and expanding mid-click shifts the target before mouseup lands.
+        // Also expand for keyboard focus. Both hover and focus expand on enter —
+        // before any click — so an icon click still lands on its first press.
         if (event.target instanceof HTMLElement && event.target.matches(":focus-visible")) onAutoOpenChange(true);
       }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onAutoOpenChange(false); }}
