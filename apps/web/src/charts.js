@@ -1,3 +1,5 @@
+import { metricGoal } from "./state.js";
+
 /**
  * @param {{ min: number, max: number } | null} [xRange]
  * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
@@ -238,6 +240,104 @@ export function chartSummary(series) {
     const last = item.points[item.points.length - 1];
     return { id: item.id, name: item.name, last: last ? last.value : null };
   });
+}
+
+export function chartSummaryRows(series, metricKey = "") {
+  const goal = metricGoal(metricKey);
+  const rows = (series ?? []).map((item, index) => {
+    const points = chartSummaryPoints(item);
+    const first = points[0] ?? null;
+    const final = points[points.length - 1] ?? null;
+    const best = bestSummaryPoint(points, goal);
+    const changePercent = first && final && Number(first.value) !== 0
+      ? ((Number(final.value) - Number(first.value)) / Math.abs(Number(first.value))) * 100
+      : null;
+    const trend = trendForSummaryPoints(points, goal);
+    const notes = [];
+    if (item?.seriesType === "aggregate") notes.push(`aggregate${item.sourceRunCount ? ` of ${item.sourceRunCount}` : ""}`);
+    if (item?.smoothed) notes.push("chart smoothed");
+    if (!points.length) notes.push("no plotted points");
+    return {
+      id: item?.id ?? `series-${index}`,
+      name: item?.identifier ?? item?.name ?? `Series ${index + 1}`,
+      first: first ? Number(first.value) : null,
+      final: final ? Number(final.value) : null,
+      best: best ? Number(best.value) : null,
+      bestStep: best ? best.step ?? null : null,
+      changePercent,
+      points: points.length,
+      rank: null,
+      trend,
+      notes: notes.length ? notes.join("; ") : "complete",
+    };
+  });
+  const ranked = rows
+    .filter((row) => Number.isFinite(row.final))
+    .sort((a, b) => goal === "minimize" ? a.final - b.final : b.final - a.final);
+  ranked.forEach((row, index) => {
+    row.rank = index + 1;
+  });
+  return rows.sort((a, b) => {
+    if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+    if (a.rank !== null) return -1;
+    if (b.rank !== null) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export function chartSummaryTakeaway(series, metricKey = "") {
+  const rows = chartSummaryRows(series, metricKey);
+  const goal = metricGoal(metricKey);
+  const direction = goal === "minimize" ? "Lower is better" : "Higher is better";
+  const plottedRows = rows.filter((row) => row.points > 0);
+  if (!plottedRows.length) return `${metricKey} has no plotted series.`;
+  const best = plottedRows.find((row) => row.rank === 1);
+  const runnerUp = plottedRows.find((row) => row.rank === 2);
+  const improvingRows = plottedRows.filter((row) => row.trend === "improving");
+  const worseningRows = plottedRows.filter((row) => row.trend === "worsening");
+  const trendNote = improvingRows.length
+    ? `${improvingRows[0].name} is improving overall.`
+    : worseningRows.length
+      ? `${worseningRows[0].name} is worsening overall.`
+      : "The plotted series are mostly flat overall.";
+  const bestSentence = best
+    ? `${best.name} has the best final value at ${formatMetricValue(best.final)}${runnerUp ? `, followed by ${runnerUp.name} at ${formatMetricValue(runnerUp.final)}` : ""}.`
+    : "No finite final values are available.";
+  return `${metricKey} across ${plottedRows.length} plotted ${plottedRows.length === 1 ? "series" : "series"}. ${direction}. ${bestSentence} ${trendNote}`;
+}
+
+function chartSummaryPoints(item) {
+  const points = item?.normalizedPoints?.length ? item.normalizedPoints : item?.points ?? [];
+  return points
+    .filter((point) => Number.isFinite(Number(point?.value)))
+    .map((point) => ({
+      ...point,
+      value: Number(point.value),
+      xValue: Number.isFinite(Number(point.xValue)) ? Number(point.xValue) : Number(point.step),
+    }))
+    .sort((a, b) => a.xValue - b.xValue);
+}
+
+function bestSummaryPoint(points, goal) {
+  return points.reduce((best, point) => {
+    if (!best) return point;
+    return goal === "minimize"
+      ? point.value < best.value ? point : best
+      : point.value > best.value ? point : best;
+  }, null);
+}
+
+function trendForSummaryPoints(points, goal) {
+  if (points.length < 2) return "not enough data";
+  const first = points[0].value;
+  const final = points[points.length - 1].value;
+  const scale = Math.max(1e-12, Math.abs(first));
+  const relative = (final - first) / scale;
+  const better = goal === "minimize" ? relative < -0.01 : relative > 0.01;
+  const worse = goal === "minimize" ? relative > 0.01 : relative < -0.01;
+  if (better) return "improving";
+  if (worse) return "worsening";
+  return "flat";
 }
 
 // EMA smoothing. Unlike a destructive smoother, this keeps each point's raw

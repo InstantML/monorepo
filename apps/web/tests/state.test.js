@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
+import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
 import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, categoricalValueForRun, chartPointCount, chunkRunIds, defaultDistributionFields, defaultParallelFields, distributionSummaryForRuns, fieldLabel, fieldValueForRun, histogramBins, histogramFramesFromObjects, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, metricFieldId, objectFieldId, parallelCoordinatesForRuns, parseCategoricalFieldId, parseFieldId, preferredScatterXField, runCategoricalFieldId, scatterPointsForRuns, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
@@ -145,6 +145,66 @@ test("dense chart helper switches for many series or many points", () => {
   assert.equal(shouldUseDenseChart(sparse), false);
   assert.equal(shouldUseDenseChart(manySeries), true);
   assert.equal(shouldUseDenseChart(manyPoints), true);
+});
+
+test("chart summary rows rank plotted series and describe trends", () => {
+  const rows = chartSummaryRows([
+    {
+      id: "a",
+      name: "Run A",
+      normalizedPoints: [
+        { step: 0, value: 0.5, xValue: 0 },
+        { step: 10, value: 0.2, xValue: 10 },
+      ],
+    },
+    {
+      id: "b",
+      identifier: "Run B alias",
+      name: "Run B",
+      smoothed: true,
+      normalizedPoints: [
+        { step: 0, value: 0.4, xValue: 0 },
+        { step: 8, value: 0.3, xValue: 8 },
+      ],
+    },
+    {
+      id: "avg",
+      name: "group avg",
+      seriesType: "aggregate",
+      sourceRunCount: 3,
+      normalizedPoints: [
+        { step: 0, value: 0.45, xValue: 0 },
+        { step: 9, value: 0.25, xValue: 9 },
+      ],
+    },
+  ], "train/loss");
+
+  assert.deepEqual(rows.map((row) => [row.name, row.final, row.best, row.bestStep, row.rank, row.trend]), [
+    ["Run A", 0.2, 0.2, 10, 1, "improving"],
+    ["group avg", 0.25, 0.25, 9, 2, "improving"],
+    ["Run B alias", 0.3, 0.3, 8, 3, "improving"],
+  ]);
+  assert.equal(rows[0].changePercent, -60);
+  assert.match(rows[1].notes, /aggregate of 3/);
+  assert.match(rows[2].notes, /chart smoothed/);
+
+  const accuracyRows = chartSummaryRows([
+    { id: "a", name: "A", normalizedPoints: [{ step: 0, value: 0.7, xValue: 0 }, { step: 1, value: 0.8, xValue: 1 }] },
+    { id: "b", name: "B", normalizedPoints: [{ step: 0, value: 0.9, xValue: 0 }, { step: 1, value: 0.85, xValue: 1 }] },
+  ], "eval/accuracy");
+  assert.deepEqual(accuracyRows.map((row) => [row.name, row.rank, row.trend]), [["B", 1, "worsening"], ["A", 2, "improving"]]);
+});
+
+test("chart summary takeaway is deterministic and goal-aware", () => {
+  const takeaway = chartSummaryTakeaway([
+    { id: "a", name: "Run A", normalizedPoints: [{ step: 0, value: 0.5, xValue: 0 }, { step: 1, value: 0.2, xValue: 1 }] },
+    { id: "b", name: "Run B", normalizedPoints: [{ step: 0, value: 0.4, xValue: 0 }, { step: 1, value: 0.3, xValue: 1 }] },
+  ], "train/loss");
+  assert.match(takeaway, /train\/loss across 2 plotted series/);
+  assert.match(takeaway, /Lower is better/);
+  assert.match(takeaway, /Run A has the best final value at 0\.2/);
+  assert.match(takeaway, /Run A is improving overall/);
+  assert.equal(chartSummaryTakeaway([], "eval/accuracy"), "eval/accuracy has no plotted series.");
 });
 
 test("latest-value panel helpers derive chart data from run summaries", () => {

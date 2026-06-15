@@ -4,12 +4,12 @@ import { FileText, ImageDown, RefreshCw } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
-import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
+import { axisTicks, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
 import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
-import { chartHeight, chartPadding, chartWidth } from "../../dashboard-models";
+import { chartHeight, chartPadding, chartWidth, metricTitle } from "../../dashboard-models";
 import { useMeasuredSize } from "../ui/use-measured-size";
 import type { HoverPoint } from "../../dashboard-types";
 
@@ -35,6 +35,7 @@ const TOOLTIP_MARGIN = 8;
 const SPARSE_POINT_THRESHOLD = 2;
 
 type TooltipPlacement = { left: number; top: number; side: "left" | "right"; vertical: "above" | "below" };
+type ChartView = "chart" | "summary";
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -79,6 +80,68 @@ function chartTooltipPlacement({
 
 // The chart renders in CSS pixels (viewBox matches the measured frame), so a
 // normalized point's x/y are already frame-local coordinates.
+function formatSummaryPercent(value: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatMetricValue(value, 4)}%`;
+}
+
+function formatSummaryStep(value: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) return "-";
+  return formatNumber(Number(value), 0);
+}
+
+function ChartSummaryTable({
+  metricKey,
+  rows,
+  tableId,
+  takeaway,
+}: {
+  metricKey: string;
+  rows: any[];
+  tableId: string;
+  takeaway: string;
+}) {
+  return (
+    <section className="chart-summary-panel" id={tableId} aria-label={`${metricKey} summary table`}>
+      <p className="chart-summary-takeaway">{takeaway}</p>
+      <div className="chart-summary-table-wrap">
+        <table className="chart-summary-table">
+          <caption>{metricTitle(metricKey)} summary table</caption>
+          <thead>
+            <tr>
+              <th scope="col">Run</th>
+              <th scope="col">Final</th>
+              <th scope="col">Best</th>
+              <th scope="col">Best step</th>
+              <th scope="col">Change</th>
+              <th scope="col">Rank</th>
+              <th scope="col">Trend</th>
+              <th scope="col">Points</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id}>
+                <th scope="row" title={row.name}>{row.name}</th>
+                <td>{formatMetricValue(row.final)}</td>
+                <td>{formatMetricValue(row.best)}</td>
+                <td>{formatSummaryStep(row.bestStep)}</td>
+                <td>{formatSummaryPercent(row.changePercent)}</td>
+                <td>{row.rank ?? "-"}</td>
+                <td>{row.trend}</td>
+                <td>{formatNumber(row.points, 0)}</td>
+                <td>{row.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
   const rows = normalizedSeries.map((item, index) => {
     const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
@@ -307,6 +370,7 @@ export function MetricChart({
   yScale?: "linear" | "log";
   zoomRange?: ChartZoomRange;
 }) {
+  const [chartView, setChartView] = useState<ChartView>("chart");
   const chartAreaRef = useRef<HTMLDivElement | null>(null);
   const chartFrameRef = useRef<HTMLDivElement | null>(null);
   const { width: measuredWidth, height: measuredHeight } = useMeasuredSize(chartFrameRef, chartWidth, height);
@@ -517,13 +581,18 @@ export function MetricChart({
   const exportFileBase = safeExportFilename(exportFilenameBase ?? metricKey, "metric-chart");
   const chartInstanceId = useId();
   const exportHelpId = `${chartInstanceId}-chart-export-help`;
+  const chartPanelId = `${chartInstanceId}-chart-panel`;
   const smoothingControlId = `${chartInstanceId}-chart-smoothing`;
-  const showSmoothing = typeof onSmoothingChange === "function";
+  const showViewToggle = true;
+  const showInlineControls = chartView === "chart" && showExportActions;
+  const showSmoothing = showInlineControls && typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
-  const showActions = showExportActions && (Boolean(exportFilenameBase) || showSmoothing || showYAxisControls);
+  const showActions = showViewToggle || (showExportActions && (Boolean(exportFilenameBase) || showSmoothing || showYAxisControls));
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
+  const summaryRows = useMemo(() => chartSummaryRows(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
+  const summaryTakeaway = useMemo(() => chartSummaryTakeaway(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
   const hoverRows = hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, xMode, useLineStyles, hover.runId) : [];
   const hiddenHoverRows = hover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
@@ -654,7 +723,27 @@ export function MetricChart({
 
   const actionsRow = showActions ? (
     <div className="chart-export-actions" aria-label="Chart actions">
-      {showYAxisControls ? (
+      <div className="chart-view-toggle" role="group" aria-label={`${metricKey} view`}>
+        <button
+          aria-controls={chartPanelId}
+          aria-pressed={chartView === "chart"}
+          className={chartView === "chart" ? "selected" : ""}
+          onClick={() => setChartView("chart")}
+          type="button"
+        >
+          Chart
+        </button>
+        <button
+          aria-controls={chartPanelId}
+          aria-pressed={chartView === "summary"}
+          className={chartView === "summary" ? "selected" : ""}
+          onClick={() => setChartView("summary")}
+          type="button"
+        >
+          Summary table
+        </button>
+      </div>
+      {showInlineControls && showYAxisControls ? (
         <>
           <button
             aria-pressed={yScale === "log"}
@@ -734,7 +823,7 @@ export function MetricChart({
           />
         </label>
       ) : null}
-      {exportFilenameBase ? (
+      {showInlineControls && exportFilenameBase ? (
         <>
           <button
             aria-label={`Download ${metricKey} plotted data CSV`}
@@ -771,13 +860,18 @@ export function MetricChart({
     // the window).
     const logHidEverything = yScale === "log" && normalizedSeries.some((item) => (item.hiddenNonPositive ?? 0) > 0);
     return (
-      <div className={`chart-area${showActions ? " chart-area-exportable" : ""}`} onMouseLeave={handleLeave}>
+      <div id={chartPanelId} className={`chart-area${showActions ? " chart-area-exportable" : ""}`} onMouseLeave={handleLeave}>
         {actionsRow}
-        <div className="empty">
-          {logHidEverything
-            ? "Log scale plots positive values only and this window has none above zero. Switch the y-axis back to linear."
-            : emptyMessage}
-        </div>
+        <span className="visually-hidden" role="status" aria-live="polite">{chartView === "summary" ? `${metricKey} summary table selected.` : `${metricKey} chart selected.`}</span>
+        {chartView === "summary" ? (
+          <ChartSummaryTable metricKey={metricKey} rows={summaryRows} tableId={`${chartInstanceId}-summary-table`} takeaway={summaryTakeaway} />
+        ) : (
+          <div className="empty">
+            {logHidEverything
+              ? "Log scale plots positive values only and this window has none above zero. Switch the y-axis back to linear."
+              : emptyMessage}
+          </div>
+        )}
       </div>
     );
   }
@@ -804,11 +898,17 @@ export function MetricChart({
 
   return (
     <div
+      id={chartPanelId}
       ref={chartAreaRef}
       className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
       onMouseLeave={handleLeave}
     >
       {actionsRow}
+      <span className="visually-hidden" role="status" aria-live="polite">{chartView === "summary" ? `${metricKey} summary table selected.` : `${metricKey} chart selected.`}</span>
+      {chartView === "summary" ? (
+        <ChartSummaryTable metricKey={metricKey} rows={summaryRows} tableId={`${chartInstanceId}-summary-table`} takeaway={summaryTakeaway} />
+      ) : (
+        <>
       {showLegend ? (
       <div className={`chart-legend${activeRunId ? " has-active" : ""}`}>
         {legendSeries.map((item, index) => {
@@ -978,6 +1078,8 @@ export function MetricChart({
           ) : null}
         </div>
       ) : null}
+        </>
+      )}
     </div>
   );
 }
