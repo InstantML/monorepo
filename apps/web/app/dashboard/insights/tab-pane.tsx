@@ -7,8 +7,12 @@ import {
   evaluationCards,
   groupedRunReducers,
   insightsRunUniverse,
+  insightsScopeLabel,
   kMeansClusters,
   numericFieldRows,
+  parallelAxisDomains,
+  partitionEvaluationCards,
+  runGroupingKeyLabel,
 } from "../../../src/research-insights.js";
 import { formatNumber, metricGoal, metricGoalValue } from "../../../src/state.js";
 import { metricTitle } from "../../dashboard-models";
@@ -23,13 +27,16 @@ const MAX_PARALLEL_AXES = 5;
 type Props = {
   embedded?: boolean;
   metricKey: string;
+  /** Optional: invoked with the run id when a scatter point or parallel line is clicked. */
+  onSelectRun?: (runId: string) => void;
   selectedRunIds: string[];
   sortedRuns: RunSummary[];
 };
 
-export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, sortedRuns }: Props) {
+export function InsightsTabPane({ embedded = false, metricKey, onSelectRun = () => {}, selectedRunIds, sortedRuns }: Props) {
   const universe = useMemo(() => insightsRunUniverse(selectedRunIds, sortedRuns), [selectedRunIds, sortedRuns]);
   const grouped = useMemo(() => groupedRunReducers(universe.runs, metricKey), [universe.runs, metricKey]);
+  const groupingKey = useMemo(() => runGroupingKeyLabel(universe.runs), [universe.runs]);
   const numeric = useMemo(() => numericFieldRows(universe.runs, metricKey), [universe.runs, metricKey]);
   const clusterDefaults = useMemo(() => kMeansClusters(universe.runs, metricKey), [universe.runs, metricKey]);
   const evalCards = useMemo(() => evaluationCards(universe.runs), [universe.runs]);
@@ -46,7 +53,7 @@ export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, s
     [clusterAxisFields[0], clusterAxisFields[1], metricKey, universe.runs],
   );
   const parallelFields = resolveParallelFields(numeric.fields, numeric.fields.slice(0, 5), parallelAxes);
-  const scope = `Using ${formatNumber(universe.runs.length, 0)} ${universe.scope}${universe.excluded ? ` · ${formatNumber(universe.excluded, 0)} selected without loaded summaries` : ""}`;
+  const scope = insightsScopeLabel(universe);
 
   return (
     <div className={`analysis-page insights-page ${embedded ? "embedded-analysis" : ""}`}>
@@ -60,7 +67,7 @@ export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, s
         <header className="analysis-header">
           <div className="analysis-title-block">
             <span className="analysis-eyebrow eyebrow--accent">Insights</span>
-            <h2>Loaded run <span className="serif-em">analysis</span></h2>
+            <h2>Loaded run analysis</h2>
             <p>{scope}</p>
           </div>
         </header>
@@ -69,7 +76,7 @@ export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, s
       {!universe.runs.length ? <div className="empty">No loaded runs available for insights.</div> : (
         <>
           <section className="analysis-grid two">
-            <GroupedReducersCard grouped={grouped} metricKey={metricKey} />
+            <GroupedReducersCard grouped={grouped} groupingKey={groupingKey} metricKey={metricKey} />
             <EvaluationCardGrid cards={evalCards} total={universe.runs.length} />
           </section>
           <section className="analysis-grid two">
@@ -79,6 +86,7 @@ export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, s
               rows={numeric.rows}
               xAxis={scatterX}
               yAxis={scatterY}
+              onSelectRun={onSelectRun}
               onXAxisChange={setScatterX}
               onYAxisChange={setScatterY}
             />
@@ -102,6 +110,7 @@ export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, s
               fields={parallelFields}
               metricKey={metricKey}
               onAxesChange={setParallelAxes}
+              onSelectRun={onSelectRun}
               rows={numeric.rows.slice(0, 80)}
               selectedAxes={parallelAxes}
             />
@@ -112,7 +121,7 @@ export function InsightsTabPane({ embedded = false, metricKey, selectedRunIds, s
   );
 }
 
-function GroupedReducersCard({ grouped, metricKey }: { grouped: any[]; metricKey: string }) {
+function GroupedReducersCard({ grouped, groupingKey, metricKey }: { grouped: any[]; groupingKey: string | null; metricKey: string }) {
   const maxMean = Math.max(1e-9, ...grouped.map((item) => Math.abs(item.mean)));
   const help = (
     <>
@@ -125,8 +134,9 @@ function GroupedReducersCard({ grouped, metricKey }: { grouped: any[]; metricKey
   );
   return (
     <AnalysisCard title={`${metricTitle(metricKey)} by group`} badge={grouped.length ? `${grouped.length} groups` : undefined} help={help}>
+      {grouped.length && groupingKey ? <p className="analysis-sublabel">Grouped by {groupingKey}</p> : null}
       <div className="analysis-table">
-        <div className="analysis-row head"><span>group</span><span>mean</span><span>spread</span><span>runs</span></div>
+        <div className="analysis-row head"><span>{groupingKey ?? "group"}</span><span>mean</span><span>spread</span><span>runs</span></div>
         {grouped.slice(0, 8).map((item) => (
           <div className="analysis-row" key={item.group}>
             <span title={item.group}>{item.group}</span>
@@ -142,26 +152,43 @@ function GroupedReducersCard({ grouped, metricKey }: { grouped: any[]; metricKey
 }
 
 function EvaluationCardGrid({ cards, total }: { cards: any[]; total: number }) {
+  const [showUnlogged, setShowUnlogged] = useState(false);
+  const { logged, unlogged } = partitionEvaluationCards(cards);
+  const visible = showUnlogged ? [...logged, ...unlogged] : logged;
   const help = (
     <>
       <strong>Latest value of each standard evaluation metric, averaged across loaded runs.</strong>
       <br />
       Each tile shows the mean of a known metric (accuracy, loss, AUC, etc.) over the
-      runs that logged it, plus how many of the loaded runs reported it. Tiles marked
-      &ldquo;not logged&rdquo; mean no loaded run recorded that metric.
+      runs that logged it, plus how many of the loaded runs reported it. Metrics that
+      no loaded run recorded are tucked behind the &ldquo;not logged&rdquo; chip.
     </>
   );
   return (
     <AnalysisCard title="Evaluation metrics" help={help}>
-      <div className="eval-card-grid">
-        {cards.map((card) => (
-          <div className={`eval-mini-card ${card.key ? "" : "missing"}`} key={card.id}>
-            <span>{card.label}</span>
-            <strong>{card.key ? formatNumber(card.latest, 4) : "—"}</strong>
-            <small>{card.key ? `avg · ${formatNumber(card.count, 0)}/${formatNumber(total, 0)} runs` : "not logged"}</small>
-          </div>
-        ))}
-      </div>
+      {visible.length ? (
+        <div className="eval-card-grid">
+          {visible.map((card) => (
+            <div className={`eval-mini-card ${card.key ? "" : "missing"}`} key={card.id}>
+              <span>{card.label}</span>
+              <strong>{card.key ? formatNumber(card.latest, 4) : "—"}</strong>
+              <small>{card.key ? `avg · ${formatNumber(card.count, 0)}/${formatNumber(total, 0)} runs` : "not logged"}</small>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="empty compact-empty">No standard evaluation metrics logged by the loaded runs.</div>
+      )}
+      {unlogged.length ? (
+        <button
+          aria-expanded={showUnlogged}
+          className="eval-unlogged-toggle"
+          onClick={() => setShowUnlogged((value) => !value)}
+          type="button"
+        >
+          {showUnlogged ? `Hide ${formatNumber(unlogged.length, 0)} not logged ▴` : `+${formatNumber(unlogged.length, 0)} not logged ▾`}
+        </button>
+      ) : null}
     </AnalysisCard>
   );
 }
@@ -172,6 +199,7 @@ function ScatterCard({
   rows,
   xAxis,
   yAxis,
+  onSelectRun,
   onXAxisChange,
   onYAxisChange,
 }: {
@@ -180,6 +208,7 @@ function ScatterCard({
   rows: any[];
   xAxis: string;
   yAxis: string;
+  onSelectRun: (runId: string) => void;
   onXAxisChange: (value: string) => void;
   onYAxisChange: (value: string) => void;
 }) {
@@ -231,10 +260,22 @@ function ScatterCard({
             >
               <line className="analysis-axis-line" x1="48" x2="488" y1="200" y2="200" />
               <line className="analysis-axis-line" x1="48" x2="48" y1="16" y2="200" />
-              <text className="analysis-tick" x="48" y="214">{formatNumber(geometry.minX, 3)}</text>
-              <text className="analysis-tick" x="488" y="214" textAnchor="end">{formatNumber(geometry.maxX, 3)}</text>
-              <text className="analysis-tick" x="44" y="200" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
-              <text className="analysis-tick" x="44" y="24" textAnchor="end">{formatNumber(geometry.maxY, 2)}</text>
+              {geometry.xDegenerate ? (
+                <text className="analysis-tick" x="268" y="214" textAnchor="middle">{formatNumber(geometry.minX, 3)}</text>
+              ) : (
+                <>
+                  <text className="analysis-tick" x="48" y="214">{formatNumber(geometry.minX, 3)}</text>
+                  <text className="analysis-tick" x="488" y="214" textAnchor="end">{formatNumber(geometry.maxX, 3)}</text>
+                </>
+              )}
+              {geometry.yDegenerate ? (
+                <text className="analysis-tick" x="44" y="112" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
+              ) : (
+                <>
+                  <text className="analysis-tick" x="44" y="200" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
+                  <text className="analysis-tick" x="44" y="24" textAnchor="end">{formatNumber(geometry.maxY, 2)}</text>
+                </>
+              )}
               <text className="analysis-axis-title" x="270" y="228" textAnchor="middle">{shortLabel(fields[0])}</text>
               <text className="analysis-axis-title" x="16" y="108" textAnchor="middle" transform="rotate(-90 16 108)">{shortLabel(fields[1])}</text>
               {visiblePoints.map((point) => {
@@ -247,10 +288,13 @@ function ScatterCard({
                     key={point.run.id}
                     cx={geometry.x(point.x)}
                     cy={geometry.y(point.y)}
+                    onClick={() => onSelectRun(point.run.id)}
                     onMouseEnter={() => setActiveRunId(point.run.id)}
                     onMouseLeave={() => setActiveRunId(null)}
                     r={active ? "5.5" : "4"}
-                  />
+                  >
+                    <title>{label}</title>
+                  </circle>
                 );
               })}
             </svg>
@@ -383,6 +427,10 @@ const parallelHelp = (
   </>
 );
 
+const PARALLEL_AXIS_TOP = 32;
+const PARALLEL_AXIS_BOTTOM = 220;
+const PARALLEL_AXIS_MID = (PARALLEL_AXIS_TOP + PARALLEL_AXIS_BOTTOM) / 2;
+
 function ParallelCoordinatesCard({
   allFields,
   fields,
@@ -390,6 +438,7 @@ function ParallelCoordinatesCard({
   metricKey,
   selectedAxes,
   onAxesChange,
+  onSelectRun,
 }: {
   allFields: string[];
   fields: string[];
@@ -397,6 +446,7 @@ function ParallelCoordinatesCard({
   metricKey: string;
   selectedAxes: string[];
   onAxesChange: (fields: string[]) => void;
+  onSelectRun: (runId: string) => void;
 }) {
   if (fields.length < 2) {
     return (
@@ -406,15 +456,16 @@ function ParallelCoordinatesCard({
       </AnalysisCard>
     );
   }
-  const domains = fields.map((field) => {
-    const values = rows.map((row) => row.values[field]).filter(Number.isFinite);
-    return { min: Math.min(...values), max: Math.max(...values) };
-  });
+  const domains = parallelAxisDomains(rows, fields);
   const xFor = (index: number) => 50 + (index / Math.max(1, fields.length - 1)) * 640;
   const yFor = (value: number, index: number) => {
     const domain = domains[index];
+    if (!Number.isFinite(value) || domain.min === null || domain.max === null) return Number.NaN;
+    // A constant axis has no spread to scale against; pin every run to the
+    // middle so lines pass through it cleanly instead of hugging the bottom.
+    if (domain.constant) return PARALLEL_AXIS_MID;
     const span = Math.max(1e-9, domain.max - domain.min);
-    return 220 - ((value - domain.min) / span) * 180;
+    return PARALLEL_AXIS_BOTTOM - ((value - domain.min) / span) * 180;
   };
   // Pick the best run by the metric's own goal direction (max for accuracy/auc,
   // min for loss). Sorting ascending unconditionally would highlight the worst
@@ -431,11 +482,31 @@ function ParallelCoordinatesCard({
         <svg className="parallel-chart" viewBox="0 0 720 264" role="img" aria-label={`Parallel coordinate chart with axes ${fields.join(", ")}`}>
           {fields.map((field, index) => {
             const anchor = edgeAwareTextAnchor(index, fields.length);
+            const domain = domains[index];
+            const constant = Boolean(domain.constant);
             return (
               <g key={field}>
-                <line className="parallel-axis" x1={xFor(index)} x2={xFor(index)} y1="32" y2="220" />
-                <text className="analysis-tick" x={xFor(index)} y="26" textAnchor={anchor}>{formatNumber(domains[index].max, 2)}</text>
-                <text className="analysis-tick" x={xFor(index)} y="234" textAnchor={anchor}>{formatNumber(domains[index].min, 2)}</text>
+                <line className={`parallel-axis${constant ? " constant" : ""}`} x1={xFor(index)} x2={xFor(index)} y1={PARALLEL_AXIS_TOP} y2={PARALLEL_AXIS_BOTTOM} />
+                {constant ? (
+                  // Run the constant readout vertically along its own axis so
+                  // neighbouring constant labels can't collide horizontally — with
+                  // every config field constant (a single hyperparameter sweep)
+                  // the old horizontal labels overran each other.
+                  <text
+                    className="analysis-tick constant"
+                    x={xFor(index) - 4}
+                    y={PARALLEL_AXIS_MID}
+                    textAnchor="middle"
+                    transform={`rotate(-90 ${xFor(index) - 4} ${PARALLEL_AXIS_MID})`}
+                  >
+                    constant · {formatNumber(domain.max, 2)}
+                  </text>
+                ) : (
+                  <>
+                    <text className="analysis-tick" x={xFor(index)} y="26" textAnchor={anchor}>{formatNumber(domain.max, 2)}</text>
+                    <text className="analysis-tick" x={xFor(index)} y="234" textAnchor={anchor}>{formatNumber(domain.min, 2)}</text>
+                  </>
+                )}
                 <text className="analysis-axis-title" x={xFor(index)} y="252" textAnchor={anchor}>
                   <title>{field}</title>
                   {shortLabel(field, 14)}
@@ -447,7 +518,16 @@ function ParallelCoordinatesCard({
             const coords = fields.map((field, index) => [xFor(index), yFor(row.values[field], index)]);
             if (coords.some(([, y]) => !Number.isFinite(y))) return null;
             const highlight = row.run.id === bestRunId;
-            return <polyline className={`parallel-line ${highlight ? "highlight" : ""}`} key={row.run.id} points={coords.map(([x, y]) => `${x},${y}`).join(" ")} />;
+            return (
+              <polyline
+                className={`parallel-line ${highlight ? "highlight" : ""}`}
+                key={row.run.id}
+                onClick={() => onSelectRun(row.run.id)}
+                points={coords.map(([x, y]) => `${x},${y}`).join(" ")}
+              >
+                <title>{row.run.name}</title>
+              </polyline>
+            );
           })}
         </svg>
       </div>
@@ -462,12 +542,18 @@ function pointGeometry(points: Array<{ x: number; y: number }>) {
   const maxX = Math.max(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const maxY = Math.max(...points.map((point) => point.y));
+  // A field with no spread (every run shares the value, e.g. a constant
+  // batch_size) would otherwise pin every point to the axis origin and print the
+  // same number at both ends. Center those points and flag the axis so the
+  // renderer can show a single tick instead of a duplicated min/max pair.
+  const xDegenerate = maxX - minX < 1e-9;
+  const yDegenerate = maxY - minY < 1e-9;
   const xSpan = Math.max(1e-9, maxX - minX);
   const ySpan = Math.max(1e-9, maxY - minY);
   return {
-    x: (value: number) => 48 + ((value - minX) / xSpan) * 440,
-    y: (value: number) => 200 - ((value - minY) / ySpan) * 176,
-    minX, maxX, minY, maxY,
+    x: (value: number) => (xDegenerate ? 268 : 48 + ((value - minX) / xSpan) * 440),
+    y: (value: number) => (yDegenerate ? 108 : 200 - ((value - minY) / ySpan) * 176),
+    minX, maxX, minY, maxY, xDegenerate, yDegenerate,
   };
 }
 

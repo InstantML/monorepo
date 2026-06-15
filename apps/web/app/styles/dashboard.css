@@ -144,6 +144,12 @@
 .select-trigger {
   justify-content: space-between;
   width: 170px;
+  /* Preferred width is 170px, but never exceed the wrapper: when the workbar
+     shrinks the .custom-select below 170px (narrow viewports), the trigger must
+     shrink with it and let .select-trigger-value ellipsize — otherwise the fixed
+     width overflows the wrapper and collides with the next control. */
+  max-width: 100%;
+  min-width: 0;
   height: 32px;
   min-height: 32px;
   border-color: var(--line);
@@ -156,13 +162,13 @@
 }
 
 .select-trigger:hover {
-  border-color: #c3d0dc;
-  background: #f8fafc;
+  border-color: #c8ccbc;
+  background: #f4f6f0;
 }
 
 .select-trigger:focus {
-  border-color: rgba(31, 184, 119, 0.48);
-  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.12);
+  border-color: rgba(43, 224, 130, 0.48);
+  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.12);
 }
 
 .select-trigger:disabled {
@@ -239,7 +245,7 @@
   min-height: 32px;
   border-color: transparent;
   background: transparent;
-  color: #263241;
+  color: #22261d;
   gap: 7px;
   padding: 7px 9px;
   font-size: 13px;
@@ -256,8 +262,8 @@
 }
 
 .select-option.selected {
-  background: #e5f2f4;
-  color: #0a6270;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .select-option-text {
@@ -340,7 +346,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #20a464;
+  background: var(--green);
 }
 
 .system-status.error span {
@@ -398,7 +404,7 @@
   border: 1px solid transparent;
   border-radius: var(--control-radius);
   background: transparent;
-  color: #394856;
+  color: #3a3f33;
   text-decoration: none;
 }
 
@@ -415,8 +421,8 @@
 
 .icon-button:hover,
 .icon-button.framed:hover {
-  border-color: #c3d0dc;
-  background: #f8fafc;
+  border-color: #c8ccbc;
+  background: #f4f6f0;
   color: var(--text);
 }
 
@@ -428,8 +434,8 @@
   place-items: center;
   border: 1px solid var(--line-soft);
   border-radius: 5px;
-  background: #f7f9fb;
-  color: #596675;
+  background: #f6f7f3;
+  color: #555b4c;
   font-size: 12px;
   font-weight: 750;
   overflow: hidden;
@@ -522,6 +528,10 @@
   display: none;
 }
 
+.nav-mobile-actions {
+  display: none;
+}
+
 .tab-scroll,
 .tab-group {
   display: grid;
@@ -571,7 +581,7 @@
   border-left: 2px solid transparent;
   border-radius: var(--control-radius);
   background: transparent;
-  color: #4d5a68;
+  color: #555b4c;
   gap: 0;
   padding: 7px;
   font-size: 12.5px;
@@ -587,7 +597,7 @@
 }
 
 .tab-button svg {
-  color: #7a8794;
+  color: #8b9280;
   flex: 0 0 auto;
 }
 
@@ -606,9 +616,9 @@
 }
 
 .tab-button:hover {
-  border-color: #dce3ea;
+  border-color: #e0e3d8;
   background: #ffffff;
-  color: #273340;
+  color: #171a14;
 }
 
 .tab-button.active {

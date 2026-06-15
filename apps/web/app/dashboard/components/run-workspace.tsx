@@ -81,11 +81,7 @@ export function RunWorkspace({
   activeMetricKey,
   api,
   artifacts,
-  chartDomain,
-  chartFullDomain,
-  chartHover,
-  chartNormalizedSeries,
-  chartRangeSeries,
+  chartSeries,
   chartZoomRange,
   dataControls,
   elementId,
@@ -94,7 +90,6 @@ export function RunWorkspace({
   metricRows,
   objectRowsById,
   onChartLeave,
-  onChartMove,
   onChartPointHover,
   onChartZoomRangeChange,
   onForkCheckpoint,
@@ -110,11 +105,7 @@ export function RunWorkspace({
   activeMetricKey: string;
   api: ApiLike;
   artifacts: Artifact[];
-  chartDomain: any;
-  chartFullDomain: any;
-  chartHover: HoverPoint;
-  chartNormalizedSeries: MetricSeries[];
-  chartRangeSeries: MetricSeries[];
+  chartSeries: MetricSeries[];
   chartZoomRange: ChartZoomRange;
   dataControls?: ReactNode;
   elementId: string;
@@ -123,7 +114,6 @@ export function RunWorkspace({
   metricRows: RunMetricRow[];
   objectRowsById: Record<number, LoggedObjectRow[]>;
   onChartLeave: () => void;
-  onChartMove: (event: MouseEvent<SVGSVGElement>) => void;
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onForkCheckpoint?: (artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) => Promise<void>;
@@ -140,7 +130,7 @@ export function RunWorkspace({
     return (
       <div className="empty compact-empty run-detail-empty">
         <strong>No run open</strong>
-        <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics.</span>
+        <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics. Checkpoints live here too — open a run to download, resume, or fork from its checkpoints.</span>
         <a className="secondary compact-button" href="/dashboard/runs">Go to Runs</a>
       </div>
     );
@@ -184,6 +174,7 @@ export function RunWorkspace({
           metricRows={metricRows}
           objectRowsById={objectRowsById}
           onForkCheckpoint={onForkCheckpoint}
+          onOpenFiles={() => onWorkspaceTabChange("files")}
           onRunMetadataSave={onRunMetadataSave}
           run={run}
           selectedCount={selectedCount}
@@ -201,18 +192,14 @@ export function RunWorkspace({
             <span className="chart-kind">bounded series</span>
           </div>
           <MetricChart
-            domain={chartDomain}
-            fullDomain={chartFullDomain}
             height={320}
-            hover={chartHover}
             metricKey={activeMetricKey}
-            normalizedSeries={chartNormalizedSeries}
+            emptyMessage={run ? `${run.name} has not logged the selected metric. Pick one of its logged metrics from the Metric selector above.` : undefined}
             onLeave={onChartLeave}
-            onMove={onChartMove}
             onPointHover={onChartPointHover}
             onZoomRangeChange={onChartZoomRangeChange}
             padding={48}
-            rangeSeries={chartRangeSeries}
+            series={chartSeries}
             showRange={false}
             xMode={xMode}
             zoomRange={chartZoomRange}
@@ -230,7 +217,7 @@ export function RunWorkspace({
   );
 }
 
-function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
+export function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [stream, setStream] = useState<"stdout" | "stderr">("stdout");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
@@ -369,7 +356,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   );
 }
 
-function RunEvidenceExplorer({
+export function RunEvidenceExplorer({
   artifacts,
   objects,
   rowsByObjectId,
@@ -420,7 +407,7 @@ function RunEvidenceExplorer({
       </aside>
       <div className="evidence-preview">
         {selected ? <EvidencePreview item={selected} rowsByObjectId={rowsByObjectId} run={run} /> : (
-          <div className="empty">No evidence logged for {run.name}.</div>
+          <div className="empty">No artifacts logged for {run.name} yet.</div>
         )}
       </div>
     </section>
@@ -470,7 +457,7 @@ function EvidencePreview({ item, rowsByObjectId, run }: { item: any; rowsByObjec
   return <div className="empty">Select evidence to preview it.</div>;
 }
 
-function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: RunSummary }) {
+export function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: RunSummary }) {
   const commit = metadataValue(run.metadata, "git_commit")
     ?? metadataValue(run.metadata, "commit")
     ?? nestedMetadataValue(run.metadata, ["_rlobs", "source", "git", "commit"]);
@@ -486,7 +473,20 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
   ];
   const systemRows = metricRows
     .filter((row) => /^(system|gpu|cpu|mem|memory|disk|network|hardware)[/_]/i.test(row.key))
+    .filter((row) => !/upload_health_unix_seconds$/.test(row.key))
     .sort((a, b) => a.key.localeCompare(b.key));
+  // Raw unix timestamps are meaningless in a stats table; surface the SDK
+  // heartbeat as a relative time in the identity strip instead.
+  const heartbeatRow = metricRows.find((row) => /upload_health_unix_seconds$/.test(row.key));
+  const heartbeatAgeSeconds = heartbeatRow?.latest ? Math.max(0, Math.round(Date.now() / 1000 - heartbeatRow.latest)) : null;
+  const heartbeatLabel = heartbeatAgeSeconds === null
+    ? "not logged"
+    : heartbeatAgeSeconds < 90
+      ? `${heartbeatAgeSeconds}s ago`
+      : heartbeatAgeSeconds < 5400
+        ? `${Math.round(heartbeatAgeSeconds / 60)}m ago`
+        : `${Math.round(heartbeatAgeSeconds / 3600)}h ago`;
+  identity.push(["Last SDK heartbeat", heartbeatLabel]);
   const fmt = (value: number | null) => (value === null ? "—" : formatNumber(value, 3));
   return (
     <section className="run-workspace-panel system-panel">
@@ -541,7 +541,7 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
   );
 }
 
-function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
+export function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [lineage, setLineage] = useState<RunLineage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");

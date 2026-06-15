@@ -154,7 +154,9 @@
   font-family: var(--font-mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--faint);
+  /* --muted, not --faint: small uppercase mono labels need headroom past
+     4.5:1 on the dark landing surface (audit L2). */
+  color: var(--muted);
   margin-bottom: 8px;
 }
 .landing-stat-card__val {
@@ -284,7 +286,7 @@
 
 /* ─── Code block ─── */
 .landing-code-block {
-  background: #0A0C12;
+  background: #0a0c09;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
@@ -353,12 +355,12 @@
 }
 
 /* Code syntax colours */
-.landing-code-dim    { color: #475569; }
-.landing-code-accent { color: #1FB877; }
-.landing-code-heading{ color: #F8FAFC; }
+.landing-code-dim    { color: #555b4c; }
+.landing-code-accent { color: #2be082; }
+.landing-code-heading{ color: #f4f6f0; }
 .landing-code-purple { color: var(--blue); }
-.landing-code-mute   { color: #94A3B8; }
-.landing-code-fg     { color: #CBD5E1; }
+.landing-code-mute   { color: #8b9280; }
+.landing-code-fg     { color: #c8ccbc; }
 .landing-code-str    { color: #86EFAC; }
 .landing-code-inline {
   font-size: 12.5px;
@@ -366,16 +368,32 @@
   color: var(--accent);
 }
 
-/* ─── Section fade-in ─── */
+/* ─── Section fade-in ───
+ * Sections are fully visible by default so content paints with no JS and on
+ * the first frame. The mount hook adds .section-pre only to sections still
+ * below the fold (and only when prefers-reduced-motion is off); the observer
+ * removes it to play the fade. Visibility is never gated on JS. */
 .section-fade {
-  opacity: 0;
-  transform: translateY(16px);
+  opacity: 1;
+  transform: none;
   transition: opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1),
               transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+.section-fade.section-pre {
+  opacity: 0;
+  transform: translateY(16px);
+}
 .section-fade.visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .section-fade,
+  .section-fade.section-pre {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 
 /* ─── Hero spotlight ─── */
@@ -389,7 +407,7 @@
   border-radius: 50%;
   background: radial-gradient(
     ellipse 50% 50% at center,
-    rgba(31, 184, 119, 0.1) 0%,
+    rgba(43, 224, 130, 0.1) 0%,
     rgba(93, 137, 221, 0.045) 34%,
     transparent 70%
   );
@@ -407,7 +425,7 @@
   border-radius: 50%;
   background: radial-gradient(
     ellipse 50% 50% at center,
-    rgba(31, 184, 119, 0.075) 0%,
+    rgba(43, 224, 130, 0.075) 0%,
     transparent 70%
   );
   filter: blur(30px);
@@ -621,9 +639,11 @@
   }
 }
 
-/* ─── Hero rise animations ─── */
+/* ─── Hero rise animations ───
+ * The from-state stays readable (never opacity 0) so hero text paints on the
+ * first frame even while the staggered delays are still pending. */
 @keyframes hero-rise {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0.6; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .hero-rise-1 { animation: hero-rise 800ms cubic-bezier(0.2, 0.8, 0.2, 1) 100ms both; }
@@ -799,7 +819,7 @@
   height: 2px;
 }
 .landing-masking-demo__legend-line--train { background: var(--accent); }
-.landing-masking-demo__legend-line--eval  { background: #94A3B8; opacity: 0.7; }
+.landing-masking-demo__legend-line--eval  { background: #8b9280; opacity: 0.7; }
 .landing-masking-demo__footer {
   display: flex;
   align-items: center;
@@ -820,7 +840,7 @@
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: #0A0C12;
+  background: #0a0c09;
 }
 .landing-audit-feed__header {
   display: flex;
@@ -890,7 +910,7 @@
   inset-inline: 0;
   top: 0;
   height: 32px;
-  background: linear-gradient(to bottom, #0A0C12, transparent);
+  background: linear-gradient(to bottom, #0a0c09, transparent);
 }
 .landing-audit-feed__fade-bottom {
   pointer-events: none;
@@ -898,7 +918,7 @@
   inset-inline: 0;
   bottom: 0;
   height: 32px;
-  background: linear-gradient(to top, #0A0C12, transparent);
+  background: linear-gradient(to top, #0a0c09, transparent);
 }
 
 /* ─── TtlRing component ─── */
@@ -915,7 +935,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at center, rgba(31,184,119,0.055) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(43, 224, 130,0.055) 0%, transparent 60%);
 }
 .landing-ttl-ring__svg { position: relative; }
 .landing-ttl-ring__label {
@@ -1136,7 +1156,7 @@
  * stay legible in both modes. The "ml" wordmark and diagonal stay Bolt. */
 .landing-nav-logo,
 [aria-label="InstantML"] {
-  color: var(--color-ink, #0E1116);
+  color: var(--color-ink, #0d0f0c);
 }
 :root[data-theme="dark"] .landing-nav-logo,
 :root[data-theme="dark"] [aria-label="InstantML"] {
@@ -1451,7 +1471,7 @@
 }
 .landing-arch-legend-dot--accent {
   background: var(--accent);
-  box-shadow: 0 0 0 1px rgba(31,184,119,0.22);
+  box-shadow: 0 0 0 1px rgba(43, 224, 130,0.22);
 }
 .landing-arch-legend-dot--border {
   border: 1px solid var(--line-strong);

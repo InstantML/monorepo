@@ -2,7 +2,7 @@
  * Layered on landing-system.css. Inherits design tokens (var(--accent),
  * var(--line), var(--text), var(--faint), var(--dim), var(--accent-soft),
  * var(--accent-line)) and primitives (.bento-cell, .landing-cta-primary,
- * .landing-h2). Brand color: var(--accent) = #1FB877 bolt green.
+ * .landing-h2). Brand color: var(--accent) = #2be082 bolt green.
  * ────────────────────────────────────────────────────────────────────────── */
 
 .pricing-root { min-height: 100vh; }
@@ -149,7 +149,7 @@
   font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--faint);
 }
 .pricing-compare-col--old .pricing-compare-col__label,
-.pricing-compare-col--alt .pricing-compare-col__label { color: #E0B07A; }
+.pricing-compare-col--alt .pricing-compare-col__label { color: #f0b43e; }
 .pricing-compare-col--new {
   border-color: var(--accent-line);
   box-shadow: 0 0 0 1px var(--accent-line), 0 14px 34px -22px rgba(0, 0, 0, 0.72);
@@ -221,13 +221,13 @@
   font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
 }
 .pricing-surprise__col--new .pricing-surprise__col-label { color: var(--accent); }
-.pricing-surprise__col--old .pricing-surprise__col-label { color: #E0B07A; }
+.pricing-surprise__col--old .pricing-surprise__col-label { color: #f0b43e; }
 
 .pricing-surprise__icon {
   display: inline-flex; align-items: center; justify-content: center;
   width: 18px; height: 18px; border-radius: 4px;
 }
-.pricing-surprise__icon--bad { background: rgba(224, 176, 122, 0.16); color: #E0B07A; }
+.pricing-surprise__icon--bad { background: rgba(224, 176, 122, 0.16); color: #f0b43e; }
 .pricing-surprise__icon--good { background: var(--accent-soft); color: var(--accent); }
 
 .pricing-surprise__evidence { margin-top: 4px; font-size: 12px; }

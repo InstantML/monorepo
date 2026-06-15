@@ -52,10 +52,9 @@ export function ApiTabPane({
 }: Props) {
   const visibleApiKeys = canManageOrg ? apiKeys : [];
   const visibleNewApiKey = canManageOrg ? newApiKey : "";
-  const activeKeyCount = visibleApiKeys.filter((key) => !key.revoked_at).length;
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API" emphasis="keys" lede={`${activeKeyCount} active · documented REST routes`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API" />
       <div className="tab-grid two-col api-tab-grid">
         <section className="panel">
           <div className="panel-head">
@@ -64,10 +63,16 @@ export function ApiTabPane({
           </div>
           <div className="panel-body admin-stack">
             {canManageOrg ? (
-              <div className="admin-form-row">
-                <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} placeholder="Dashboard SDK key" value={apiKeyName} />
-                <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
-              </div>
+              <>
+                <div className="admin-form-row">
+                  <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} placeholder="Dashboard SDK key" value={apiKeyName} />
+                  <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
+                </div>
+                {/* AP3: key-management guidance with a docs path, not just a form. */}
+                <p className="admin-hint">
+                  Keys are shown once at creation and sent as <code>Authorization: Bearer</code>. Name keys per machine or pipeline so revoking one doesn&apos;t break the rest — see the <a href="/docs/quickstart">quickstart</a> and <a href="/docs/api">API reference</a>.
+                </p>
+              </>
             ) : (
               <p className="empty">API-key management is available to workspace owners and admins.</p>
             )}
@@ -100,7 +105,10 @@ export function ApiTabPane({
           <div className="panel-head"><h2><Code2 size={15} /> API Surface</h2></div>
           <div className="panel-body">
             <ApiTable rows={apiRows} />
-            <pre>{JSON.stringify({ org_id: activeOrgId || null, project: project || null, status: status || null, metric_key: metricKey, inspected_run_id: primaryRunId ?? null, selected_run_ids: selectedRunIds }, null, 2)}</pre>
+            <details className="detail-section api-context-detail">
+              <summary>Current query context</summary>
+              <pre>{JSON.stringify({ org_id: activeOrgId || null, project: project || null, status: status || null, metric_key: metricKey, inspected_run_id: primaryRunId ?? null, selected_run_ids: selectedRunIds }, null, 2)}</pre>
+            </details>
           </div>
         </section>
       </div>

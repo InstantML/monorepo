@@ -114,7 +114,7 @@ export function CompareTabPane({
         <header className="analysis-header compare-analysis-header">
           <div className="analysis-title-block">
             <span className="analysis-eyebrow eyebrow--accent">Compare</span>
-            <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs <span className="serif-em">side by side</span></h2>
+            <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs side by side</h2>
             <p>{metricTitle(metricKey)} · {metricGoalLabel(metricKey)} objective · sort any column</p>
           </div>
           <div className="analysis-stat-strip">
@@ -234,7 +234,7 @@ export function CompareTabPane({
           ) : (
             <div className="empty compare-empty-state">
               <p>No runs selected yet. Add runs with the picker above, or select them from the Runs workspace. Selections are saved to the link, so a compare view can be shared or reopened later.</p>
-              <button className="primary-button" onClick={onOpenRunsTab} type="button">Select runs in the Runs tab</button>
+              <button className="secondary compact-button" onClick={onOpenRunsTab} type="button">Select runs in the Runs tab</button>
             </div>
           )
         ) : (

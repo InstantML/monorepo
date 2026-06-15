@@ -213,6 +213,7 @@ export type CompareRunSort =
   | "config";
 
 export type TabId =
+  | "overview"
   | "runs"
   | "metrics"
   | "distributed"
@@ -223,12 +224,11 @@ export type TabId =
   | "imports"
   | "insights"
   | "artifacts"
-  | "checkpoints"
   | "reports"
   | "settings"
   | "api";
 
-export type Tone = "good" | "bad" | "live" | "neutral";
+export type Tone = "good" | "bad" | "live" | "neutral" | "warn";
 
 export type AlertRow = {
   id: string;
@@ -244,14 +244,6 @@ export type DatasetRow = {
   runs: number;
   seeds: string[];
   best: number | null;
-};
-
-export type CheckpointRow = {
-  id: string;
-  name: string;
-  uri: string;
-  step: string;
-  evalReturn: string;
 };
 
 export type ReportRow = {

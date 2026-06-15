@@ -217,6 +217,9 @@ export function RunsWorkspace({
     "[data-add-panel-trigger='true']",
   );
   const [draggedPanel, setDraggedPanel] = useState<DraggedWorkspacePanel | null>(null);
+  // R6 cross-highlight: hovering a rail run isolates its series in every line
+  // panel; hovering a chart series lights up the matching rail run.
+  const [highlightRunId, setHighlightRunId] = useState<string | null>(null);
   const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
   const [addHistogramObjectKey, setAddHistogramObjectKey] = useState("");
   const [bulkPromptEnabled, setBulkPromptEnabled] = useState(false);
@@ -431,8 +434,10 @@ export function RunsWorkspace({
             const runColor = chartColor(stableChartIndex(run.id || run.name, index));
             return (
               <div
-                className={`workspace-run-row ${selected ? "selected" : ""}`}
+                className={`workspace-run-row ${selected ? "selected" : ""}${run.id === highlightRunId ? " is-highlighted" : ""}`}
                 key={run.id}
+                onMouseEnter={() => setHighlightRunId(run.id)}
+                onMouseLeave={() => setHighlightRunId((current) => (current === run.id ? null : current))}
               >
                 <button
                   aria-label={compareLabel}
@@ -462,7 +467,8 @@ export function RunsWorkspace({
                       <span className={`workspace-run-status ${runStatusClass(statusLabel)}`}>{statusLabel}</span>
                       {hasLatestMetricValue ? (
                         <span className="workspace-run-metric-chip" title={`${metricKey}: ${latestMetricValue}`}>
-                          {shortMetricName(metricKey)} {compactRailMetricValue(latestMetricValue)}
+                          <span className="wrm-name">{shortMetricName(metricKey)}</span>
+                          <span className="wrm-value">{compactRailMetricValue(latestMetricValue)}</span>
                         </span>
                       ) : null}
                       {/* Exception-only: synced is the unmarked default. */}
@@ -541,6 +547,8 @@ export function RunsWorkspace({
             return (
               <WorkspaceSectionView
                 key={section.id}
+                highlightRunId={highlightRunId}
+                onHighlightRun={setHighlightRunId}
                 onDuplicatePanel={onDuplicatePanel}
                 onEditPanel={onEditPanel}
                 onFullscreenPanel={onFullscreenPanel}

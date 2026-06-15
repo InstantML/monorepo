@@ -1,0 +1,587 @@
+/* ── instrument.css — Instrument design-language signature layer ─────────────
+ * The recognizable moves from docs/design/reimagine/DESIGN-SYSTEM.md that sit
+ * on top of the tokenized feature styles: panel corner registration ticks,
+ * mono stat numerals, green-means-live, flat primary actions, rail wash.
+ * Imported last in globals.css so same-specificity rules here win.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/* 1 — Panel bezels: corner registration ticks (top-left + bottom-right).
+ *     Hover turns them signal green — the panel's "instrument" identity. */
+.metric-card,
+.workspace-panel-card,
+.workspace-section {
+  position: relative;
+}
+
+.metric-card::before,
+.metric-card::after,
+.workspace-panel-card::before,
+.workspace-panel-card::after,
+.workspace-section::before,
+.workspace-section::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: var(--line-strong);
+  border-style: solid;
+  transition: border-color 0.2s cubic-bezier(0.2, 0.9, 0.25, 1);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Inset so the bracket floats inside the rounded corner instead of
+ * colliding with the curve. */
+.metric-card::before,
+.workspace-panel-card::before,
+.workspace-section::before {
+  top: 4px;
+  left: 4px;
+  border-width: 1px 0 0 1px;
+  border-top-left-radius: 3px;
+}
+
+.metric-card::after,
+.workspace-panel-card::after,
+.workspace-section::after {
+  bottom: 4px;
+  right: 4px;
+  border-width: 0 1px 1px 0;
+  border-bottom-right-radius: 3px;
+}
+
+.metric-card:hover::before,
+.metric-card:hover::after,
+.workspace-panel-card:hover::before,
+.workspace-panel-card:hover::after,
+.workspace-section:hover::before,
+.workspace-section:hover::after {
+  border-color: var(--accent);
+}
+
+/* 2 — Stat numerals are data: tabular mono, not display sans. */
+.metric-card strong,
+.run-kpi-grid .metric-card strong {
+  font: 500 22px/1.15 var(--font-mono);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 3 — Green means live. "live" tone tiles read signal, not info-blue. */
+.metric-card.live strong {
+  color: var(--accent);
+}
+
+/* 4 — Primary action: flat signal wash, no gradients (one verb per view). */
+button.primary-button,
+:root[data-theme="dark"] button.primary-button {
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  box-shadow: none;
+}
+
+button.primary-button:hover,
+:root[data-theme="dark"] button.primary-button:hover {
+  border-color: var(--accent);
+  background: var(--surface-tint);
+  color: var(--accent-strong);
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] button.primary-button {
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] button.primary-button:hover {
+  color: var(--accent-strong);
+}
+
+/* 5 — Nav rail: active item gets the signal edge + flood wash. */
+.tab-button.active,
+:root[data-theme="dark"] .tab-button.active {
+  border-top-color: transparent;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-left-color: var(--accent);
+  background: linear-gradient(90deg, var(--accent-soft), transparent 75%);
+  color: var(--text);
+}
+
+.tab-button.active svg,
+:root[data-theme="dark"] .tab-button.active svg {
+  color: var(--accent);
+}
+
+/* 6 — Micro-labels: uppercase mono group labels take the Instrument tracking. */
+.tab-group-label {
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+}
+
+/* 7 — Focus is signal, everywhere, both themes. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+:root[data-theme="dark"] button:focus-visible,
+:root[data-theme="dark"] .select-trigger:focus-visible {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* 8 — Tables: identifiers and numerals are data → mono. Green is reserved
+ *     for live/best, so run names read as text, not links. */
+.run-name-button {
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.run-name-button:hover {
+  color: var(--accent);
+}
+
+.col-latest,
+.col-pinned,
+.col-duration,
+.col-started {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 9 — Status semantics: running = signal, finished = quiet idle, failed = crit.
+ *     (statusTone maps running→live, finished→good, failed→bad.) */
+.pill {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pill.live,
+:root[data-theme="dark"] .pill.live {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pill.good,
+:root[data-theme="dark"] .pill.good {
+  border-color: var(--line);
+  background: transparent;
+  color: var(--muted);
+}
+
+.pill.bad,
+:root[data-theme="dark"] .pill.bad {
+  border-color: rgba(242, 85, 85, 0.35);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* 9b — Run-rail status chips match .pill casing: uppercase mono. */
+.workspace-run-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* 14 — Run detail: the metadata rail pins and scrolls independently so the
+ *      main column never drags a dead sibling column behind it. */
+.detail-side-rail {
+  position: sticky;
+  top: calc(var(--topbar-height) + 12px);
+  align-self: start;
+  max-height: calc(100vh - var(--topbar-height) - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* 10 — Nav rail items are mono, like every other label in the system. */
+.tab-button {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 12 — Section heads are bezel labels: uppercase mono micro-labels, like the
+ *      panel heads in the reference mockups. Icons inside keep their size. */
+.detail-section h3,
+.workspace-panel-head h3,
+.drawer-group h3,
+.shortcut-group h3,
+.lineage-children-head h3 {
+  font: 500 11px/1.3 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* 13 — A running run is live: its timeline dot reads signal, not info-blue. */
+.run-timeline .timeline-dot.live,
+.event-row.active .event-marker {
+  background: var(--accent);
+}
+
+/* Disclosure headings ("Raw configuration", "Latest metrics") match h3 bezels. */
+.detail-section summary {
+  font: 500 11px/1.3 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* 15 — Status strips are quiet info banners, not bare text. */
+.status-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.status-strip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--info);
+  flex: none;
+}
+
+.status-strip.loading::before {
+  background: var(--accent);
+}
+
+/* 16 — Analysis stat strips fill the space their row gives them (never
+ *      overlap a sibling title); values are data → mono. The artifacts page
+ *      strip sits alone on its row, so it spans fully. */
+.analysis-stat-strip {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.artifact-stat-strip {
+  width: 100%;
+}
+
+.analysis-stat-strip .analysis-stat {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.analysis-stat-strip .analysis-stat strong {
+  font: 500 16px/1.2 var(--font-mono);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 17 — Consolidated artifact empty state. */
+.artifact-empty-panel .artifact-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 56px 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.artifact-empty-state svg {
+  color: var(--dim);
+}
+
+.artifact-empty-state strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.artifact-empty-state span {
+  max-width: 440px;
+  font-size: 13px;
+}
+
+.artifact-empty-state code {
+  margin-top: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* 18 — Warnings are amber, in both themes. Severity is never green. */
+.pill.warn,
+:root[data-theme="dark"] .pill.warn {
+  border-color: rgba(240, 180, 62, 0.4);
+  background: var(--warm-soft);
+  color: var(--warm);
+}
+
+/* 19 — Docs code blocks keep the dark code chrome in both themes (the
+ *      syntax theme is dark-only; !important beats the injected style). */
+.docs-route-code pre {
+  background: #111b16 !important;
+  color: #e6f4ee !important;
+}
+
+/* 20 — Analysis headers never crush the title: the stat strip wraps below
+ *      instead of overlapping when space runs out. */
+.analysis-header {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
+.analysis-title-block {
+  flex: 1 1 280px;
+}
+
+/* 21 — Status banners wrap instead of clipping mid-sentence. */
+.status-message {
+  height: auto;
+  max-width: 420px;
+  white-space: normal;
+  line-height: 1.35;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+/* 22 — The sidebar pin toggle is a utility, not a destination: no active-route
+ *      treatment. */
+.nav-pin-button.active,
+:root[data-theme="dark"] .nav-pin-button.active {
+  border-left-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.nav-pin-button.active svg,
+:root[data-theme="dark"] .nav-pin-button.active svg {
+  color: var(--dim);
+}
+
+/* 23 — Native select fallback keeps its caret clear of the border. */
+.native-select-proxy {
+  padding-right: 26px;
+}
+
+/* 24 — The nav rail advertises that it scrolls: visible thumb at overflow. */
+.tab-scroll::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+}
+
+/* 25 — Data values never break mid-number. */
+.summary-row strong,
+.summary-row span:last-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-run-pager span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 26 — Metric summary header aligns with its name column. */
+.metric-summary-head span:first-child {
+  text-align: left;
+}
+
+/* 27 — Disabled means muted, even for destructive actions. */
+button:disabled,
+:root[data-theme="dark"] button:disabled {
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--dim);
+  box-shadow: none;
+}
+
+/* 28 — API query-context dump reads as an intentional disclosure. */
+.api-context-detail {
+  margin-top: 12px;
+}
+
+.api-context-detail pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  font-size: 11.5px;
+}
+
+/* 33 — Runs table toolbar: separate the row count from the segmented control. */
+.runs-tablebar-count { margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--line); }
+
+/* 34 — Account/workspace menu (rail variant) opens to the right of the rail
+ *      foot, clamped inside the viewport (was clipping off the left edge). */
+.account-workspace--rail .account-workspace-menu {
+  left: 0;
+  right: auto;
+  max-width: calc(100vw - 24px);
+}
+
+/* 35 — Run-detail KPI cells share a min height so sub-lines don't stagger. */
+.pd-kpi { min-height: 78px; }
+
+/* 36 — Config telemetry summary grid divides evenly (was 5 + 1 orphan). */
+.run-config-telemetry,
+.pd-telemetry-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* 37 — Insights scatter/cluster panels: headroom so rotated Y-axis titles
+ *      aren't clipped at the panel top. */
+.insights-scatter svg,
+.insights-cluster svg,
+.rank-heatmap svg { overflow: visible; }
+.insights-panel .panel-body { padding-top: 16px; }
+
+/* 38 — Billing actions: one primary CTA, the rest secondary, on one row that
+ *      wraps gracefully instead of orphaning Cancel. */
+.billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.billing-actions .primary-button { order: 0; }
+.billing-actions .primary-button ~ .primary-button {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.billing-actions .billing-cancel { margin-left: auto; }
+
+/* 39 — Settings amber limit callouts get breathing room. */
+.settings-grid .warn-callout,
+.usage-warning,
+.plan-limit-callout { line-height: 1.5; }
+
+/* 40 — Distributed rank controls sit with the panel, not floating detached. */
+.rank-band-area .analysis-controls,
+.analysis-header .analysis-controls { gap: 8px; }
+
+/* 31 — Rail hover is a quiet surface raise, distinct from the green active
+ *      state (hover was rendering identical to active). */
+.tab-button:hover:not(.active),
+:root[data-theme="dark"] .tab-button:hover:not(.active) {
+  border-color: transparent;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.tab-button:hover:not(.active) svg,
+:root[data-theme="dark"] .tab-button:hover:not(.active) svg {
+  color: var(--text-2);
+}
+
+/* 32 — Chart scale/Y-auto toggles take the system 6px radius (were pills). */
+.chart-log-toggle,
+.chart-yauto-toggle,
+.chart-y-toggle {
+  border-radius: var(--radius-sm) !important;
+}
+.chart-log-toggle.active,
+.chart-yauto-toggle.active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 30 — Visual-bug nitpick pass: design-system discipline.
+ *      green stays reserved for live/best; informational state is blue/neutral. */
+
+/* INFO severity pill — blue, not live-green. */
+.pill.info,
+:root[data-theme="dark"] .pill.info {
+  border-color: rgba(77, 163, 255, 0.35);
+  background: var(--info-soft, rgba(77, 163, 255, 0.13));
+  color: var(--info);
+}
+
+/* Neutral timeline dot (Created and other non-severity events were blue). */
+.pd-dot--neutral { background: var(--dim); }
+
+/* Run-detail KPI deltas are informational — neutral, not green/red.
+ * The arrow glyph carries direction; green is for the explicit best marker. */
+.pd-kpi-delta.up,
+.pd-kpi-delta.down,
+.pd-kpi-delta.flat { color: var(--muted); }
+
+/* Compact tables (datasets etc.): uppercase-mono heads on a tokenized
+ * surface, like every other Instrument data table. */
+.compact-head {
+  background: var(--surface-soft);
+}
+.compact-head span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+
+/* Legacy panel heads were Archivo prose; bring them to the uppercase-mono
+ * micro-label convention used across the refactor. Scoped to dashboard panels. */
+.tab-pane .panel-head h2,
+.tab-pane .panel-head h3,
+.tab-pane .drawer-head h2 {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tab-pane .panel-head h2 svg,
+.tab-pane .panel-head h3 svg { color: var(--muted); }
+
+/* Imports stepper + copy action: green only marks completion of the LIVE/best
+ * sense — the stepper progress and a generic copy button are neutral. */
+.imports-command,
+.imports-copy {
+  border-color: var(--line-strong);
+  color: var(--muted);
+  background: transparent;
+}
+.imports-command:hover,
+.imports-copy:hover { border-color: var(--dim); color: var(--text); }
+
+/* 29 — API surface: HTTP method is a neutral mono tag (green = live/best
+ *      only), and endpoint descriptions are body copy, not micro-labels. */
+.api-row span {
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font: 600 11px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+}
+.api-row small {
+  font: 500 12px/1.4 var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+/* 11 — Chart furniture: axis type is mono micro-labeling. */
+.tick-label {
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}
+
+.axis-label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}

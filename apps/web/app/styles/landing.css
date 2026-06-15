@@ -166,8 +166,8 @@
 }
 
 .secondary-link:hover {
-  border-color: #b9c5d0;
-  background: #f7f9fb;
+  border-color: #c8ccbc;
+  background: #f6f7f3;
 }
 
 .provider-status {
@@ -377,7 +377,7 @@
 .sdk-preview {
   gap: 8px;
   grid-column: span 2;
-  color: #223142;
+  color: #22261d;
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -549,7 +549,7 @@
   overflow: auto;
   border: 1px solid var(--line-soft);
   border-radius: var(--control-radius);
-  background: #0f172a;
+  background: #171a14;
   color: #d8f5f8;
   padding: 10px;
   font-size: 12px;

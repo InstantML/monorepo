@@ -13,7 +13,9 @@ import {
 import { usePathname } from "next/navigation";
 import {
   ChevronLeft,
+  Copy,
   FileText,
+  LayoutTemplate,
   Plus,
   Redo2,
   Sparkles,
@@ -21,7 +23,7 @@ import {
   Undo2,
 } from "lucide-react";
 
-import { ApiClient, isAbortError } from "../../../src/api.js";
+import { ApiClient, ApiError, isAbortError } from "../../../src/api.js";
 import {
   createReport,
   deleteReport,
@@ -31,6 +33,10 @@ import {
   reportMarkdownUrl,
   rotateReportShareToken,
 } from "../../../src/reports-api.js";
+import {
+  duplicateReportPayload,
+  experimentReadoutTemplate,
+} from "../../../src/report-templates.js";
 import { PageHead } from "../ui/page-head";
 import { ReportEditor } from "./report-editor";
 import { AutoSavePill } from "./auto-save-pill";
@@ -84,6 +90,7 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
   const [activeReport, setActiveReport] = useState<ReportRecord | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unsupported, setUnsupported] = useState(false);
   const [autoSave, setAutoSave] = useState<AutoSaveStatus>({ state: "idle" });
 
   // Per-editor auto-save scheduler. Recreated each time we open a new
@@ -120,8 +127,16 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
     try {
       const { reports } = await listReports(api);
       setSummaries(reports);
+      setUnsupported(false);
     } catch (loadError) {
-      setError(messageFromError(loadError));
+      // A 404 on the collection means this backend doesn't serve reports at
+      // all (route not mounted) — degrade quietly instead of alarming.
+      if (loadError instanceof ApiError && loadError.status === 404) {
+        setUnsupported(true);
+        setSummaries([]);
+      } else {
+        setError(messageFromError(loadError));
+      }
     } finally {
       setBusy(false);
     }
@@ -252,41 +267,86 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
     void loadReport(mode.reportId);
   }, [mode, loadReport]);
 
-  const handleCreate = useCallback(async () => {
-    if (!canEditReports) {
-      setError("Report editing is available to workspace writers.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), CREATE_REPORT_TIMEOUT_MS);
-    try {
-      const created = await createReport(
-        api,
-        {
-          title: "Untitled report",
-          visibility: "private",
-        },
-        {
-          signal: controller.signal,
-        },
-      );
-      if (created) {
-        await loadList();
-        openReport(created.id, { autoFocus: true });
+  // Body matches the server's CreateReportRequest. Kept structurally loose
+  // (plain strings / unknown blocks) because the payload may come from the
+  // pure-JS template module and goes straight to the untyped JS API helper.
+  const createAndOpen = useCallback(
+    async (body: {
+      title: string;
+      description?: string;
+      visibility: string;
+      blocks?: unknown[];
+    }) => {
+      if (!canEditReports) {
+        setError("Report editing is available to workspace writers.");
+        return;
       }
-    } catch (createError) {
-      setError(
-        isAbortError(createError)
-          ? "Creating the report timed out. Try again in a moment."
-          : messageFromError(createError),
-      );
-    } finally {
-      window.clearTimeout(timeout);
-      setBusy(false);
-    }
-  }, [api, canEditReports, loadList]);
+      setBusy(true);
+      setError(null);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), CREATE_REPORT_TIMEOUT_MS);
+      try {
+        const created = await createReport(api, body, {
+          signal: controller.signal,
+        });
+        if (created) {
+          await loadList();
+          openReport(created.id, { autoFocus: true });
+        }
+      } catch (createError) {
+        if (createError instanceof ApiError && createError.status === 404) {
+          setUnsupported(true);
+        } else {
+          setError(
+            isAbortError(createError)
+              ? "Creating the report timed out. Try again in a moment."
+              : messageFromError(createError),
+          );
+        }
+      } finally {
+        window.clearTimeout(timeout);
+        setBusy(false);
+      }
+    },
+    [api, canEditReports, loadList, openReport],
+  );
+
+  const handleCreate = useCallback(async () => {
+    await createAndOpen({ title: "Untitled report", visibility: "private" });
+  }, [createAndOpen]);
+
+  // RP3b: "Start from template" — an Experiment readout starter with
+  // Summary / Results (live PanelGrid) / Next steps sections prefilled.
+  const handleCreateFromTemplate = useCallback(async () => {
+    await createAndOpen(experimentReadoutTemplate());
+  }, [createAndOpen]);
+
+  // RP3a: duplicate an existing report as "<title> (copy)" with the same
+  // description and blocks, then open the copy like the create flow does.
+  const handleDuplicate = useCallback(
+    async (reportId: string) => {
+      if (!canEditReports) {
+        setError("Report editing is available to workspace writers.");
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        const source = await fetchReport(api, reportId);
+        if (!source) throw new Error("Could not load the report to duplicate.");
+        const created = await createReport(api, duplicateReportPayload(source));
+        if (created) {
+          await loadList();
+          openReport(created.id);
+        }
+      } catch (duplicateError) {
+        setError(messageFromError(duplicateError));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [api, canEditReports, loadList, openReport],
+  );
 
   const handleEditorChange = useCallback(
     (
@@ -439,20 +499,20 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
 
   return (
     <>
-      <PageHead
-        eyebrow="Workspace"
-        title="Reports"
-        emphasis="for collaboration"
-        lede="Block-based documents · live PanelGrids · shareable recaps"
-      />
+      <PageHead eyebrow="Workspace" title="Reports" />
       {error ? <div className="report-error" role="alert">{error}</div> : null}
+      {/* The unsupported state is conveyed by the empty-state card below (which
+          is unsupported-aware) — no separate banner, to avoid duplicate copy. */}
       {mode.kind === "list" ? (
         <ReportsListPane
           summaries={summaries}
           busy={busy}
+          unsupported={unsupported}
           onOpen={(reportId) => openReport(reportId)}
           onCreate={() => void handleCreate()}
-          canEditReports={canEditReports}
+          onCreateFromTemplate={() => void handleCreateFromTemplate()}
+          onDuplicate={(reportId) => void handleDuplicate(reportId)}
+          canEditReports={canEditReports && !unsupported}
           onDelete={(reportId, title) => {
             if (!canEditReports) return;
             if (!window.confirm(`Delete "${title || "Untitled report"}"? This cannot be undone.`)) {
@@ -583,16 +643,22 @@ function ReportToolbar({
 function ReportsListPane({
   summaries,
   busy,
+  unsupported = false,
   canEditReports,
   onOpen,
   onCreate,
+  onCreateFromTemplate,
+  onDuplicate,
   onDelete,
 }: {
   summaries: ReportSummary[];
   busy: boolean;
+  unsupported?: boolean;
   canEditReports: boolean;
   onOpen: (reportId: string) => void;
   onCreate: () => void;
+  onCreateFromTemplate: () => void;
+  onDuplicate: (reportId: string) => void;
   onDelete: (reportId: string, title: string) => void;
 }) {
   return (
@@ -608,6 +674,19 @@ function ReportsListPane({
           </div>
           {summaries.length > 0 ? (
             <div className="report-home__actions">
+              <button
+                type="button"
+                className="report-pane__icon-button"
+                onClick={() => onCreateFromTemplate()}
+                disabled={busy || !canEditReports}
+                title={
+                  canEditReports
+                    ? "Start from the Experiment readout template"
+                    : "Report editing requires workspace write access"
+                }
+              >
+                <LayoutTemplate size={14} aria-hidden="true" /> Start from template
+              </button>
               <button
                 type="button"
                 className="report-pane__icon-button"
@@ -629,17 +708,28 @@ function ReportsListPane({
             <div className="report-list__empty">
               <FileText size={22} aria-hidden="true" />
               <strong>No reports yet</strong>
-              <span>{canEditReports ? "Create the first writeup for this workspace." : "This workspace is read-only. Shared reports will appear here."}</span>
+              <span>{unsupported ? "This backend doesn't serve reports yet. Existing writeups will appear here once it does." : canEditReports ? "Create the first writeup for this workspace." : "This workspace is read-only. Shared reports will appear here."}</span>
               {canEditReports ? (
-                <button
-                  type="button"
-                  className="report-pane__icon-button"
-                  onClick={() => onCreate()}
-                  disabled={busy}
-                  title="Create report"
-                >
-                  <Plus size={14} aria-hidden="true" /> Create report
-                </button>
+                <div className="report-list__empty-actions">
+                  <button
+                    type="button"
+                    className="report-pane__icon-button"
+                    onClick={() => onCreate()}
+                    disabled={busy}
+                    title="Create report"
+                  >
+                    <Plus size={14} aria-hidden="true" /> Create report
+                  </button>
+                  <button
+                    type="button"
+                    className="report-pane__icon-button"
+                    onClick={() => onCreateFromTemplate()}
+                    disabled={busy}
+                    title="Start from the Experiment readout template"
+                  >
+                    <LayoutTemplate size={14} aria-hidden="true" /> Start from template
+                  </button>
+                </div>
               ) : null}
             </div>
           ) : (
@@ -680,6 +770,16 @@ function ReportsListPane({
                     </span>
                   </div>
                   <div className="report-list__actions">
+                    <button
+                      type="button"
+                      className="report-pane__icon-button"
+                      onClick={() => onDuplicate(summary.id)}
+                      aria-label={`Duplicate report ${summary.title || "Untitled report"}`}
+                      disabled={busy || !canEditReports}
+                      title={canEditReports ? "Duplicate report" : "Report editing requires workspace write access"}
+                    >
+                      <Copy size={13} aria-hidden="true" />
+                    </button>
                     <button
                       type="button"
                       className="report-pane__icon-button report-pane__icon-button--danger"

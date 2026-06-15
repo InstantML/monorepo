@@ -265,6 +265,16 @@ export function formatNumber(value, digits = 2) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
+// Metric values span ~1e-8 (learning rates) to ~1e6 (token counts). Fixed
+// decimal rounding turns the small end into a misleading "0", so fall back to
+// scientific notation below the rounding threshold.
+export function formatMetricValue(value, digits = 3) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
+  const num = Number(value);
+  if (num !== 0 && Math.abs(num) < 10 ** -digits) return num.toExponential(2);
+  return num.toLocaleString(undefined, { maximumFractionDigits: digits });
+}
+
 function numericDesc(left, right) {
   const leftValue = left ?? Number.NEGATIVE_INFINITY;
   const rightValue = right ?? Number.NEGATIVE_INFINITY;

@@ -13,7 +13,6 @@ export const DASHBOARD_TAB_IDS = [
   "datasets",
   "imports",
   "artifacts",
-  "checkpoints",
   "reports",
   "settings",
   "api",
@@ -21,7 +20,14 @@ export const DASHBOARD_TAB_IDS = [
 
 const DASHBOARD_TABS = new Set(DASHBOARD_TAB_IDS);
 const DASHBOARD_TAB_ALIASES = new Map([
-  ["models", "checkpoints"],
+  // CK2: the standalone Checkpoints tab merged into Run Detail (which owns
+  // download/resume/fork and the lineage rows). Old links keep working.
+  ["models", "detail"],
+  ["checkpoints", "detail"],
+  // The Alerts tab is labelled "Run Health" in the rail, so the friendly slug
+  // a user would guess from that label resolves to the same page.
+  ["run-health", "alerts"],
+  ["health", "alerts"],
 ]);
 const SAFE_NEXT_PREFIXES = ["/dashboard", "/onboarding"];
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;

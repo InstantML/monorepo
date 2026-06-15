@@ -13635,6 +13635,14 @@
               "null"
             ]
           },
+          "share_token_issued_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the current share token was minted (S6). Tokens older than the\nconfigured TTL stop resolving. `None` on rows persisted before this\nfield existed — those legacy tokens stay valid until rotated."
+          },
           "title": {
             "type": "string"
           },
