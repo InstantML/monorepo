@@ -6,7 +6,6 @@ import {
   Database,
   FileBarChart,
   GitCompare,
-  LayoutDashboard,
   Network,
   Package,
   Settings,
@@ -17,21 +16,18 @@ import {
 import { tabFromPath, tabToPath } from "../src/routes.js";
 import type { TabId } from "./dashboard-types";
 
-// "overview" is a shell-level surface (route /dashboard/overview) that is not
-// part of the canonical TabId set in src/routes.js. The shell widens the tab
-// id space locally; routes.js stays the source of truth for the legacy ids.
-export type ShellTabId = TabId | "overview";
-
-export const OVERVIEW_PATH = "/dashboard/overview";
+// ShellTabId once widened the canonical TabId set with the "overview" cockpit
+// surface; that page was removed, so the shell id space is now exactly TabId.
+// The alias is kept so call sites don't churn.
+export type ShellTabId = TabId;
 
 // Rail groups follow the reimagine mocks (docs/design/reimagine/shell.js):
-// OPERATE leads with Overview, DATA holds the corpus surfaces, SYSTEM holds
+// OPERATE leads with Runs, DATA holds the corpus surfaces, SYSTEM holds
 // health/reporting/admin. Ids are unchanged; only grouping and order moved.
 export const navGroups = [
   {
     id: "operate",
     items: [
-      { id: "overview", label: "Overview", icon: LayoutDashboard },
       { id: "runs", label: "Runs", icon: Activity },
       { id: "metrics", label: "Metrics", icon: BarChart3 },
       { id: "compare", label: "Compare", icon: GitCompare },
@@ -64,28 +60,19 @@ export const tabs = navGroups.flatMap((group) => [...group.items]);
 // is still a valid tab/route — keep it in the id set so isTabId stays correct.
 const tabIds = new Set<string>([...tabs.map((tab) => tab.id), "detail"]);
 
-// Canonical routes.js tabs only — excludes "overview", which routes through
-// its own static segment (app/dashboard/overview/page.tsx), so the [[...tab]]
-// catch-all never needs to resolve it.
 export function isTabId(value: string): value is TabId {
-  return value !== "overview" && tabIds.has(value);
+  return tabIds.has(value);
 }
 
 export function isShellTabId(value: string): value is ShellTabId {
   return tabIds.has(value);
 }
 
-export function isOverviewPath(pathname: string): boolean {
-  const urlPath = String(pathname ?? "").split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
-  return urlPath === OVERVIEW_PATH || urlPath.startsWith(`${OVERVIEW_PATH}/`);
-}
-
 export function shellTabPath(tab: ShellTabId): string {
-  return tab === "overview" ? OVERVIEW_PATH : tabToPath(tab);
+  return tabToPath(tab);
 }
 
 export function shellTabFromPath(pathname: string): ShellTabId {
-  if (isOverviewPath(pathname)) return "overview";
   const resolved = tabFromPath(pathname);
   return isTabId(resolved) ? resolved : "runs";
 }

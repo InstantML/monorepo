@@ -28,7 +28,6 @@ import { AccountWorkspaceMenu, DashboardTopbar, OPEN_PROJECT_PICKER_EVENT } from
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { compactCount } from "./chrome/ticker";
 import { DatasetsTabPane } from "./datasets/tab-pane";
-import { OverviewTabPane } from "./overview/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
 import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
@@ -40,7 +39,7 @@ import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { useFocusTrap } from "./ui/use-focus-trap";
-import { isOverviewPath, isTabId, OVERVIEW_PATH, shellTabFromPath, shellTabPath, tabs } from "../dashboard-config";
+import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
 import {
   artifactTotalsForRuns,
@@ -780,14 +779,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   // set. Always fetch its series on the detail tab so the curve renders instead
   // of the empty "select runs" state.
   const seriesFetchRuns = useMemo(() => {
-    // Overview charts the running runs regardless of selection — that is the
-    // page's whole premise ("eval/return_mean — active runs").
-    if (activeTab === "overview") return runningRuns.slice(0, MAX_SELECTED_RUNS);
     if (activeTab === "detail" && primaryRun && !metricSeriesRuns.some((run) => run.id === primaryRun.id)) {
       return [primaryRun, ...metricSeriesRuns].slice(0, MAX_SELECTED_RUNS);
     }
     return metricSeriesRuns;
-  }, [activeTab, metricSeriesRuns, primaryRun?.id, runningRuns]);
+  }, [activeTab, metricSeriesRuns, primaryRun?.id]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
@@ -1665,9 +1661,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       const legacyPath = pathFromLegacyHash(window.location.hash);
       if (legacyPath) {
         window.history.replaceState(null, "", legacyPath + search);
-      } else if (!isOverviewPath(window.location.pathname)) {
-        // Overview routes through its own static segment and is not in the
-        // canonical tab set — leave its path untouched.
+      } else {
         const canonicalPath = canonicalDashboardPath(window.location.pathname);
         if (window.location.pathname !== canonicalPath) window.history.replaceState(null, "", canonicalPath + search);
       }
@@ -1942,7 +1936,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     const isLiveRefresh = signature === seriesSignatureRef.current;
     seriesSignatureRef.current = signature;
     async function loadMetricSeries() {
-      const shouldLoad = activeTab === "metrics" || activeTab === "overview" || (activeTab === "detail" && runWorkspaceTab === "data");
+      const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
       const runsForFetch = seriesFetchRuns;
       if (!shouldLoad || !metricKey || !runsForFetch.length) {
         if (hasSeriesRef.current) setSeries([]);
@@ -3774,23 +3768,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
           project={project}
           theme={theme}
         />
-
-        <section className={`tab-pane ${activeTab === "overview" ? "active" : ""}`} aria-label="Overview">
-          {activeTab === "overview" ? (
-            <OverviewTabPane
-              alertRows={alertRows}
-              initialLoadDone={initialLoadDone}
-              metricKey={metricKey}
-              onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
-              onSelectTab={selectTab}
-              overview={overview}
-              project={project}
-              runningRuns={runningRuns}
-              series={displaySeries}
-              sparkValues={tickerSparkValues}
-            />
-          ) : null}
-        </section>
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
           {activeTab === "runs" ? (

@@ -731,9 +731,7 @@ export function DashboardTopbar({
   const viewActionsTriggerRef = useRef<HTMLButtonElement>(null);
   // Run Detail is reached *through* a run — its filters are meaningless there,
   // so it uses the admin shell (no workbar), matching the run-detail mock.
-  // Overview is the composed cockpit page: the mock shows only the telemetry
-  // ticker above it, so the run filter bar stays hidden there too.
-  const showWorkbar = activeTab !== "detail" && activeTab !== "overview";
+  const showWorkbar = activeTab !== "detail";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
   const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
   const workbarInert = compactFilters && !mobileFiltersOpen;

@@ -45,16 +45,17 @@ test("number-key tab navigation exists and respects rail order", () => {
   assert.ok(editableGuard > -1 && numberBranch > editableGuard, "editable-element guard must run before number-key navigation");
 });
 
-// Mockup parity (2026-06): nav regrouped to OPERATE / DATA / SYSTEM with an
-// Overview landing tab; ids unchanged so routes/deep-links survive.
+// Mockup parity (2026-06): nav regrouped to OPERATE / DATA / SYSTEM; ids
+// unchanged so routes/deep-links survive. The Overview landing tab was later
+// removed (OPERATE now leads with Runs), so it must be absent from the config.
 test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", () => {
   const configSrc = read("app/dashboard-config.tsx");
   assert.match(configSrc, /id: "operate"/);
   assert.match(configSrc, /id: "data"/);
   assert.match(configSrc, /id: "system"/);
-  assert.match(configSrc, /id: "overview", label: "Overview"/);
+  assert.doesNotMatch(configSrc, /id: "overview"/);
   assert.match(configSrc, /id: "alerts", label: "Run Health"/);
-  for (const id of ["overview", "runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "settings", "api"]) {
+  for (const id of ["runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "settings", "api"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
   // CK2: the Checkpoints tab merged into Run Detail; its nav slot is gone but
