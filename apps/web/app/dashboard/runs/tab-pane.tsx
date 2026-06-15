@@ -7,13 +7,11 @@ import { ChevronLeft, ChevronRight, LayoutGrid, Table2, X } from "lucide-react";
 import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
 import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
-import { ProjectsOverview } from "./projects-overview";
 import { RunsCommandbar } from "./runs-commandbar";
 import { RunsTable } from "./runs-table";
 import { RunsWorkspace } from "./runs-workspace";
 import { WorkspacePanelCard } from "./workspace-panel-card";
 import { fieldLabel } from "../../../src/dashboard-panels.js";
-import { shouldShowProjectsOverview } from "../../../src/projects-overview.js";
 import type { HistogramTimelineState, Overview, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
@@ -232,12 +230,6 @@ export function RunsTabPane({
     localStorage.setItem("instantml:next:runs-view", view);
   }
   const showEmptyCallout = initialLoadDone && !dashboardLoading && summaryTotal === 0 && projects.length === 0 && !project && !query && !status;
-  // Audit 3.1: with no project scope, land on the explicit project overview
-  // instead of a cross-project workspace. "Browse all runs" opts back into the
-  // mixed view for this visit; picking a project re-arms the overview.
-  const [browseAllRuns, setBrowseAllRuns] = useState(false);
-  const showProjectsOverview = initialLoadDone
-    && shouldShowProjectsOverview({ browseAllRuns, project, projects, query, status });
   const nonCurrentMemberships = orgMemberships.filter((m) => !m.is_current);
   // The sticky run rail and panel toolbar sit directly below the sticky filter
   // bar, offset by --runs-filter-sticky-height. That filter wraps to different
@@ -294,18 +286,6 @@ export function RunsTabPane({
   return (
     <>
       <PageHead eyebrow="Workspace" title="Runs" />
-      {showProjectsOverview ? (
-        <ProjectsOverview
-          metricKey={metricKey}
-          onBrowseAllRuns={() => setBrowseAllRuns(true)}
-          onSelectProject={(name) => {
-            setBrowseAllRuns(false);
-            onSelectProject(name);
-          }}
-          projects={projects}
-          totalRuns={summaryTotal}
-        />
-      ) : (
       <>
       {/* The run filter row (status / search / sort / saved views) lives in the
           Runs tab, between the page head and the metric/Runs-actions row. */}
@@ -363,16 +343,6 @@ export function RunsTabPane({
           selectedRunExportTitle={selectedRunExportTitle}
           tableColumns={tableColumns}
         />
-        {!project && browseAllRuns && projects.length > 1 ? (
-          <button
-            className="secondary compact-button runs-back-to-projects"
-            onClick={() => setBrowseAllRuns(false)}
-            title="Back to the project cards"
-            type="button"
-          >
-            ← All projects
-          </button>
-        ) : null}
         <div className="runs-view-toggle" role="group" aria-label="Runs view">
           <button
             aria-pressed={runsView === "panels"}
@@ -480,7 +450,6 @@ export function RunsTabPane({
       />
       )}
       </>
-      )}
       {editingPanelContext ? (
         <PanelEditDrawer
           categoricalFieldOptions={workspaceCategoricalFieldOptions}
