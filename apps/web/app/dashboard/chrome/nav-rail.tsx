@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 import type { MouseEvent, ReactNode } from "react";
 
-import { InstantMlMark } from "../../instantml-mark";
 import { navGroups, shellTabPath } from "../../dashboard-config";
 import type { ShellTabId } from "../../dashboard-config";
 
@@ -103,12 +102,6 @@ export function DashboardNav({
         <button aria-label="Close navigation" className="icon-button framed" onClick={onMobileClose} tabIndex={compactTabIndex} type="button">
           <X size={15} />
         </button>
-      </div>
-      {/* Rail brand block (desktop, per shell mock). The PROJECT card was removed
-          — the workbar's project filter is the single project control. */}
-      <div className="rail-brand" aria-hidden={hiddenCompactNav ? true : undefined}>
-        <span className="rail-brandmark"><InstantMlMark size={13} /></span>
-        <span className="rail-brand-name">InstantML</span>
       </div>
       <div className="tab-scroll">
         {navGroups.map((group) => (

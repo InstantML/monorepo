@@ -29,23 +29,45 @@
     min-height: 0;
     padding: 6px 16px;
     border-bottom: 1px solid var(--line);
-    /* The base brandbar is a grid that pins the (now-hidden) brand cell left and
-     * the actions into a left column. With only the account cluster surviving on
-     * desktop, lay it out as a flex row aligned to the right edge. */
+    /* Global chrome row: logo + project selector on the left, account/search
+     * cluster on the right. */
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    gap: 12px;
   }
-  .topbar .brand-cell,
-  .topbar .brand-wordmark,
+  /* Logo + wordmark, left. */
+  .topbar .brand-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    text-decoration: none;
+  }
+  .topbar .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+  }
+  .topbar .brand-wordmark {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .topbar .brand-wordmark__accent { color: var(--accent); }
+  /* Project selector, left (after the logo). */
+  .topbar .brandbar-project { flex: none; }
+  /* The org/workspace label, breadcrumb, and mobile menu button are owned by the
+   * account menu + page-head now, so they stay hidden on desktop. */
   .topbar .org-switcher-label,
   .topbar .brandbar .breadcrumb,
   .topbar .mobile-menu-button {
     display: none;
   }
-  /* Push the surviving account/search actions to the right. The ⌘K search button
-   * is the primary search affordance now that the ticker is gone; the plan chip
-   * stays hidden on desktop (it's reachable from Settings). */
+  /* Push the account/search actions to the right. The ⌘K search button is the
+   * primary search affordance; the plan chip stays hidden (reachable from Settings). */
   .topbar .brandbar-row { margin-left: auto; }
   .topbar .brandbar-actions { margin-left: auto; }
   .topbar .plan-usage-badge {
@@ -60,45 +82,15 @@
   }
 
   /* ── Rail brand + project card (Instrument layout) ── */
-  /* The base .tabs rail is a two-row grid (minmax(0,1fr) auto) tuned for the old
-     icon-only nav. The Instrument rail adds a brand block and PROJECT card above
-     the scroller, and the grid squeezed the brand row to its 1fr min — collapsing
-     it so the 22px brandmark overflowed down onto the project card. Lay the rail
-     out as a simple flex column: brand + project size to content, the tab list
-     takes the remaining height and scrolls, and .rail-foot (margin-top:auto)
-     stays pinned to the bottom. */
+  /* The rail is a simple flex column: the tab list takes the remaining height
+     and scrolls, and .rail-foot (margin-top:auto) stays pinned to the bottom.
+     (The brand block moved to the topbar.) */
   .tabs {
     display: flex;
     flex-direction: column;
   }
   .tab-scroll {
     flex: 1 1 auto;
-  }
-  .rail-brand {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 16px 14px;
-  }
-  .rail-brandmark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    background: var(--accent-soft);
-    border: 1px solid var(--accent-line);
-    border-radius: var(--radius-sm);
-    color: var(--accent);
-    flex: none;
-  }
-  .rail-brandmark svg { display: block; }
-  .rail-brand-name {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.02em;
-    color: var(--text);
   }
 
   /* ── Nav group labels always visible (mockup keeps them in the pinned rail) ── */

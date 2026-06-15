@@ -2549,29 +2549,6 @@ button.compare-row-head.active {
   max-width: 120px;
   opacity: 1;
 }
-/* Brand wordmark collapses with the rail. In the 56px icon state only the
- * brandmark shows (centered like the tab icons); the wordmark is hidden so it
- * can't overflow the rail and cover the page header. It reappears when the rail
- * expands (pinned, hover, or keyboard focus), matching the .tab-label behavior
- * above. */
-.shell:not(.nav-pinned) .rail-brand {
-  justify-content: center;
-  padding-left: 0;
-  padding-right: 0;
-}
-.shell:not(.nav-pinned) .rail-brand-name {
-  display: none;
-}
-.shell:not(.nav-pinned).nav-auto-open .rail-brand,
-.shell:not(.nav-pinned) .tabs:has(:focus-visible) .rail-brand {
-  justify-content: flex-start;
-  padding-left: 16px;
-  padding-right: 16px;
-}
-.shell:not(.nav-pinned).nav-auto-open .rail-brand-name,
-.shell:not(.nav-pinned) .tabs:has(:focus-visible) .rail-brand-name {
-  display: block;
-}
 .tab-button {
   min-height: 36px;
   border: 0;

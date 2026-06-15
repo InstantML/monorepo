@@ -842,37 +842,25 @@ export function DashboardTopbar({
           }}
         >
           <span className="brand-mark" aria-hidden="true">
-            <InstantMlMark size={24} />
+            <InstantMlMark size={22} />
           </span>
-        </a>
-        <div className="brandbar-row">
-          <span className="brand-wordmark" aria-label="InstantML">
+          <span className="brand-wordmark" aria-hidden="true">
             instant<span className="brand-wordmark__accent">ml</span>
           </span>
-          <span className="org-switcher-label" aria-label="Workspace">{workspaceName || "Workspace"}</span>
+        </a>
+        {/* Project is global context (applies to every tab), so it lives in the
+            topbar beside the logo and the workspace switcher. */}
+        <div className="brandbar-project">
+          <CustomSelect
+            id="project-filter"
+            label="Project"
+            value={project}
+            onChange={onProject}
+            options={[{ value: "", label: "All projects" }, ...projects.map((item) => ({ value: item, label: item }))]}
+          />
+        </div>
+        <div className="brandbar-row">
           <nav className="breadcrumb" aria-label="Breadcrumb">
-            {showWorkbar ? (
-              <button
-                className="crumb crumb-link crumb-project"
-                onClick={() => {
-                  // 3.4: the breadcrumb project is a live control — it reveals
-                  // the filter bar and opens the (single) project selector.
-                  if (compactFilters) setMobileFiltersOpen(true);
-                  else setDesktopFiltersCollapsed(false);
-                  window.requestAnimationFrame(() => {
-                    const trigger = document.getElementById("project-filter")?.closest(".custom-select-control")?.querySelector(".select-trigger");
-                    if (trigger instanceof HTMLElement) trigger.click();
-                  });
-                }}
-                title="Change project"
-                type="button"
-              >
-                {project || "All projects"}
-              </button>
-            ) : (
-              <span className="crumb">{project || "All projects"}</span>
-            )}
-            <span className="sep" aria-hidden="true">/</span>
             {activeTab === "detail" ? (
               <>
                 <a aria-label="Back to Runs" className="crumb crumb-link" href={tabToPath("runs")} onClick={(event) => { event.preventDefault(); onSelectTab("runs"); }}>Runs</a>
@@ -942,7 +930,6 @@ export function DashboardTopbar({
 
       {showWorkbar ? (
         <div className="workbar" role="toolbar" aria-label="Run filters" aria-hidden={workbarInert ? true : undefined} inert={workbarInert ? true : undefined}>
-          <CustomSelect id="project-filter" label="Project" value={project} onChange={onProject} options={[{ value: "", label: "All projects" }, ...projects.map((item) => ({ value: item, label: item }))]} />
           <CustomSelect
             id="status-filter"
             label="Status"

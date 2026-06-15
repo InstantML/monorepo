@@ -13,7 +13,8 @@ function read(relPath) {
 
 test("dashboard workbar dropdown menus are not clipped by the filter row", () => {
   const topbarSrc = read("app/dashboard/chrome/topbar.tsx");
-  assert.match(topbarSrc, /<CustomSelect id="project-filter"/);
+  // Project is a global control in the topbar; status stays in the run filter row.
+  assert.match(topbarSrc, /id="project-filter"/);
   assert.match(topbarSrc, /id="status-filter"/);
 
   const css = read("app/styles/overhaul.css");
@@ -81,8 +82,9 @@ test("selected run export is natively disabled when validation has feedback", ()
   assert.match(commandbarSrc, /selectedRunExportDisabled \? <span className="export-selected-runs-help">\{selectedRunExportTitle\}<\/span> : null/);
 });
 
-test("dashboard breadcrumb labels the empty project scope as all projects", () => {
+test("topbar project selector labels the empty project scope as all projects", () => {
   const topbarSrc = read("app/dashboard/chrome/topbar.tsx");
-  assert.match(topbarSrc, /\{project \|\| "All projects"\}/);
+  // The empty scope is the project select's first option.
+  assert.match(topbarSrc, /value: "", label: "All projects"/);
   assert.doesNotMatch(topbarSrc, /\{project \|\| "demo"\}/);
 });
