@@ -202,24 +202,27 @@ button:focus-visible,
   scrollbar-width: thin;
 }
 
-/* 10 — Nav rail items are mono, like every other label in the system. */
+/* 10 — Nav rail items are navigation prose, not telemetry → Archivo sans.
+ *      Mono is reserved for data (values, ids, units); a nav label is neither. */
 .tab-button {
-  font-family: var(--font-mono);
-  font-size: 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0;
 }
 
-/* 12 — Section heads are bezel labels: uppercase mono micro-labels, like the
- *      panel heads in the reference mockups. Icons inside keep their size. */
+/* 12 — Section heads are prose headings → Archivo sans, sentence case.
+ *      Headings are not data, so they don't take the mono micro-label
+ *      treatment; that stays for true labels (units, table columns, chips). */
 .detail-section h3,
 .workspace-panel-head h3,
 .drawer-group h3,
 .shortcut-group h3,
 .lineage-children-head h3 {
-  font: 500 11px/1.3 var(--font-mono);
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--muted);
+  font: 600 12.5px/1.3 var(--font-sans);
+  letter-spacing: var(--tracking-display);
+  text-transform: none;
+  color: var(--text-2);
 }
 
 /* 13 — A running run is live: its timeline dot reads signal, not info-blue. */
@@ -228,12 +231,12 @@ button:focus-visible,
   background: var(--accent);
 }
 
-/* Disclosure headings ("Raw configuration", "Latest metrics") match h3 bezels. */
+/* Disclosure headings ("Raw configuration", "Latest metrics") match h3 headings. */
 .detail-section summary {
-  font: 500 11px/1.3 var(--font-mono);
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--muted);
+  font: 600 12.5px/1.3 var(--font-sans);
+  letter-spacing: var(--tracking-display);
+  text-transform: none;
+  color: var(--text-2);
 }
 
 /* 15 — Status strips are quiet info banners, not bare text. */
@@ -531,17 +534,18 @@ button:disabled,
   text-transform: uppercase;
 }
 
-/* Legacy panel heads were Archivo prose; bring them to the uppercase-mono
- * micro-label convention used across the refactor. Scoped to dashboard panels. */
+/* Panel heads are prose titles → Archivo sans, sentence case. Mono is for the
+ * data inside the panel, not the panel's name; uppercase-mono titles made the
+ * whole product read like a terminal. Count badges + table columns stay mono. */
 .tab-pane .panel-head h2,
 .tab-pane .panel-head h3,
 .tab-pane .drawer-head h2 {
-  font-family: var(--font-mono);
-  font-size: 11px;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
   font-weight: 600;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--muted);
+  letter-spacing: var(--tracking-display);
+  text-transform: none;
+  color: var(--text);
 }
 .tab-pane .panel-head h2 svg,
 .tab-pane .panel-head h3 svg { color: var(--muted); }
