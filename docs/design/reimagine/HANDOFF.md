@@ -11,7 +11,7 @@ InstantML is a training-observability dashboard: run tables, metric charts,
 artifacts, health monitors. Instrument treats it as a precision instrument
 console — Spline Sans Mono carries every value/label/identifier, Archivo
 carries prose, green is reserved for live/best, and structure comes from
-hairlines on a warm graphite (dark, default) or warm paper (light) surface.
+hairlines on a warm paper (light, default) or warm graphite (dark) surface.
 
 Stack: Next.js 16 app router, plain CSS custom properties (no Tailwind/CSS-in-JS),
 hand-rolled SVG charts, Lucide icons, Clerk auth. Fonts load via `next/font`
