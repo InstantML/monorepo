@@ -654,8 +654,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [tableColumns, setTableColumns] = useState<TableColumns>(defaultTableColumns);
   const [pinnedMetrics, setPinnedMetrics] = useState<string[]>([]);
-  // The nav rail is always pinned (labeled); the collapse/pin control was removed.
-  const navPinned = true;
   const [navAutoOpen, setNavAutoOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -3684,7 +3682,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         />
       ) : null}
 
-      <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
+      <section className={`shell ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
         <DashboardNav
           activeTab={activeTab}
           compactNav={isMobile}
@@ -3694,7 +3692,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
           onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
-          pinned={navPinned}
           theme={theme}
         />
 
