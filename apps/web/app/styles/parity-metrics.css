@@ -336,6 +336,10 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  /* charts.css sets a global `table { table-layout: fixed }`, which would collapse
+     these width:1% numeric columns to ~10px and overlap the values. Restore auto
+     layout so Last/Min/Max/Best/Points size to their content. */
+  table-layout: auto;
 }
 .metrics-parity .mx-table th {
   font-family: var(--font-mono);
