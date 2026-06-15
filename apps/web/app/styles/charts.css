@@ -1316,7 +1316,7 @@ small {
 }
 
 .series-point {
-  stroke: #fff;
+  stroke: var(--chart-card-bg);
   stroke-width: 1;
   opacity: 0.78;
   cursor: crosshair;

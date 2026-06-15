@@ -338,7 +338,7 @@
 }
 
 .histogram-bar {
-  fill: #1b9c8f;
+  fill: var(--series-6);
   opacity: 0.56;
 }
 

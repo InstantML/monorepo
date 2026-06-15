@@ -144,6 +144,12 @@
 .select-trigger {
   justify-content: space-between;
   width: 170px;
+  /* Preferred width is 170px, but never exceed the wrapper: when the workbar
+     shrinks the .custom-select below 170px (narrow viewports), the trigger must
+     shrink with it and let .select-trigger-value ellipsize — otherwise the fixed
+     width overflows the wrapper and collides with the next control. */
+  max-width: 100%;
+  min-width: 0;
   height: 32px;
   min-height: 32px;
   border-color: var(--line);

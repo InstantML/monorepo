@@ -116,6 +116,7 @@
 }
 
 .imports-steps {
+  grid-column: 1 / -1;
   align-items: center;
   display: flex;
   gap: 0;
@@ -175,13 +176,13 @@
 }
 
 .imports-step.is-done .imports-step-marker {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--surface);
 }
 
 .imports-step.is-done:not(:last-child)::after {
-  background: var(--accent);
+  background: var(--line-strong);
 }
 
 .imports-step.is-current {

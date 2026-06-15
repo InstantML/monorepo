@@ -2,15 +2,15 @@
  * Self-contained, namespaced (.iml-*) so it never touches dashboard selectors
  * (.eyebrow / .brand-mark / .button-link are shared globally elsewhere).
  * Engineering-brutalism: dark-only, Bolt accent, mono eyebrows,
- * italic-serif emphasis, hairline borders, grid + glow. Tokens mirror
- * docs/design/assets/ui-overhaul-mocks/tokens.css. */
+ * italic-serif emphasis, hairline borders, grid + glow. Surface ramp mirrors
+ * the Instrument warm-graphite dark tokens (apps/web/app/styles/tokens.css). */
 
 .iml-auth,
 .iml-landing {
-  --bg:#080907; --bg-soft:#0a0c09; --surface:#0d0f15; --surface-2:#12141c;
-  --surface-3:#141712; --surface-hover:#1a1d28;
-  --line:#20241d; --line-soft:#1a1d17; --line-strong:#242937;
-  --text:#f4f6f0; --text-2:#c8ccbc; --muted:#8b9280; --faint:#8b9280; --dim:#5b6678;
+  --bg:#080907; --bg-soft:#0a0c09; --surface:#121511; --surface-2:#171a15;
+  --surface-3:#141712; --surface-hover:#181b16;
+  --line:#20241d; --line-soft:#1a1d17; --line-strong:#2e332a;
+  --text:#f4f6f0; --text-2:#c8ccbc; --muted:#8b9280; --faint:#8b9280; --dim:#79816d;
   --accent:#2be082; --accent-strong:#54f0a0; --accent-soft:rgba(43, 224, 130,.12);
   --accent-line:rgba(43, 224, 130,.32);
   --warm:#f0b43e; --warm-soft:rgba(224,176,122,.14);
@@ -49,14 +49,14 @@
 /* ── chrome ─────────────────────────────────────────────────────────────── */
 .iml-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;
   justify-content:space-between;gap:14px;height:var(--topbar-h);padding:0 18px;
-  border-bottom:1px solid var(--line);background:rgba(7,8,12,.86);
+  border-bottom:1px solid var(--line);background:rgba(8,9,7,.86);
   backdrop-filter:blur(10px) saturate(140%)}
 .iml-brand{display:flex;align-items:center;gap:10px;color:var(--text);
   font:700 14px/1 var(--f-display);letter-spacing:-.01em}
 .iml-mark{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:7px;
   border:1px solid var(--accent-line);color:var(--accent);
   background:linear-gradient(180deg,rgba(43, 224, 130,.12),rgba(43, 224, 130,.02));
-  --brand-mark-bg:#0d0f15}
+  --brand-mark-bg:#121511}
 .iml-mark .instantml-mark-svg{width:64%;height:64%}
 .iml-bar-actions{display:flex;align-items:center;gap:8px}
 

@@ -20,6 +20,17 @@ export function chartColor(index = 0) {
   return CHART_PALETTE[Math.abs(Number(index) || 0) % CHART_PALETTE.length];
 }
 
+// Run-identity hues: the chart palette with the three reserved delta-semantic
+// families removed — green (=better), amber (=differs), and coral (=worse) —
+// so a run's identity swatch can never be mistaken for a value judgement.
+// Single source of truth for the compare side-by-side identity swatches.
+const IDENTITY_PALETTE_INDEXES = [1, 3, 4, 5, 8, 9, 10, 11];
+export const IDENTITY_PALETTE = IDENTITY_PALETTE_INDEXES.map((index) => CHART_PALETTE[index]);
+
+export function identityColor(index = 0) {
+  return IDENTITY_PALETTE[Math.abs(Number(index) || 0) % IDENTITY_PALETTE.length];
+}
+
 export function stableChartIndex(value, fallback = 0) {
   const source = String(value ?? "");
   if (!source) return Math.abs(Number(fallback) || 0) % (CHART_PALETTE.length * 4);
