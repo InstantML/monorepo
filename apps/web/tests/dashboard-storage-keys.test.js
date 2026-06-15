@@ -443,9 +443,9 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(runsWorkspace, /pointerDragCleanupRef/, "pointer drag listeners should be cleaned up on unmount or interrupted drag");
   assert.match(runsWorkspace, /removeEventListener\("pointercancel"/, "pointer drag cleanup should remove cancellation listeners");
 
-  const topbar = readFileSync(`${root}app/dashboard/chrome/topbar.tsx`, "utf8");
-  assert.match(topbar, /workbar-search-popover/, "run search should include syntax help beside the actual search box");
-  assert.match(topbar, /aria-invalid=\{Boolean\(searchError && !searchErrorStale\)\}/, "search syntax errors should be associated with the input without marking stale edits invalid");
+  const filterBar = readFileSync(`${root}app/dashboard/runs/run-filter-bar.tsx`, "utf8");
+  assert.match(filterBar, /workbar-search-popover/, "run search should include syntax help beside the actual search box");
+  assert.match(filterBar, /aria-invalid=\{Boolean\(searchError && !searchErrorStale\)\}/, "search syntax errors should be associated with the input without marking stale edits invalid");
 
   const workspacePanelCard = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
   assert.match(workspacePanelCard, /resizeCleanupRef/, "panel resize listeners should be cleaned up on unmount or interrupted resize");

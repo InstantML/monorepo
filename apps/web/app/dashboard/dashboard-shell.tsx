@@ -35,6 +35,7 @@ import { ImportsTabPane } from "./imports/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
+import { RunFilterBar } from "./runs/run-filter-bar";
 import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
@@ -3659,19 +3660,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         activeIcon={ActiveIcon}
         activeTab={activeTab}
         accountUser={sessionPayload?.user ?? null}
-        overview={overview}
         detailRunName={primaryRun?.name ?? ""}
-        message={message}
         mobileNavOpen={mobileNavOpen}
-        onApplySavedView={applySavedView}
-        onClearFilters={clearFilters}
         onMobileMenuToggle={() => setMobileNavOpen((open) => !open)}
         onProject={changeProject}
-        onQuery={changeRunQueryInput}
         onQuickSearch={() => setQuickSearchOpen(true)}
-        onRefresh={loadDashboard}
-        onSaveView={saveView}
-        canSaveView={canWriteWorkspace}
         onCheckWorkspaceName={checkWorkspaceName}
         onCreateWorkspace={createWorkspace}
         onOpenBilling={() => selectTab("settings")}
@@ -3680,9 +3673,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
         onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
-        onSortBy={changeRunSort}
-        onStatus={changeStatus}
-        onViewName={setViewName}
         theme={theme}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
@@ -3693,18 +3683,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         planLabel={activePlan}
         project={project}
         projects={projects}
-        query={queryInput}
-        searchError={searchError}
-        searchErrorStale={Boolean(searchError && searchError.query !== queryInput)}
-        savedViewKey={savedViewKey}
-        savedViews={savedViews}
-        sortBy={sortBy}
-        status={status}
         storageUsagePercent={storagePercent}
-        tone={currentMessageTone}
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
-        viewName={viewName}
         workspaceName={sessionPayload?.organization?.name ?? ""}
         workspaceId={activeOrgId}
       />
@@ -3754,6 +3735,32 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
               hasNextPage={hasNextPage}
               hasPreviousPage={hasPreviousPage}
               initialLoadDone={initialLoadDone}
+              filterBar={(
+                <RunFilterBar
+                  overview={overview}
+                  status={status}
+                  onStatus={changeStatus}
+                  query={queryInput}
+                  onQuery={changeRunQueryInput}
+                  sortBy={sortBy}
+                  onSortBy={changeRunSort}
+                  project={project}
+                  onProject={changeProject}
+                  searchError={searchError}
+                  searchErrorStale={Boolean(searchError && searchError.query !== queryInput)}
+                  savedViews={savedViews}
+                  savedViewKey={savedViewKey}
+                  viewName={viewName}
+                  onViewName={setViewName}
+                  onSaveView={saveView}
+                  canSaveView={canWriteWorkspace}
+                  onApplySavedView={applySavedView}
+                  onClearFilters={clearFilters}
+                  onRefresh={loadDashboard}
+                  message={message}
+                  tone={currentMessageTone}
+                />
+              )}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
               onAddPanel={addWorkspacePanel}

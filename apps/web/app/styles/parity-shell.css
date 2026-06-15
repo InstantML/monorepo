@@ -42,6 +42,9 @@
     gap: 8px;
     flex: none;
     text-decoration: none;
+    /* The base .brand-cell carries a right hairline divider; give it room so it
+       isn't crammed against the wordmark (balances the gap to the project select). */
+    padding-right: 14px;
   }
   .topbar .brand-mark {
     display: inline-flex;

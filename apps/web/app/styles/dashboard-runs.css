@@ -163,6 +163,20 @@
   display: none;
 }
 
+/* The run filter bar reuses .workbar, but here it is Runs-tab content (not
+   topbar chrome): drop the topbar border-top and inner gutter so its controls
+   line up with the page head + panels, and add a little space before the
+   metric / Runs-actions row below. */
+.workbar.runs-filterbar {
+  border-top: 0;
+  padding-left: 0;
+  padding-right: 0;
+  margin-bottom: 8px;
+  /* Sit above the sticky metric/Runs-actions row (.runs-workspace-filter,
+     z-index 14) so the status/sort/search dropdowns open over it, not behind. */
+  z-index: 15;
+}
+
 .runs-workspace-filter {
   position: sticky;
   top: var(--topbar-height);

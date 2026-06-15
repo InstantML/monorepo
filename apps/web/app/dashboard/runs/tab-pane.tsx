@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, LayoutGrid, Table2, X } from "lucide-react";
 
@@ -45,6 +45,7 @@ type Props = {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   initialLoadDone: boolean;
+  filterBar?: ReactNode;
   metricKey: string;
   metricOptionsForControls: string[];
   onAddPanel: (sectionId: string, panelMetric: string, type?: WorkspacePanelType) => void;
@@ -147,6 +148,7 @@ export function RunsTabPane({
   hasNextPage,
   hasPreviousPage,
   initialLoadDone,
+  filterBar,
   metricKey,
   metricOptionsForControls,
   onAddPanel,
@@ -305,6 +307,9 @@ export function RunsTabPane({
         />
       ) : (
       <>
+      {/* The run filter row (status / search / sort / saved views) lives in the
+          Runs tab, between the page head and the metric/Runs-actions row. */}
+      {filterBar}
       {/* The Run health summary cards were removed from this header (2026-06):
           they duplicated the Run health tab and pushed the actual run list
           below the fold. Health stats live on /dashboard/alerts. */}

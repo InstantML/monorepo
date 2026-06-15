@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Moon, Plus, RefreshCw, Save, Search, Settings, SlidersHorizontal, Sun, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Moon, Plus, Search, Settings, Sun, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -12,8 +12,7 @@ import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import type { ShellTabId } from "../../dashboard-config";
 import { CustomSelect } from "../ui/select";
-import type { SelectOption } from "../ui/select";
-import type { Overview, TabId } from "../../dashboard-types";
+import type { TabId } from "../../dashboard-types";
 import { useFocusTrap } from "../ui/use-focus-trap";
 
 export type OrgMembershipSummary = {
@@ -54,10 +53,6 @@ export type WorkspaceNameAvailability = {
 
 const ORG_SWITCHER_SEARCH_THRESHOLD = 7;
 
-function countSuffix(count: number) {
-  return ` (${new Intl.NumberFormat("en-US").format(Math.max(0, count))})`;
-}
-
 type AccountUser = {
   primary_email?: string | null;
   display_name?: string | null;
@@ -86,11 +81,6 @@ function AccountAvatar({ user }: { user: AccountUser | null }) {
     </span>
   );
 }
-
-type RunSearchError = {
-  message: string;
-  position: number | null;
-} | null;
 
 export function OrgSwitcher({
   busy,
@@ -609,17 +599,10 @@ export function DashboardTopbar({
   activeTab,
   accountUser,
   detailRunName,
-  message,
   mobileNavOpen,
-  onApplySavedView,
-  onClearFilters,
   onMobileMenuToggle,
   onProject,
-  onQuery,
   onQuickSearch,
-  onRefresh,
-  onSaveView,
-  canSaveView,
   onCheckWorkspaceName,
   onCreateWorkspace,
   onOpenBilling,
@@ -627,33 +610,20 @@ export function DashboardTopbar({
   onSelectTab,
   onSignOut,
   onShortcutHelp,
-  onSortBy,
-  onStatus,
   onToggleTheme,
-  onViewName,
   orgMemberships,
   theme,
   orgSwitchBusy,
   orgSwitchError,
   onSwitchOrg,
-  overview,
   planLabel,
   project,
   projects,
-  query,
-  searchError,
-  searchErrorStale,
-  savedViewKey,
-  savedViews,
-  sortBy,
-  status,
   metricUsagePercent,
   apiRequestUsagePercent,
   storageUsagePercent,
-  tone,
   usageAvailable,
   usageResetLabel,
-  viewName,
   workspaceName,
   workspaceId,
 }: {
@@ -661,17 +631,10 @@ export function DashboardTopbar({
   activeTab: ShellTabId;
   accountUser: AccountUser | null;
   detailRunName: string;
-  message: string;
   mobileNavOpen: boolean;
-  onApplySavedView: (key: string) => void;
-  onClearFilters: () => void;
   onMobileMenuToggle: () => void;
   onProject: (project: string) => void;
-  onQuery: (value: string) => void;
   onQuickSearch: () => void;
-  onRefresh: () => void;
-  onSaveView: () => void;
-  canSaveView: boolean;
   onCheckWorkspaceName: (name: string) => Promise<WorkspaceNameAvailability>;
   onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
   onOpenBilling: () => void;
@@ -679,85 +642,35 @@ export function DashboardTopbar({
   onSelectTab: (tabId: ShellTabId) => void;
   onSignOut: () => void;
   onShortcutHelp: () => void;
-  onSortBy: (value: string) => void;
-  onStatus: (status: string) => void;
   onToggleTheme: () => void;
-  onViewName: (value: string) => void;
   orgMemberships: OrgMembershipSummary[];
   theme: "dark" | "light";
   orgSwitchBusy: boolean;
   orgSwitchError: string;
   onSwitchOrg: (orgId: string) => void;
-  overview: Overview;
   planLabel: string;
   project: string;
   projects: string[];
-  query: string;
-  searchError: RunSearchError;
-  searchErrorStale: boolean;
-  savedViewKey: string;
-  savedViews: SelectOption[];
-  sortBy: string;
-  status: string;
   metricUsagePercent: number;
   apiRequestUsagePercent: number;
   storageUsagePercent: number;
-  tone: "error" | "loading" | "ok";
   usageAvailable: boolean;
   usageResetLabel: string;
-  viewName: string;
   workspaceName: string;
   workspaceId: string;
 }) {
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
-  const [desktopFiltersCollapsed, setDesktopFiltersCollapsed] = useState(false);
-  const [compactFilters, setCompactFilters] = useState(false);
-  const [searchHelpOpen, setSearchHelpOpen] = useState(false);
-  const [viewActionsOpen, setViewActionsOpen] = useState(false);
   const topbarRef = useRef<HTMLElement>(null);
-  const searchHelpRef = useRef<HTMLDivElement>(null);
-  const viewActionsRef = useRef<HTMLDivElement>(null);
-  const viewActionsTriggerRef = useRef<HTMLButtonElement>(null);
-  // Run Detail is reached *through* a run — its filters are meaningless there,
-  // so it uses the admin shell (no workbar), matching the run-detail mock.
-  const showWorkbar = activeTab !== "detail";
   const tabLabel = activeTab === "detail" ? "Run Detail" : tabs.find((tab) => tab.id === activeTab)?.label ?? "Runs";
-  const filtersVisible = compactFilters ? mobileFiltersOpen : !desktopFiltersCollapsed;
-  const workbarInert = compactFilters && !mobileFiltersOpen;
-  const showStatusCounts = !status;
-  const finishedRuns = Math.max(0, overview.total_runs - overview.active_runs - overview.failed_runs);
-  const statusOptions: SelectOption[] = [
-    { value: "", label: `All${showStatusCounts ? countSuffix(overview.total_runs) : ""}` },
-    { value: "running", label: `Running${showStatusCounts ? countSuffix(overview.active_runs) : ""}` },
-    { value: "finished", label: `Finished${showStatusCounts ? countSuffix(finishedRuns) : ""}` },
-    { value: "failed", label: `Failed${showStatusCounts ? countSuffix(overview.failed_runs) : ""}` },
-  ];
-  const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
-    ? ` Column ${searchError.position}.`
-    : "";
-  const searchErrorText = searchError ? `${searchError.message}${searchErrorPositionSuffix}` : "";
-  const searchErrorHelp = "Try tag:baseline status:finished, name:\"long context\", or -tag:debug.";
-  const activeFilters = [
-    project ? { key: "project", label: `Project: ${project}`, onClear: () => onProject("") } : null,
-    status ? { key: "status", label: `Status: ${status}`, onClear: () => onStatus("") } : null,
-    query.trim() ? { key: "search", label: `Search: ${query.trim()}`, onClear: () => onQuery("") } : null,
-    sortBy !== "created" ? { key: "sort", label: `Sort: ${sortBy.replace("-", " ")}`, onClear: () => onSortBy("created") } : null,
-  ].filter((item): item is { key: string; label: string; onClear: () => void } => Boolean(item));
-  const filterSummaryLabel = activeFilters.length
-    ? activeFilters.map((filter) => filter.label).join(", ")
-    : "No active run filters";
 
   useLayoutEffect(() => {
     const root = document.documentElement;
     const media = window.matchMedia("(max-width: 900px)");
     let frame = 0;
+    // The topbar is now a single slim row (logo + project + account/search). The
+    // ResizeObserver re-syncs --topbar-height to the measured height; the fallback
+    // only covers the first paint frame.
     function fallbackHeight() {
-      if (media.matches) {
-        return "56px";
-      }
-      // Desktop chrome is the slim account brandbar (~44px) plus the optional
-      // filter workbar (~44px).
-      return showWorkbar && !desktopFiltersCollapsed ? "88px" : "44px";
+      return media.matches ? "56px" : "45px";
     }
     function syncHeight() {
       const height = topbarRef.current?.getBoundingClientRect().height;
@@ -768,7 +681,6 @@ export function DashboardTopbar({
       frame = window.requestAnimationFrame(syncHeight);
     }
     function applyHeight() {
-      setCompactFilters(media.matches);
       root.style.setProperty("--topbar-height", fallbackHeight());
       queueSyncHeight();
     }
@@ -782,45 +694,10 @@ export function DashboardTopbar({
       media.removeEventListener("change", applyHeight);
       root.style.removeProperty("--topbar-height");
     };
-  }, [desktopFiltersCollapsed, showWorkbar]);
-
-  useEffect(() => {
-    if (!searchHelpOpen) return undefined;
-    function closeFromOutside(event: globalThis.PointerEvent) {
-      if (!searchHelpRef.current?.contains(event.target as Node)) setSearchHelpOpen(false);
-    }
-    function closeFromEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") setSearchHelpOpen(false);
-    }
-    document.addEventListener("pointerdown", closeFromOutside);
-    document.addEventListener("keydown", closeFromEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeFromOutside);
-      document.removeEventListener("keydown", closeFromEscape);
-    };
-  }, [searchHelpOpen]);
-
-  useEffect(() => {
-    if (!viewActionsOpen) return undefined;
-    function closeFromOutside(event: globalThis.PointerEvent) {
-      if (!viewActionsRef.current?.contains(event.target as Node)) setViewActionsOpen(false);
-    }
-    function closeFromEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") {
-        setViewActionsOpen(false);
-        viewActionsTriggerRef.current?.focus();
-      }
-    }
-    document.addEventListener("pointerdown", closeFromOutside);
-    document.addEventListener("keydown", closeFromEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeFromOutside);
-      document.removeEventListener("keydown", closeFromEscape);
-    };
-  }, [viewActionsOpen]);
+  }, []);
 
   return (
-    <header className={`topbar ${showWorkbar ? "topbar--workbar" : "topbar--brandonly"} ${mobileFiltersOpen ? "mobile-filters-open" : ""} ${desktopFiltersCollapsed ? "desktop-filters-collapsed" : ""}`} ref={topbarRef}>
+    <header className="topbar" ref={topbarRef}>
       <div className="brandbar">
         <button
           type="button"
@@ -884,21 +761,6 @@ export function DashboardTopbar({
             <button className="ghost-kbd" data-quick-search-trigger="true" type="button" onClick={onQuickSearch} aria-label="Quick search">
               <Search size={13} /> <span className="ghost-kbd-label">Search</span> <span className="kbd">⌘K</span>
             </button>
-            {showWorkbar ? (
-              <button
-                aria-label={filtersVisible ? "Hide filters" : "Show filters"}
-                aria-expanded={filtersVisible}
-                className="icon-button framed mobile-filters-toggle"
-                onClick={() => {
-                  if (compactFilters) setMobileFiltersOpen((open) => !open);
-                  else setDesktopFiltersCollapsed((collapsed) => !collapsed);
-                }}
-                title={filtersVisible ? "Hide the filter bar" : "Show the filter bar"}
-                type="button"
-              >
-                <SlidersHorizontal size={15} />
-              </button>
-            ) : null}
             <button
               aria-label="Keyboard shortcuts"
               className="icon-button framed brandbar-action-desktop"
@@ -928,160 +790,6 @@ export function DashboardTopbar({
         </div>
       </div>
 
-      {showWorkbar ? (
-        <div className="workbar" role="toolbar" aria-label="Run filters" aria-hidden={workbarInert ? true : undefined} inert={workbarInert ? true : undefined}>
-          <CustomSelect
-            id="status-filter"
-            label="Status"
-            value={status}
-            onChange={onStatus}
-            options={statusOptions}
-          />
-          <span className="workbar-divider" aria-hidden="true" />
-          <div
-            className={`workbar-search-group ${searchError ? "has-error" : ""} ${searchErrorStale ? "stale-error" : ""}`}
-            ref={searchHelpRef}
-          >
-            <label className="workbar-search">
-              <Search size={13} />
-              <input
-                aria-describedby={`run-search-help-note${searchError && !searchErrorStale ? " run-search-error" : ""}`}
-                aria-invalid={Boolean(searchError && !searchErrorStale)}
-                id="search"
-                onChange={(event) => onQuery(event.target.value)}
-                placeholder="runs, tags, notes, config"
-                type="search"
-                value={query}
-                aria-label="Search runs"
-              />
-            </label>
-            <button
-              aria-controls="run-search-help"
-              aria-expanded={searchHelpOpen}
-              aria-label="Run search syntax"
-              className="icon-button workbar-search-help"
-              onClick={() => setSearchHelpOpen((open) => !open)}
-              title="Run search syntax"
-              type="button"
-            >
-              <CircleHelp size={14} />
-            </button>
-            <span className="visually-hidden" id="run-search-help-note">
-              Search supports bare text, field filters, uppercase boolean operators, quoted phrases, and explicit regex.
-            </span>
-            {searchHelpOpen ? (
-              <div className="workbar-search-popover" id="run-search-help" role="note" aria-label="Run search syntax">
-                <strong>Run search</strong>
-                <code>reward stability</code>
-                <code>tag:baseline status:finished</code>
-                <code>name:"long context" -tag:debug</code>
-                <code>(tag:baseline OR tag:candidate) notes:ablated</code>
-                <code>re:/seed-(13|14)/</code>
-                <span>Regex requires the Rust API.</span>
-                <span>Fields: all, name, project, notes, config, metadata, tag/tags, status, id.</span>
-              </div>
-            ) : null}
-            {searchError ? (
-              <span
-                className="workbar-search-error"
-                id="run-search-error"
-                role="status"
-                aria-live="polite"
-                title={`${searchErrorText} ${searchErrorHelp}`}
-              >
-                <strong>{searchErrorText}</strong>
-                <em>{searchErrorHelp}</em>
-              </span>
-            ) : null}
-          </div>
-          <CustomSelect
-            className="compact"
-            id="sort-select"
-            label="Sort"
-            onChange={onSortBy}
-            options={[
-              { value: "created", label: "Newest" },
-              { value: "metric-latest", label: "Latest metric" },
-              { value: "metric-best", label: "Best metric" },
-              { value: "name", label: "Name" },
-              { value: "status", label: "Status" },
-              { value: "duration", label: "Duration" },
-            ]}
-            value={sortBy}
-          />
-          <div className="active-filter-strip" aria-label={filterSummaryLabel}>
-            <span className="visually-hidden" role="status" aria-live="polite">{filterSummaryLabel}</span>
-            <span className="active-filter-title">Filters</span>
-            {activeFilters.length ? (
-              activeFilters.map((filter) => (
-                <button
-                  aria-label={`Clear ${filter.label}`}
-                  className="active-filter-chip"
-                  key={filter.key}
-                  onClick={filter.onClear}
-                  title={`Clear ${filter.label}`}
-                  type="button"
-                >
-                  <span>{filter.label}</span>
-                  <X size={12} aria-hidden="true" />
-                </button>
-              ))
-            ) : (
-              <span className="active-filter-empty">All runs</span>
-            )}
-            {activeFilters.length ? (
-              <button className="active-filter-reset" onClick={onClearFilters} type="button">
-                Reset
-              </button>
-            ) : null}
-            {searchError ? (
-              <span
-                className={`active-filter-error ${searchErrorStale ? "stale" : ""}`}
-                aria-hidden="true"
-                title={`${searchErrorText} ${searchErrorHelp}`}
-              >
-                <span>Fix search: {searchErrorText}</span>
-                <em>Try tag:baseline status:finished</em>
-              </span>
-            ) : null}
-          </div>
-          <span className={`status-message ${tone}`} id="status-message" role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"} tabIndex={-1} title={message}>{message}</span>
-          <div className="workbar-spacer" />
-          <div className="view-actions-menu" ref={viewActionsRef}>
-            <button
-              aria-controls="view-actions-popover"
-              aria-expanded={viewActionsOpen}
-              aria-haspopup="dialog"
-              className="secondary compact-button view-actions-trigger"
-              onClick={() => setViewActionsOpen((open) => !open)}
-              ref={viewActionsTriggerRef}
-              type="button"
-            >
-              <Save size={14} /> View actions <ChevronDown size={12} aria-hidden="true" />
-            </button>
-            {viewActionsOpen ? (
-              <div className="view-actions-popover" id="view-actions-popover" role="dialog" aria-label="Saved view actions">
-                <label className="control compact view-actions-name">
-                  Name
-                  <input aria-label="Saved view name" id="view-name" value={viewName} onChange={(event) => onViewName(event.target.value)} placeholder="view name" />
-                </label>
-                <button className="primary-button" disabled={!canSaveView} id="save-view" title={canSaveView ? "Save view" : "Read only workspaces cannot save shared views"} type="button" onClick={onSaveView}><Save size={14} /> Save view</button>
-                {!canSaveView ? <span className="view-actions-help">Read-only demo workspaces cannot save shared views.</span> : null}
-                <CustomSelect
-                  className="compact"
-                  id="saved-view-select"
-                  label="View"
-                  menuAlign="right"
-                  onChange={onApplySavedView}
-                  options={[{ value: "", label: "Unsaved" }, ...savedViews]}
-                  value={savedViewKey}
-                />
-                <button className="secondary compact-button" type="button" aria-label="Refresh dashboard data" onClick={() => { setViewActionsOpen(false); onRefresh(); }}><RefreshCw size={14} /> Refresh data</button>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
     </header>
   );
 }

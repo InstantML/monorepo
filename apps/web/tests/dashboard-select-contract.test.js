@@ -13,9 +13,10 @@ function read(relPath) {
 
 test("dashboard workbar dropdown menus are not clipped by the filter row", () => {
   const topbarSrc = read("app/dashboard/chrome/topbar.tsx");
-  // Project is a global control in the topbar; status stays in the run filter row.
+  // Project is a global control in the topbar; status lives in the Runs-tab filter bar.
   assert.match(topbarSrc, /id="project-filter"/);
-  assert.match(topbarSrc, /id="status-filter"/);
+  const filterBarSrc = read("app/dashboard/runs/run-filter-bar.tsx");
+  assert.match(filterBarSrc, /id="status-filter"/);
 
   const css = read("app/styles/overhaul.css");
   const workbarRule = css.match(/\.workbar\s*\{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? "";
