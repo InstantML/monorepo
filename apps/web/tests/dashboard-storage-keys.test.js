@@ -447,6 +447,10 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(filterBar, /workbar-search-popover/, "run search should include syntax help beside the actual search box");
   assert.match(filterBar, /aria-invalid=\{Boolean\(searchError && !searchErrorStale\)\}/, "search syntax errors should be associated with the input without marking stale edits invalid");
 
+  const navRail = readFileSync(`${root}app/dashboard/chrome/nav-rail.tsx`, "utf8");
+  assert.doesNotMatch(shell, /\bnavPinned\b|nav-pinned/, "dashboard shell should always render the side nav unpinned");
+  assert.doesNotMatch(navRail, /\bpinned\b/, "side nav should not expose a pinned state");
+
   const workspacePanelCard = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
   assert.match(workspacePanelCard, /resizeCleanupRef/, "panel resize listeners should be cleaned up on unmount or interrupted resize");
   assert.match(workspacePanelCard, /addEventListener\("pointercancel"/, "panel resize should handle pointer cancellation");
@@ -462,6 +466,9 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(distributedPane, /function changeRankKey[\s\S]*setSummary\(null\)/, "rank-key changes should clear old reducer data before relabeling charts");
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
+  assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-button \{[\s\S]*?justify-content: flex-start;[\s\S]*?gap: 0;[\s\S]*?padding: 8px 12px;/, "collapsed nav icons should keep the same origin as expanded nav items");
+  assert.match(css, /\.shell:not\(\.nav-pinned\)\.nav-auto-open \.tab-button,[\s\S]*?\.shell:not\(\.nav-pinned\) \.tabs:has\(:focus-visible\) \.tab-button \{[\s\S]*?justify-content: flex-start;[\s\S]*?gap: 8px;[\s\S]*?padding: 8px 12px;/, "auto-open nav should reveal labels without shifting icons");
+  assert.match(css, /\.tab-button svg \{ flex: 0 0 16px; \}/, "nav icons should use a fixed flex slot");
 });
 
 test("settings seat summary falls back to org membership metadata for read-only users", () => {

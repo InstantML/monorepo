@@ -24,7 +24,6 @@ export function DashboardNav({
   onSelect,
   onShortcutHelp,
   onThemeToggle,
-  pinned,
   theme,
 }: {
   accountMenu?: ReactNode;
@@ -36,7 +35,6 @@ export function DashboardNav({
   onSelect: (tabId: ShellTabId) => void;
   onShortcutHelp?: () => void;
   onThemeToggle: () => void;
-  pinned: boolean;
   theme: "light" | "dark";
 }) {
   const navRef = useRef<HTMLElement>(null);
@@ -62,14 +60,14 @@ export function DashboardNav({
 
   return (
     <nav
-      className={`tabs ${pinned ? "pinned" : ""}`}
+      className="tabs"
       aria-hidden={hiddenCompactNav ? true : undefined}
       aria-label="Dashboard sections"
-      onMouseEnter={() => { if (!pinned && !compactNav) onAutoOpenChange(true); }}
+      onMouseEnter={() => { if (!compactNav) onAutoOpenChange(true); }}
       onMouseLeave={() => {
         // Don't collapse out from under a focused rail item (keyboard user
         // tabbing through while the pointer drifts off); onBlur handles those.
-        if (!pinned && !compactNav && !navRef.current?.contains(document.activeElement)) onAutoOpenChange(false);
+        if (!compactNav && !navRef.current?.contains(document.activeElement)) onAutoOpenChange(false);
       }}
       onFocus={(event) => {
         // Also expand for keyboard focus. Both hover and focus expand on enter —
@@ -100,7 +98,7 @@ export function DashboardNav({
                   key={tab.id}
                   onClick={(event) => handleTabSelect(event, tab.id)}
                   tabIndex={compactTabIndex}
-                  title={pinned ? undefined : tab.label}
+                  title={tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
                 </a>
@@ -116,7 +114,7 @@ export function DashboardNav({
           className="tab-button nav-theme-button"
           onClick={onThemeToggle}
           tabIndex={compactTabIndex}
-          title={pinned ? undefined : themeLabel}
+          title={themeLabel}
           type="button"
         >
           {dark ? <Sun size={15} /> : <Moon size={15} />}

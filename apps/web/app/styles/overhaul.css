@@ -2598,9 +2598,9 @@ button.compare-row-head.active {
   box-shadow: 1px 0 0 var(--line);
 }
 .shell:not(.nav-pinned) .tab-button {
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0;
-  padding: 8px;
+  padding: 8px 12px;
 }
 .shell:not(.nav-pinned) .tab-label {
   max-width: 0;
@@ -2610,7 +2610,7 @@ button.compare-row-head.active {
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-button {
   justify-content: flex-start;
   gap: 8px;
-  padding: 8px 9px;
+  padding: 8px 12px;
 }
 .shell:not(.nav-pinned).nav-auto-open .tab-label,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-label {
@@ -2639,6 +2639,7 @@ button.compare-row-head.active {
   background: var(--accent);
 }
 .tab-button.active svg { color: var(--accent); }
+.tab-button svg { flex: 0 0 16px; }
 .tab-label { white-space: nowrap; }
 .nav-footer { border-top: 1px solid var(--line-soft); padding-top: 8px; }
 
