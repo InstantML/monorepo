@@ -104,9 +104,23 @@
 .control {
   display: grid;
   gap: 3px;
+  min-width: 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
+}
+
+.shell label,
+.shell .search-control,
+.shell .metric-filter-control {
+  min-width: 0;
+}
+
+.shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.shell select,
+.shell textarea {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .visually-hidden {
@@ -551,16 +565,20 @@
 }
 
 .tab-group-label {
-  display: none;
+  display: block;
+  min-height: 17px;
   padding: 2px 9px 3px;
   color: var(--faint);
   font: 700 10px/1 var(--font-mono);
+  opacity: 0;
   text-transform: uppercase;
+  visibility: hidden;
 }
 
 .shell.nav-auto-open .tab-group-label,
 .shell.nav-pinned .tab-group-label {
-  display: block;
+  opacity: 1;
+  visibility: visible;
 }
 
 .tab-group + .tab-group {

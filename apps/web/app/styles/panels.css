@@ -1041,6 +1041,12 @@ kbd {
 
 .fullscreen-panel-card {
   display: grid;
+  /* Reset the dashboard-grid spans (.workspace-panel-card spans 6 cols / 4 rows)
+     so the card is a plain single-column grid item in the fullscreen modal.
+     Otherwise it creates 6 implicit columns and the top bar (drawer-head) only
+     fills the first one instead of the full card width. */
+  grid-column: auto;
+  grid-row: auto;
   grid-template-rows: auto minmax(0, 1fr);
   --fullscreen-chart-width: min(100%, 1120px, calc(213.954vh - 509px));
   min-height: 0;
@@ -1055,8 +1061,7 @@ kbd {
 }
 
 .fullscreen-panel-card .workspace-panel-meta {
-  justify-content: center;
-  padding: 0 0 12px;
+  display: none;
 }
 
 .fullscreen-panel-card .chart-area {
