@@ -19,7 +19,7 @@
 .shortcut-group h3,
 .compare-metric-strip > span {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -163,7 +163,7 @@
 }
 :root[data-theme="light"] .tabs.pinned,
 :root[data-theme="light"] .shell.nav-auto-open .tabs {
-  box-shadow: 2px 0 16px 0 rgba(15, 23, 42, 0.08);
+  box-shadow: 2px 0 16px 0 rgba(23, 26, 20, 0.08);
 }
 .tab-button {
   border-radius: var(--radius);
@@ -264,7 +264,7 @@
   max-height: 0;
   opacity: 0;
   overflow: hidden;
-  transition: max-height 0.14s ease, opacity 0.14s ease, margin 0.14s ease;
+  transition: opacity 0.14s ease;
   margin: 0;
 }
 .workspace-run-row:hover .workspace-run-tags,
@@ -418,7 +418,18 @@ textarea:focus {
 
 /* --topbar-height is owned by DashboardTopbar (48px brand-only / 92px with
    workbar) via an inline style on <html>, and .topbar height tracks it in the
-   authoritative chrome block below. No fixed/media overrides here. */
+   authoritative chrome block below. These selectors provide the same values
+   before hydration so the sticky nav rail does not jump after first paint. */
+@media (min-width: 901px) {
+  :root:has(.topbar--workbar:not(.desktop-filters-collapsed)) {
+    --topbar-height: 92px;
+  }
+
+  :root:has(.topbar--brandonly),
+  :root:has(.topbar.desktop-filters-collapsed) {
+    --topbar-height: 48px;
+  }
+}
 
 /* Run Detail title is a run identifier — render it mono, not sans display. */
 .run-detail-title h2 {
@@ -432,7 +443,7 @@ textarea:focus {
  * the run-detail mock and the other analysis page headers). */
 .run-workspace-title > span:first-child {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -1073,7 +1084,7 @@ textarea:focus {
 .empty-workspace-snippet__code {
   padding: 14px 16px;
   font: 500 12.5px/1.65 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  color: #e2e8f0;
+  color: #e0e3d8;
   white-space: pre;
   overflow-x: auto;
   margin: 0;
@@ -1369,7 +1380,7 @@ textarea:focus {
 }
 .run-workspace-eyebrow {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -1484,14 +1495,14 @@ textarea:focus {
 .analysis-title-block .analysis-eyebrow {
   align-self: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
   color: var(--accent);
 }
 .analysis-title-block h2 {
-  font: 700 20px/1 var(--font-sans);
+  font: 700 20px/1 var(--font-display);
   letter-spacing: var(--tracking-display);
   color: var(--text);
   white-space: normal;
@@ -1525,7 +1536,7 @@ textarea:focus {
 .analysis-stat-strip .analysis-stat:last-child { border-inline-end: 0; }
 .analysis-stat-strip .analysis-stat span {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -1612,7 +1623,7 @@ textarea:focus {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--line-soft);
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.18), 0 0 0 1px var(--line-soft);
   color: var(--text);
 }
 :root[data-theme="dark"] .workbar-search-popover {
@@ -1642,7 +1653,7 @@ textarea:focus {
 }
 .workbar-search-popover span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.35;
 }
 .workbar-search-error {
@@ -1650,14 +1661,26 @@ textarea:focus {
   z-index: 49;
   inset-block-start: calc(100% + 6px);
   inset-inline-start: 0;
+  display: grid;
+  gap: 3px;
   max-width: min(420px, calc(100vw - 32px));
-  padding: 5px 7px;
+  padding: 7px 9px;
   border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line));
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
   box-shadow: var(--shadow-sm);
   color: var(--danger);
-  font: 650 11px/1.25 var(--font-sans);
+  font: 650 11.5px/1.25 var(--font-sans);
+}
+.workbar-search-error strong,
+.workbar-search-error em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workbar-search-error em {
+  color: var(--muted);
+  font: 600 11px/1.3 var(--font-sans);
+  font-style: normal;
 }
 :root[data-theme="dark"] .workbar-search-error {
   background: color-mix(in srgb, var(--surface) 92%, var(--bg));
@@ -1678,6 +1701,160 @@ textarea:focus {
 }
 .workbar-name { flex: 0 1 128px; min-width: 96px; }
 .workbar-name input { width: 100%; }
+.active-filter-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 500px;
+  min-width: 220px;
+  min-height: 32px;
+  overflow: hidden;
+  padding: 3px 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  color: var(--muted);
+}
+.active-filter-title {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font: 750 10.5px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+.active-filter-chip,
+.active-filter-reset,
+.active-filter-empty,
+.active-filter-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 650 11.5px/1 var(--font-sans);
+  white-space: nowrap;
+}
+.active-filter-chip {
+  max-width: 150px;
+  padding: 0 6px 0 8px;
+}
+.active-filter-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-filter-chip:hover,
+.active-filter-reset:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.active-filter-empty {
+  padding: 0 8px;
+  color: var(--muted);
+}
+.active-filter-reset {
+  flex: 0 0 auto;
+  padding: 0 8px;
+  color: var(--accent);
+}
+.active-filter-error {
+  max-width: 320px;
+  padding: 0 8px;
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-filter-error span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.active-filter-error em {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-style: normal;
+}
+.active-filter-error.stale {
+  border-color: var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.view-actions-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+.view-actions-trigger {
+  height: 32px;
+  white-space: nowrap;
+}
+.view-actions-popover {
+  position: fixed;
+  inset-block-start: calc(var(--topbar-height) + 2px);
+  inset-inline-end: 16px;
+  z-index: calc(var(--z-pop) + var(--z-chrome));
+  display: grid;
+  gap: 9px;
+  min-width: 260px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 96%, var(--bg));
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.18), 0 0 0 1px var(--line-soft);
+}
+:root[data-theme="dark"] .view-actions-popover {
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line-soft);
+}
+.view-actions-popover .control,
+.view-actions-popover .custom-select-control {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+.view-actions-popover .control > span:first-child:not(.select-trigger),
+.view-actions-popover .custom-select-control > span:first-child:not(.select-trigger) {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  color: var(--muted);
+  font: 650 10.5px/1 var(--font-mono);
+  text-transform: uppercase;
+  white-space: normal;
+}
+.view-actions-popover input,
+.view-actions-popover .select-trigger {
+  width: 100%;
+}
+.view-actions-popover .primary-button,
+.view-actions-popover .secondary {
+  justify-content: center;
+  width: 100%;
+}
+.view-actions-divider {
+  height: 1px;
+  background: var(--line);
+}
+.view-actions-popover .secondary.danger:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
+  color: var(--danger);
+}
+.view-actions-popover .secondary.danger:not(:disabled):hover {
+  background: var(--danger-soft);
+}
+.view-actions-help {
+  color: var(--muted);
+  font: 600 12px/1.35 var(--font-sans);
+}
 
 /* Slim the runs metric/columns strip — secondary, tucked under the stats. */
 .runs-workspace-filter .runs-commandbar {
@@ -1689,7 +1866,6 @@ textarea:focus {
 }
 .runs-commandbar .command-spacer { flex: 1; }
 .runs-commandbar .command-select .select-trigger { height: 32px; }
-
 /* ══════════════════════════════════════════════════════════════════════════
  * Secondary surfaces — every page inlined with the mock flat language
  * (Alerts / Datasets / Artifacts / Checkpoints / Reports / Settings /
@@ -1961,6 +2137,74 @@ textarea:focus {
   padding: 5px;
 }
 
+/* ── Settings: calm, well-segmented key/value lists ────────────────────────
+ * The settings tab is a reference surface, not a telemetry wall. Render each
+ * panel as one ruled list (sans label left, value right) instead of a stack of
+ * separately bordered tiles with corner registration ticks. Mono is dropped
+ * here: the values are short and column-aligned, so tabular sans figures read
+ * cleanly and the page stops looking like terminal output. */
+.settings-grid .settings-list .setting-row {
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+  align-items: baseline;
+  gap: 16px;
+  padding: 9px 2px;
+}
+.settings-grid .settings-list > .setting-row:last-child {
+  border-bottom: 0;
+}
+
+/* A metered quota reads as one unit: label/value line with the bar tucked
+ * directly beneath it (was a tile floating above a detached bar). */
+.settings-grid .settings-list .usage-row {
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 9px;
+}
+.settings-grid .settings-list > .usage-row:last-child {
+  border-bottom: 0;
+}
+.settings-grid .settings-list .usage-row > .setting-row {
+  border-bottom: 0;
+  padding: 9px 2px 5px;
+}
+.settings-grid .settings-list .usage-row .usage-meter {
+  margin-top: 3px;
+}
+
+/* Labels: sans, sentence case, quiet (were uppercase mono micro-labels). */
+.settings-grid .settings-list .setting-row span {
+  font: 500 12.5px/1.35 var(--font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+/* Values: sans + tabular figures, right-aligned so digits still line up. */
+.settings-grid .settings-list .setting-row strong {
+  font: 600 13.5px/1.3 var(--font-sans);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+.settings-grid .settings-list .setting-row strong.good { color: var(--accent); }
+.settings-grid .settings-list .setting-row strong.bad { color: var(--danger); }
+.settings-grid .settings-list .setting-row strong.live { color: var(--warm); }
+.settings-grid .settings-list .setting-hint { margin-top: 8px; }
+/* The usage-limit warning is a prose sentence, not a code line → sans. */
+.settings-grid .admin-alert-list .api-row strong {
+  font: 600 12.5px/1.45 var(--font-sans);
+  letter-spacing: 0;
+}
+
+/* Usage meters read as a utilization gauge: quiet → amber → red as the quota
+ * fills (green stays reserved for live/best, never "you used some quota"). */
+.usage-meter.tone-neutral span { background: var(--dim); }
+.usage-meter.tone-live span { background: var(--warm); }
+.usage-meter.tone-bad span { background: var(--danger); }
+.usage-meter.tone-good span { background: var(--accent); }
+
 @media (max-width: 860px) {
   .admin-form-row {
     grid-template-columns: 1fr;
@@ -2012,6 +2256,18 @@ textarea:focus {
   text-decoration: none;
 }
 .workspace-rail-select-banner .link-button:hover { text-decoration: underline; }
+.workspace-rail-select-banner.quiet {
+  margin: 6px 12px;
+  padding: 7px 10px;
+  border-color: var(--line-soft);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+}
+.workspace-rail-select-banner.quiet .link-button {
+  color: var(--text-2);
+  font-weight: 600;
+}
 
 /* Rows — no full border box; hover/selected stay dark + accent rail only */
 .workspace-run-row {
@@ -2068,7 +2324,7 @@ textarea:focus {
   opacity: 0;
   overflow: hidden;
   margin: 0;
-  transition: max-height 0.14s ease, opacity 0.14s ease, margin 0.14s ease;
+  transition: opacity 0.14s ease;
 }
 .workspace-run-row:hover .workspace-run-tags,
 .workspace-run-row:focus-within .workspace-run-tags,
@@ -2164,7 +2420,7 @@ textarea:focus {
 :root[data-theme="dark"] .compare-run-cell.changed,
 .compare-cell.changed,
 .compare-run-cell.changed {
-  background: rgba(31, 184, 119, 0.07);
+  background: rgba(43, 224, 130, 0.07);
   color: var(--accent-strong);
   font-weight: 600;
 }
@@ -2303,14 +2559,14 @@ button.compare-row-head.active {
 
 :root[data-theme="dark"] button.compare-row-head:hover,
 :root[data-theme="dark"] button.compare-row-head.active {
-  background: rgba(31, 184, 119, 0.13);
+  background: rgba(43, 224, 130, 0.13);
   color: var(--accent-strong);
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
 :root[data-theme="dark"] .compare-row-head,
 :root[data-theme="dark"] .compare-run-identity {
-  background: #0b121e;
+  background: #0d0f0c;
 }
 
 :root[data-theme="dark"] .compare-row-head {
@@ -2342,19 +2598,24 @@ button.compare-row-head.active {
   border-right: 1px solid var(--line);
   padding: 12px 8px 10px;
   overflow: visible;
-  transition: width 140ms ease, box-shadow 140ms ease;
+  transition: width 160ms ease, box-shadow 140ms ease;
 }
 :root[data-theme="dark"] .tabs { background: var(--color-ink); }
 
 /* Auto-open expands the .tabs element itself to 212px so its opaque
  * background covers tab labels without leaking page content through gaps
- * between buttons. */
-.shell:not(.nav-pinned).nav-auto-open .tabs {
+ * between buttons. The grid column stays 56px, so the expanded rail slides
+ * out as an overlay rather than reflowing the page. Triggered by hover
+ * (nav-auto-open) and by keyboard focus; hover expands on pointer-enter —
+ * before any click — so icon clicks still land on their first press. */
+.shell:not(.nav-pinned).nav-auto-open .tabs,
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) {
   width: 212px;
   box-shadow: 22px 0 46px -12px rgba(0, 0, 0, 0.55);
 }
-:root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs {
-  box-shadow: 22px 0 46px -12px rgba(15, 23, 42, 0.18);
+:root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs,
+:root[data-theme="light"] .shell:not(.nav-pinned) .tabs:has(:focus-visible) {
+  box-shadow: 22px 0 46px -12px rgba(23, 26, 20, 0.18);
 }
 
 .tab-scroll {
@@ -2363,6 +2624,23 @@ button.compare-row-head.active {
   /* Firefox */
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+/* dashboard.css owns the base nav-label behavior. This later layer repeats the
+ * state selectors because overhaul.css is currently the winning chrome layer. */
+.tab-group-label {
+  display: none;
+  padding: 3px 9px 4px;
+  color: var(--faint);
+  font: 700 10px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+.shell.nav-pinned .tab-group-label,
+.shell:not(.nav-pinned).nav-auto-open .tab-group-label,
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-group-label {
+  display: block;
+}
+.shell:not(.nav-pinned):not(.nav-auto-open) .tab-group-label {
+  display: none;
 }
 /* WebKit / Blink — subtle thumb that matches the dark dashboard chrome,
  * brightens on hover. Track stays invisible so the rail stays clean. */
@@ -2395,20 +2673,22 @@ button.compare-row-head.active {
   box-shadow: 1px 0 0 var(--line);
 }
 .shell:not(.nav-pinned) .tab-button {
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0;
-  padding: 8px;
+  padding: 8px 12px;
 }
 .shell:not(.nav-pinned) .tab-label {
   max-width: 0;
   opacity: 0;
 }
-.shell:not(.nav-pinned).nav-auto-open .tab-button {
+.shell:not(.nav-pinned).nav-auto-open .tab-button,
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-button {
   justify-content: flex-start;
   gap: 8px;
-  padding: 8px 9px;
+  padding: 8px 12px;
 }
-.shell:not(.nav-pinned).nav-auto-open .tab-label {
+.shell:not(.nav-pinned).nav-auto-open .tab-label,
+.shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-label {
   max-width: 120px;
   opacity: 1;
 }
@@ -2434,6 +2714,7 @@ button.compare-row-head.active {
   background: var(--accent);
 }
 .tab-button.active svg { color: var(--accent); }
+.tab-button svg { flex: 0 0 16px; }
 .tab-label { white-space: nowrap; }
 .nav-footer { border-top: 1px solid var(--line-soft); padding-top: 8px; }
 
@@ -2710,11 +2991,11 @@ button.compare-row-head.active {
 }
 .workspace-run-tags { gap: 4px; }
 
-/* Eyebrow size is uniformly 11px (was 10.5 in the stat-strip → fuzzy mono) */
+/* Eyebrow size is uniformly 12px so dense mono labels stay readable. */
 .analysis-stat-strip .analysis-stat span,
 .metric-card span,
 .setting-row span,
-.api-row small { font-size: 11px; }
+.api-row small { font-size: 12px; }
 
 /* Page-head vertical rhythm: one 16px head→content gap everywhere */
 .page-head { padding: 4px 2px 16px; }
@@ -2742,7 +3023,7 @@ button.compare-row-head.active {
 .breadcrumb .crumb-link:hover { color: var(--text); text-decoration-color: currentColor; }
 
 /* Tokenize row-hover wash so light theme stays visible */
-:root { --row-hover: rgba(15, 23, 42, 0.04); }
+:root { --row-hover: rgba(23, 26, 20, 0.04); }
 :root[data-theme="dark"] { --row-hover: rgba(255, 255, 255, 0.03); }
 .table tr:hover td,
 :root[data-theme="dark"] tbody tr:hover,
@@ -2798,7 +3079,7 @@ button.compare-row-head.active {
 .workspace-run-open .legend-dot { margin-top: 4px; }
 .workspace-run-body { display: grid; gap: 2px; min-width: 0; }
 .workspace-run-body strong {
-  font: 600 12.5px/1.2 var(--font-mono);
+  font: 650 13px/1.2 var(--font-mono);
   letter-spacing: -0.01em;
   color: var(--text);
   overflow: hidden;
@@ -2807,12 +3088,49 @@ button.compare-row-head.active {
   transition: color 0.1s ease;
 }
 .workspace-run-body small {
-  font: 500 11px/1.25 var(--font-mono);
-  color: var(--faint);
+  font: 550 12px/1.3 var(--font-mono);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Persistent run-selection tray: renders only while a selection exists, so it
+ * never reserves dead space. Fixed above page content, below modals. */
+.selection-tray {
+  position: fixed;
+  right: 16px;
+  bottom: 14px;
+  left: calc(var(--sidebar-width, 56px) + 16px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
+  padding: 9px 14px;
+}
+
+.selection-tray-count {
+  color: var(--accent);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.selection-tray-names {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-tray-spacer {
+  flex: 1;
+}
+
 .upload-health-chip {
   justify-self: start;
   width: max-content;
@@ -2825,7 +3143,7 @@ button.compare-row-head.active {
   white-space: nowrap;
 }
 .upload-health-chip.good {
-  border-color: rgba(31, 184, 119, 0.24);
+  border-color: rgba(43, 224, 130, 0.24);
   color: var(--accent-strong);
 }
 .upload-health-chip.live {
@@ -2835,6 +3153,56 @@ button.compare-row-head.active {
 .upload-health-chip.bad {
   border-color: rgba(219, 57, 57, 0.24);
   color: var(--danger);
+}
+.workspace-run-row {
+  min-height: 70px;
+}
+.workspace-run-list {
+  grid-auto-rows: minmax(76px, max-content);
+}
+.workspace-run-body {
+  gap: 3px;
+}
+.workspace-run-body small,
+.workspace-run-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+.workspace-run-tags b,
+.workspace-run-tags em {
+  font-size: 12px;
+}
+/* dashboard-runs.css owns the base collapsed summary. This later layer mirrors
+ * it so the current overhaul rail keeps the same visible collapsed context. */
+.workspace-rail-collapsed-summary {
+  display: none;
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  text-align: center;
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary strong {
+  color: var(--text);
+  font: 700 13px/1 var(--font-mono);
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary span {
+  writing-mode: vertical-rl;
+  text-transform: uppercase;
+  font: 650 9.5px/1 var(--font-mono);
+}
+.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary em {
+  max-width: 44px;
+  overflow: hidden;
+  color: var(--text-2);
+  font: 600 10px/1.15 var(--font-mono);
+  font-style: normal;
+  text-overflow: ellipsis;
 }
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }
@@ -2972,3 +3340,29 @@ button.compare-row-head.active {
   border-radius: var(--radius);
 }
 .workspace-run-select:focus-visible .workspace-eye span { border-color: var(--accent); }
+
+/* 3.4: the breadcrumb project crumb is a button that opens the project
+   selector; inherit the crumb-link look without button chrome. */
+button.crumb-project {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.admin-hint a {
+  color: var(--accent);
+}
+
+.admin-hint code {
+  font-size: 11.5px;
+}

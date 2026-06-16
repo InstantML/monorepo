@@ -2,26 +2,27 @@
  * Self-contained, namespaced (.iml-*) so it never touches dashboard selectors
  * (.eyebrow / .brand-mark / .button-link are shared globally elsewhere).
  * Engineering-brutalism: dark-only, Bolt accent, mono eyebrows,
- * italic-serif emphasis, hairline borders, grid + glow. Tokens mirror
- * docs/design/assets/ui-overhaul-mocks/tokens.css. */
+ * italic-serif emphasis, hairline borders, grid + glow. Surface ramp mirrors
+ * the Instrument warm-graphite dark tokens (apps/web/app/styles/tokens.css). */
 
 .iml-auth,
 .iml-landing {
-  --bg:#07080c; --bg-soft:#0a0c12; --surface:#0d0f15; --surface-2:#12141c;
-  --surface-3:#171a24; --surface-hover:#1a1d28;
-  --line:#1c1f2a; --line-soft:#151923; --line-strong:#242937;
-  --text:#f8fafc; --text-2:#cbd5e1; --muted:#94a3b8; --faint:#8b97a8; --dim:#5b6678;
-  --accent:#1FB877; --accent-strong:#27e896; --accent-soft:rgba(31,184,119,.12);
-  --accent-line:rgba(31,184,119,.32);
-  --warm:#e0b07a; --warm-soft:rgba(224,176,122,.14);
-  --danger:#f87171; --danger-soft:rgba(248,113,113,.14);
-  --f-sans:"Geist",var(--font-sans-next),ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-mono:"Geist Mono",var(--font-mono-next),ui-monospace,SFMono-Regular,Menlo,monospace;
+  --bg:#080907; --bg-soft:#0a0c09; --surface:#121511; --surface-2:#171a15;
+  --surface-3:#141712; --surface-hover:#181b16;
+  --line:#20241d; --line-soft:#1a1d17; --line-strong:#2e332a;
+  --text:#f4f6f0; --text-2:#c8ccbc; --muted:#8b9280; --faint:#8b9280; --dim:#79816d;
+  --accent:#2be082; --accent-strong:#54f0a0; --accent-soft:rgba(43, 224, 130,.12);
+  --accent-line:rgba(43, 224, 130,.32);
+  --warm:#f0b43e; --warm-soft:rgba(224,176,122,.14);
+  --danger:#f25555; --danger-soft:rgba(248,113,113,.14);
+  --f-sans:var(--font-sans-next),"Archivo",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-display:var(--font-sans-next),"Archivo",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:var(--font-mono-next),"Spline Sans Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --f-serif:"Instrument Serif",var(--font-serif-next),Georgia,"Times New Roman",serif;
   --r-sm:4px; --r:6px; --r-lg:10px; --r-pill:999px;
   --topbar-h:48px;
   --bg-grid:
-    radial-gradient(900px 600px at 50% -8%, rgba(31,184,119,.07), transparent 70%),
+    radial-gradient(900px 600px at 50% -8%, rgba(43, 224, 130,.07), transparent 70%),
     linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),
     linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px),
     var(--bg);
@@ -48,14 +49,14 @@
 /* ── chrome ─────────────────────────────────────────────────────────────── */
 .iml-bar{position:sticky;top:0;z-index:50;display:flex;align-items:center;
   justify-content:space-between;gap:14px;height:var(--topbar-h);padding:0 18px;
-  border-bottom:1px solid var(--line);background:rgba(7,8,12,.86);
+  border-bottom:1px solid var(--line);background:rgba(8,9,7,.86);
   backdrop-filter:blur(10px) saturate(140%)}
 .iml-brand{display:flex;align-items:center;gap:10px;color:var(--text);
-  font:700 14px/1 var(--f-sans);letter-spacing:-.01em}
+  font:700 14px/1 var(--f-display);letter-spacing:-.01em}
 .iml-mark{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:7px;
   border:1px solid var(--accent-line);color:var(--accent);
-  background:linear-gradient(180deg,rgba(31,184,119,.12),rgba(31,184,119,.02));
-  --brand-mark-bg:#0d0f15}
+  background:linear-gradient(180deg,rgba(43, 224, 130,.12),rgba(43, 224, 130,.02));
+  --brand-mark-bg:#121511}
 .iml-mark .instantml-mark-svg{width:64%;height:64%}
 .iml-bar-actions{display:flex;align-items:center;gap:8px}
 
@@ -70,27 +71,27 @@
 .iml-eyebrow.is-danger{color:var(--danger)}
 .iml-em{font-family:var(--f-serif);font-style:italic;font-weight:400;
   font-size:1.08em;color:var(--text-2)}
-.iml-headline{font:700 28px/1.08 var(--f-sans);letter-spacing:-.02em;
+.iml-headline{font:700 28px/1.08 var(--f-display);letter-spacing:-.02em;
   color:var(--text);margin:0}
 .iml-headline:focus{outline:none}
 .iml-sub{color:var(--muted);font-size:13px;line-height:1.6;margin:0;max-width:48ch}
 .iml-sub code{font-family:var(--f-mono);color:var(--text-2);font-size:.92em}
 
-.iml-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;
-  padding:0 14px;background:var(--surface-2);border:1px solid var(--line);
-  border-radius:var(--r);color:var(--text);font:600 13px/1 var(--f-sans);cursor:pointer;
+.iml-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;
+  padding:9px 14px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--r);color:var(--text);font:600 13px/1.2 var(--f-sans);cursor:pointer;
   transition:background .14s,border-color .14s,color .14s,transform .1s;white-space:nowrap}
 .iml-btn:hover{background:var(--surface-hover);border-color:var(--line-strong)}
 .iml-btn:active{transform:translateY(1px)}
-.iml-btn:disabled{opacity:.6;cursor:not-allowed}
+.iml-btn:disabled{opacity:.68;cursor:not-allowed}
 .iml-btn--ghost{background:transparent;border-color:transparent;color:var(--muted)}
 .iml-btn--ghost:hover{background:var(--surface-hover);color:var(--text)}
 .iml-btn--outline{background:transparent;border-color:var(--line-strong);color:var(--text-2)}
 .iml-btn--outline:hover{background:var(--surface-hover);color:var(--text)}
 .iml-btn--primary{background:var(--accent);border-color:var(--accent);color:#051d12}
 .iml-btn--primary:hover:not(:disabled){background:var(--accent-strong);border-color:var(--accent-strong)}
-.iml-btn--primary:disabled{background:var(--accent);border-color:var(--accent);opacity:.62}
-.iml-btn--lg{height:44px;padding:0 18px;font-size:14px}
+.iml-btn--primary:disabled{background:#18704d;border-color:#18704d;color:#f2fff8;opacity:1}
+.iml-btn--lg{min-height:44px;padding:11px 18px;font-size:14px}
 .iml-btn--block{width:100%}
 .iml-btn .iml-arrow{transition:transform .16s}
 .iml-btn:hover:not(:disabled) .iml-arrow{transform:translateX(3px)}
@@ -102,12 +103,12 @@
 .iml-chip.is-muted{color:var(--muted)}
 .iml-dot{width:7px;height:7px;border-radius:999px;background:var(--faint);flex:0 0 auto}
 .iml-dot.is-running{background:var(--accent);animation:iml-pulse 1.8s ease-out infinite}
-@keyframes iml-pulse{0%{box-shadow:0 0 0 0 rgba(31,184,119,.45)}
-  70%{box-shadow:0 0 0 7px rgba(31,184,119,0)}100%{box-shadow:0 0 0 0 rgba(31,184,119,0)}}
+@keyframes iml-pulse{0%{box-shadow:0 0 0 0 rgba(43, 224, 130,.45)}
+  70%{box-shadow:0 0 0 7px rgba(43, 224, 130,0)}100%{box-shadow:0 0 0 0 rgba(43, 224, 130,0)}}
 .iml-spin{width:13px;height:13px;border-radius:50%;flex:0 0 auto;
-  border:2px solid rgba(31,184,119,.25);border-top-color:var(--accent);
+  border:2px solid rgba(43, 224, 130,.25);border-top-color:var(--accent);
   animation:iml-spin .7s linear infinite}
-.iml-spin.on-fill{border-color:rgba(5,29,18,.3);border-top-color:#051d12}
+.iml-spin.on-fill{border-color:color-mix(in srgb,currentColor 34%,transparent);border-top-color:currentColor}
 @keyframes iml-spin{to{transform:rotate(360deg)}}
 
 /* ── card ───────────────────────────────────────────────────────────────── */
@@ -118,7 +119,7 @@
 .iml-card--single{grid-template-columns:1fr;width:min(520px,100%)}
 
 .iml-aside{padding:30px 26px;border-right:1px solid var(--line-soft);
-  background:radial-gradient(420px 280px at 0% 0%,rgba(31,184,119,.07),transparent 60%);
+  background:radial-gradient(420px 280px at 0% 0%,rgba(43, 224, 130,.07),transparent 60%);
   display:flex;flex-direction:column;gap:22px}
 .iml-aside-brand{display:flex;align-items:center;gap:10px}
 .iml-aside-brand .iml-mark{width:34px;height:34px}
@@ -182,7 +183,7 @@
   border-radius:var(--r);color:var(--text);font:500 14px/1 var(--f-sans);outline:none;
   width:100%;transition:border-color .14s,box-shadow .14s}
 .iml-input::placeholder{color:var(--faint)}
-.iml-input:focus{border-color:var(--accent-line);box-shadow:0 0 0 3px rgba(31,184,119,.13)}
+.iml-input:focus{border-color:var(--accent-line);box-shadow:0 0 0 3px rgba(43, 224, 130,.13)}
 textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5;
   resize:vertical;font-family:var(--f-mono);font-size:12px}
 .iml-hint{font:500 11px/1.4 var(--f-mono);color:var(--muted);letter-spacing:.01em}
@@ -201,16 +202,16 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
 .iml-seg-opt input{position:absolute;top:10px;inset-inline-start:10px;
   width:14px;height:14px;opacity:0;margin:0}
 .iml-seg-opt:has(input:checked){border-color:var(--accent-line);
-  background:var(--accent-soft);box-shadow:0 0 0 1px rgba(31,184,119,.18) inset}
+  background:#0b1411;box-shadow:0 0 0 1px rgba(43, 224, 130,.18) inset}
 .iml-seg-opt:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
 .iml-seg-t{display:flex;align-items:center;gap:8px;font:600 13px/1 var(--f-sans);
   color:var(--text)}
 .iml-seg-d{font:500 11px/1.4 var(--f-mono);color:var(--muted)}
 .iml-seg-opt:has(input:checked) .iml-seg-t{color:var(--accent-strong)}
 .iml-tick{width:14px;height:14px;border-radius:50%;border:1px solid var(--line-strong);
-  display:grid;place-items:center;color:transparent;font-size:9px;flex:0 0 auto}
-.iml-seg-opt:has(input:checked) .iml-tick{border-color:var(--accent);
-  background:var(--accent);color:#04130d}
+  display:grid;place-items:center;color:transparent;font-size:12px;flex:0 0 auto}
+.iml-seg-opt:has(input:checked) .iml-tick{border-color:#b9f4d0;
+  background:#b9f4d0;color:#062116}
 /* Fallback for browsers without :has() — the radio styling above relies on
    it, so without it the account-type selection/focus would be invisible.
    Show the native radio instead. */
@@ -228,8 +229,8 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
 .iml-plan:hover{border-color:var(--line-strong);background:var(--surface-2)}
 .iml-plan input{position:absolute;top:12px;inset-inline-end:12px;width:14px;height:14px;
   opacity:0;margin:0}
-.iml-plan:has(input:checked){border-color:var(--accent-line);background:var(--accent-soft);
-  box-shadow:0 0 0 1px rgba(31,184,119,.18) inset}
+.iml-plan:has(input:checked){border-color:var(--accent-line);background:#0b1411;
+  box-shadow:0 0 0 1px rgba(43, 224, 130,.18) inset}
 .iml-plan:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
 .iml-plan-h{display:flex;align-items:center;gap:7px;font:600 13px/1 var(--f-sans);
   color:var(--text)}
@@ -336,4 +337,15 @@ textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5
 }
 @media (prefers-reduced-motion:reduce){
   .iml-auth *,.iml-landing *{animation:none!important;transition:none!important}
+}
+
+/* A2: spotlight the shared-demo action when arriving via the landing demo link. */
+.iml-btn--demo-spotlight {
+  border-color: var(--accent, #2be082);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.18);
+}
+
+.iml-demo-hint {
+  margin: 0 0 2px;
+  text-align: center;
 }

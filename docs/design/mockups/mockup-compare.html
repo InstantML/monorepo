@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Compare redesign</title>
+<style>
+  :root{
+    --ink:#0E1116; --bolt:#1FB877; --deep:#0A4D33;
+    --bg:#0b0e13; --surface:#11151c; --surface-2:#171c25; --surface-3:#1d2330;
+    --line:#222936; --line-soft:#1a202b;
+    --text:#e8edf4; --text-2:#aeb9c8; --muted:#7e8b9d; --faint:#5e6b7d;
+    --accent:#1FB877; --accent-soft:rgba(31,184,119,.12); --accent-line:rgba(31,184,119,.32);
+    --good:#3ecf8e; --bad:#e0635c; --amber:#d9a23a; --blue:#5d89dd;
+    --s1:#8a5ccf; --s2:#2e8b57; --s3:#2a7fbd;
+    --radius:6px; --radius-lg:10px; font-size:14px;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--text);font:400 1rem/1.45 "Inter",system-ui,sans-serif;padding:0}
+  .mono{font-family:ui-monospace,monospace}
+  .page{max-width:1180px;margin:0 auto;padding:20px 24px}
+  h1{font-size:1.15rem;font-weight:600;display:flex;align-items:center;gap:10px}
+  .sub{color:var(--muted);font-size:.88rem;margin-top:2px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .btn{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);color:var(--text-2);padding:6px 11px;font-size:.88rem;cursor:pointer}
+  .btn.primary{background:var(--bolt);border-color:var(--bolt);color:#06281a;font-weight:600}
+  .chip{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--text-2);background:var(--surface-2)}
+  .chip.on{border-color:var(--accent-line);color:#bdebd6;background:var(--accent-soft)}
+
+  /* Run strip: selection is first-class ON the page */
+  .runstrip{display:flex;gap:8px;align-items:center;margin:16px 0;flex-wrap:wrap}
+  .runpill{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:.86rem}
+  .runpill .sw{width:8px;height:8px;border-radius:2px}
+  .runpill.ref{border-color:var(--accent-line);background:var(--accent-soft)}
+  .runpill .x{color:var(--faint);cursor:pointer;margin-left:2px}
+  .addrun{position:relative}
+  .picker{position:absolute;top:42px;left:0;width:340px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:0 14px 40px rgba(0,0,0,.5);z-index:5;overflow:hidden}
+  .picker input{width:100%;background:var(--surface-2);border:none;border-bottom:1px solid var(--line);color:var(--text);padding:10px 12px;font-size:.9rem;outline:none}
+  .picker .opt{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:.88rem;cursor:pointer}
+  .picker .opt:hover{background:var(--surface-2)}
+  .picker .opt .meta{margin-left:auto;color:var(--faint);font-size:.76rem;font-family:ui-monospace,monospace}
+  .picker .foot{padding:8px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:.78rem;display:flex;gap:10px}
+  .urlNote{font-size:.78rem;color:var(--faint);font-family:ui-monospace,monospace}
+
+  .best{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:12px 16px;margin:14px 0}
+  .best .label{font-size:.72rem;letter-spacing:.08em;color:var(--faint)}
+  .best .name{font-weight:600;font-family:ui-monospace,monospace}
+  .best .val{margin-left:auto;font-size:1.2rem;font-weight:600;color:#bdebd6;font-family:ui-monospace,monospace}
+
+  /* Table: sticky first column, edge fade, direction-aware deltas */
+  .tableWrap{position:relative;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}
+  .tableScroll{overflow-x:auto}
+  .tableWrap::after{content:"";position:absolute;top:0;right:0;bottom:12px;width:42px;pointer-events:none;background:linear-gradient(to right, transparent, rgba(11,14,19,.9));}
+  table{border-collapse:separate;border-spacing:0;font-size:.88rem;min-width:1100px;width:100%}
+  th,td{padding:9px 12px;border-bottom:1px solid var(--line-soft);white-space:nowrap;text-align:right}
+  th{font-size:.74rem;color:var(--muted);font-weight:500;background:var(--surface);position:sticky;top:0}
+  th .dir{font-size:.68rem;color:var(--faint);display:block}
+  th:first-child,td:first-child{position:sticky;left:0;background:var(--surface);text-align:left;z-index:2;border-right:1px solid var(--line)}
+  tbody tr:hover td{background:var(--surface-2)}
+  .runName{display:flex;align-items:center;gap:8px;font-weight:600}
+  .sw{width:9px;height:9px;border-radius:2px;flex:none}
+  .refTag{font-size:.68rem;letter-spacing:.06em;color:#bdebd6;background:var(--accent-soft);border:1px solid var(--accent-line);padding:1px 7px;border-radius:999px;margin-left:6px}
+  .num{font-family:ui-monospace,monospace}
+  .delta{display:block;font-size:.76rem}
+  .delta.up{color:var(--good)} .delta.down{color:var(--bad)} .delta.zero{color:var(--faint)}
+  .cfgdiff{background:rgba(217,162,58,.12)}
+  .artifacts{display:flex;gap:6px;align-items:center}
+  .ver{font-size:.72rem;background:var(--surface-3);border-radius:4px;padding:1px 6px;color:var(--text-2);font-family:ui-monospace,monospace}
+  .note{margin-top:14px;padding:10px 12px;border:1px dashed var(--line);border-radius:var(--radius-lg);color:var(--muted);font-size:.83rem;max-width:72ch}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Compare <span class="chip on">3 runs</span> <span class="chip">vs reference: iris-fast-lr-seed-17</span></h1>
+  <div class="sub">Deltas are colored by each metric’s goal direction (accuracy ↑ good, loss/ece ↓ good). Unknown direction renders neutral.</div>
+
+  <!-- Selection lives here too: add/remove runs without leaving Compare; state mirrors ?runs= -->
+  <div class="runstrip">
+    <span class="runpill ref"><span class="sw" style="background:var(--s1)"></span>iris-fast-lr-seed-17 <span class="x">·ref</span></span>
+    <span class="runpill"><span class="sw" style="background:var(--s3)"></span>iris-fast-lr-seed-7 <span class="x">✕</span></span>
+    <span class="runpill"><span class="sw" style="background:var(--s2)"></span>iris-baseline-seed-17 <span class="x">✕</span></span>
+    <span class="addrun">
+      <button class="btn primary">＋ Add runs</button>
+      <span class="picker">
+        <input placeholder="Search runs in iris-classification…" value="reg">
+        <div class="opt"><span class="sw" style="background:#c26300"></span> iris-<b>reg</b>ularized-seed-17 <span class="meta">acc 0.900</span></div>
+        <div class="opt"><span class="sw" style="background:#d04a3a"></span> iris-<b>reg</b>ularized-seed-7 <span class="meta">acc 0.900</span></div>
+        <div class="foot"><span>↵ add</span><span>⇧↵ add all matches</span><span style="margin-left:auto">from current filter (6)</span></div>
+      </span>
+    </span>
+    <span class="urlNote">/dashboard/compare?runs=9f05,31fc,99e1&ref=9f05 — shareable, survives reload</span>
+  </div>
+
+  <div class="best">
+    <span><div class="label">BEST RUN · TEST/ACCURACY</div><div class="name">iris-fast-lr-seed-17</div></span>
+    <span class="chip">Diff only</span><span class="chip">Rows ▾</span><span class="chip">＋ Add metric</span><span class="chip">＋ Add config key</span>
+    <span class="val">0.96667</span>
+  </div>
+
+  <div class="tableWrap"><div class="tableScroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>Status</th>
+          <th class="num">test/accuracy <span class="dir">goal ↑</span></th>
+          <th class="num">test/ece <span class="dir">goal ↓</span></th>
+          <th class="num">train/loss <span class="dir">goal ↓</span></th>
+          <th class="num">duration</th>
+          <th class="num">lr <span class="dir">config</span></th>
+          <th class="num">l2 <span class="dir">config</span></th>
+          <th>artifacts</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="runName"><span class="sw" style="background:var(--s1)"></span>iris-fast-lr-seed-17<span class="refTag">REF</span></span></td>
+          <td>Finished</td>
+          <td class="num">0.96667<span class="delta zero">reference</span></td>
+          <td class="num">0.124<span class="delta zero">reference</span></td>
+          <td class="num">0.183<span class="delta zero">reference</span></td>
+          <td class="num">11s</td>
+          <td class="num">0.22</td>
+          <td class="num">0.0010</td>
+          <td class="artifacts"><span class="ver">predictions v2</span><span class="ver">model v1</span><span class="ver">+2</span></td>
+        </tr>
+        <tr>
+          <td><span class="runName"><span class="sw" style="background:var(--s3)"></span>iris-fast-lr-seed-7</span></td>
+          <td>Finished</td>
+          <td class="num">0.96667<span class="delta zero">±0%</span></td>
+          <td class="num">0.134<span class="delta down">+8.1% worse</span></td>
+          <td class="num">0.177<span class="delta up">−3.3% better</span></td>
+          <td class="num">11s</td>
+          <td class="num">0.22</td>
+          <td class="num">0.0010</td>
+          <td class="artifacts"><span class="ver">predictions v2</span><span class="ver">model v1</span><span class="ver">+2</span></td>
+        </tr>
+        <tr>
+          <td><span class="runName"><span class="sw" style="background:var(--s2)"></span>iris-baseline-seed-17</span></td>
+          <td>Finished</td>
+          <td class="num">0.93333<span class="delta down">−3.4% worse</span></td>
+          <td class="num">0.110<span class="delta up">−11.3% better</span></td>
+          <td class="num">0.192<span class="delta down">+4.9% worse</span></td>
+          <td class="num">10s</td>
+          <td class="num cfgdiff">0.14</td>
+          <td class="num cfgdiff">0.00050</td>
+          <td class="artifacts"><span class="ver">predictions v2</span><span class="ver">model v1</span><span class="ver">+2</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div></div>
+
+  <div class="note">
+    Changes from today’s Compare: (1) runs are added/removed here, not on another tab; (2) the selection is in the URL so the view is shareable and reload-safe; (3) per-metric goal direction drives delta color (today a lower loss shows red); (4) config cells that differ from the reference get a quiet highlight; (5) artifacts are grouped by name with version chips instead of duplicate filename rows; (6) the first column is sticky and the right edge fades to signal horizontal scroll.
+  </div>
+</div>
+</body>
+</html>

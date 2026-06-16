@@ -90,6 +90,8 @@ const securityHeaders = [
   { key: "Content-Security-Policy", value: `default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self' https://*.clerk.accounts.dev https://*.clerk.dev https://*.clerk.com https://checkout.stripe.com https://billing.stripe.com; img-src 'self' data: blob: ${clerkAssets}; connect-src 'self' http://127.0.0.1:* http://localhost:* ${clerkConnect} ${stripeConnect}; frame-src ${clerkConnect} https://challenges.cloudflare.com https://checkout.stripe.com https://billing.stripe.com; script-src 'self' 'unsafe-inline'${scriptEvalPolicy} ${clerkConnect} https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:` },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // Legacy framing fallback for browsers that ignore CSP frame-ancestors.
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
 ];
 
@@ -112,8 +114,8 @@ const nextConfig = {
       { source: "/api/dashboard/preferences", destination: `${apiBases.control}/api/dashboard/preferences` },
       { source: "/api/workspace-views", destination: `${apiBases.control}/api/workspace-views` },
       { source: "/api/workspace-views/:path*", destination: `${apiBases.control}/api/workspace-views/:path*` },
-      { source: "/api/reports", destination: `${apiBases.control}/api/reports` },
-      { source: "/api/reports/:path*", destination: `${apiBases.control}/api/reports/:path*` },
+      { source: "/api/reports", destination: `${apiBases.data}/api/reports` },
+      { source: "/api/reports/:path*", destination: `${apiBases.data}/api/reports/:path*` },
       { source: "/api/:path*", destination: `${apiBases.data}/api/:path*` },
       { source: "/runs/:path*", destination: `${apiBases.data}/runs/:path*` },
       { source: "/projects", destination: `${apiBases.data}/projects` },

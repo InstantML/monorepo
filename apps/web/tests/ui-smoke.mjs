@@ -379,10 +379,12 @@ try {
     const tabs = document.querySelector(".tabs");
     return {
       focusWithin: tabs?.matches(":focus-within") ?? false,
+      nativeTitleCount: document.querySelectorAll("nav.tabs [title]").length,
       width: tabs?.getBoundingClientRect().width ?? 0,
     };
   });
   assert.equal(collapsedNav.focusWithin, false);
+  assert.equal(collapsedNav.nativeTitleCount, 0, "sidebar nav should use stable custom labels instead of native title tooltips");
   assert.ok(collapsedNav.width < 80, `sidebar should collapse after mouse tab select, got ${collapsedNav.width}`);
 
   await page.evaluate(() => {
@@ -721,7 +723,8 @@ try {
   await page.fill("#search", "");
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
-  await page.locator(".runs-commandbar").getByRole("button", { name: "Columns" }).click();
+  await page.locator(".runs-commandbar").getByRole("button", { name: "Runs actions" }).click();
+  await page.locator(".runs-actions-popover").getByRole("button", { name: "Columns" }).click();
   await page.waitForSelector("#columns-popover");
   await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").uncheck();
   assert.equal(await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").isChecked(), false);
@@ -949,92 +952,91 @@ try {
   await page.evaluate(() => window.scrollTo(0, 0));
 
   const firstWorkspacePanel = page.locator(".workspace-panel-card").first();
+  await firstWorkspacePanel.scrollIntoViewIfNeeded();
   const startingLayout = await firstWorkspacePanel.evaluate((node) => ({
     h: Number(node.dataset.panelHeight),
     w: Number(node.dataset.panelWidth),
   }));
+  const startingGeometry = await firstWorkspacePanel.evaluate((card) => {
+    const grid = card.closest(".workspace-panel-grid");
+    const chartArea = card.querySelector(".chart-area");
+    const frame = card.querySelector(".metric-chart-frame");
+    const legend = card.querySelector(".chart-legend");
+    const handle = card.querySelector(".panel-resize-handle");
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return { bottom: box.bottom, height: box.height, left: box.left, right: box.right, top: box.top, width: box.width };
+    };
+    const handleBox = rect(handle);
+    const rowHeight = Number.parseFloat(getComputedStyle(grid).gridAutoRows);
+    const rowGap = Number.parseFloat(getComputedStyle(grid).rowGap);
+    const expectedPanelHeight = Number(card.dataset.panelHeight) * rowHeight + (Number(card.dataset.panelHeight) - 1) * rowGap;
+    const hit = document.elementFromPoint(handleBox.left + handleBox.width / 2, handleBox.top + handleBox.height / 2);
+    const frameBox = rect(frame);
+    const legendBox = rect(legend);
+    const chartAreaBox = rect(chartArea);
+    return {
+      chartArea: chartAreaBox,
+      expectedPanelHeight,
+      frame: frameBox,
+      frameAspect: getComputedStyle(frame).aspectRatio,
+      handle: handleBox,
+      handleHitClass: hit?.className ?? "",
+      handleZIndex: getComputedStyle(handle).zIndex,
+      legendColumns: getComputedStyle(legend).gridTemplateColumns.split(" ").filter(Boolean).length,
+      legendHeight: legendBox.height,
+      lowerDeadSpace: chartAreaBox.bottom - Math.max(frameBox.bottom, legendBox.bottom),
+      panel: rect(card),
+      rows: getComputedStyle(grid).gridAutoRows,
+    };
+  });
+  assert.equal(startingGeometry.rows, "78px");
+  assert.ok(Math.abs(startingGeometry.panel.height - startingGeometry.expectedPanelHeight) <= 4, `workspace panel height ${startingGeometry.panel.height} should follow grid span ${startingGeometry.expectedPanelHeight}`);
+  assert.equal(startingGeometry.frameAspect, "auto");
+  assert.match(String(startingGeometry.handleHitClass), /panel-resize-handle/, "resize handle should be the topmost hit target at its center");
+  assert.equal(startingGeometry.handleZIndex, "12");
+  assert.ok(startingGeometry.legendColumns >= 3, `workspace legend should compact across the panel, got ${startingGeometry.legendColumns} columns`);
+  assert.ok(startingGeometry.legendHeight <= 60, `workspace legend should not starve the chart, got ${startingGeometry.legendHeight}`);
+  assert.ok(startingGeometry.frame.height >= 80, `workspace chart frame should stay usable, got ${startingGeometry.frame.height}`);
+  assert.ok(startingGeometry.lowerDeadSpace <= 24, `workspace chart should not leave a large bottom gutter, got ${startingGeometry.lowerDeadSpace}`);
   const resizeBox = await firstWorkspacePanel.locator(".panel-resize-handle").boundingBox();
   assert.ok(resizeBox, "expected workspace panel resize handle");
-  await page.evaluate(() => {
-    const handle = document.querySelector(".workspace-panel-card .panel-resize-handle");
-    if (!handle) throw new Error("Missing panel resize handle");
-    const rect = handle.getBoundingClientRect();
-    const startX = rect.left + rect.width / 2;
-    const startY = rect.top + rect.height / 2;
-    const pointerId = 41;
-    handle.dispatchEvent(new PointerEvent("pointerdown", {
-      bubbles: true,
-      buttons: 1,
-      cancelable: true,
-      clientX: startX,
-      clientY: startY,
-      isPrimary: true,
-      pointerId,
-      pointerType: "mouse",
-    }));
-    window.dispatchEvent(new PointerEvent("pointermove", {
-      bubbles: true,
-      buttons: 1,
-      clientX: startX + 260,
-      clientY: startY + 120,
-      isPrimary: true,
-      pointerId,
-      pointerType: "mouse",
-    }));
-    window.dispatchEvent(new PointerEvent("pointerup", {
-      bubbles: true,
-      clientX: startX + 260,
-      clientY: startY + 120,
-      isPrimary: true,
-      pointerId,
-      pointerType: "mouse",
-    }));
-  });
-  const resizedOnce = await page.evaluate((start) => {
-    const card = document.querySelector(".workspace-panel-card");
-    return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
-  }, startingLayout);
-  if (!resizedOnce) {
-    await page.evaluate(() => {
-      const handle = document.querySelector(".workspace-panel-card .panel-resize-handle");
-      if (!handle) throw new Error("Missing panel resize handle after retry");
-      const rect = handle.getBoundingClientRect();
-      const startX = rect.left + rect.width / 2;
-      const startY = rect.top + rect.height / 2;
-      const pointerId = 42;
-      handle.dispatchEvent(new PointerEvent("pointerdown", {
-        bubbles: true,
-        buttons: 1,
-        cancelable: true,
-        clientX: startX,
-        clientY: startY,
-        isPrimary: true,
-        pointerId,
-        pointerType: "mouse",
-      }));
-      window.dispatchEvent(new PointerEvent("pointermove", {
-        bubbles: true,
-        buttons: 1,
-        clientX: startX + 320,
-        clientY: startY + 180,
-        isPrimary: true,
-        pointerId,
-        pointerType: "mouse",
-      }));
-      window.dispatchEvent(new PointerEvent("pointerup", {
-        bubbles: true,
-        clientX: startX + 320,
-        clientY: startY + 180,
-        isPrimary: true,
-        pointerId,
-        pointerType: "mouse",
-      }));
-    });
-  }
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2, resizeBox.y + resizeBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 180, resizeBox.y + resizeBox.height / 2 + 170, { steps: 8 });
+  await page.mouse.up();
   await page.waitForFunction((start) => {
     const card = document.querySelector(".workspace-panel-card");
     return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
   }, startingLayout);
+  const resizedGeometry = await firstWorkspacePanel.evaluate((card) => {
+    const grid = card.closest(".workspace-panel-grid");
+    const frame = card.querySelector(".metric-chart-frame");
+    const handle = card.querySelector(".panel-resize-handle");
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return { bottom: box.bottom, height: box.height, left: box.left, right: box.right, top: box.top, width: box.width };
+    };
+    const rowHeight = Number.parseFloat(getComputedStyle(grid).gridAutoRows);
+    const rowGap = Number.parseFloat(getComputedStyle(grid).rowGap);
+    const rowSpan = Number(card.dataset.panelHeight);
+    return {
+      expectedPanelHeight: rowSpan * rowHeight + (rowSpan - 1) * rowGap,
+      frame: rect(frame),
+      handle: rect(handle),
+      mode: document.querySelector("#workspace-mode")?.value,
+      panel: rect(card),
+      rowSpan,
+      widthSpan: Number(card.dataset.panelWidth),
+    };
+  });
+  assert.equal(resizedGeometry.mode, "manual");
+  assert.ok(
+    resizedGeometry.rowSpan > startingLayout.h || resizedGeometry.widthSpan > startingLayout.w,
+    `resize should increase width or height from ${JSON.stringify(startingLayout)} to ${JSON.stringify({ h: resizedGeometry.rowSpan, w: resizedGeometry.widthSpan })}`,
+  );
+  assert.ok(Math.abs(resizedGeometry.panel.height - resizedGeometry.expectedPanelHeight) <= 4, `resized panel height ${resizedGeometry.panel.height} should follow grid span ${resizedGeometry.expectedPanelHeight}`);
+  assert.ok(resizedGeometry.frame.height > startingGeometry.frame.height, "chart frame should grow when the panel is resized taller");
   await page.getByRole("button", { name: "Reset layout" }).click();
   await page.waitForFunction(() => document.querySelector("#workspace-mode")?.value === "automatic" && document.querySelectorAll(".workspace-panel-card").length >= 3);
 
@@ -1166,8 +1168,8 @@ try {
   await selectVisibleRunForMetrics(page);
 
   await page.getByRole("link", { name: /Metrics/ }).click();
-  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Metric Catalog"));
-  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Leaderboard"));
+  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Metric browser"));
+  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Series"));
   await page.fill("#metric-filter", "train/.*");
   await page.waitForFunction(() => [...document.querySelectorAll("#metric-select option")].some((option) => option.textContent === "train/loss"));
   await chooseSelect(page, "#metric-select", "train/loss");
@@ -1175,15 +1177,21 @@ try {
   const pinMetric = page.locator("#pin-metric");
   if (!(await pinMetric.innerText()).includes("Pinned")) await pinMetric.click();
   await chooseSelect(page, "#group-select", "seed");
-  await chooseSelect(page, "#x-mode", "time");
+  await page.locator("#x-mode-time").click();
+  await page.waitForFunction(() => document.querySelector("#x-mode-time")?.getAttribute("aria-pressed") === "true");
   await page.locator("#smoothing").focus();
   await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector("#smoothing")?.value === "10");
+  await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .series-smooth").length > 0);
   await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector("#smoothing")?.value === "20");
   await page.check("#group-average");
   await page.waitForSelector(".tab-pane.active .series-point", { timeout: 10000 });
   await page.locator(".tab-pane.active .series-point").first().hover({ force: true });
-  await page.waitForSelector(".tab-pane.active .readout-card", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active .readout-card").innerText(), /step/);
+  await page.waitForSelector(".tab-pane.active .chart-tooltip", { timeout: 10000 });
+  const metricsReadoutText = await page.locator(".tab-pane.active .chart-tooltip").innerText();
+  assert.match(metricsReadoutText, /Raw \/ EMA/i);
+  assert.match(metricsReadoutText, /EMA/);
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
@@ -1392,14 +1400,14 @@ try {
   await page.getByRole("link", { name: /^Metrics$/ }).click();
   await page.waitForSelector(".tab-pane.active .metrics-analysis", { timeout: 10000 });
   await page.fill("#metric-filter", "");
-  await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .metric-catalog-row").length >= 3);
-  await page.waitForFunction(() => [...document.querySelectorAll(".tab-pane.active .metric-catalog-row")]
-    .some((row) => row.textContent?.includes("Loss")));
-  await page.locator(".tab-pane.active .metric-catalog-row", { hasText: "Loss" }).locator(".metric-catalog-main").click();
+  await page.waitForFunction(() => document.querySelectorAll(".tab-pane.active .mx-tree-leaf").length >= 3);
+  await page.waitForFunction(() => [...document.querySelectorAll(".tab-pane.active .mx-tree-leaf")]
+    .some((row) => /loss/i.test(row.textContent ?? "")));
+  await page.locator(".tab-pane.active .mx-tree-leaf", { hasText: "loss" }).first().locator(".mx-tree-leaf-main").click();
   await page.waitForSelector(".tab-pane.active .metric-chart", { timeout: 10000 }).catch(async (error) => {
     const state = await page.evaluate(() => ({
       activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
-      catalogRows: [...document.querySelectorAll(".tab-pane.active .metric-catalog-row")].slice(0, 5).map((row) => row.textContent?.replace(/\s+/g, " ").trim() ?? ""),
+      catalogRows: [...document.querySelectorAll(".tab-pane.active .mx-tree-leaf")].slice(0, 5).map((row) => row.textContent?.replace(/\s+/g, " ").trim() ?? ""),
       empty: document.querySelector(".tab-pane.active .chart-area .empty")?.textContent ?? "",
       metricSelect: document.querySelector("#metric-select")?.textContent ?? "",
       tabText: document.querySelector(".tab-pane.active")?.textContent?.slice(0, 800) ?? "",
@@ -1413,12 +1421,12 @@ try {
     chartPointRadius: document.querySelector(".tab-pane.active .series-point")?.getAttribute("r") ?? "",
     points: document.querySelectorAll(".tab-pane.active .series-point").length,
     axisLabels: [...document.querySelectorAll(".tab-pane.active .axis-label")].map((node) => node.textContent),
-    metricCatalogRows: document.querySelectorAll(".tab-pane.active .metric-catalog-row").length,
-    leaderboardRows: document.querySelectorAll(".tab-pane.active .leaderboard-row").length,
-    leaderboardEmpty: document.querySelector(".tab-pane.active")?.textContent?.includes("No selected runs have") ?? false,
+    metricCatalogRows: document.querySelectorAll(".tab-pane.active .mx-tree-leaf").length,
+    seriesRows: document.querySelectorAll(".tab-pane.active .mx-table tbody tr").length,
+    seriesEmpty: document.querySelector(".tab-pane.active")?.textContent?.includes("No runs have logged") ?? false,
     controls: {
       group: document.querySelector("#group-select")?.value,
-      x: document.querySelector("#x-mode")?.value,
+      x: document.querySelector("#x-mode-time")?.getAttribute("aria-pressed") === "true" ? "time" : "step",
       smooth: document.querySelector("#smoothing")?.value,
       average: document.querySelector("#group-average")?.checked,
     },
@@ -1510,7 +1518,7 @@ try {
   assert.ok(data.notePreviews.some((note) => /Synthetic|note/i.test(note)), "workspace rows should expose note previews");
   assert.ok(data.tagPreviews.some((tags) => /demo|qa-smoke|compare-smoke/i.test(tags)), "workspace rows should expose tag previews");
   assert.ok(data.metricCatalogRows >= 3);
-  assert.ok(data.leaderboardRows >= 1 || data.leaderboardEmpty);
+  assert.ok(data.seriesRows >= 1 || data.seriesEmpty);
   assert.ok(data.runTimelineRows >= 3);
   assert.ok(data.runMetricRows >= 3);
   assert.equal(data.runDetailChart, true);
@@ -1808,7 +1816,8 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   await page.waitForFunction((name) => document.querySelector(".workspace-run-list")?.textContent?.includes(name), viewerRunName);
   const viewerRunsText = await page.locator("body").innerText();
   assert.match(viewerRunsText, /eval\/viewer_score/);
-  assert.equal(await page.getByRole("button", { name: "Save view" }).isEnabled(), false);
+  await page.getByRole("button", { name: "View actions" }).click();
+  assert.equal(await page.locator(".view-actions-popover").getByRole("button", { name: "Save view" }).isEnabled(), false);
   await pageApiExpectStatus(page, "POST", "/runs", {
     project: "viewer-project",
     name: "viewer-must-not-write",

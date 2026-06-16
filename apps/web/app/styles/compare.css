@@ -43,7 +43,7 @@
 .compare-artifact-item small,
 .artifact-media-fallback {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -60,7 +60,7 @@
   object-fit: contain;
   border: 1px solid var(--line-soft);
   border-radius: var(--control-radius);
-  background: #050a12;
+  background: var(--color-ink);
 }
 
 .artifact-image {
@@ -106,7 +106,7 @@
   gap: 2px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 780;
   line-height: 1.25;
   text-transform: uppercase;
@@ -132,7 +132,7 @@ button.compare-row-head.active {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 720;
   opacity: 0.76;
   text-overflow: ellipsis;
@@ -165,7 +165,7 @@ button.compare-row-head.active {
 .compare-run-identity small,
 .compare-note {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -201,7 +201,7 @@ button.compare-row-head.active {
 }
 
 .compare-metric-cell.primary {
-  box-shadow: inset 2px 0 0 rgba(31, 184, 119, 0.72);
+  box-shadow: inset 2px 0 0 rgba(43, 224, 130, 0.46);
 }
 
 .compare-signal-cell small,
@@ -209,7 +209,7 @@ button.compare-row-head.active {
 .compare-evidence-note {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -261,8 +261,7 @@ button.compare-row-head.active {
   display: grid;
   gap: 6px;
   min-height: 76px;
-  border: 1px solid var(--line-soft);
-  border-left: 3px solid #b8c3ce;
+  border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: var(--surface-soft);
   padding: 12px;
@@ -321,7 +320,7 @@ button.compare-row-head.active {
   display: block;
   min-width: 0;
   overflow: hidden;
-  color: #11202b;
+  color: #141712;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -389,14 +388,72 @@ button.compare-row-head.active {
 }
 
 .compact-head {
-  background: #fbfcfd;
+  background: #fdfdfb;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
 }
 
 .browser-row {
-  grid-template-columns: 34px minmax(0, 1fr) auto auto minmax(112px, auto) minmax(86px, auto);
+  grid-template-columns: 34px minmax(0, 1fr) auto auto minmax(112px, auto) minmax(96px, auto) minmax(86px, auto);
+}
+
+.browser-row.reference-only {
+  border-style: dashed;
+}
+
+.browser-row.reference-only .browser-icon {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.artifact-name-group {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.artifact-name-group .browser-row.older-version {
+  margin-left: 22px;
+}
+
+.browser-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.artifact-reference-chip {
+  flex: 0 0 auto;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: help;
+}
+
+.artifact-version-count-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.artifact-version-count-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .browser-row .copy-button {
@@ -422,7 +479,7 @@ button.compare-row-head.active {
 
 .browser-row > span,
 .timeline-row > span:not(.timeline-dot) {
-  color: #344251;
+  color: #3a3f33;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
@@ -443,6 +500,41 @@ button.compare-row-head.active {
   white-space: nowrap;
 }
 
+/* In-app plan-change confirmation shown before any Stripe redirect. */
+.billing-confirm {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--control-radius);
+  background: var(--surface-tint);
+  padding: 12px;
+}
+
+.billing-confirm p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Actionable Compare empty state: teaches both selection paths instead of
+ * dead-ending. */
+.compare-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 36px 16px;
+}
+
+.compare-empty-state p {
+  margin: 0;
+  max-width: 52ch;
+  text-align: center;
+}
+
+.compare-empty-state .primary-button {
+  width: auto;
+}
+
 .control.full select,
 .control.full input,
 .control.full .select-trigger {
@@ -456,19 +548,19 @@ button.compare-row-head.active {
 
 .api-row span {
   justify-self: start;
-  border: 1px solid #d3e8ec;
+  border: 1px solid var(--line);
   border-radius: var(--tight-radius);
   background: var(--accent-soft);
   color: var(--accent-strong);
   padding: 3px 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 750;
 }
 
 .api-row code {
   min-width: 0;
   overflow: hidden;
-  color: #1f2f3f;
+  color: var(--text);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -489,17 +581,17 @@ button.compare-row-head.active {
   border-width: 1px;
   border-radius: var(--control-radius);
   background: #fff;
-  color: #344251;
+  color: #3a3f33;
   padding: 5px 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-decoration: none;
 }
 
 .copy-button:hover {
-  border-color: #b9c5d0;
-  background: #f7f9fb;
-  color: #1f2f3f;
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+  color: var(--text);
 }
 
 .copy-button.unavailable,
@@ -521,6 +613,10 @@ button.compare-row-head.active {
   align-items: start;
 }
 
+.artifact-stat-strip {
+  margin-bottom: 12px;
+}
+
 .artifact-catalog-panel {
   position: sticky;
   top: calc(var(--topbar-height) + 12px);
@@ -533,12 +629,12 @@ button.compare-row-head.active {
 }
 
 .artifact-lineage-panel,
-.artifact-totals-panel {
+.artifact-hint-panel {
   min-width: 0;
 }
 
 .artifact-raw-panel {
-  grid-column: 2 / 3;
+  grid-column: 2 / -1;
 }
 
 .artifact-raw-panel > summary {
@@ -550,20 +646,69 @@ button.compare-row-head.active {
   display: none;
 }
 
-.artifact-totals-panel {
-  grid-column: 3 / 4;
+.artifact-hint-panel {
+  grid-column: 2 / -1;
+}
+
+.artifact-note-panel {
+  position: static;
+}
+
+.artifact-inline-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .artifact-catalog-controls {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(128px, max-content) auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: end;
   width: min(100%, 560px);
 }
 
 .artifact-catalog-controls .control {
+  flex: 0 1 132px;
   min-width: 0;
+}
+
+.artifact-catalog-controls .search-control {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 180px;
+  gap: 7px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface-soft);
+  padding: 0 8px;
+  color: var(--faint);
+}
+
+.artifact-catalog-controls .search-control input {
+  min-height: 0;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.artifact-catalog-controls .search-control input,
+.artifact-catalog-controls select {
+  width: 100%;
+}
+
+.artifact-catalog-controls .search-control:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.artifact-catalog-controls .copy-button {
+  flex: 0 0 auto;
 }
 
 .artifact-catalog-panel .panel-head,
@@ -637,7 +782,7 @@ button.compare-row-head.active {
   background: #fff;
   color: var(--muted);
   padding: 2px 7px;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -717,24 +862,26 @@ button.compare-row-head.active {
 
 .artifact-lineage-node span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
 
 .artifact-lineage-node.run {
-  border-left: 3px solid var(--blue);
+  border-color: color-mix(in srgb, var(--blue) 32%, var(--line));
+  background: color-mix(in srgb, var(--surface-soft) 86%, var(--blue));
 }
 
 .artifact-lineage-node.artifact_version {
-  border-left: 3px solid var(--green);
+  border-color: color-mix(in srgb, var(--green) 30%, var(--line));
+  background: color-mix(in srgb, var(--surface-soft) 88%, var(--green));
 }
 
 .artifact-lineage-edge {
   grid-template-columns: minmax(0, 1fr) 18px auto minmax(0, 1fr);
   align-items: center;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .artifact-lineage-edge span {
@@ -752,13 +899,8 @@ button.compare-row-head.active {
     grid-template-columns: minmax(220px, 0.45fr) minmax(0, 1fr);
   }
 
-  .artifact-lineage-panel,
-  .artifact-totals-panel {
+  .artifact-lineage-panel {
     grid-column: 1 / -1;
-  }
-
-  .artifact-raw-panel {
-    grid-column: 2 / 3;
   }
 }
 
@@ -785,7 +927,7 @@ button.compare-row-head.active {
   .artifact-manifest-panel,
   .artifact-lineage-panel,
   .artifact-raw-panel,
-  .artifact-totals-panel {
+  .artifact-hint-panel {
     position: static;
     grid-column: 1 / -1;
   }
@@ -804,7 +946,7 @@ button.compare-row-head.active {
   }
 
   .artifact-catalog-controls {
-    grid-template-columns: minmax(0, 1fr) minmax(118px, auto) auto;
+    align-items: stretch;
   }
 
   .metrics-chart-surface {
@@ -1195,6 +1337,12 @@ button.compare-row-head.active {
     align-items: stretch;
   }
 
+  .artifact-catalog-controls .control,
+  .artifact-catalog-controls .search-control,
+  .artifact-catalog-controls .copy-button {
+    flex-basis: 100%;
+  }
+
   .artifact-catalog-controls .copy-button {
     width: 100%;
     justify-content: center;
@@ -1444,6 +1592,21 @@ button.compare-row-head.active {
 /* table shell — its own bounded scroll region so the column-header row stays
  * sticky on vertical scroll and wheel scrolling stays on the table. */
 .cmp-table-wrap{overflow:auto;max-height:70vh;scrollbar-gutter:stable;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+/* Edge fade signals horizontally clipped columns; it disappears once the
+ * table is scrolled to its right edge (scroll-driven animation, with a
+ * static fallback fade for browsers without scroll timelines). */
+.cmp-table-shell{position:relative;min-width:0}
+.cmp-table-shell::after{
+  content:"";
+  position:absolute;
+  top:0;
+  right:0;
+  bottom:12px;
+  width:36px;
+  border-radius:0 var(--radius) var(--radius) 0;
+  background:linear-gradient(to right, transparent, color-mix(in srgb, var(--surface) 88%, transparent));
+  pointer-events:none;
+}
 .cmp-table{min-width:max-content}
 .cmp-row{display:grid;grid-template-columns:var(--cmp-cols);align-items:stretch}
 .cmp-row + .cmp-row{border-top:1px solid var(--line-soft)}
@@ -1466,7 +1629,7 @@ button.compare-row-head.active {
 .cmp-th-cell.sticky .cmp-th{box-shadow:1px 0 0 var(--line)}
 .cmp-th:hover{background:var(--surface-hover)}
 .cmp-th-label{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap}
-.cmp-th-meta{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
+.cmp-th-meta{font-size: 12px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
 .cmp-th-chev{color:var(--dim);flex:none}
 .cmp-th:hover .cmp-th-chev{color:var(--muted)}
 .cmp-th.sorted .cmp-th-chev{color:var(--accent)}
@@ -1482,7 +1645,7 @@ button.compare-row-head.active {
 .cmp-cell.num{align-items:flex-end;text-align:right;font-variant-numeric:tabular-nums}
 .cmp-row:hover .cmp-cell{background:var(--surface-hover)}
 .cmp-row.reference .cmp-cell{background:var(--surface-selected)}
-.cmp-row.reference:hover .cmp-cell{background:#143027}
+.cmp-row.reference:hover .cmp-cell{background:var(--surface-tint)}
 
 /* sticky identity column */
 .cmp-identity{
@@ -1494,14 +1657,14 @@ button.compare-row-head.active {
 .cmp-identity-meta{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
 .cmp-run-name{font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmp-identity-sub{display:flex;align-items:center;gap:7px;min-width:0}
-.cmp-proj{font-family:var(--font-sans);font-size:10.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cmp-ref-tag{font-family:var(--font-sans);font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-strong);border:1px solid var(--accent-line);border-radius:var(--tight-radius);padding:1px 5px;flex:none}
+.cmp-proj{font-family:var(--font-sans);font-size: 12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-ref-tag{font-family:var(--font-sans);font-size: 12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-strong);border:1px solid var(--accent-line);border-radius:var(--tight-radius);padding:1px 5px;flex:none}
 .cmp-anchor{flex:none;background:transparent;border:0;cursor:pointer;color:var(--dim);font-size:14px;line-height:1;padding:3px 5px;border-radius:var(--control-radius)}
 .cmp-anchor:hover{color:var(--accent);background:var(--surface-hover)}
 .cmp-anchor.on{color:var(--accent)}
 
 /* status pills — distinct from the green=better / coral=worse delta semantics */
-.pill.cmp-status{font-family:var(--font-sans);font-size:10px;font-weight:600;padding:2px 7px;border-radius:var(--radius-pill);text-transform:capitalize;border:1px solid transparent;flex:none}
+.pill.cmp-status{font-family:var(--font-mono);font-size: 11.5px;font-weight:600;padding:2px 7px;border-radius:var(--radius-pill);text-transform:capitalize;border:1px solid transparent;flex:none}
 .pill.cmp-status.good{background:var(--surface-3);color:var(--text-2);border-color:var(--line-strong)}
 .pill.cmp-status.live{background:rgba(125,161,232,0.16);color:var(--blue);border-color:rgba(125,161,232,0.4)}
 .pill.cmp-status.bad{background:var(--danger-soft);color:var(--coral);border-color:rgba(248,113,113,0.38)}
@@ -1512,7 +1675,7 @@ button.compare-row-head.active {
  * "good" even on rows that are worse than the reference. Direction is carried by
  * the delta chip below. */
 .cmp-metric.primary .cmp-metric-val{color:var(--text);font-weight:720}
-.cmp-metric-sub{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:11px;color:var(--faint)}
+.cmp-metric-sub{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size: 12px;color:var(--faint)}
 .cmp-delta{font-family:var(--font-mono);font-weight:600}
 .cmp-delta.up{color:var(--green)}
 .cmp-delta.down{color:var(--coral)}
@@ -1533,3 +1696,59 @@ button.compare-row-head.active {
  * Use the same amber semantic as the rows-mode config diff dot — never the
  * success green, which would read as an improvement. */
 .cmp-redesign .compare-cell.changed{background:var(--warm-soft);color:var(--amber);font-weight:600}
+
+/* AR4: bounded csv/json/text artifact preview. */
+.artifact-text-preview-block {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  margin-top: 6px;
+}
+
+.artifact-text-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.artifact-text-preview-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.artifact-text-preview {
+  width: 100%;
+  max-width: 720px;
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--chart-card-bg, var(--surface));
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text);
+}
+
+.artifact-text-preview.is-loading,
+.artifact-text-preview.is-error {
+  font-family: inherit;
+  color: var(--muted);
+  white-space: normal;
+}
+
+.artifact-text-preview-note {
+  color: var(--muted);
+  font-size: 11.5px;
+}

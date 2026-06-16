@@ -2584,6 +2584,7 @@ mod tests {
             updated_at: epoch(),
             author_user_id: None,
             share_token: None,
+            share_token_issued_at: None,
             visibility: visibility.to_string(),
             deleted_at: if deleted { Some(epoch()) } else { None },
         }

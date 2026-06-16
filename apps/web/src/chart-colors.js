@@ -1,20 +1,34 @@
+// Instrument series order (signal green first — "the run you care about"),
+// mid-lightness so every color holds on both the dark graphite canvas and
+// white exports. See docs/design/reimagine/DESIGN-SYSTEM.md §2.5.
 export const CHART_PALETTE = [
-  "#2f80ed",
-  "#12a67a",
-  "#d65f74",
-  "#e0a33f",
-  "#7c5cc4",
-  "#3b9ba7",
-  "#8a96a8",
-  "#d97745",
-  "#4f6fb4",
-  "#7d9857",
-  "#b46ba8",
-  "#607080",
+  "#15a35d",
+  "#3b82e0",
+  "#bd8113",
+  "#c44fb2",
+  "#7a5fe0",
+  "#1b9c8f",
+  "#e06a38",
+  "#6f9a3f",
+  "#d6447e",
+  "#3f9ec9",
+  "#6f7d8c",
+  "#7d8472",
 ];
 
 export function chartColor(index = 0) {
   return CHART_PALETTE[Math.abs(Number(index) || 0) % CHART_PALETTE.length];
+}
+
+// Run-identity hues: the chart palette with the three reserved delta-semantic
+// families removed — green (=better), amber (=differs), and coral (=worse) —
+// so a run's identity swatch can never be mistaken for a value judgement.
+// Single source of truth for the compare side-by-side identity swatches.
+const IDENTITY_PALETTE_INDEXES = [1, 3, 4, 5, 8, 9, 10, 11];
+export const IDENTITY_PALETTE = IDENTITY_PALETTE_INDEXES.map((index) => CHART_PALETTE[index]);
+
+export function identityColor(index = 0) {
+  return IDENTITY_PALETTE[Math.abs(Number(index) || 0) % IDENTITY_PALETTE.length];
 }
 
 export function stableChartIndex(value, fallback = 0) {

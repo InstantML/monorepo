@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
+import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
 import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, categoricalValueForRun, chartPointCount, chunkRunIds, defaultDistributionFields, defaultParallelFields, distributionSummaryForRuns, fieldLabel, fieldValueForRun, histogramBins, histogramFramesFromObjects, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, metricFieldId, objectFieldId, parallelCoordinatesForRuns, parseCategoricalFieldId, parseFieldId, preferredScatterXField, runCategoricalFieldId, scatterPointsForRuns, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
@@ -26,6 +26,9 @@ import {
   metricKeysFromSummary,
   preferredMetricKey,
   rangeSelect,
+  RUN_SELECTION_URL_LIMIT,
+  runSelectionFromSearch,
+  runSelectionSearchParam,
   selectAllVisible,
   sortRuns,
   statusTone,
@@ -49,6 +52,20 @@ test("selection is capped and toggled", () => {
   assert.equal(selected.includes("run-0"), false);
   assert.equal(selected.at(-1), `run-${MAX_SELECTED_RUNS}`);
   assert.deepEqual(toggleSelection(selected, "run-4"), selected.filter((id) => id !== "run-4"));
+});
+
+test("run selection round-trips through the ?runs= URL parameter with a cap", () => {
+  assert.deepEqual(runSelectionFromSearch(""), []);
+  assert.deepEqual(runSelectionFromSearch("?runs="), []);
+  const a = "9f0516b7-a1e3-4612-a73c-71592074e636";
+  const b = "477afd28-c350-4307-bbf2-6d6b2049bae5";
+  assert.deepEqual(runSelectionFromSearch(`?runs=${a},${b},${a}`), [a, b]);
+  // Non-id junk (injection attempts, paths) is dropped.
+  assert.deepEqual(runSelectionFromSearch("?runs=<script>,../etc,run id"), []);
+  const many = Array.from({ length: RUN_SELECTION_URL_LIMIT + 10 }, (_, index) => `0000000${String(index).padStart(2, "0")}-0000-0000-0000-000000000000`);
+  assert.equal(runSelectionFromSearch(`?runs=${many.join(",")}`).length, RUN_SELECTION_URL_LIMIT);
+  assert.equal(runSelectionSearchParam(many).split(",").length, RUN_SELECTION_URL_LIMIT);
+  assert.equal(runSelectionSearchParam([a, b]), `${a},${b}`);
 });
 
 test("research insights helpers scope runs, extract fields, cluster, and detect eval metrics", () => {
@@ -89,6 +106,10 @@ test("research insights helpers scope runs, extract fields, cluster, and detect 
   const clusters = kMeansClusters(runs, "eval/accuracy", 2);
   assert.equal(clusters.points.length, 3);
   assert(clusters.clusters.length >= 1);
+  assert.deepEqual(clusters.fields, ["config.optimizer.lr", "config.width"]);
+  const projectedClusters = kMeansClusters(runs, "eval/accuracy", 2, 12, ["config.width", "config.optimizer.lr"]);
+  assert.deepEqual(projectedClusters.axes, ["config.width", "config.optimizer.lr"]);
+  assert.deepEqual(projectedClusters.points.map((point) => point.cluster), clusters.points.map((point) => point.cluster));
   const cards = evaluationCards(runs);
   assert.equal(cards.find((card) => card.id === "accuracy").key, "eval/accuracy");
   assert.equal(cards.find((card) => card.id === "f1").count, 3);
@@ -124,6 +145,66 @@ test("dense chart helper switches for many series or many points", () => {
   assert.equal(shouldUseDenseChart(sparse), false);
   assert.equal(shouldUseDenseChart(manySeries), true);
   assert.equal(shouldUseDenseChart(manyPoints), true);
+});
+
+test("chart summary rows rank plotted series and describe trends", () => {
+  const rows = chartSummaryRows([
+    {
+      id: "a",
+      name: "Run A",
+      normalizedPoints: [
+        { step: 0, value: 0.5, xValue: 0 },
+        { step: 10, value: 0.2, xValue: 10 },
+      ],
+    },
+    {
+      id: "b",
+      identifier: "Run B alias",
+      name: "Run B",
+      smoothed: true,
+      normalizedPoints: [
+        { step: 0, value: 0.4, xValue: 0 },
+        { step: 8, value: 0.3, xValue: 8 },
+      ],
+    },
+    {
+      id: "avg",
+      name: "group avg",
+      seriesType: "aggregate",
+      sourceRunCount: 3,
+      normalizedPoints: [
+        { step: 0, value: 0.45, xValue: 0 },
+        { step: 9, value: 0.25, xValue: 9 },
+      ],
+    },
+  ], "train/loss");
+
+  assert.deepEqual(rows.map((row) => [row.name, row.final, row.best, row.bestStep, row.rank, row.trend]), [
+    ["Run A", 0.2, 0.2, 10, 1, "improving"],
+    ["group avg", 0.25, 0.25, 9, 2, "improving"],
+    ["Run B alias", 0.3, 0.3, 8, 3, "improving"],
+  ]);
+  assert.equal(rows[0].changePercent, -60);
+  assert.match(rows[1].notes, /aggregate of 3/);
+  assert.match(rows[2].notes, /chart smoothed/);
+
+  const accuracyRows = chartSummaryRows([
+    { id: "a", name: "A", normalizedPoints: [{ step: 0, value: 0.7, xValue: 0 }, { step: 1, value: 0.8, xValue: 1 }] },
+    { id: "b", name: "B", normalizedPoints: [{ step: 0, value: 0.9, xValue: 0 }, { step: 1, value: 0.85, xValue: 1 }] },
+  ], "eval/accuracy");
+  assert.deepEqual(accuracyRows.map((row) => [row.name, row.rank, row.trend]), [["B", 1, "worsening"], ["A", 2, "improving"]]);
+});
+
+test("chart summary takeaway is deterministic and goal-aware", () => {
+  const takeaway = chartSummaryTakeaway([
+    { id: "a", name: "Run A", normalizedPoints: [{ step: 0, value: 0.5, xValue: 0 }, { step: 1, value: 0.2, xValue: 1 }] },
+    { id: "b", name: "Run B", normalizedPoints: [{ step: 0, value: 0.4, xValue: 0 }, { step: 1, value: 0.3, xValue: 1 }] },
+  ], "train/loss");
+  assert.match(takeaway, /train\/loss across 2 plotted series/);
+  assert.match(takeaway, /Lower is better/);
+  assert.match(takeaway, /Run A has the best final value at 0\.2/);
+  assert.match(takeaway, /Run A is improving overall/);
+  assert.equal(chartSummaryTakeaway([], "eval/accuracy"), "eval/accuracy has no plotted series.");
 });
 
 test("latest-value panel helpers derive chart data from run summaries", () => {
@@ -539,24 +620,37 @@ test("summary helpers format stable UI values", () => {
 
 test("upload health derives compact state from SDK heartbeat metrics", () => {
   const at = 1_000;
-  assert.deepEqual(uploadHealthForRun({ latest_metrics: {} }, at), { tone: "neutral", label: "upload unknown", state: "unknown" });
-  assert.deepEqual(uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990 } }, at), { tone: "good", label: "synced", state: "synced" });
+  assert.equal(uploadHealthForRun({ latest_metrics: {} }, at).state, "unknown");
+  assert.deepEqual(uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990 } }, at), { tone: "good", label: "synced", state: "synced", detail: "" });
   assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/queued_events": 12 } }, at),
-    { tone: "live", label: "syncing 12", state: "syncing" },
+    uploadHealthForRun({ status: "running", latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/queued_events": 12 } }, at),
+    { tone: "live", label: "syncing · 12 rows", state: "syncing", detail: "Metric rows are still uploading." },
   );
+  assert.equal(
+    uploadHealthForRun({ status: "running", latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/upload_lag_seconds": 9 } }, at).state,
+    "syncing",
+  );
+  // Stale heartbeats only matter while the run is active; ended runs with an
+  // empty queue read as synced instead of warning on every finished run.
+  const stalled = uploadHealthForRun({ status: "running", latest_metrics: { "system/instantml/upload_health_unix_seconds": 900 } }, at);
+  assert.equal(stalled.state, "stale");
+  assert.equal(stalled.label, "sync stalled");
   assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/upload_lag_seconds": 9 } }, at),
-    { tone: "live", label: "syncing", state: "syncing" },
+    uploadHealthForRun({ status: "finished", latest_metrics: { "system/instantml/upload_health_unix_seconds": 900 } }, at),
+    { tone: "good", label: "synced", state: "synced", detail: "" },
   );
-  assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 900 } }, at),
-    { tone: "neutral", label: "upload stale", state: "stale" },
+  // A run that ended with rows still queued is reported as incomplete data.
+  const incomplete = uploadHealthForRun(
+    { status: "finished", latest_metrics: { "system/instantml/upload_health_unix_seconds": 900, "system/instantml/queued_events": 480 } },
+    at,
   );
-  assert.deepEqual(
-    uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/failed_events": 1 } }, at),
-    { tone: "bad", label: "upload errors", state: "errors" },
-  );
+  assert.equal(incomplete.state, "incomplete");
+  assert.equal(incomplete.tone, "bad");
+  assert.equal(incomplete.label, "incomplete · 480 rows pending");
+  assert.match(incomplete.detail, /instantml-uploader/);
+  const errored = uploadHealthForRun({ latest_metrics: { "system/instantml/upload_health_unix_seconds": 990, "system/instantml/failed_events": 1 } }, at);
+  assert.equal(errored.state, "errors");
+  assert.equal(errored.label, "sync error");
 });
 
 test("chart helpers normalize series and summarize last values", () => {
@@ -564,7 +658,7 @@ test("chart helpers normalize series and summarize last values", () => {
   const normalized = normalizeSeries(series, 100, 80);
   assert.match(normalized[0].path, /28\.00/);
   assert.equal(normalized[0].normalizedPoints.length, 2);
-  assert.deepEqual(chartDomain(series), { minX: 0, maxX: 10, minY: 1, maxY: 3 });
+  assert.deepEqual(chartDomain(series), { minX: 0, maxX: 10, minY: 1, maxY: 3, yScale: "linear" });
   const zoomedSeries = [{
     id: "zoom",
     name: "zoomed",
@@ -575,7 +669,7 @@ test("chart helpers normalize series and summarize last values", () => {
       { step: 30, value: 200 },
     ],
   }];
-  assert.deepEqual(chartDomain(zoomedSeries, "step", "eval/return_mean", { min: 8, max: 22 }), { minX: 10, maxX: 20, minY: 50, maxY: 60 });
+  assert.deepEqual(chartDomain(zoomedSeries, "step", "eval/return_mean", { min: 8, max: 22 }), { minX: 10, maxX: 20, minY: 50, maxY: 60, yScale: "linear" });
   const zoomedNormalized = normalizeSeries(zoomedSeries, 100, 80, 28, "step", "eval/return_mean", { min: 8, max: 22 });
   assert.deepEqual(zoomedNormalized[0].normalizedPoints.map((point) => point.step), [10, 20]);
   assert.deepEqual(axisTicks(0, 10, 3), [0, 5, 10]);
@@ -597,8 +691,9 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.notEqual(segmentHover.point.step, 5);
   assert.equal(nearestPoint(normalized, 999, 999), null);
   assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 560, height: 360 }, 290, 200, 560, 640), { x: 280, y: 320 });
-  assert.deepEqual(chartDomain([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/accuracy"), { minX: 0, maxX: 1, minY: 0, maxY: 1 });
-  assert.deepEqual(chartDomain([{ id: "loss", name: "loss", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/loss"), { minX: 0, maxX: 1, minY: 0.52, maxY: 1 });
+  assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 1120, height: 360 }, 570, 200, 560, 360, { preserveAspectRatio: "none" }), { x: 280, y: 180 });
+  assert.deepEqual(chartDomain([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/accuracy"), { minX: 0, maxX: 1, minY: 0, maxY: 1, yScale: "linear" });
+  assert.deepEqual(chartDomain([{ id: "loss", name: "loss", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/loss"), { minX: 0, maxX: 1, minY: 0.52, maxY: 1, yScale: "linear" });
   assert.match(normalizeSeries([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.5 }, { step: 1, value: 1 }] }], 100, 80, 28, "step", "train/accuracy")[0].path, /40\.00/);
   assert.match(normalizeSeries(series, 100, 80, 28, "time")[0].path, /28\.00/);
   assert.deepEqual(chartSummary(series), [{ id: "a", name: "run-a", last: 3 }]);
@@ -619,7 +714,7 @@ test("tiny-magnitude metrics fill the plot height instead of squishing to the fl
   assert.ok(Math.abs(ys[0] - (height - padding)) < 0.001, `min should sit on the floor, got ${ys[0]}`);
   assert.ok(Math.abs(ys[2] - padding) < 0.001, `max should reach the ceiling, got ${ys[2]}`);
   // The window uses the real (tiny) data range, not a clamped span of 1.
-  assert.deepEqual(chartDomain(series, "step", "train/loss"), { minX: 0, maxX: 2, minY: 0.001, maxY: 0.009 });
+  assert.deepEqual(chartDomain(series, "step", "train/loss"), { minX: 0, maxX: 2, minY: 0.001, maxY: 0.009, yScale: "linear" });
 });
 
 test("a single / flat value opens a magnitude-relative window so the line is centered", () => {
@@ -637,8 +732,8 @@ test("smoothSeries keeps raw values and attaches a smoothed value", () => {
   assert.deepEqual(smoothed[0].points.map((point) => point.value), [0, 10, 0]);
   // Smoothed values are a damped EMA that stays within the raw envelope.
   const sv = smoothed[0].points.map((point) => point.smoothedValue);
-  assert.equal(sv[0], 0);
-  assert.ok(sv[1] > 0 && sv[1] < 10);
+  assert.deepEqual(sv, [0, 5, 2.5]);
+  assert.deepEqual(smoothSeries(series, 90)[0].points.map((point) => Number(point.smoothedValue.toFixed(12))), [0, 1, 0.9]);
   // factor 0 is a no-op (no smoothed flag).
   assert.equal(smoothSeries(series, 0)[0].smoothed, undefined);
   // Normalized output carries both raw and smoothed paths.
@@ -667,7 +762,13 @@ test("formatAxisTick stays compact: scientific for tiny/huge, plain for mid-rang
   assert.equal(formatAxisTick(0.00899), "8.99e-3");
   assert.equal(formatAxisTick(0.0000366), "3.66e-5");
   assert.equal(formatAxisTick(0.0000155), "1.55e-5");
-  assert.equal(formatAxisTick(150000), "1.5e5");
+  // 5-digit-plus magnitudes use compact k/M/B suffixes so right-anchored y-axis
+  // ticks don't run off the left edge (e.g. tokens/sec ~40k).
+  assert.equal(formatAxisTick(9999), "9999");
+  assert.equal(formatAxisTick(40000), "40k");
+  assert.equal(formatAxisTick(12500), "12.5k");
+  assert.equal(formatAxisTick(150000), "150k");
+  assert.equal(formatAxisTick(1250000), "1.25M");
 });
 
 test("identifierForRun resolves name, notes and tags with fallbacks", () => {
@@ -1089,13 +1190,19 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(DEFAULT_DASHBOARD_TAB, "runs");
   assert.equal(tabToPath("metrics"), "/dashboard/metrics");
   assert.equal(tabToPath("distributed"), "/dashboard/distributed");
-  assert.equal(tabToPath("checkpoints"), "/dashboard/checkpoints");
+  // CK2: the Checkpoints tab merged into Run Detail; old ids stay routable.
+  assert.equal(tabToPath("checkpoints"), "/dashboard/detail");
   assert.equal(tabToPath("imports"), "/dashboard/imports");
-  assert.equal(tabToPath("models"), "/dashboard/checkpoints");
+  assert.equal(tabToPath("models"), "/dashboard/detail");
   assert.equal(tabToPath("insights"), "/dashboard/insights");
   assert.equal(tabToPath("unknown"), "/dashboard/runs");
   assert.equal(tabFromPath("/dashboard/advanced?x=1"), "runs");
-  assert.equal(tabFromPath("/dashboard/models?x=1"), "checkpoints");
+  assert.equal(tabFromPath("/dashboard/models?x=1"), "detail");
+  assert.equal(tabFromPath("/dashboard/checkpoints?x=1"), "detail");
+  // The Alerts tab is labelled "Run Health"; the friendly slug resolves to it.
+  assert.equal(tabFromPath("/dashboard/run-health?x=1"), "alerts");
+  assert.equal(tabFromPath("/dashboard/health"), "alerts");
+  assert.equal(tabToPath("run-health"), "/dashboard/alerts");
   assert.equal(tabFromPath("/dashboard/integrations?x=1"), "runs");
   assert.equal(tabFromPath("/dashboard/imports?x=1"), "imports");
   assert.equal(tabFromPath("/dashboard/compare?x=1"), "compare");
@@ -1103,7 +1210,8 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabFromPath("/dashboard/not-real"), "runs");
   assert.equal(canonicalDashboardPath("/dashboard"), "/dashboard/runs");
   assert.equal(canonicalDashboardPath("/dashboard/reports/report_123"), "/dashboard/reports/report_123");
-  assert.equal(canonicalDashboardPath("/dashboard/models"), "/dashboard/checkpoints");
+  assert.equal(canonicalDashboardPath("/dashboard/models"), "/dashboard/detail");
+  assert.equal(canonicalDashboardPath("/dashboard/checkpoints"), "/dashboard/detail");
   assert.equal(canonicalDashboardPath("/dashboard/integrations"), "/dashboard/runs");
   assert.equal(canonicalDashboardPath("/dashboard/imports"), "/dashboard/imports");
   assert.equal(canonicalDashboardPath("/dashboard/metrics/extra"), "/dashboard/metrics");

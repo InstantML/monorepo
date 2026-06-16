@@ -1,11 +1,14 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { AlertTriangle, Copy, CreditCard, ExternalLink, Gauge, RefreshCw, Settings, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
-import { MetricCard } from "../ui/metric-card";
 import { PageHead } from "../ui/page-head";
 import { SettingRow } from "./setting-row";
 import { formatNumber } from "../../../src/state.js";
 import { roleLabel } from "../../../src/roles.js";
+import type { Tone } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 
 type SeatRow = components["schemas"]["SeatRow"];
@@ -26,6 +29,16 @@ type BillingStatus = {
 const RETRY_PLAN_LABELS = {
   pro: "Retry Pro",
   premium: "Retry Premium",
+};
+
+// Hosted beta list prices; shown in the in-app confirmation step before any
+// redirect to Stripe checkout.
+const PLAN_RANK: Record<"free" | "pro" | "premium", number> = { free: 0, pro: 1, premium: 2 };
+
+const PLAN_CONFIRM_SUMMARY: Record<"free" | "pro" | "premium", { price: string; note: string }> = {
+  free: { price: "$0", note: "The downgrade applies at the next billing boundary; nothing is charged." },
+  pro: { price: "$199/month", note: "Nothing is charged yet — you'll review the full price and confirm payment on Stripe's secure checkout." },
+  premium: { price: "$699/month", note: "Nothing is charged yet — you'll review the full price and confirm payment on Stripe's secure checkout." },
 };
 
 function formatInviteDate(value: string) {
@@ -54,6 +67,7 @@ function planDisplayName(value?: string) {
 }
 
 type Props = {
+  accountUser: { display_name?: string | null; primary_email?: string | null } | null;
   activeLimitIncludedSeats: number;
   activePlan: string;
   activeUsageWarnings: UsageWarning[];
@@ -89,11 +103,8 @@ type Props = {
   onXMode: (mode: string) => void;
   orgName: string;
   orgPlanTier: string;
-  project: string;
   reservedSeatCount: number;
   seats: SeatRow[];
-  selectedRunCount: number;
-  status: string;
   storagePercent: number;
   storageUsed: number;
   storageLimit: number;
@@ -106,6 +117,7 @@ type Props = {
 };
 
 export function SettingsTabPane({
+  accountUser,
   activeLimitIncludedSeats,
   activePlan,
   activeUsageWarnings,
@@ -141,11 +153,8 @@ export function SettingsTabPane({
   onXMode,
   orgName,
   orgPlanTier,
-  project,
   reservedSeatCount,
   seats,
-  selectedRunCount,
-  status,
   storagePercent,
   storageUsed,
   storageLimit,
@@ -156,6 +165,13 @@ export function SettingsTabPane({
   xMode,
   billingStatus,
 }: Props) {
+  // Plan changes confirm in-app before any Stripe redirect.
+  const [pendingPlan, setPendingPlan] = useState<"free" | "pro" | "premium" | null>(null);
+  // Drop a stale confirm if the plan changes underneath it (another admin
+  // completed an upgrade, or checkout returned).
+  useEffect(() => {
+    setPendingPlan(null);
+  }, [orgPlanTier, billingStatus?.access_state]);
   const adminOnlyValue = "Available to admins";
   const usageUnavailableValue = "Unavailable";
   const billingState = canManageOrg ? billingStatus?.access_state ?? "free_active" : adminOnlyValue;
@@ -170,6 +186,11 @@ export function SettingsTabPane({
   const storageMeterPercent = canManageOrg && usageAvailable ? storagePercent : 0;
   const metricMeterPercent = canManageOrg && usageAvailable ? metricPercent : 0;
   const apiRequestMeterPercent = canManageOrg && usageAvailable ? apiRequestsPercent : 0;
+  // Quota pressure → value/meter tint: quiet under 70%, amber by 70%, red by 90%.
+  const usageTone = (percent: number): Tone => (canManageOrg && percent > 90 ? "bad" : canManageOrg && percent > 70 ? "live" : "neutral");
+  const storageTone = usageTone(storagePercent);
+  const metricTone = usageTone(metricPercent);
+  const apiRequestTone = usageTone(apiRequestsPercent);
   const visibleInvitations = invitations.filter((invitation) => invitation.status !== "accepted");
   const checkoutRetryPlan = billingStatus?.access_state === "checkout_pending"
     ? billingStatus.requested_plan_tier ?? billingStatus.plan_tier ?? orgPlanTier
@@ -215,34 +236,45 @@ export function SettingsTabPane({
         : "Cancel the active paid subscription at period end";
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace" emphasis="settings" lede={`${activePlan} · usage · seats`} />
+      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace settings" />
+      {/* Two independent column stacks instead of a row-paired grid: Plan Usage
+          is much taller than Billing, so a row grid left a large void under the
+          short Billing card before Workspace. Stacking each column lets the right
+          column pack tight against the top. */}
       <div className="tab-grid settings-grid">
+        <div className="settings-col">
         <section className="panel">
           <div className="panel-head">
             <h2><Gauge size={15} /> Plan Usage</h2>
             <button className="ghost" disabled={adminBusy || !canManageOrg} onClick={onLoadOrgSettings} type="button"><RefreshCw size={14} /> Refresh</button>
           </div>
-          <div className="panel-body insight-stack">
-            <MetricCard label="Plan" value={activePlan} tone="good" />
-            <MetricCard label="Seats" value={`${formatNumber(reservedSeatCount, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} tone="neutral" />
-            <MetricCard label={storageUsageLabel} value={storageUsageValue} tone={canManageOrg && storagePercent > 90 ? "bad" : canManageOrg && storagePercent > 70 ? "live" : "neutral"} />
-            {canManageOrg && storageUsageDescription ? <p className="setting-hint">{storageUsageDescription}</p> : null}
-            {canManageOrg && !usageAvailable ? <p className="setting-hint">Usage reporting is not available from this local control plane.</p> : null}
-            {!canManageOrg ? <p className="setting-hint">Usage reporting is available to workspace admins.</p> : null}
-            <div className="usage-meter" aria-label={`${storageUsageLabel} usage`}>
-              <span style={{ width: `${storageMeterPercent}%` }} />
+          <div className="panel-body settings-list">
+            <SettingRow label="Plan" value={activePlan} tone="good" />
+            <SettingRow label="Seats" value={`${formatNumber(reservedSeatCount, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} />
+            <div className="usage-row">
+              <SettingRow label={storageUsageLabel} value={storageUsageValue} tone={storageTone} />
+              <div className={`usage-meter tone-${storageTone}`} aria-label={`${storageUsageLabel} usage`}>
+                <span style={{ width: `${storageMeterPercent}%` }} />
+              </div>
             </div>
-            <MetricCard label="Metric points this month" value={metricUsageValue} tone={canManageOrg && metricPercent > 90 ? "bad" : canManageOrg && metricPercent > 70 ? "live" : "neutral"} />
-            <div className="usage-meter" aria-label="Metric point usage">
-              <span style={{ width: `${metricMeterPercent}%` }} />
+            <div className="usage-row">
+              <SettingRow label="Metric points this month" value={metricUsageValue} tone={metricTone} />
+              <div className={`usage-meter tone-${metricTone}`} aria-label="Metric point usage">
+                <span style={{ width: `${metricMeterPercent}%` }} />
+              </div>
             </div>
-            <MetricCard label="API requests this month" value={apiRequestUsageValue} tone={canManageOrg && apiRequestsPercent > 90 ? "bad" : canManageOrg && apiRequestsPercent > 70 ? "live" : "neutral"} />
-            <div className="usage-meter" aria-label="API request usage">
-              <span style={{ width: `${apiRequestMeterPercent}%` }} />
+            <div className="usage-row">
+              <SettingRow label="API requests this month" value={apiRequestUsageValue} tone={apiRequestTone} />
+              <div className={`usage-meter tone-${apiRequestTone}`} aria-label="API request usage">
+                <span style={{ width: `${apiRequestMeterPercent}%` }} />
+              </div>
             </div>
             <SettingRow label="General API rate" value={canManageOrg ? generalRateLimitLabel || "-" : adminOnlyValue} />
             <SettingRow label="Ingest API rate" value={canManageOrg ? ingestRateLimitLabel || "-" : adminOnlyValue} />
             <SettingRow label="Monthly reset" value={canManageOrg && usageAvailable && usageResetLabel ? `${usageResetLabel} UTC` : canManageOrg && usageAvailable ? "-" : canManageOrg ? usageUnavailableValue : adminOnlyValue} />
+            {canManageOrg && storageUsageDescription ? <p className="setting-hint">{storageUsageDescription}</p> : null}
+            {canManageOrg && !usageAvailable ? <p className="setting-hint">Usage reporting is not available from this local control plane.</p> : null}
+            {!canManageOrg ? <p className="setting-hint">Usage reporting is available to workspace admins.</p> : null}
                 {canManageOrg && activeUsageWarnings.length ? (
               <div className="admin-alert-list">
                 {activeUsageWarnings.map((warning) => (
@@ -255,6 +287,8 @@ export function SettingsTabPane({
             ) : null}
           </div>
         </section>
+        </div>
+        <div className="settings-col">
         <section className="panel">
           <div className="panel-head"><h2><CreditCard size={15} /> Billing</h2></div>
           <div className="panel-body settings-list">
@@ -270,10 +304,35 @@ export function SettingsTabPane({
             {canManageOrg ? (
               <div className="admin-form-row billing-actions">
                 <button className="secondary compact-button" disabled={!canOpenBillingPortal} onClick={onOpenBillingPortal} title={portalTitle} type="button"><CreditCard size={14} /> Open portal</button>
-                <button className="secondary compact-button" disabled={planButtonDisabled("pro")} onClick={() => onChangeBillingPlan("pro")} title={planButtonTitle("pro")} type="button">{planButtonLabel("pro")}</button>
-                <button className="secondary compact-button" disabled={planButtonDisabled("premium")} onClick={() => onChangeBillingPlan("premium")} title={planButtonTitle("premium")} type="button">{planButtonLabel("premium")}</button>
-                <button className="secondary compact-button" disabled={planButtonDisabled("free")} onClick={() => onChangeBillingPlan("free")} title={planButtonTitle("free")} type="button">{planButtonLabel("free")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("pro")} onClick={() => setPendingPlan("pro")} title={planButtonTitle("pro")} type="button">{planButtonLabel("pro")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("premium")} onClick={() => setPendingPlan("premium")} title={planButtonTitle("premium")} type="button">{planButtonLabel("premium")}</button>
+                <button className="secondary compact-button" disabled={planButtonDisabled("free")} onClick={() => setPendingPlan("free")} title={planButtonTitle("free")} type="button">{planButtonLabel("free")}</button>
                 <button className="ghost compact-button billing-cancel" disabled={!canCancelBilling} onClick={onCancelBilling} title={cancelTitle} type="button">Cancel subscription</button>
+              </div>
+            ) : null}
+            {canManageOrg && pendingPlan ? (
+              <div className="billing-confirm" role="region" aria-label="Confirm plan change">
+                <strong>
+                  {PLAN_RANK[pendingPlan] < (PLAN_RANK[orgPlanTier as "free" | "pro" | "premium"] ?? 0)
+                    ? `Downgrade to ${planDisplayName(pendingPlan)}${pendingPlan === "free" ? "" : ` · ${PLAN_CONFIRM_SUMMARY[pendingPlan].price}`}`
+                    : `Change plan to ${planDisplayName(pendingPlan)} · ${PLAN_CONFIRM_SUMMARY[pendingPlan].price}`}
+                </strong>
+                <p>{PLAN_CONFIRM_SUMMARY[pendingPlan].note}</p>
+                <div className="admin-form-row">
+                  <button
+                    className="primary-button compact-button"
+                    disabled={adminBusy}
+                    onClick={() => {
+                      const plan = pendingPlan;
+                      setPendingPlan(null);
+                      onChangeBillingPlan(plan);
+                    }}
+                    type="button"
+                  >
+                    {pendingPlan === "free" ? "Confirm downgrade" : "Continue to Stripe checkout"}
+                  </button>
+                  <button className="ghost compact-button" disabled={adminBusy} onClick={() => setPendingPlan(null)} type="button">Keep current plan</button>
+                </div>
               </div>
             ) : null}
           </div>
@@ -342,12 +401,16 @@ export function SettingsTabPane({
         <section className="panel">
           <div className="panel-head"><h2><Settings size={15} /> Workspace</h2></div>
           <div className="panel-body settings-list">
+            {/* Transient filter/selection state is visible in the filter bar
+             * itself; echoing it here read as debug output (audit ST1). */}
             <SettingRow label="Organization" value={orgName || "Workspace"} />
             <SettingRow label="Plan tier" value={orgPlanTier || "free"} />
-            <SettingRow label="Project filter" value={project || "All projects"} />
-            <SettingRow label="Status filter" value={status || "All statuses"} />
-            <SettingRow label="Selected runs" value={formatNumber(selectedRunCount, 0)} />
-            <SettingRow label="API route mode" value="Same-origin proxy" />
+            {accountUser ? (
+              <>
+                <SettingRow label="Signed in as" value={accountUser.display_name || accountUser.primary_email || "-"} />
+                {accountUser.display_name && accountUser.primary_email ? <SettingRow label="Email" value={accountUser.primary_email} /> : null}
+              </>
+            ) : null}
           </div>
         </section>
         <section className="panel">
@@ -377,6 +440,7 @@ export function SettingsTabPane({
             <SettingRow label="Metric point limit" value="1,000 per selected run" />
           </div>
         </section>
+        </div>
       </div>
     </>
   );

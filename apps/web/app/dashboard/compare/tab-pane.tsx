@@ -10,6 +10,9 @@ import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, RunSummar
 type Props = {
   addAllCompareTableMetrics: () => void;
   addCompareTableMetric: (metric: string) => void;
+  availableRuns: RunSummary[];
+  onAddCompareRun: (runId: string) => void;
+  onOpenRunsTab: () => void;
   compareAddMetricOptions: string[];
   compareArtifactsByRun: Record<string, Artifact[]>;
   compareConfigKeys: string[];
@@ -51,6 +54,9 @@ type Props = {
 export function CompareTabPane({
   addAllCompareTableMetrics,
   addCompareTableMetric,
+  availableRuns,
+  onAddCompareRun,
+  onOpenRunsTab,
   compareAddMetricOptions,
   compareArtifactsByRun,
   compareConfigKeys,
@@ -88,13 +94,27 @@ export function CompareTabPane({
   selectedRunIds,
   sideBySide,
 }: Props) {
+  const selectedIdSet = new Set(selectedRunIds);
+  const addRunOptions = availableRuns.filter((run) => !selectedIdSet.has(run.id));
+  const addRunSelect = (
+    <CustomSelect
+      disabled={!addRunOptions.length}
+      id="compare-add-run"
+      label="Add runs"
+      onChange={(value) => { if (value) onAddCompareRun(value); }}
+      options={addRunOptions.length
+        ? [{ value: "", label: "Add run to comparison", disabled: true }, ...addRunOptions.map((run) => ({ value: run.id, label: run.name }))]
+        : [{ value: "", label: "All loaded runs selected", disabled: true }]}
+      value=""
+    />
+  );
   return (
     <div className="analysis-page compare-analysis">
       <section className="panel analysis-card compare-shell">
         <header className="analysis-header compare-analysis-header">
           <div className="analysis-title-block">
             <span className="analysis-eyebrow eyebrow--accent">Compare</span>
-            <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs <span className="serif-em">side by side</span></h2>
+            <h2>{compareRunIds.length}{compareOverflowCount ? `/${selectedRunIds.length}` : ""} runs side by side</h2>
             <p>{metricTitle(metricKey)} · {metricGoalLabel(metricKey)} objective · sort any column</p>
           </div>
           <div className="analysis-stat-strip">
@@ -109,6 +129,7 @@ export function CompareTabPane({
             Search
             <input aria-label="Compare search" id="compare-search" placeholder="runs, evidence, tags, notes, artifacts" value={compareSearch} onChange={(event) => onChangeCompareSearch(event.target.value)} />
           </label>
+          {addRunSelect}
           <CustomSelect
             id="reference-run"
             label="Reference"
@@ -205,24 +226,37 @@ export function CompareTabPane({
             </button>
           </div>
         </div>
-        <SideBySide
-          artifactsByRun={compareArtifactsByRun}
-          configSortKey={compareConfigSortKey}
-          diffOnly={diffOnly}
-          layout={compareLayout}
-          metricKey={metricKey}
-          onOpenRunArtifacts={onOpenRunArtifacts}
-          onReferenceRunId={onReferenceRunId}
-          onRunSort={onRunSort}
-          onRunSortMetricKey={onRunSortMetricKey}
-          payload={sideBySide}
-          referenceRunId={referenceRun?.id ?? ""}
-          rowSort={compareRowSort}
-          runSort={compareRunSort}
-          runSortMetricKey={compareSortMetricKey}
-          search={compareSearch}
-          tableMetrics={compareTableMetricKeys}
-        />
+        {!compareRuns.length ? (
+          selectedRunIds.length ? (
+            <div className="empty compare-empty-state">
+              <p>Loading the {selectedRunIds.length} selected runs…</p>
+            </div>
+          ) : (
+            <div className="empty compare-empty-state">
+              <p>No runs selected yet. Add runs with the picker above, or select them from the Runs workspace. Selections are saved to the link, so a compare view can be shared or reopened later.</p>
+              <button className="secondary compact-button" onClick={onOpenRunsTab} type="button">Select runs in the Runs tab</button>
+            </div>
+          )
+        ) : (
+          <SideBySide
+            artifactsByRun={compareArtifactsByRun}
+            configSortKey={compareConfigSortKey}
+            diffOnly={diffOnly}
+            layout={compareLayout}
+            metricKey={metricKey}
+            onOpenRunArtifacts={onOpenRunArtifacts}
+            onReferenceRunId={onReferenceRunId}
+            onRunSort={onRunSort}
+            onRunSortMetricKey={onRunSortMetricKey}
+            payload={sideBySide}
+            referenceRunId={referenceRun?.id ?? ""}
+            rowSort={compareRowSort}
+            runSort={compareRunSort}
+            runSortMetricKey={compareSortMetricKey}
+            search={compareSearch}
+            tableMetrics={compareTableMetricKeys}
+          />
+        )}
         {compareRuns.length ? (
           <details className="compare-annotation-details">
             <summary>

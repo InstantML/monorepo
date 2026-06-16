@@ -1,4 +1,4 @@
-import { metricAggregate, metricGoalValue } from "./state.js";
+import { formatNumber, metricAggregate, metricGoalValue } from "./state.js";
 
 const EVAL_KEY_PATTERNS = [
   { id: "accuracy", label: "Accuracy", patterns: [/accuracy$/i, /eval\/accuracy/i, /val\/accuracy/i] },
@@ -16,9 +16,50 @@ export function insightsRunUniverse(selectedRunIds, sortedRuns) {
   const selectedRuns = runs.filter((run) => selected.has(run.id));
   return {
     runs: selectedRuns.length ? selectedRuns : runs,
-    scope: selectedRuns.length ? "selected loaded runs" : "current loaded page",
+    scopeKind: selectedRuns.length ? "selected" : "page",
     excluded: selected.size > selectedRuns.length ? selected.size - selectedRuns.length : 0,
   };
+}
+
+export function insightsScopeLabel(universe) {
+  const count = universe?.runs?.length ?? 0;
+  const noun = universe?.scopeKind === "selected" ? "selected" : "loaded";
+  const base = `Analyzing the ${formatNumber(count, 0)} ${noun} ${count === 1 ? "run" : "runs"}`;
+  const excluded = universe?.excluded ?? 0;
+  return excluded ? `${base} · ${formatNumber(excluded, 0)} selected without loaded summaries` : base;
+}
+
+// Human label for the field groupedRunReducers buckets by ("seed", "tag", a
+// config field), or null when runs collapse into a single "all" bucket and
+// naming the key would be noise.
+export function runGroupingKeyLabel(runs) {
+  const field = chooseGroupField(runs);
+  if (field === "tag") return "tag";
+  if (field === "all") return null;
+  if (field.startsWith("config.")) return field.slice("config.".length);
+  return null;
+}
+
+export function partitionEvaluationCards(cards) {
+  const list = Array.isArray(cards) ? cards : [];
+  return {
+    logged: list.filter((card) => Boolean(card.key)),
+    unlogged: list.filter((card) => !card.key),
+  };
+}
+
+// Per-axis min/max for parallel coordinates, flagging degenerate axes so the
+// chart can annotate "constant · value" instead of printing the same number
+// twice, and axes with no finite values at all.
+export function parallelAxisDomains(rows, fields) {
+  const list = Array.isArray(rows) ? rows : [];
+  return (Array.isArray(fields) ? fields : []).map((field) => {
+    const values = list.map((row) => row?.values?.[field]).filter(isFiniteNumber);
+    if (!values.length) return { field, min: null, max: null, constant: false, empty: true };
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return { field, min, max, constant: min === max, empty: false };
+  });
 }
 
 export function groupedRunReducers(runs, metricKey) {
@@ -74,7 +115,7 @@ export function numericFieldRows(runs, metricKey) {
   };
 }
 
-export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
+export function kMeansClusters(runs, metricKey, k = 3, iterations = 12, displayAxes = []) {
   const { fields, rows } = numericFieldRows(runs, metricKey);
   // Cluster on configuration features only. Seed-like fields are run identifiers
   // (index noise), and metric fields would leak the outcome into the feature
@@ -88,7 +129,7 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
     .map((row) => ({ run: row.run, vector: selectedFields.map((field) => row.values[field]) }))
     .filter((row) => row.vector.every(isFiniteNumber));
   if (vectors.length < 3 || selectedFields.length < 2) {
-    return { clusters: [], fields: selectedFields, axes: selectedFields.slice(0, 2), points: [] };
+    return { clusters: [], fields: selectedFields, axes: selectedFields.slice(0, 2), points: [], plotted: 0, clustered: 0 };
   }
   const normalized = normalizeVectors(vectors.map((row) => row.vector));
   const clusterCount = Math.min(k, vectors.length);
@@ -121,8 +162,12 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
   const axisOrder = selectedFields
     .map((field, index) => ({ index, distinct: distinctCount(field) }))
     .sort((a, b) => b.distinct - a.distinct);
-  const xDim = axisOrder[0]?.index ?? 0;
-  const yDim = (axisOrder[1]?.index ?? 1) === xDim ? Math.min(1, selectedFields.length - 1) : (axisOrder[1]?.index ?? 1);
+  const requestedX = selectedFields.indexOf(displayAxes[0]);
+  const requestedY = selectedFields.indexOf(displayAxes[1]);
+  const xDim = requestedX >= 0 ? requestedX : axisOrder[0]?.index ?? 0;
+  const yDim = requestedY >= 0 && requestedY !== xDim
+    ? requestedY
+    : (axisOrder.find((axis) => axis.index !== xDim)?.index ?? Math.min(1, selectedFields.length - 1));
   const points = vectors.map((item, index) => ({
     id: item.run.id,
     name: item.run.name,
@@ -130,7 +175,7 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12) {
     x: normalized[index][xDim],
     y: normalized[index][yDim],
   }));
-  return { clusters, fields: selectedFields, axes: [selectedFields[xDim], selectedFields[yDim]], points };
+  return { clusters, fields: selectedFields, axes: [selectedFields[xDim], selectedFields[yDim]], points, plotted: points.length, clustered: vectors.length };
 }
 
 export function evaluationCards(runs) {

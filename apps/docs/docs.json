@@ -4,9 +4,13 @@
   "name": "InstantML Docs",
   "description": "Documentation for logging, comparing, and debugging training runs with InstantML.",
   "colors": {
-    "primary": "#1FB877",
-    "light": "#1FB877",
-    "dark": "#34D399"
+    "primary": "#16915c",
+    "light": "#2be082",
+    "dark": "#2be082"
+  },
+  "fonts": {
+    "heading": { "family": "Archivo" },
+    "body": { "family": "Archivo" }
   },
   "logo": {
     "light": "/images/instantml-lockup-light.svg",

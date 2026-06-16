@@ -9,13 +9,13 @@ import type {
   Artifact,
   DatasetRow,
   MetricCatalogRow,
-  CheckpointRow,
   ReportRow,
   RunMetricRow,
   RunSummary,
   RunTimelineRow,
   TableColumns,
   WorkspacePanel,
+  WorkspacePanelLayout,
   WorkspacePanelSettings,
   WorkspacePanelType,
   WorkspaceSection,
@@ -38,6 +38,8 @@ export const COMPARE_RUN_LIMIT = 50;
 export const COMPARE_ARTIFACT_LIMIT = 12;
 export const WORKSPACE_SCHEMA_VERSION = 2;
 export const DEFAULT_METRIC_KEY = "eval/return_mean";
+export const MIN_WORKSPACE_PANEL_ROWS = 3;
+export const MIN_LINE_WORKSPACE_PANEL_ROWS = 6;
 export { WORKSPACE_VIEW_PREFIX };
 const AUTOMATIC_WORKSPACE_PANEL_LIMIT = 6;
 const PREFERRED_AUTOMATIC_METRICS = [
@@ -117,10 +119,14 @@ export function metricNamespace(metricKey: string) {
   return metricKey.includes("/") ? metricKey.split("/")[0] : "custom";
 }
 
+const METRIC_ACRONYMS = new Set(["kl", "lr", "rl", "gpu", "cpu", "sdk", "api", "ppo", "dpo", "sft", "ema"]);
+
 export function metricTitle(metricKey: string) {
   return shortMetricName(metricKey)
     .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
+    .split(" ")
+    .map((word) => (METRIC_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.replace(/^\w/, (c) => c.toUpperCase())))
+    .join(" ");
 }
 
 export function workspaceStorageKey(project: string, scope = "") {
@@ -249,7 +255,7 @@ export function workspacePanelForMetric(metricKey: string, type: WorkspacePanelT
     type: safeType,
     title: safeType === "line" ? metricTitleText : `${metricTitleText} ${workspacePanelTypeLabel(safeType)}`,
     metricKey,
-    layout: defaultWorkspacePanelLayout,
+    layout: sanitizePanelLayout(defaultWorkspacePanelLayout, safeType),
   };
 }
 
@@ -340,7 +346,7 @@ function sanitizeWorkspacePanel(panel: unknown, index: number) {
     type,
     title: typeof panel.title === "string" && panel.title.trim() ? panel.title.slice(0, 80) : metricTitle(panel.metricKey),
     metricKey: panel.metricKey.slice(0, 256),
-    layout: sanitizePanelLayout(panel.layout),
+    layout: sanitizePanelLayout(panel.layout, type),
     settings: sanitizePanelSettings(panel.settings),
   };
   if (type === "scatter") {
@@ -377,11 +383,17 @@ function sanitizeWorkspacePanel(panel: unknown, index: number) {
   return base;
 }
 
-export function sanitizePanelLayout(layout: unknown) {
-  if (!isPlainObject(layout)) return defaultWorkspacePanelLayout;
+export function sanitizePanelLayout(layout: unknown, type: WorkspacePanelType = "line"): WorkspacePanelLayout {
+  const minRows = type === "line" ? MIN_LINE_WORKSPACE_PANEL_ROWS : MIN_WORKSPACE_PANEL_ROWS;
+  if (!isPlainObject(layout)) {
+    return {
+      ...defaultWorkspacePanelLayout,
+      h: Math.max(minRows, defaultWorkspacePanelLayout.h),
+    };
+  }
   return {
     w: Math.round(boundedNumber(layout.w, 3, 12) ?? defaultWorkspacePanelLayout.w),
-    h: Math.round(boundedNumber(layout.h, 3, 10) ?? defaultWorkspacePanelLayout.h),
+    h: Math.round(boundedNumber(layout.h, minRows, 10) ?? Math.max(minRows, defaultWorkspacePanelLayout.h)),
   };
 }
 
@@ -508,7 +520,8 @@ export function buildRunTimelineRows(run: RunSummary | null, artifacts: Artifact
       id: "best-metric",
       label: `Best ${shortMetricName(metricKey)}`,
       detail: `step ${compactValue(metric.best_step ?? "-")}`,
-      value: compactValue(metric.max ?? "-"),
+      // Same precision as the KPI strip and summary table — one number, one format.
+      value: typeof metric.max === "number" ? formatNumber(metric.max, 3) : "-",
       tone: "good",
     });
   }
@@ -664,7 +677,7 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       rows.push({
         id: `${run.id}:checkpoint`,
         severity: "warning",
-        tone: "live",
+        tone: "warn",
         title: `${run.name} has no checkpoints`,
         detail: "Checkpoint lineage is unavailable for this run.",
         label: "warning",
@@ -674,14 +687,50 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       rows.push({
         id: `${run.id}:metric`,
         severity: "warning",
-        tone: "live",
+        tone: "warn",
         title: `${run.name} is missing ${metricKey}`,
         detail: "The selected metric is not present in latest summaries.",
         label: "warning",
       });
     }
   }
-  return rows.slice(0, 20);
+  return dedupeAlertRows(rows).slice(0, 20);
+}
+
+// Identical per-run warnings (every seed run "has no checkpoints") train users
+// to ignore the page. Collapse same-kind warnings into one grouped row; only
+// failures and active runs stay individual because each is actionable.
+export function dedupeAlertRows(rows: AlertRow[]): AlertRow[] {
+  const collapsibleKinds = new Map<string, { rows: AlertRow[]; title: (count: number) => string }>([
+    ["checkpoint", { rows: [], title: (count) => `${count} runs have no checkpoints` }],
+    ["metric", { rows: [], title: (count) => `${count} runs are missing the selected metric` }],
+  ]);
+  const result: AlertRow[] = [];
+  for (const row of rows) {
+    const kind = row.id.split(":")[1] ?? "";
+    const bucket = collapsibleKinds.get(kind);
+    if (bucket) bucket.rows.push(row);
+    else result.push(row);
+  }
+  for (const [kind, bucket] of collapsibleKinds) {
+    if (bucket.rows.length <= 1) {
+      result.push(...bucket.rows);
+      continue;
+    }
+    // Titles are "<run name> has no checkpoints" / "<run name> is missing …";
+    // strip the known suffix so run names containing spaces survive intact.
+    const names = bucket.rows.map((row) => row.title.replace(/ has no checkpoints$| is missing .*$/, ""));
+    const sample = names.slice(0, 3).join(", ");
+    result.push({
+      id: `grouped:${kind}`,
+      severity: "warning",
+      tone: "warn",
+      title: bucket.title(bucket.rows.length),
+      detail: `${sample}${names.length > 3 ? ` and ${names.length - 3} more` : ""}`,
+      label: "warning",
+    });
+  }
+  return result;
 }
 
 export function buildDatasetRows(runs: RunSummary[], metricKey: string): DatasetRow[] {
@@ -747,20 +796,6 @@ export function runRailTooltip(run: RunSummary) {
   const note = runNoteText(run);
   if (note) lines.push(`Note: ${note}`);
   return lines.join("\n");
-}
-
-export function buildCheckpointRows(run: RunSummary | null, artifacts: Artifact[]): CheckpointRow[] {
-  if (!run) return [];
-  return artifacts
-    .filter((artifact) => artifact.type === "checkpoint")
-    .sort((left, right) => (left.step ?? -1) - (right.step ?? -1))
-    .map((artifact) => ({
-      id: artifact.id,
-      name: artifact.name,
-      uri: artifact.uri,
-      step: artifact.step === null ? "no step" : `step ${artifact.step}`,
-      evalReturn: compactValue(artifact.metadata.eval_return ?? "-"),
-    }));
 }
 
 export function buildReportRows(savedViews: Array<string | { label: string; value: string }>): ReportRow[] {

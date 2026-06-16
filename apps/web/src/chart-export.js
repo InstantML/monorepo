@@ -1,4 +1,4 @@
-import { axisTicks, formatAxisTick, formatAxisValue } from "./charts.js";
+import { axisTicks, formatAxisTick, formatAxisValue, logAxisTicks, yMapper } from "./charts.js";
 import { CHART_PALETTE, chartColor, chartStyleIndexesForItems, chartSvgDashAttr, stableChartIndex } from "./chart-colors.js";
 
 export const CHART_EXPORT_MAX_SERIES = 120;
@@ -86,11 +86,14 @@ export function chartSeriesToSvg({ metricKey = "", series = [], width = 560, hei
   const safePadding = Math.min(Math.max(12, Number(padding) || 28), maxPadding);
   const domain = series.find((item) => item?.domain)?.domain;
   const xTicks = domain ? axisTicks(domain.minX, domain.maxX, 5) : [];
-  const yTicks = domain ? axisTicks(domain.minY, domain.maxY, 5) : [];
+  // The y scale (including log10) must match the scale the paths were
+  // normalized with, so ticks come from the domain's own scale.
+  const yTicks = domain
+    ? (domain.yScale === "log" ? logAxisTicks(domain.minY, domain.maxY, 5) : axisTicks(domain.minY, domain.maxY, 5))
+    : [];
   const xSpan = domain ? (domain.maxX - domain.minX) || 1 : 1;
-  const ySpan = domain ? (domain.maxY - domain.minY) || 1 : 1;
   const xPos = (value) => safePadding + ((value - domain.minX) / xSpan) * (safeWidth - safePadding * 2);
-  const yPos = (value) => safeHeight - safePadding - ((value - domain.minY) / ySpan) * (safeHeight - safePadding * 2);
+  const yPos = domain ? yMapper(domain, safeHeight, safePadding) : () => safeHeight - safePadding;
   const title = metricKey || "metric";
   const paths = [];
   const legendItems = [];

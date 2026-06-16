@@ -767,6 +767,46 @@ mod tests {
     }
 
     #[test]
+    fn browser_session_created_index_includes_all_same_workspace_projects() {
+        let org_id = Uuid::from_u128(1);
+        let other_org_id = Uuid::from_u128(2);
+        let ctx = RequestContext {
+            org_id,
+            auth: None,
+            session: Some(SessionContext {
+                session_id: Uuid::from_u128(20),
+                user_id: Uuid::from_u128(21),
+                role: "viewer".to_string(),
+                demo_read_only: false,
+            }),
+        };
+        let mut data = StoreData::default();
+        let mut alpha = run(1, "alpha-run", 1);
+        alpha.project_id = Uuid::from_u128(10);
+        alpha.project = "alpha".to_string();
+        let mut beta = run(2, "beta-run", 2);
+        beta.project_id = Uuid::from_u128(11);
+        beta.project = "beta".to_string();
+        let mut other_org = run(3, "other-org-run", 3);
+        other_org.org_id = other_org_id;
+        other_org.project_id = Uuid::from_u128(12);
+        other_org.project = "other-org".to_string();
+        data.insert_run(alpha.clone());
+        data.insert_run(beta.clone());
+        data.insert_run(other_org);
+
+        let query = HashMap::new();
+        let search = CompiledRunSearch::empty();
+        let (total, page) = created_index_page(&data, &ctx, &query, &search, 0, 25).unwrap();
+
+        assert_eq!(total, 2);
+        assert_eq!(
+            page.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![beta.id, alpha.id]
+        );
+    }
+
+    #[test]
     fn metric_sort_prefers_high_reward_and_low_loss_then_newer_runs() {
         let newer = run(3, "newer", 3);
         let older = run(1, "older", 1);

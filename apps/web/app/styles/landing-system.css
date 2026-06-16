@@ -43,8 +43,8 @@
 
 .mono-label {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.22em;
+  font-size: 12px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--accent);
   font-weight: 500;
@@ -86,7 +86,7 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     0 0 0 1px var(--accent-line),
-    0 8px 24px -8px rgba(31, 184, 119, 0.3);
+    0 10px 22px -14px rgba(0, 0, 0, 0.62);
   min-height: 44px;
   border: none;
   gap: 4px;
@@ -98,7 +98,7 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
     0 0 0 1px var(--accent-line),
-    0 14px 32px -8px rgba(31, 184, 119, 0.3);
+    0 14px 28px -16px rgba(0, 0, 0, 0.68);
   background: linear-gradient(180deg, var(--accent) 0%, var(--accent-strong) 100%);
   color: var(--color-ink);
 }
@@ -150,11 +150,13 @@
   background: var(--surface-soft);
 }
 .landing-stat-card__key {
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--faint);
+  /* --muted, not --faint: small uppercase mono labels need headroom past
+     4.5:1 on the dark landing surface (audit L2). */
+  color: var(--muted);
   margin-bottom: 8px;
 }
 .landing-stat-card__val {
@@ -197,8 +199,8 @@
 }
 .landing-paint-tile__tag {
   font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.22em;
+  font-size: 12px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 .landing-paint-tile__tag--danger { color: rgba(248, 113, 113, 0.8); }
@@ -232,12 +234,12 @@
   align-items: center;
   justify-content: center;
   background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--accent-line);
+  border: 1px solid var(--accent-line);
 }
 .landing-bento-eyebrow__label {
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--faint);
 }
@@ -262,7 +264,7 @@
   border-radius: 999px;
 }
 .landing-matrix-cell__status {
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--faint);
   letter-spacing: 0.05em;
@@ -276,7 +278,7 @@
   padding: 5px 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
   color: var(--muted);
@@ -284,13 +286,13 @@
 
 /* ─── Code block ─── */
 .landing-code-block {
-  background: #0A0C12;
+  background: #0a0c09;
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
   box-shadow:
-    0 0 0 1px rgba(31, 184, 119, 0.04),
-    0 24px 48px -16px rgba(0, 0, 0, 0.6);
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 22px 46px -20px rgba(0, 0, 0, 0.64);
   max-width: 640px;
   width: 100%;
 }
@@ -314,7 +316,7 @@
 }
 .landing-code-block__filename {
   margin-left: 12px;
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--faint);
 }
@@ -335,7 +337,7 @@
 
 .tab-btn {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.05em;
   padding: 6px 10px;
   border-radius: 4px;
@@ -353,12 +355,12 @@
 }
 
 /* Code syntax colours */
-.landing-code-dim    { color: #475569; }
-.landing-code-accent { color: #1FB877; }
-.landing-code-heading{ color: #F8FAFC; }
-.landing-code-purple { color: #C084FC; }
-.landing-code-mute   { color: #94A3B8; }
-.landing-code-fg     { color: #CBD5E1; }
+.landing-code-dim    { color: #555b4c; }
+.landing-code-accent { color: #2be082; }
+.landing-code-heading{ color: #f4f6f0; }
+.landing-code-purple { color: var(--blue); }
+.landing-code-mute   { color: #8b9280; }
+.landing-code-fg     { color: #c8ccbc; }
 .landing-code-str    { color: #86EFAC; }
 .landing-code-inline {
   font-size: 12.5px;
@@ -366,16 +368,32 @@
   color: var(--accent);
 }
 
-/* ─── Section fade-in ─── */
+/* ─── Section fade-in ───
+ * Sections are fully visible by default so content paints with no JS and on
+ * the first frame. The mount hook adds .section-pre only to sections still
+ * below the fold (and only when prefers-reduced-motion is off); the observer
+ * removes it to play the fade. Visibility is never gated on JS. */
 .section-fade {
-  opacity: 0;
-  transform: translateY(16px);
+  opacity: 1;
+  transform: none;
   transition: opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1),
               transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+.section-fade.section-pre {
+  opacity: 0;
+  transform: translateY(16px);
+}
 .section-fade.visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .section-fade,
+  .section-fade.section-pre {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 
 /* ─── Hero spotlight ─── */
@@ -389,8 +407,8 @@
   border-radius: 50%;
   background: radial-gradient(
     ellipse 50% 50% at center,
-    rgba(31, 184, 119, 0.22) 0%,
-    rgba(31, 184, 119, 0.08) 30%,
+    rgba(43, 224, 130, 0.1) 0%,
+    rgba(93, 137, 221, 0.045) 34%,
     transparent 70%
   );
   filter: blur(40px);
@@ -407,7 +425,7 @@
   border-radius: 50%;
   background: radial-gradient(
     ellipse 50% 50% at center,
-    rgba(31, 184, 119, 0.16) 0%,
+    rgba(43, 224, 130, 0.075) 0%,
     transparent 70%
   );
   filter: blur(30px);
@@ -486,8 +504,8 @@
  *
  * On first page load the dot grid cascades in row-by-row (every dot
  * scales up + fades in). The four Bolt diagonal dots layer a separate
- * pulse on top — they overshoot scale and briefly glow green, then
- * settle. After the diagonal pops, the wordmark fades in from the left.
+ * pulse on top, then settle. After the diagonal syncs, the wordmark fades in
+ * from the left.
  *
  * Plays once per session. The boot script in layout.tsx adds the
  * .no-logo-anim class to <html> on repeat visits and when
@@ -495,12 +513,12 @@
  */
 @keyframes logo-dot-emerge {
   0%   { opacity: 0; transform: scale(0.35); }
-  60%  { opacity: 1; transform: scale(1.15); }
+  60%  { opacity: 1; transform: scale(1.06); }
   100% { opacity: 1; transform: scale(1); }
 }
 @keyframes logo-diagonal-pulse {
   0%   { opacity: 0; transform: scale(0.35); filter: drop-shadow(0 0 0 transparent); }
-  45%  { opacity: 1; transform: scale(1.35); filter: drop-shadow(0 0 9px rgba(31, 184, 119, 0.85)); }
+  45%  { opacity: 1; transform: scale(1.08); filter: drop-shadow(0 0 0 transparent); }
   100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
 }
 @keyframes logo-wordmark-text-in {
@@ -512,7 +530,7 @@
   opacity: 0;
   transform-origin: center;
   transform-box: fill-box;
-  animation: logo-dot-emerge 500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: logo-dot-emerge 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .logo-anim .logo-dot-r0 { animation-delay: 0ms; }
 .logo-anim .logo-dot-r1 { animation-delay: 80ms; }
@@ -520,7 +538,7 @@
 .logo-anim .logo-dot-r3 { animation-delay: 240ms; }
 
 .logo-anim .logo-dot-diagonal {
-  animation: logo-diagonal-pulse 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: logo-diagonal-pulse 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 .logo-anim .logo-dot-diagonal.logo-dot-d0 { animation-delay: 420ms; }
 .logo-anim .logo-dot-diagonal.logo-dot-d1 { animation-delay: 540ms; }
@@ -621,9 +639,11 @@
   }
 }
 
-/* ─── Hero rise animations ─── */
+/* ─── Hero rise animations ───
+ * The from-state stays readable (never opacity 0) so hero text paints on the
+ * first frame even while the staggered delays are still pending. */
 @keyframes hero-rise {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0.6; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .hero-rise-1 { animation: hero-rise 800ms cubic-bezier(0.2, 0.8, 0.2, 1) 100ms both; }
@@ -649,7 +669,7 @@
   inset: -3px;
   border-radius: 999px;
   background: var(--green);
-  opacity: 0.4;
+  opacity: 0.22;
   animation: statusPulse 2s ease-out infinite;
 }
 @keyframes statusPulse {
@@ -756,9 +776,9 @@
   background: var(--surface-soft);
 }
 .landing-masking-demo__label {
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--faint);
 }
@@ -766,7 +786,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--accent);
 }
@@ -783,7 +803,7 @@
   position: absolute;
   right: 20px;
   top: 16px;
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--faint);
 }
@@ -799,14 +819,14 @@
   height: 2px;
 }
 .landing-masking-demo__legend-line--train { background: var(--accent); }
-.landing-masking-demo__legend-line--eval  { background: #94A3B8; opacity: 0.7; }
+.landing-masking-demo__legend-line--eval  { background: #8b9280; opacity: 0.7; }
 .landing-masking-demo__footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
   border-top: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
 }
 .landing-masking-demo__stat { color: var(--faint); }
@@ -820,7 +840,7 @@
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: #0A0C12;
+  background: #0a0c09;
 }
 .landing-audit-feed__header {
   display: flex;
@@ -830,9 +850,9 @@
   border-bottom: 1px solid var(--line);
 }
 .landing-audit-feed__label {
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--faint);
 }
@@ -840,7 +860,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--accent);
 }
@@ -860,7 +880,7 @@
   align-items: baseline;
   gap: 12px;
   padding: 6px 0;
-  font-size: 11.5px;
+  font-size: 12px;
   font-family: var(--font-mono);
   line-height: 1.4;
 }
@@ -872,10 +892,13 @@
   border-radius: 50%;
 }
 .landing-audit-feed__ts {
+  flex: 0 0 auto;
   color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
 .landing-audit-feed__line {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -887,7 +910,7 @@
   inset-inline: 0;
   top: 0;
   height: 32px;
-  background: linear-gradient(to bottom, #0A0C12, transparent);
+  background: linear-gradient(to bottom, #0a0c09, transparent);
 }
 .landing-audit-feed__fade-bottom {
   pointer-events: none;
@@ -895,7 +918,7 @@
   inset-inline: 0;
   bottom: 0;
   height: 32px;
-  background: linear-gradient(to top, #0A0C12, transparent);
+  background: linear-gradient(to top, #0a0c09, transparent);
 }
 
 /* ─── TtlRing component ─── */
@@ -912,7 +935,7 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(circle at center, rgba(31,184,119,0.10) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(43, 224, 130,0.055) 0%, transparent 60%);
 }
 .landing-ttl-ring__svg { position: relative; }
 .landing-ttl-ring__label {
@@ -925,9 +948,9 @@
   pointer-events: none;
 }
 .landing-ttl-ring__eyebrow {
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--faint);
   margin-bottom: 4px;
@@ -940,7 +963,7 @@
   line-height: 1;
 }
 .landing-ttl-ring__unit {
-  font-size: 10px;
+  font-size: 12px;
   font-family: var(--font-mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -959,7 +982,7 @@
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text);
-  font-family: var(--font-sans);
+  font-family: var(--font-display);
 }
 
 /* ─── Landing root and layout ─── */
@@ -1084,13 +1107,14 @@
   margin-bottom: 24px;
 }
 .landing-hero-badge__text {
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
 }
 .landing-h1 {
+  font-family: var(--font-display);
   font-size: 40px;
   font-weight: 600;
   letter-spacing: 0;
@@ -1132,7 +1156,7 @@
  * stay legible in both modes. The "ml" wordmark and diagonal stay Bolt. */
 .landing-nav-logo,
 [aria-label="InstantML"] {
-  color: var(--color-ink, #0E1116);
+  color: var(--color-ink, #0d0f0c);
 }
 :root[data-theme="dark"] .landing-nav-logo,
 :root[data-theme="dark"] [aria-label="InstantML"] {
@@ -1160,6 +1184,199 @@
 }
 .landing-proof-chip__check { color: var(--accent); }
 
+.landing-product-preview {
+  display: grid;
+  grid-template-columns: minmax(180px, 230px) minmax(0, 1fr);
+  width: min(920px, 100%);
+  min-height: 302px;
+  margin-top: 32px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 95%, var(--bg));
+  box-shadow: 0 24px 52px -34px rgba(0, 0, 0, 0.8);
+}
+
+.landing-product-preview__rail {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-soft) 72%, var(--bg));
+  padding: 12px;
+}
+
+.landing-product-preview__rail-head,
+.landing-product-preview__toolbar,
+.landing-product-preview__chips,
+.landing-product-preview__run {
+  display: flex;
+  align-items: center;
+}
+
+.landing-product-preview__rail-head {
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  color: var(--muted);
+  font: 600 12px/1 var(--font-mono);
+}
+
+.landing-product-preview__rail-head strong {
+  color: var(--text);
+  font: 600 12px/1 var(--font-mono);
+}
+
+.landing-product-preview__run {
+  gap: 8px;
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 7px 8px;
+}
+
+.landing-product-preview__run.is-selected {
+  border-color: var(--line);
+  background: var(--surface-selected);
+}
+
+.landing-product-preview__run div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.landing-product-preview__run strong,
+.landing-product-preview__run small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.landing-product-preview__run strong {
+  color: var(--text);
+  font: 600 12.5px/1 var(--font-mono);
+}
+
+.landing-product-preview__run small {
+  color: var(--muted);
+  font: 500 12px/1 var(--font-mono);
+}
+
+.landing-product-preview__status {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--dim);
+}
+
+.landing-product-preview__status.is-running { background: var(--accent); }
+.landing-product-preview__status.is-finished { background: var(--blue); }
+
+.landing-product-preview__main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 14px 16px 12px;
+}
+
+.landing-product-preview__toolbar {
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding-bottom: 8px;
+}
+
+.landing-product-preview__toolbar > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.landing-product-preview__eyebrow {
+  color: var(--muted);
+  font: 600 12px/1 var(--font-mono);
+}
+
+.landing-product-preview__toolbar strong {
+  color: var(--text);
+  font: 650 16px/1 var(--font-display);
+}
+
+.landing-product-preview__chips {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.landing-product-preview__chips span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: 4px 8px;
+  font: 600 12px/1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.landing-product-preview__chart {
+  width: 100%;
+  min-height: 220px;
+}
+
+.landing-product-preview__grid line {
+  stroke: var(--chart-grid);
+  stroke-width: 1;
+}
+
+.landing-product-preview__line {
+  fill: none;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+}
+
+.landing-product-preview__line.is-blue { stroke: var(--series-1); }
+.landing-product-preview__line.is-green { stroke: var(--series-2); }
+.landing-product-preview__line.is-amber { stroke: var(--series-4); }
+.landing-product-preview__line.is-coral { stroke: var(--series-3); }
+
+.landing-product-preview__point {
+  stroke: var(--chart-card-bg);
+  stroke-width: 2;
+}
+
+.landing-product-preview__point.is-green { fill: var(--series-2); }
+.landing-product-preview__point.is-amber { fill: var(--series-4); }
+
+.landing-product-preview__axis text {
+  fill: var(--muted);
+  font: 600 12px/1 var(--font-mono);
+}
+
+@media (max-width: 820px) {
+  .landing-product-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-product-preview__rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .landing-product-preview__run:nth-of-type(n + 5) {
+    display: none;
+  }
+
+  .landing-product-preview__toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .landing-stats-section { padding-top: 28px; padding-bottom: 64px; }
 @media (min-width: 768px) { .landing-stats-section { padding-bottom: 80px; } }
 .landing-stats-grid {
@@ -1177,6 +1394,7 @@
 .landing-section-intro { max-width: 672px; margin-bottom: 32px; }
 .landing-mono-label { margin-bottom: 12px; }
 .landing-h2 {
+  font-family: var(--font-display);
   font-size: 30px;
   font-weight: 600;
   letter-spacing: 0;
@@ -1253,7 +1471,7 @@
 }
 .landing-arch-legend-dot--accent {
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(31,184,119,0.7);
+  box-shadow: 0 0 0 1px rgba(43, 224, 130,0.22);
 }
 .landing-arch-legend-dot--border {
   border: 1px solid var(--line-strong);
@@ -1264,7 +1482,7 @@
   border-top: 1px dashed var(--line-strong);
 }
 .landing-arch-legend-label {
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
   color: var(--muted);
 }
@@ -1287,6 +1505,7 @@
 }
 .landing-bento-inner-pad { padding: 24px 24px 0; }
 .landing-bento-h3 {
+  font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
   color: var(--text);
@@ -1294,7 +1513,7 @@
   margin-bottom: 4px;
 }
 .landing-bento-body {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
   line-height: 1.6;
   margin-bottom: 16px;
@@ -1311,6 +1530,7 @@
   .landing-bento-sm { grid-column: span 2; }
 }
 .landing-bento-h3-sm {
+  font-family: var(--font-display);
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
@@ -1318,7 +1538,7 @@
   margin-bottom: 4px;
 }
 .landing-bento-body-sm {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
   line-height: 1.6;
 }
@@ -1401,10 +1621,11 @@
   align-items: center;
   justify-content: center;
   background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--accent-line);
+  border: 1px solid var(--accent-line);
   margin-bottom: 24px;
 }
 .landing-cta-h2 {
+  font-family: var(--font-display);
   font-size: 28px;
   font-weight: 600;
   letter-spacing: 0;
@@ -1432,7 +1653,7 @@
   .landing-cta-row { flex-direction: row; }
 }
 .landing-cta-note {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--faint);
   margin-top: 24px;
   font-family: var(--font-mono);
@@ -1464,7 +1685,7 @@
   font-weight: 600;
   color: var(--text);
   letter-spacing: 0;
-  font-family: var(--font-sans);
+  font-family: var(--font-display);
 }
 .landing-footer__brand-desc {
   font-size: 13px;
@@ -1472,9 +1693,9 @@
   line-height: 1.6;
 }
 .landing-footer-col-title {
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--font-mono);
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--faint);
   margin-bottom: 16px;

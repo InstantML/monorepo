@@ -460,6 +460,11 @@ export function ReportEditor({
             value={report.title}
             placeholder="Untitled report"
             onChange={(event) => emit({ ...report, title: event.target.value })}
+            onFocus={(event) => {
+              // The server requires a non-empty title, so new reports start as
+              // "Untitled report"; select it on focus so typing replaces it.
+              if (report.title === "Untitled report") event.currentTarget.select();
+            }}
             aria-label="Report title"
           />
         )}

@@ -44,7 +44,12 @@ npm run deploy:cloud-run
 npm run deploy:cloud-run -- --help
 ```
 
-The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. The managed router pins auth, billing, org, dashboard preference, and workspace-view routes to control; tenant product routes such as `/api/reports` use the data backend. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
+
+For split deployments with the managed HTTPS router, auth, admin, billing,
+organization, workspace-view, dashboard-preference, invitation, and report
+routes are routed to the control service. Product data routes use the data
+service by default.
 
 Important environment variables:
 
@@ -80,6 +85,18 @@ Important environment variables:
 - `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warnings. Default: `1000`.
 
 Do not run this from CI. It can create paid cloud resources, add Secret Manager versions, provision public Cloud Run or load-balancer URLs, and create Cloudflare R2 buckets when artifact uploads are enabled. The default deployment is the split `control` plus `data` shape; prod stays warm with one manual instance per service, while staging uses automatic min `0` max `1` to reduce idle cost without allowing multiple writers. The public router path refuses HTTP-only IP routing because auth/session and API-key traffic must use HTTPS; first router setup can return a pending DNS/certificate state before it writes the public API base. Hosted artifact byte uploads use Cloudflare R2 when configured; the helper mounts Cloudflare env/secrets only on non-control services, and any Cloudflare token Client IP filter must include every Cloud Run static egress IP that can run artifact uploads. See `docs/architecture/self-hosted-gcp-clickhouse.md` for the current self-hosted GCP ClickHouse operating model.
+
+Before adding data cells or raising instance counts, run the Phase 0 capacity
+preflight and record its JSON output in the operator ticket:
+
+```bash
+INSTANTML_CLOUD_SQL_CONNECTION_LIMIT=<cloud-sql-tier-limit> npm --silent run rust:capacity-plan
+```
+
+The runbook in `docs/ops/backend-phase-0-capacity.md` explains the active
+revision, per-revision instance, deploy-overlap, operator-job, migration-job,
+and headroom inputs. This preflight is intentionally separate from `deploy-cloud-run.mjs` so
+operators can run it without mutating cloud resources.
 
 Hosted Rust origin logs are Cloud Run stdout/stderr JSON logs. They include
 request completion events with redacted route-template paths, `request_id`,

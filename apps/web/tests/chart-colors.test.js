@@ -19,6 +19,19 @@ test("chart colors cycle through the shared dashboard palette", () => {
   assert.equal(chartColor(Number.NaN), CHART_PALETTE[0]);
 });
 
+test("chart palette keeps thin strokes legible on light and dark chart surfaces", () => {
+  for (const color of CHART_PALETTE) {
+    assert.ok(
+      contrastRatio(color, "#ffffff") >= 3,
+      `${color} must meet non-text contrast against white chart surfaces`,
+    );
+    assert.ok(
+      contrastRatio(color, "#0e1116") >= 3,
+      `${color} must meet non-text contrast against dark chart surfaces`,
+    );
+  }
+});
+
 test("stable chart indexes stay deterministic and bounded", () => {
   const first = stableChartIndex("run-baseline", 4);
   const second = stableChartIndex("run-baseline", 9);
@@ -61,3 +74,18 @@ test("line style helpers expose matching css, canvas, and svg dash patterns", ()
   assert.equal(chartSvgDashAttr(0), "");
   assert.equal(chartSvgDashAttr(CHART_PALETTE.length), ' stroke-dasharray="6 4"');
 });
+
+function contrastRatio(foreground, background) {
+  const lighter = Math.max(relativeLuminance(foreground), relativeLuminance(background));
+  const darker = Math.min(relativeLuminance(foreground), relativeLuminance(background));
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function relativeLuminance(hex) {
+  const [r, g, b] = hex
+    .replace("#", "")
+    .match(/.{2}/g)
+    .map((part) => parseInt(part, 16) / 255)
+    .map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}

@@ -7,7 +7,7 @@ import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels.js";
 import { BULK_SELECT_MATCHING_LIMIT, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
-import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runNoteText, runRailTooltip, workspacePanelTypeLabel } from "../../dashboard-models";
+import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runNoteText, runRailTooltip, shortMetricName, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { WorkspaceSectionView } from "./workspace-panel-card";
@@ -46,6 +46,21 @@ function compactRailConfigSummary(run: RunSummary) {
     .slice(0, 2)
     .map((key) => `${key.replace("learning_rate", "lr")} ${compactRailConfigValue(config[key])}`);
   return parts.length ? parts.join(" · ") : "no config";
+}
+
+function compactRailMetricValue(value: number) {
+  const absolute = Math.abs(value);
+  if (absolute > 0 && absolute < 0.001) return value.toExponential(2).replace("e-0", "e-").replace("e+", "e");
+  if (absolute >= 100000) return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat("en-US", { maximumSignificantDigits: 4 }).format(value);
+}
+
+function runStatusClass(status: string) {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "running") return "running";
+  if (normalized === "failed" || normalized === "error") return "failed";
+  if (normalized === "finished" || normalized === "completed" || normalized === "succeeded") return "finished";
+  return "neutral";
 }
 
 function visibleTagsForSearch(tags: string[], search: string, limit: number) {
@@ -108,10 +123,12 @@ export function RunsWorkspace({
   onRunRailCollapsed,
   onSetAddPanelSection,
   onTableColumns,
+  onClearSelection,
   onSelectAllMatching,
   onSelectAllVisible,
   onToggleRun,
   onToggleSection,
+  metricKey,
   hasNextPage,
   hasPreviousPage,
   initialLoadDone,
@@ -158,12 +175,14 @@ export function RunsWorkspace({
   onResizePanel: (sectionId: string, panelId: string, layout: import("../../dashboard-types").WorkspacePanelLayout) => void;
   onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
   onRunRailCollapsed: (collapsed: boolean) => void;
+  onClearSelection: () => void;
   onSelectAllMatching: () => void;
   onSelectAllVisible: () => void;
   onSetAddPanelSection: (sectionId: string) => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   onToggleRun: (runId: string, options?: { shift?: boolean }) => void;
   onToggleSection: (sectionId: string) => void;
+  metricKey: string;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   initialLoadDone: boolean;
@@ -198,8 +217,12 @@ export function RunsWorkspace({
     "[data-add-panel-trigger='true']",
   );
   const [draggedPanel, setDraggedPanel] = useState<DraggedWorkspacePanel | null>(null);
+  // R6 cross-highlight: hovering a rail run isolates its series in every line
+  // panel; hovering a chart series lights up the matching rail run.
+  const [highlightRunId, setHighlightRunId] = useState<string | null>(null);
   const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
   const [addHistogramObjectKey, setAddHistogramObjectKey] = useState("");
+  const [bulkPromptEnabled, setBulkPromptEnabled] = useState(false);
   const draggedPanelRef = useRef<DraggedWorkspacePanel | null>(null);
   const pointerDragCleanupRef = useRef<() => void>(() => {});
   const activeAddSectionId = addPanelSectionId || view.sections[0]?.id || "";
@@ -290,9 +313,24 @@ export function RunsWorkspace({
       : `Deselect all ${visibleRunIds.length} visible runs`
     : `Select all ${visibleRunIds.length} visible runs`;
   const matchingOverflow = summaryTotal > visibleRunIds.length;
-  const showSelectAllMatching = matchingOverflow;
+  const showSelectAllMatching = matchingOverflow && selectedRunIds.length > 0;
   const selectAllMatchingTarget = Math.min(summaryTotal, BULK_SELECT_MATCHING_LIMIT);
   const initialRunsLoading = !initialLoadDone && workspaceRuns.length === 0;
+  const railPageLabel = initialRunsLoading
+    ? "Loading runs"
+    : summaryTotal > 0
+      ? `${pageStart}-${pageEnd} of ${summaryTotal}`
+      : "No runs";
+
+  useEffect(() => {
+    if (!selectedRunIds.length) setBulkPromptEnabled(false);
+  }, [selectedRunIds.length]);
+
+  function handleSelectAllVisible() {
+    setBulkPromptEnabled(true);
+    onSelectAllVisible();
+  }
+
   return (
     <div className={`runs-workspace ${showAddPanelDrawer ? "drawer-open" : ""} ${runRailCollapsed ? "run-rail-collapsed" : ""}`}>
       <aside className="workspace-run-rail">
@@ -303,7 +341,7 @@ export function RunsWorkspace({
               aria-label={railSelectionLabel}
               checked={railSelectionState === "all"}
               disabled={visibleRunIds.length === 0 || initialRunsLoading}
-              onChange={onSelectAllVisible}
+              onChange={handleSelectAllVisible}
               ref={(node) => { if (node) node.indeterminate = railSelectionState === "some"; }}
               type="checkbox"
             />
@@ -328,7 +366,7 @@ export function RunsWorkspace({
             <button
               aria-pressed={railSelectionState === "all"}
               className="link-button"
-              onClick={onSelectAllVisible}
+              onClick={handleSelectAllVisible}
               type="button"
             >
               {railSelectionState === "all"
@@ -338,13 +376,26 @@ export function RunsWorkspace({
                 : `Select all ${visibleRunIds.length} on this page`}
             </button>
             {railSelectionState !== "none" ? (
-              <span className="workspace-rail-page-count">{selectedRunIds.length} selected</span>
+              <span className="workspace-rail-page-count">
+                {selectedRunIds.length} selected
+                {railSelectionState === "some" ? (
+                  <>
+                    {" · "}
+                    <button className="link-button" onClick={onClearSelection} type="button">Clear</button>
+                  </>
+                ) : null}
+              </span>
             ) : null}
           </div>
         ) : null}
+        <div className="workspace-rail-collapsed-summary" aria-label={`Runs rail summary: ${selectedRunIds.length} selected, ${railPageLabel}`}>
+          <strong>{selectedRunIds.length}</strong>
+          <span>selected</span>
+          <em>{railPageLabel}</em>
+        </div>
         {showSelectAllMatching && !initialRunsLoading ? (
-          <div className="workspace-rail-select-banner" role="status" aria-live="polite">
-            <span>{selectedRunIds.length} of {summaryTotal} selected.</span>
+          <div className={`workspace-rail-select-banner ${bulkPromptEnabled ? "" : "quiet"}`} role="status" aria-live="polite">
+            <span>{bulkPromptEnabled ? `${selectedRunIds.length} of ${summaryTotal} selected.` : "More runs match the current filters."}</span>
             {selectAllMatchingDisabled ? (
               <span className="visually-hidden">Refresh or fix the current search before selecting all matching runs.</span>
             ) : null}
@@ -357,7 +408,9 @@ export function RunsWorkspace({
             >
               {selectAllMatchingBusy
                 ? `Selecting ${selectAllMatchingTarget}...`
-                : selectAllMatchingTarget < summaryTotal
+                : !bulkPromptEnabled
+                  ? "Bulk select matching"
+                  : selectAllMatchingTarget < summaryTotal
                   ? `Select first ${selectAllMatchingTarget} matching filter`
                   : `Select all ${summaryTotal} matching filter`}
             </button>
@@ -375,17 +428,25 @@ export function RunsWorkspace({
             const uploadHealth = uploadHealthForRun(run);
             const configSummary = runConfigSummary(run);
             const compactConfigSummary = compactRailConfigSummary(run);
+            const statusLabel = run.status || "unknown";
+            const latestMetricValue = metricKey ? run.latest_metrics?.[metricKey] : undefined;
+            const hasLatestMetricValue = typeof latestMetricValue === "number" && Number.isFinite(latestMetricValue);
             const runColor = chartColor(stableChartIndex(run.id || run.name, index));
             return (
               <div
-                className={`workspace-run-row ${selected ? "selected" : ""}`}
+                className={`workspace-run-row ${selected ? "selected" : ""}${run.id === highlightRunId ? " is-highlighted" : ""}`}
                 key={run.id}
+                onMouseEnter={() => setHighlightRunId(run.id)}
+                onMouseLeave={() => setHighlightRunId((current) => (current === run.id ? null : current))}
               >
                 <button
                   aria-label={compareLabel}
                   aria-pressed={selected}
                   className="workspace-run-select"
-                  onClick={(event) => onToggleRun(run.id, { shift: event.shiftKey })}
+                  onClick={(event) => {
+                    setBulkPromptEnabled(true);
+                    onToggleRun(run.id, { shift: event.shiftKey });
+                  }}
                   title={selected ? "Remove from comparison" : "Add to comparison"}
                   type="button"
                 >
@@ -402,9 +463,19 @@ export function RunsWorkspace({
                   <span className="workspace-run-body">
                     <strong>{compactRailRunName(run.name)}</strong>
                     <small title={`${run.project} · ${configSummary}`}>{run.project} · {compactConfigSummary}</small>
-                    {uploadHealth.state !== "unknown" ? (
-                      <span className={`upload-health-chip ${uploadHealth.tone}`}>{uploadHealth.label}</span>
-                    ) : null}
+                    <span className="workspace-run-evidence">
+                      <span className={`workspace-run-status ${runStatusClass(statusLabel)}`}>{statusLabel}</span>
+                      {hasLatestMetricValue ? (
+                        <span className="workspace-run-metric-chip" title={`${metricKey}: ${latestMetricValue}`}>
+                          <span className="wrm-name">{shortMetricName(metricKey)}</span>
+                          <span className="wrm-value">{compactRailMetricValue(latestMetricValue)}</span>
+                        </span>
+                      ) : null}
+                      {/* Exception-only: synced is the unmarked default. */}
+                      {uploadHealth.state !== "unknown" && uploadHealth.state !== "synced" ? (
+                        <span className={`upload-health-chip ${uploadHealth.tone}`} title={uploadHealth.detail || undefined}>{uploadHealth.label}</span>
+                      ) : null}
+                    </span>
                     <span className="workspace-run-tags" aria-label={`${run.name} tags`}>
                       {visibleTags.map((tag) => <b key={tag} title={tag}>{tag}</b>)}
                       {hiddenTags.length ? <em title={hiddenTags.join(", ")}>+{hiddenTags.length}</em> : null}
@@ -476,6 +547,8 @@ export function RunsWorkspace({
             return (
               <WorkspaceSectionView
                 key={section.id}
+                highlightRunId={highlightRunId}
+                onHighlightRun={setHighlightRunId}
                 onDuplicatePanel={onDuplicatePanel}
                 onEditPanel={onEditPanel}
                 onFullscreenPanel={onFullscreenPanel}

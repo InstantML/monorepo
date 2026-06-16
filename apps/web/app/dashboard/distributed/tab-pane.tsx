@@ -59,14 +59,18 @@ type RankSummary = {
   truncated: { steps: boolean; heatmap: boolean; outliers: boolean };
 };
 
+type ReducerMode = "central" | "mean" | "weighted" | "median" | "bounds";
+
 type Props = {
   api: { get: (path: string, options?: Record<string, unknown>) => Promise<any> };
+  availableRuns?: RunSummary[];
   embedded?: boolean;
+  onSelectRun?: (runId: string) => void;
   primaryRun: RunSummary | null;
   onMeta?: (meta: { worldSize: number; rankKeys: number }) => void;
 };
 
-export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }: Props) {
+export function DistributedTabPane({ api, availableRuns = [], embedded = false, onSelectRun, primaryRun, onMeta }: Props) {
   const [summary, setSummary] = useState<RankSummary | null>(null);
   const [rankKey, setRankKey] = useState("");
   const [error, setError] = useState("");
@@ -138,17 +142,28 @@ export function DistributedTabPane({ api, embedded = false, primaryRun, onMeta }
         <header className="analysis-header">
           <div className="analysis-title-block">
             <span className="analysis-eyebrow eyebrow--accent">Distributed</span>
-            <h2>Rank <span className="serif-em">reducers</span></h2>
+            <h2>Rank reducers</h2>
             <p>{primaryRun ? `${primaryRun.name} · selected run` : "No run selected"}</p>
           </div>
-          <div className="analysis-controls">{keySelect}</div>
+          <div className="analysis-controls">
+            {onSelectRun && availableRuns.length ? (
+              <CustomSelect
+                id="distributed-run"
+                label="Run"
+                onChange={(value) => { if (value) onSelectRun(value); }}
+                options={availableRuns.map((run) => ({ value: run.id, label: run.name }))}
+                value={primaryRun?.id ?? ""}
+              />
+            ) : null}
+            {keySelect}
+          </div>
         </header>
       )}
 
       {error ? <div className="banner error">{error}</div> : null}
-      {!primaryRun ? <div className="empty">Select a run to inspect distributed rank metrics.</div> : null}
+      {!primaryRun ? <RankMetricsEmptyState selected={false} /> : null}
       {primaryRun && loading && !summary ? <div className="empty">Loading rank metrics...</div> : null}
-      {primaryRun && summary && !summary.keys.length ? <div className="empty">No rank metrics logged for this run yet.</div> : null}
+      {primaryRun && summary && !summary.keys.length ? <RankMetricsEmptyState selected /> : null}
 
       {hasData ? (
         <>
@@ -187,7 +202,8 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 function ReducerChart({ metricKey, reducers }: { metricKey: string; reducers: RankReducerPoint[] }) {
-  const geometry = useMemo(() => chartGeometry(reducers), [reducers]);
+  const [mode, setMode] = useState<ReducerMode>("central");
+  const geometry = useMemo(() => chartGeometry(reducers, mode), [mode, reducers]);
   const help = (
     <>
       <strong>{metricTitle(metricKey)} reduced across ranks at each step.</strong>
@@ -204,27 +220,49 @@ function ReducerChart({ metricKey, reducers }: { metricKey: string; reducers: Ra
   const bandBottom = reducers.slice().reverse().map((point) => `${geometry.x(point.step)},${geometry.y(point.p05)}`);
   return (
     <AnalysisCard title={`${metricTitle(metricKey)} reducers`} badge={metricKey} help={help}>
-      <svg className="analysis-line-chart" viewBox="0 0 720 280" role="img" aria-label="Rank reducer chart">
-        {geometry.yTicks.map((tick) => (
-          <g key={tick}>
-            <line className="analysis-grid-line" x1="52" x2="700" y1={geometry.y(tick)} y2={geometry.y(tick)} />
-            <text className="analysis-tick" x="46" y={geometry.y(tick) + 4} textAnchor="end">{formatNumber(tick, 3)}</text>
-          </g>
-        ))}
-        <line className="analysis-axis-line" x1="52" x2="700" y1="244" y2="244" />
-        <polygon className="rank-band-area" points={[...bandTop, ...bandBottom].join(" ")} />
-        <polyline className="rank-median-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.p50)}`).join(" ")} />
-        <polyline className="rank-mean-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.mean)}`).join(" ")} />
-        <polyline className="rank-weighted-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.weighted_mean)}`).join(" ")} />
-        <text className="analysis-tick" x="52" y="262">{formatNumber(geometry.minX, 0)}</text>
-        <text className="analysis-tick" x="700" y="262" textAnchor="end">{formatNumber(geometry.maxX, 0)}</text>
-        <text className="analysis-axis-title" x="376" y="276" textAnchor="middle">step</text>
-      </svg>
+      <div className="analysis-control-row">
+        <CustomSelect
+          className="axis-select"
+          id="rank-reducer-mode"
+          label="Y series"
+          onChange={(value) => setMode(value as ReducerMode)}
+          options={[
+            { value: "central", label: "Mean, weighted, median", description: "Show central tendency with p05-p95 band" },
+            { value: "mean", label: "Mean only", description: "Unweighted mean across ranks" },
+            { value: "weighted", label: "Weighted mean only", description: "Sample-count weighted mean" },
+            { value: "median", label: "Median only", description: "p50 across ranks" },
+            { value: "bounds", label: "Min/max bounds", description: "Show min, p05, p95, and max" },
+          ]}
+          value={mode}
+        />
+      </div>
+      <div className="analysis-chart-frame analysis-chart-frame--wide">
+        <svg className="analysis-line-chart" viewBox="0 0 720 280" role="img" aria-label={`Rank reducer chart showing ${reducerModeLabel(mode)} for ${metricKey}`}>
+          {geometry.yTicks.map((tick) => (
+            <g key={tick}>
+              <line className="analysis-grid-line" x1="52" x2="700" y1={geometry.y(tick)} y2={geometry.y(tick)} />
+              <text className="analysis-tick" x="46" y={geometry.y(tick) + 4} textAnchor="end">{formatNumber(tick, 3)}</text>
+            </g>
+          ))}
+          <line className="analysis-axis-line" x1="52" x2="700" y1="244" y2="244" />
+          {["central", "bounds"].includes(mode) ? <polygon className="rank-band-area" points={[...bandTop, ...bandBottom].join(" ")} /> : null}
+          {["central", "median"].includes(mode) ? <polyline className="rank-median-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.p50)}`).join(" ")} /> : null}
+          {["central", "mean"].includes(mode) ? <polyline className="rank-mean-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.mean)}`).join(" ")} /> : null}
+          {["central", "weighted"].includes(mode) ? <polyline className="rank-weighted-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.weighted_mean)}`).join(" ")} /> : null}
+          {mode === "bounds" ? <polyline className="rank-min-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.min)}`).join(" ")} /> : null}
+          {mode === "bounds" ? <polyline className="rank-max-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.max)}`).join(" ")} /> : null}
+          <text className="analysis-tick" x="52" y="262">{formatNumber(geometry.minX, 0)}</text>
+          <text className="analysis-tick" x="700" y="262" textAnchor="end">{formatNumber(geometry.maxX, 0)}</text>
+          <text className="analysis-axis-title" x="376" y="276" textAnchor="middle">step</text>
+        </svg>
+      </div>
       <div className="analysis-legend">
-        <span><i className="rank-mean" /> mean</span>
-        <span><i className="rank-weighted" /> weighted</span>
-        <span><i className="rank-median" /> median (p50)</span>
-        <span><i className="swatch rank-band" /> p05–p95</span>
+        {["central", "mean"].includes(mode) ? <span><i className="rank-mean" /> mean</span> : null}
+        {["central", "weighted"].includes(mode) ? <span><i className="rank-weighted" /> weighted</span> : null}
+        {["central", "median"].includes(mode) ? <span><i className="rank-median" /> median (p50)</span> : null}
+        {["central", "bounds"].includes(mode) ? <span><i className="swatch rank-band" /> p05–p95</span> : null}
+        {mode === "bounds" ? <span><i className="rank-min" /> min</span> : null}
+        {mode === "bounds" ? <span><i className="rank-max" /> max</span> : null}
       </div>
     </AnalysisCard>
   );
@@ -253,6 +291,11 @@ function CoveragePanel({ coverage }: { coverage: RankCoveragePoint[] }) {
         {buckets.map((bucket) => (
           <span key={bucket.step} className={bucket.mismatch ? "mismatch" : bucket.ratio < 1 ? "partial" : ""} style={{ height: `${Math.max(8, bucket.ratio * 100)}%` }} title={`~step ${formatNumber(bucket.step, 0)}: ${formatNumber(bucket.ratio * 100, 0)}% ranks reporting`} />
         ))}
+      </div>
+      <div className="coverage-legend" aria-label="Coverage states">
+        <span><i className="full" />full</span>
+        <span><i className="partial" />partial</span>
+        <span><i className="mismatch" />world-size mismatch</span>
       </div>
       <p className="analysis-note">
         {latest ? `${latest.rank_count}/${latest.expected_world_size} ranks at step ${formatNumber(latest.step, 0)}` : "No coverage points."}
@@ -349,7 +392,9 @@ function HeatmapPanel({ heatmap, truncated }: { heatmap: RankHeatmapPoint[]; tru
               const cell = grid.lookup.get(`${rank}:${step}`);
               if (!cell) return <i key={`${rank}-${step}`} style={{ background: "var(--surface-3)", opacity: 0.5 }} title={`r${rank} step ${step}: no data`} />;
               const intensity = Math.min(1, Math.abs(cell.delta_from_mean) / grid.maxDelta);
-              const color = cell.delta_from_mean >= 0 ? "var(--coral)" : "var(--series-2)";
+              // Blue/orange diverging ramp (colorblind-safe) with opacity as the
+              // magnitude channel; exact values stay one hover away via title.
+              const color = cell.delta_from_mean >= 0 ? "var(--amber)" : "var(--blue)";
               return <i key={`${rank}-${step}`} style={{ background: color, opacity: 0.16 + intensity * 0.8 }} title={`r${rank} step ${step}: ${formatNumber(cell.value, 4)} (${signed(cell.delta_from_mean, 4)})`} />;
             }))}
           </div>
@@ -360,9 +405,9 @@ function HeatmapPanel({ heatmap, truncated }: { heatmap: RankHeatmapPoint[]; tru
         </div>
       </div>
       <div className="heatmap-scale">
-        <span>{signed(-grid.maxDelta, 3)}</span>
+        <span>cooler {signed(-grid.maxDelta, 3)}</span>
         <span className="ramp" />
-        <span>{signed(grid.maxDelta, 3)}</span>
+        <span>warmer {signed(grid.maxDelta, 3)}</span>
         <span style={{ color: "var(--faint)" }}>Δ from rank mean</span>
       </div>
     </AnalysisCard>
@@ -389,7 +434,8 @@ function OutlierPanel({ outliers, truncated, worldSize }: { outliers: RankOutlie
             <span>r{item.rank}</span>
             <span>step {formatNumber(item.step, 0)}</span>
             <strong>{formatNumber(item.value, 4)}</strong>
-            <span className={item.z_score >= 0 ? "pos" : "neg"}>{signed(item.z_score, 2)}z</span>
+            {/* Deviation direction isn't inherently good or bad — emphasize magnitude, not sign. */}
+            <span className="z-mag" style={{ opacity: 0.55 + Math.min(0.45, Math.abs(item.z_score) / 6) }}>{signed(item.z_score, 2)}z</span>
           </div>
         ))}
         {!shown.length ? <div className="empty compact-empty">No outlier ranks detected.</div> : null}
@@ -421,14 +467,13 @@ function heatmapGrid(heatmap: RankHeatmapPoint[]) {
   return { ranks, steps, lookup, maxDelta };
 }
 
-function chartGeometry(points: RankReducerPoint[]) {
+function chartGeometry(points: RankReducerPoint[], mode: ReducerMode = "central") {
   if (!points.length) return null;
   const minX = Math.min(...points.map((point) => point.step));
   const maxX = Math.max(...points.map((point) => point.step));
-  // Scale to the robust p05-p95 band and the central lines, not raw min/max,
-  // so a single straggler rank does not stretch the axis and crush the band.
-  const minY = Math.min(...points.flatMap((point) => [point.p05, point.mean, point.weighted_mean]));
-  const maxY = Math.max(...points.flatMap((point) => [point.p95, point.mean, point.weighted_mean]));
+  const values = points.flatMap((point) => reducerModeValues(point, mode));
+  const minY = Math.min(...values);
+  const maxY = Math.max(...values);
   const xSpan = Math.max(1, maxX - minX);
   const ySpan = Math.max(1e-9, maxY - minY);
   const pad = ySpan * 0.08;
@@ -441,7 +486,39 @@ function chartGeometry(points: RankReducerPoint[]) {
   return { x, y, yTicks, minX, maxX };
 }
 
+function reducerModeValues(point: RankReducerPoint, mode: ReducerMode) {
+  if (mode === "mean") return [point.mean];
+  if (mode === "weighted") return [point.weighted_mean];
+  if (mode === "median") return [point.p50];
+  if (mode === "bounds") return [point.min, point.p05, point.p95, point.max];
+  // Keep the default robust to a single straggler by using percentile bounds and
+  // central lines, not raw min/max.
+  return [point.p05, point.p95, point.mean, point.weighted_mean, point.p50];
+}
+
+function reducerModeLabel(mode: ReducerMode) {
+  if (mode === "mean") return "mean";
+  if (mode === "weighted") return "weighted mean";
+  if (mode === "median") return "median";
+  if (mode === "bounds") return "min and max bounds";
+  return "mean, weighted mean, and median";
+}
+
 function signed(value: number | undefined, digits: number) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
   return `${value >= 0 ? "+" : ""}${formatNumber(value, digits)}`;
+}
+
+function RankMetricsEmptyState({ selected }: { selected: boolean }) {
+  return (
+    <div className="analysis-empty-state" role="status">
+      <strong>{selected ? "No rank metrics logged for this run yet." : "Select a run to inspect distributed rank metrics."}</strong>
+      <span>
+        {selected
+          ? "Rank-aware panels appear after the SDK logs per-worker values with rank and world_size."
+          : "The Distributed page is scoped to one selected run and shows reducer lines, rank coverage, heatmaps, and outliers."}
+      </span>
+      <code>{'run.log_rank_metrics({"train/loss": loss}, step=step, rank=rank, world_size=world_size)'}</code>
+    </div>
+  );
 }

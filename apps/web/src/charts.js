@@ -1,9 +1,14 @@
+import { metricGoal } from "./state.js";
+
 /**
  * @param {{ min: number, max: number } | null} [xRange]
+ * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
-export function normalizeSeries(series, width, height, padding = 28, xKey = "step", metricKey = "", xRange = null) {
+export function normalizeSeries(series, width, height, padding = 28, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
   const points = series.flatMap((item) => item.points);
   if (points.length === 0) return [];
+  const yScale = yAxis?.scale === "log" ? "log" : "linear";
+  const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
   // Iterative extent (no intermediate xValues array, no Math.min(...spread) —
   // the spread form is both slower and overflows the call stack past ~100k pts).
   const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
@@ -14,52 +19,67 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
   const rawMinStep = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
   const rawMaxStep = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
   const { min: minStep, max: maxStep } = stepDomain(rawMinStep, rawMaxStep);
-  const yDomain = valueDomain(domainPoints, metricKey);
+  const yDomain = valueDomain(domainPoints, metricKey, yScale, yRange);
   const minValue = yDomain.minY;
   const maxValue = yDomain.maxY;
   // Spans are guaranteed positive by stepDomain/valueDomain, so we never clamp
   // to 1 here — clamping was what squished tiny-magnitude metrics to the floor.
   const stepSpan = maxStep - minStep;
-  const valueSpan = maxValue - minValue;
   const innerW = width - padding * 2;
-  const innerH = height - padding * 2;
-  const mapY = (value) => height - padding - ((value - minValue) / valueSpan) * innerH;
-  const domain = { minX: minStep, maxX: maxStep, minY: minValue, maxY: maxValue };
+  const domain = { minX: minStep, maxX: maxStep, minY: minValue, maxY: maxValue, yScale, yRangeManual: Boolean(yRange) };
+  const mapY = yMapper(domain, height, padding);
   return series.map((item) => {
     const filtered = range ? item.points.filter((point) => pointInRange(point, xKey, range)) : item.points;
+    // Log scale can only place positive values; non-positive points drop from
+    // the plot (counted so the UI can say so) while `points` keeps the raw set.
+    const positive = yScale === "log" ? filtered.filter((point) => Number(point.value) > 0) : filtered;
+    // Points arrive in step order; wall-clock timestamps from concurrent runs
+    // interleave, so time mode must re-sort or the path sweeps back and forth.
+    // Decorate-sort-undecorate keeps the comparator cheap (one Date parse per
+    // point here; the render loop below re-derives xValue as it always has).
+    const plottable = xKey === "time"
+      ? positive
+          .map((point) => [xValue(point, xKey), point])
+          .sort((left, right) => left[0] - right[0])
+          .map((pair) => pair[1])
+      : positive;
     const smoothed = Boolean(item.smoothed);
     // Single pass builds normalizedPoints + both path strings, and computes
     // xValue once per point (it parses a Date in time mode — calling it twice
     // doubled that cost on every render).
-    const normalizedPoints = new Array(filtered.length);
+    const normalizedPoints = new Array(plottable.length);
     let path = "";
     let smoothPath = "";
-    for (let i = 0; i < filtered.length; i += 1) {
-      const point = filtered[i];
+    for (let i = 0; i < plottable.length; i += 1) {
+      const point = plottable[i];
       const xv = xValue(point, xKey);
       const x = padding + ((xv - minStep) / stepSpan) * innerW;
       const y = mapY(point.value);
-      const ySmoothed = smoothed && Number.isFinite(point.smoothedValue) ? mapY(point.smoothedValue) : undefined;
+      const smoothable = smoothed && Number.isFinite(point.smoothedValue) && (yScale !== "log" || point.smoothedValue > 0);
+      const ySmoothed = smoothable ? mapY(point.smoothedValue) : undefined;
       normalizedPoints[i] = { ...point, x, y, ySmoothed, displayY: ySmoothed ?? y, xValue: xv };
       const xs = x.toFixed(2);
       path += `${i ? " " : ""}${xs},${y.toFixed(2)}`;
       if (smoothed) smoothPath += `${i ? " " : ""}${xs},${(ySmoothed ?? y).toFixed(2)}`;
     }
-    return { ...item, points: filtered, path, smoothPath, normalizedPoints, domain };
+    return { ...item, points: filtered, path, smoothPath, normalizedPoints, domain, hiddenNonPositive: filtered.length - plottable.length };
   });
 }
 
 /**
  * @param {{ min: number, max: number } | null} [xRange]
+ * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
-export function chartDomain(series, xKey = "step", metricKey = "", xRange = null) {
+export function chartDomain(series, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
   const points = series.flatMap((item) => item.points);
   if (points.length === 0) return null;
+  const yScale = yAxis?.scale === "log" ? "log" : "linear";
+  const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
   const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
   const range = boundedXRange(xRange, fullMinX, fullMaxX);
   const visiblePoints = range ? points.filter((point) => pointInRange(point, xKey, range)) : points;
   const visibleExtent = range && visiblePoints.length > 1 ? xExtent(visiblePoints, xKey) : null;
-  const yDomain = valueDomain(visiblePoints.length ? visiblePoints : points, metricKey);
+  const yDomain = valueDomain(visiblePoints.length ? visiblePoints : points, metricKey, yScale, yRange);
   const rawMinX = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
   const rawMaxX = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
   const xDomain = stepDomain(rawMinX, rawMaxX);
@@ -68,7 +88,77 @@ export function chartDomain(series, xKey = "step", metricKey = "", xRange = null
     maxX: xDomain.max,
     minY: yDomain.minY,
     maxY: yDomain.maxY,
+    yScale,
   };
+}
+
+/**
+ * Validate a manual y-range. Returns null (meaning "use the data domain") for
+ * anything unusable: non-numeric bounds, an empty window, or a non-positive
+ * floor on a log scale.
+ * @param {{ min: number, max: number } | null | undefined} range
+ * @param {"linear" | "log"} [yScale]
+ */
+export function sanitizeYAxisRange(range, yScale = "linear") {
+  if (!range) return null;
+  const min = Number(range.min);
+  const max = Number(range.max);
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return null;
+  if (yScale === "log" && min <= 0) return null;
+  return { min, max };
+}
+
+/**
+ * Value→pixel mapper for the y axis, shared by series normalization, axis
+ * gridlines, the mini range overview, and SVG export so all four stay on the
+ * exact same scale (linear or log10).
+ * @param {{ minY: number, maxY: number, yScale?: string } | null} domain
+ */
+export function yMapper(domain, height, padding) {
+  const innerH = height - padding * 2;
+  if (domain?.yScale === "log") {
+    const logMin = Math.log10(domain.minY);
+    const logSpan = (Math.log10(domain.maxY) - logMin) || 1;
+    return (value) => height - padding - ((Math.log10(value) - logMin) / logSpan) * innerH;
+  }
+  const minY = domain?.minY ?? 0;
+  const span = ((domain?.maxY ?? 1) - minY) || 1;
+  return (value) => height - padding - ((value - minY) / span) * innerH;
+}
+
+// Log-axis ticks: 1-2-5 mantissas across the covered decades, thinned to ~count
+// so a 6-decade loss curve labels 1e-4 / 1e-2 / 1 rather than 30 cramped ticks.
+// Sub-decade windows (e.g. 3..8) fall back to the linear nice-tick family,
+// which is correct there — within one decade a log axis is locally linear-ish
+// and 1-2-5 candidates may not exist inside the window at all.
+export function logAxisTicks(min, max, count = 5) {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= 0) return [];
+  if (min === max) return [min];
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  const decades = Math.log10(hi / lo);
+  const mantissas = decades > Math.max(2, count) ? [1] : [1, 2, 5];
+  const candidates = [];
+  for (let exp = Math.floor(Math.log10(lo)); exp <= Math.ceil(Math.log10(hi)); exp += 1) {
+    for (const mantissa of mantissas) {
+      const value = Number((mantissa * Math.pow(10, exp)).toPrecision(12));
+      if (value >= lo * (1 - 1e-9) && value <= hi * (1 + 1e-9)) candidates.push(value);
+    }
+  }
+  if (candidates.length < 2) {
+    return axisTicks(lo, hi, count).filter((tick) => tick > 0);
+  }
+  const stride = Math.max(1, Math.ceil(candidates.length / Math.max(2, count)));
+  const ticks = [];
+  for (let index = 0; index < candidates.length; index += stride) ticks.push(candidates[index]);
+  // End on the top candidate by replacing (not appending) the final stride
+  // tick, so spacing stays even instead of cramming two ticks at the top.
+  const last = candidates[candidates.length - 1];
+  if (ticks[ticks.length - 1] !== last) {
+    if (ticks.length > 1) ticks[ticks.length - 1] = last;
+    else ticks.push(last);
+  }
+  return ticks;
 }
 
 // "Nice" axis ticks: round the tick step to the 1-2-5 family so labels land on
@@ -119,9 +209,15 @@ export function nearestPoint(normalizedSeries, x, y, maxDistance = 18) {
   return nearest;
 }
 
-export function svgPointFromClient(rect, clientX, clientY, width, height) {
+export function svgPointFromClient(rect, clientX, clientY, width, height, options = {}) {
   const rectWidth = Math.max(1, Number(rect?.width ?? 0));
   const rectHeight = Math.max(1, Number(rect?.height ?? 0));
+  if (options.preserveAspectRatio === "none") {
+    return {
+      x: ((clientX - Number(rect?.left ?? 0)) / rectWidth) * width,
+      y: ((clientY - Number(rect?.top ?? 0)) / rectHeight) * height,
+    };
+  }
   const scale = Math.min(rectWidth / width, rectHeight / height);
   const renderedWidth = width * scale;
   const renderedHeight = height * scale;
@@ -144,6 +240,104 @@ export function chartSummary(series) {
     const last = item.points[item.points.length - 1];
     return { id: item.id, name: item.name, last: last ? last.value : null };
   });
+}
+
+export function chartSummaryRows(series, metricKey = "") {
+  const goal = metricGoal(metricKey);
+  const rows = (series ?? []).map((item, index) => {
+    const points = chartSummaryPoints(item);
+    const first = points[0] ?? null;
+    const final = points[points.length - 1] ?? null;
+    const best = bestSummaryPoint(points, goal);
+    const changePercent = first && final && Number(first.value) !== 0
+      ? ((Number(final.value) - Number(first.value)) / Math.abs(Number(first.value))) * 100
+      : null;
+    const trend = trendForSummaryPoints(points, goal);
+    const notes = [];
+    if (item?.seriesType === "aggregate") notes.push(`aggregate${item.sourceRunCount ? ` of ${item.sourceRunCount}` : ""}`);
+    if (item?.smoothed) notes.push("chart smoothed");
+    if (!points.length) notes.push("no plotted points");
+    return {
+      id: item?.id ?? `series-${index}`,
+      name: item?.identifier ?? item?.name ?? `Series ${index + 1}`,
+      first: first ? Number(first.value) : null,
+      final: final ? Number(final.value) : null,
+      best: best ? Number(best.value) : null,
+      bestStep: best ? best.step ?? null : null,
+      changePercent,
+      points: points.length,
+      rank: null,
+      trend,
+      notes: notes.length ? notes.join("; ") : "complete",
+    };
+  });
+  const ranked = rows
+    .filter((row) => Number.isFinite(row.final))
+    .sort((a, b) => goal === "minimize" ? a.final - b.final : b.final - a.final);
+  ranked.forEach((row, index) => {
+    row.rank = index + 1;
+  });
+  return rows.sort((a, b) => {
+    if (a.rank !== null && b.rank !== null) return a.rank - b.rank;
+    if (a.rank !== null) return -1;
+    if (b.rank !== null) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export function chartSummaryTakeaway(series, metricKey = "") {
+  const rows = chartSummaryRows(series, metricKey);
+  const goal = metricGoal(metricKey);
+  const direction = goal === "minimize" ? "Lower is better" : "Higher is better";
+  const plottedRows = rows.filter((row) => row.points > 0);
+  if (!plottedRows.length) return `${metricKey} has no plotted series.`;
+  const best = plottedRows.find((row) => row.rank === 1);
+  const runnerUp = plottedRows.find((row) => row.rank === 2);
+  const improvingRows = plottedRows.filter((row) => row.trend === "improving");
+  const worseningRows = plottedRows.filter((row) => row.trend === "worsening");
+  const trendNote = improvingRows.length
+    ? `${improvingRows[0].name} is improving overall.`
+    : worseningRows.length
+      ? `${worseningRows[0].name} is worsening overall.`
+      : "The plotted series are mostly flat overall.";
+  const bestSentence = best
+    ? `${best.name} has the best final value at ${formatMetricValue(best.final)}${runnerUp ? `, followed by ${runnerUp.name} at ${formatMetricValue(runnerUp.final)}` : ""}.`
+    : "No finite final values are available.";
+  return `${metricKey} across ${plottedRows.length} plotted ${plottedRows.length === 1 ? "series" : "series"}. ${direction}. ${bestSentence} ${trendNote}`;
+}
+
+function chartSummaryPoints(item) {
+  const points = item?.normalizedPoints?.length ? item.normalizedPoints : item?.points ?? [];
+  return points
+    .filter((point) => Number.isFinite(Number(point?.value)))
+    .map((point) => ({
+      ...point,
+      value: Number(point.value),
+      xValue: Number.isFinite(Number(point.xValue)) ? Number(point.xValue) : Number(point.step),
+    }))
+    .sort((a, b) => a.xValue - b.xValue);
+}
+
+function bestSummaryPoint(points, goal) {
+  return points.reduce((best, point) => {
+    if (!best) return point;
+    return goal === "minimize"
+      ? point.value < best.value ? point : best
+      : point.value > best.value ? point : best;
+  }, null);
+}
+
+function trendForSummaryPoints(points, goal) {
+  if (points.length < 2) return "not enough data";
+  const first = points[0].value;
+  const final = points[points.length - 1].value;
+  const scale = Math.max(1e-12, Math.abs(first));
+  const relative = (final - first) / scale;
+  const better = goal === "minimize" ? relative < -0.01 : relative > 0.01;
+  const worse = goal === "minimize" ? relative > 0.01 : relative < -0.01;
+  if (better) return "improving";
+  if (worse) return "worsening";
+  return "flat";
 }
 
 // EMA smoothing. Unlike a destructive smoother, this keeps each point's raw
@@ -191,10 +385,28 @@ export function formatAxisTick(value) {
   const num = Number(value);
   if (num === 0) return "0";
   const abs = Math.abs(num);
-  // Sub-0.01 (and very large) magnitudes use compact scientific notation so the
-  // labels stay narrow enough to clear the rotated axis title. The hover tooltip
-  // / readout keep full decimal precision via formatMetricValue.
-  if (abs < 1e-2 || abs >= 1e5) {
+  // Sub-0.01 magnitudes use trimmed scientific notation so the labels stay narrow
+  // enough to clear the rotated axis title. The hover tooltip / readout keep full
+  // decimal precision via formatMetricValue.
+  if (abs < 1e-2) {
+    return num.toExponential(2).replace(/\.?0+e/, "e").replace("e+", "e");
+  }
+  // Large magnitudes (5+ digits) use compact k/M/B/T suffixes so the right-anchored
+  // y-axis ticks stay narrow enough not to clip against the axis inset — e.g.
+  // tokens/sec around 40k previously rendered as "40000" and ran off the left edge.
+  if (abs >= 1e4) {
+    const units = [
+      { value: 1e12, suffix: "T" },
+      { value: 1e9, suffix: "B" },
+      { value: 1e6, suffix: "M" },
+      { value: 1e3, suffix: "k" },
+    ];
+    const unit = units.find((entry) => abs >= entry.value);
+    if (unit) {
+      const scaled = num / unit.value;
+      const digits = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+      return `${parseFloat(scaled.toFixed(digits))}${unit.suffix}`;
+    }
     return num.toExponential(2).replace(/\.?0+e/, "e").replace("e+", "e");
   }
   return formatMetricValue(num, 4);
@@ -287,16 +499,30 @@ function distanceToSegment(x, y, x1, y1, x2, y2) {
   return { distance: Math.hypot(x - px, y - py), t };
 }
 
-function valueDomain(points, metricKey = "") {
+function valueDomain(points, metricKey = "", yScale = "linear", yRange = null) {
+  // A manual range IS the domain; data outside it gets clipped by the chart.
+  if (yRange) return { minY: yRange.min, maxY: yRange.max };
   let minY = Infinity;
   let maxY = -Infinity;
   for (const point of points) {
     const value = Number(point.value);
     if (!Number.isFinite(value)) continue;
+    if (yScale === "log" && value <= 0) continue;
     if (value < minY) minY = value;
     if (value > maxY) maxY = value;
   }
-  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) return { minY: 0, maxY: 1 };
+  if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+    // No usable values (e.g. log scale over all-negative data) still needs a
+    // drawable window so the axes render under the empty-state message.
+    return yScale === "log" ? { minY: 0.1, maxY: 1 } : { minY: 0, maxY: 1 };
+  }
+  if (yScale === "log") {
+    // Log axes span the positive data exactly; a degenerate single value opens
+    // a symmetric window around it (clamped so values near MAX_VALUE don't
+    // overflow the top bound to Infinity).
+    if (minY === maxY) return { minY: minY / 2, maxY: Math.min(maxY * 2, Number.MAX_VALUE) };
+    return { minY, maxY };
+  }
   if (usesUnitDomain(metricKey, minY, maxY)) {
     // Bounded metrics (accuracy/rate/…) keep a 0 baseline, but the top fits the
     // data plus a little headroom instead of always pinning to 1 — otherwise a

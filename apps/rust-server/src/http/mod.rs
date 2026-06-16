@@ -204,24 +204,6 @@ fn control_routes() -> Router<Arc<AppState>> {
                 .put(update_workspace_view)
                 .delete(delete_workspace_view),
         )
-        .route("/api/reports", get(list_reports).post(create_report))
-        .route("/api/reports/panels", get(list_org_panels))
-        .route(
-            "/api/reports/share/:share_token",
-            get(get_report_by_share_token),
-        )
-        .route(
-            "/api/reports/:report_id",
-            get(get_report).patch(update_report).delete(delete_report),
-        )
-        .route(
-            "/api/reports/:report_id/share",
-            post(rotate_report_share_token),
-        )
-        .route(
-            "/api/reports/:report_id/markdown",
-            get(export_report_markdown),
-        )
         .route("/api/users", post(create_user).get(list_users))
         .route("/api/orgs", post(create_org).get(list_orgs))
         .route("/api/orgs/current-user", post(create_current_user_org))
@@ -358,6 +340,24 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
             post(create_artifact_input_edge),
         )
         .route("/api/runs/:run_id/artifact-edges", get(run_artifact_edges))
+        .route("/api/reports", get(list_reports).post(create_report))
+        .route("/api/reports/panels", get(list_org_panels))
+        .route(
+            "/api/reports/share/:share_token",
+            get(get_report_by_share_token),
+        )
+        .route(
+            "/api/reports/:report_id",
+            get(get_report).patch(update_report).delete(delete_report),
+        )
+        .route(
+            "/api/reports/:report_id/share",
+            post(rotate_report_share_token),
+        )
+        .route(
+            "/api/reports/:report_id/markdown",
+            get(export_report_markdown),
+        )
         .route("/api/export", get(export_data))
         .route("/api/usage", get(usage_summary))
         .route("/api/usage/export", get(usage_export))

@@ -2,7 +2,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
-import { canLoadClerkForRequest } from "../src/admin-auth.mjs";
+import { adminClerkDomain, canLoadClerkForRequest } from "../src/admin-auth.mjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,8 +16,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const requestHost = requestHeaders.get("host");
   const requestProtocol = requestHeaders.get("x-forwarded-proto") ?? "http";
   const shouldLoadClerk = canLoadClerkForRequest(publishableKey, requestHost, requestProtocol);
+  const clerkDomain = adminClerkDomain();
   const body = shouldLoadClerk ? (
-    <ClerkProvider publishableKey={publishableKey}>{children}</ClerkProvider>
+    <ClerkProvider publishableKey={publishableKey} domain={clerkDomain}>{children}</ClerkProvider>
   ) : (
     children
   );
