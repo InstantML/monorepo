@@ -36,6 +36,7 @@ from instantml.client import (
     _finish_drain_seconds,
     _git_metadata,
     _normalize_source_tracking,
+    _sdk_version,
     _source_metadata,
     _write_audio_data,
     _write_image_data,
@@ -78,6 +79,16 @@ def test_client_default_http_timeout_has_cold_path_headroom():
     # genuinely unreachable backend.
     assert ro.Client().timeout >= 10.0
     assert ro.Api().timeout >= 10.0
+
+
+def test_sdk_version_falls_back_when_package_metadata_is_unavailable(monkeypatch):
+    def missing_version(package):
+        assert package == "instantml"
+        raise client_module.importlib.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(client_module.importlib.metadata, "version", missing_version)
+
+    assert _sdk_version() == "unknown"
 
 
 def test_api_runs_builds_expected_query_string(monkeypatch):

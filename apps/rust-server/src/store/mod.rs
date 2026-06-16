@@ -1510,10 +1510,10 @@ fn run_control_summary(
         "stop_request_id": control.and_then(|item| item.stop_request_id),
         "stop_requested": matches!(stop_state, "requested" | "acknowledged" | "completed"),
         "actor": control.and_then(|item| display_stop_actor(item.actor.as_deref())),
-        "stop_requested_at": control.and_then(|item| item.requested_at.clone()),
-        "stop_acknowledged_at": control.and_then(|item| item.acknowledged_at.clone()),
-        "stop_completed_at": control.and_then(|item| item.completed_at.clone()),
-        "updated_at": control.map(|item| item.updated_at.clone()),
+        "stop_requested_at": control.and_then(|item| item.requested_at),
+        "stop_acknowledged_at": control.and_then(|item| item.acknowledged_at),
+        "stop_completed_at": control.and_then(|item| item.completed_at),
+        "updated_at": control.map(|item| item.updated_at),
     });
     if privacy == RunControlPrivacy::Private {
         if let Value::Object(map) = &mut summary {

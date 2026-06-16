@@ -68,6 +68,29 @@ class _UnsupportedStopClient(_RecordingClient):
         }
 
 
+class _PayloadStopClient(_RecordingClient):
+    def __init__(self, payload):
+        super().__init__()
+        self.payload = payload
+
+    def _request(self, method, path, body=None, **kwargs):
+        self.requests.append((method, path, body, kwargs))
+        if path.endswith("/stop-signal"):
+            return self.payload
+        return {
+            "run_id": "run-1",
+            "run_control": {"stop_state": body.get("state") if body else "none"},
+        }
+
+
+class _FailingAckStopClient(_StopClient):
+    def _request(self, method, path, body=None, **kwargs):
+        self.requests.append((method, path, body, kwargs))
+        if path.endswith("/stop-ack"):
+            raise InstantMLError("POST /api/runs/run-1/stop-ack failed: network down")
+        return super()._request(method, path, body, **kwargs)
+
+
 def _request_triplet(request):
     return request[:3]
 
@@ -325,6 +348,133 @@ def test_raise_if_stop_requested_caches_unsupported_old_server(monkeypatch):
     ]
     assert len(stop_signal_requests) == 1
     run.finish("failed")
+
+
+def test_stop_request_returns_cached_request_after_finish(monkeypatch):
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+    request = StopRequest("run-1", "stop-1")
+    run._stop_request = request
+    run._finished = True
+    monkeypatch.setattr(run, "_stop_client", lambda: pytest.fail("finished runs must not poll stop signals"))
+
+    assert run.stop_request(force=True) is request
+
+
+def test_stop_request_skips_due_poll_when_server_is_unsupported(monkeypatch):
+    stop_client = _StopClient()
+    run = Run(
+        client=_RecordingClient(),
+        run_id="run-1",
+        upload_mode="sync",
+        stop_check_interval_seconds=0.01,
+    )
+    run._stop_signal_supported = False
+    run._next_stop_check_at = 0.0
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    assert run.stop_request() is None
+    assert stop_client.requests == []
+    run.finish("failed")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"run_id": "run-1", "stop_requested": True, "stop_request": None},
+        {"run_id": "run-1", "stop_requested": True, "stop_request": {}},
+    ],
+)
+def test_stop_request_ignores_malformed_stop_payloads(monkeypatch, payload):
+    stop_client = _PayloadStopClient(payload)
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    assert run.stop_request(force=True) is None
+    assert run._stop_request is None
+    run.finish("failed")
+
+
+def test_finish_stopped_falls_back_when_no_stop_request(monkeypatch):
+    client = _RecordingClient()
+    stop_client = _StopClient(requested=False)
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    run.finish_stopped()
+
+    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in [
+        _request_triplet(request) for request in client.requests
+    ]
+    assert not [request for request in stop_client.requests if request[1].endswith("/stop-ack")]
+
+
+@pytest.mark.parametrize(
+    ("payload", "fallback_delay"),
+    [
+        ({"poll_after_seconds": "not-a-number"}, 7.0),
+        ({"poll_after_seconds": None}, 11.0),
+    ],
+)
+def test_stop_poll_delay_falls_back_for_invalid_server_values(payload, fallback_delay):
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+    try:
+        assert run._stop_poll_delay(payload, fallback_delay) == fallback_delay
+    finally:
+        run.finish("failed")
+
+
+def test_stop_client_clamps_timeout_and_copies_configuration():
+    client = _RecordingClient()
+    client.base_url = "http://instantml.test"
+    client.timeout = 99.0
+    client.offline_dir = "/tmp/instantml-offline-test"
+    client.api_key = "instantml_test"
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+
+    try:
+        stop_client = run._stop_client()
+        assert stop_client.base_url == "http://instantml.test"
+        assert stop_client.timeout == 0.75
+        assert stop_client.offline_dir == "/tmp/instantml-offline-test"
+        assert stop_client.api_key == "instantml_test"
+    finally:
+        run.finish("failed")
+
+
+def test_ack_stop_request_is_idempotent_after_acknowledgement(monkeypatch):
+    stop_client = _StopClient()
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+    run._stop_acknowledged = True
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    assert run._ack_stop_request(StopRequest("run-1", "stop-1"), "acknowledged") is True
+    assert stop_client.requests == []
+    run.finish("failed")
+
+
+def test_ack_stop_request_failure_returns_false(monkeypatch):
+    stop_client = _FailingAckStopClient()
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    assert run._ack_stop_request(StopRequest("run-1", "stop-1"), "completed") is False
+    assert _request_triplet(stop_client.requests[-1]) == (
+        "POST",
+        "/api/runs/run-1/stop-ack",
+        {"stop_request_id": "stop-1", "state": "completed"},
+    )
+    run.finish("failed")
+
+
+def test_context_manager_finishes_stopped_for_stop_exception(monkeypatch):
+    calls = []
+    run = Run(client=_RecordingClient(), run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "finish_stopped", lambda: calls.append("finished-stopped"))
+
+    run.__exit__(None, InstantMLStopRequested(StopRequest("run-1", "stop-1")), None)
+
+    assert calls == ["finished-stopped"]
+    client_module._unregister_active_run(run)
 
 
 def test_stop_check_interval_zero_disables_raise_polling(monkeypatch):
