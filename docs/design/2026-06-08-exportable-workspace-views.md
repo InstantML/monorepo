@@ -384,10 +384,13 @@ Rules:
   The export body must not include `org_id`, `owner_user_id`, session IDs,
   API-key metadata, tenant routes, object-storage references, signed URLs,
   artifact storage URIs, report share tokens, or localStorage keys.
-- Export may include run IDs, metric keys, project names, selected tab, search
-  query, panel layout, Compare settings, and table columns because those are
-  part of the dashboard state. The UI must label the file as dashboard metadata,
-  not run data.
+- Export may include metric keys, project names, selected tab, search query,
+  panel layout, Compare settings, and table columns because those are part of
+  the dashboard state. Embedded selected/current run IDs such as
+  `primaryRunId`, `referenceRunId`, and `selectedRunIds` are stripped so agents
+  use explicit `run_ids` with `/api/workspace-view-data` instead of stale
+  dashboard state. The UI must label the file as dashboard metadata, not run
+  data.
 - `payload_sha256` is computed from canonical JSON serialization of
   `view.payload`. Import treats mismatch as a warning by default, not a hard
   failure, so hand-edited files can still be imported after review. The hash is
@@ -411,7 +414,7 @@ export envelopes are rejected so callers cannot bypass the dry-run-first flow.
     }
   },
   "dry_run": true,
-  "conflict_strategy": "create_copy",
+  "conflict_strategy": "create",
   "existing_view_id": null,
   "expected_updated_at": null,
   "name": "Daily eval comparison copy",
@@ -421,8 +424,8 @@ export envelopes are rejected so callers cannot bypass the dry-run-first flow.
 
 `conflict_strategy` values:
 
-- `create_copy` (default): create a fresh view ID for the current user.
-- `replace_existing`: update `existing_view_id`; the caller must own that view
+- `create` (default): create a fresh view ID for the current user.
+- `replace`: update `existing_view_id`; the caller must own that view
   and provide `expected_updated_at` from the target view summary/detail. Stale
   values return a conflict instead of overwriting newer state.
 
@@ -434,7 +437,7 @@ Server response:
   "import_result": {
     "dry_run": true,
     "accepted": true,
-    "conflict_strategy": "create_copy",
+    "conflict_strategy": "create",
     "applied_name": "Daily eval comparison copy",
     "applied_project": "cartpole-prod",
     "payload_bytes": 42817,
@@ -483,7 +486,7 @@ Server validation:
   are dropped with warning codes.
 - Embedded IDs are ignored; created rows always use the authenticated current
   org/user context.
-- `replace_existing` requires `existing_view_id`, `expected_updated_at`,
+- `replace` requires `existing_view_id`, `expected_updated_at`,
   ownership of that view, and a non-deleted existing row.
 - Server dry run performs no tenant/data-plane calls. It may count referenced
   run IDs or metric keys inside the payload, but it must not verify their
@@ -501,7 +504,7 @@ Frontend validation:
   saving. Missing-run or metric-with-no-local-data warnings are client-side best
   effort against already loaded summaries/catalog data, not server dry-run
   results.
-- `replace_existing` is disabled until the user selects a target saved view; the
+- `replace` is disabled until the user selects a target saved view; the
   drawer must show the target name, project, and last updated time, then re-run
   dry run with that `existing_view_id` and `expected_updated_at`.
 
@@ -773,8 +776,8 @@ Python SDK:
 Storage:
 
 - No new table expected. Use existing `workspace_views.deleted_at`.
-- Add or verify a DB-backed control-plane index for persisted view pagination:
-  `(org_id, owner_user_id, deleted_at, updated_at DESC, id)`.
+- Add a DB-backed control-plane index migration for persisted view pagination
+  and tombstone pruning; do not mutate already-applied migration `0001`.
 - Enforce a first-slice live-view cap of 200 saved views per user and 1,000 per
   org. Soft-deleted views count toward a separate tombstone cap until control
   compaction/purge exists.
@@ -816,15 +819,16 @@ Limits and indexes:
 
 - `MAX_LIVE_WORKSPACE_VIEWS_PER_USER = 200`.
 - `MAX_LIVE_WORKSPACE_VIEWS_PER_ORG = 1000`.
-- `MAX_WORKSPACE_VIEW_TOMBSTONES_PER_USER = 500` before an operator/compaction
-  follow-up is required.
+- `MAX_WORKSPACE_VIEW_TOMBSTONES_PER_USER = 50` before pruning old hosted
+  tombstones.
 - DB-backed hosted control storage should use
-  `(org_id, owner_user_id, deleted_at, updated_at DESC, id)` for list/read
-  pagination. Local in-memory replay can keep the current map/filter path while
-  counts are under the caps.
-- Tombstones are retained for at least 90 days for audit/replay safety. A later
-  control compaction design can hard-purge expired tombstones from DB-backed
-  projections without changing the API contract.
+  `(org_id, owner_user_id, updated_at DESC) WHERE deleted_at IS NULL` for live
+  lists and `(org_id, owner_user_id, deleted_at DESC, updated_at DESC) WHERE
+  deleted_at IS NOT NULL` for tombstone pruning. Local in-memory replay can keep
+  the current map/filter path while counts are under the caps.
+- Hosted tombstones are retained by newest-count rather than age in this slice.
+  A later audit/compaction design can add time-based retention without changing
+  the API contract.
 
 ## API Contracts
 
@@ -875,7 +879,7 @@ Request:
 
 - `WorkspaceViewImportRequest` only.
 - `dry_run` is required.
-- `replace_existing` requires `existing_view_id` and `expected_updated_at`.
+- `replace` requires `existing_view_id` and `expected_updated_at`.
 - Server dry run performs no tenant/data-plane calls.
 
 Response:
@@ -975,9 +979,14 @@ Expected data shape:
   or tenant ClickHouse records.
 - `POST /api/workspace-view-data` is explicitly data-plane and may fetch bounded
   run summaries and bounded metric series for at most 100 run IDs and 50 panels.
+  Summary aggregation must be projected to the metric keys referenced by the
+  accepted panels rather than all metrics on each run.
 - Live saved views are capped at 200 per user and 1,000 per org in the first
   slice so unlimited import-as-copy cannot grow control-plane replay without
   bound.
+- Hosted soft-delete tombstones are pruned after delete, retaining the most
+  recent 50 per user so conflict-safe deletes do not create unbounded startup
+  replay rows.
 
 Latency target:
 
@@ -1077,12 +1086,14 @@ Deferred complexity:
   sanitizer.
 - Import ignores embedded IDs and always binds to current auth context. The
   persisted payload is the sanitized payload returned by validation.
-- View JSON may include project names, run IDs, metric keys, search queries, and
-  table-column choices; export UI should label the file as dashboard metadata.
+- View JSON may include project names, metric keys, search queries, and
+  table-column choices; embedded run IDs are stripped and callers provide
+  explicit `run_ids` to the view-data API. Export UI should label the file as
+  dashboard metadata.
 - No remote fetches from imported JSON.
-- Sanitizer tests must cover `org_id`, `owner_user_id`, API key/session-looking
-  fields, tenant routes, bucket/object paths, signed URLs, artifact URIs,
-  localStorage keys, and report/share tokens.
+- Sanitizer tests must cover `org_id`, `owner_user_id`, embedded run IDs,
+  API key/session-looking fields, tenant routes, bucket/object paths, signed
+  URLs, artifact URIs, localStorage keys, and report/share tokens.
 - Dangerous property names (`__proto__`, `prototype`, `constructor`) are
   rejected at every depth.
 - Export headers are server-mandatory, including attachment, no-store, nosniff,
@@ -1335,6 +1346,25 @@ Post-implementation senior backend review:
   500-point per-series and 50,000-point aggregate caps, Postgres replace/delete
   use conditional `updated_at` updates, and dry-run replace validates the same
   target/timestamp preconditions as real replace.
+
+Post-refactor senior frontend/backend review:
+
+- Finding: The refactored Runs workbar hid saved-view controls inside the mobile
+  View actions popover; delete confirmation initially focused the destructive
+  button; import preview could become stale if the JSON changed while dry-run was
+  in flight; and local layout edits could trigger unnecessary workspace metric
+  series refetches.
+- Finding: The agent view-data endpoint still summarized all metrics before
+  projecting panels, fetched line metric keys serially, returned `403` for
+  inaccessible run IDs, allowed omitted `dry_run` to write imports, and lacked
+  saved-view live caps/indexes/tombstone pruning.
+- Decision: Fixed before merge. Mobile hide rules now target only direct workbar
+  controls, delete focuses Cancel and restores focus to View actions, import
+  requires a current <=128 KiB dry-run payload, and workspace series signatures
+  ignore local-only `updatedAt`. View-data now resolves panels first, summarizes
+  only referenced metric keys, batches line-series reads across keys, returns
+  no-leak `404` for missing/inaccessible runs, requires explicit `dry_run`, and
+  enforces saved-view caps plus hosted tombstone pruning/indexes.
 
 ## Coverage Exceptions
 

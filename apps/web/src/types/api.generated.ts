@@ -2787,7 +2787,7 @@ export interface components {
         };
         ImportWorkspaceViewRequest: {
             conflict_strategy?: string | null;
-            dry_run?: boolean;
+            dry_run: boolean;
             /** Format: uuid */
             existing_view_id?: string | null;
             /** Format: date-time */

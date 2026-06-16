@@ -902,14 +902,17 @@ textarea:focus {
 .workspace-view-preview span,
 .workspace-view-delete-body dt {
   color: var(--muted);
-  font: 600 11px/1.2 var(--font-sans);
+  font: 650 10.5px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
 }
 .workspace-view-preview strong,
 .workspace-view-delete-body dd {
   min-width: 0;
   margin: 0;
   overflow-wrap: anywhere;
-  font: 650 12px/1.3 var(--font-sans);
+  font: 600 12px/1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 .workspace-view-preview ul {
   margin: 2px 0 0;
@@ -922,9 +925,18 @@ textarea:focus {
   color: var(--text);
   font: 500 13px/1.4 var(--font-sans);
 }
-.danger-action {
-  background: var(--danger);
+button.secondary.danger-action,
+:root[data-theme="dark"] button.secondary.danger-action {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: var(--surface);
+  color: var(--danger);
+  box-shadow: none;
+}
+button.secondary.danger-action:hover:not(:disabled),
+:root[data-theme="dark"] button.secondary.danger-action:hover:not(:disabled) {
   border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 .workspace-segment,
 .workspace-plan-grid {
@@ -2905,9 +2917,9 @@ button.compare-row-head.active {
   .workbar-spacer,
   .workbar .system-status,
   .workbar-name,
-  .workbar #demo-reset,
-  .workbar #save-view,
-  .workbar .custom-select-control.compact,
+  .workbar > #demo-reset,
+  .workbar > #save-view,
+  .workbar > .custom-select-control.compact,
   .workbar > .icon-button {
     display: none;
   }

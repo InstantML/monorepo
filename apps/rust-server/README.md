@@ -416,7 +416,15 @@ Dashboard preference and workspace-view routes are browser-session control
 state. Hosted SDK/API keys cannot read or mutate them; owner/admin/member
 browser sessions may save views, viewers may read preferences/views, and shared
 demo sessions remain read-only. Local compatibility mode keeps the same route
-shapes without requiring a hosted browser session.
+shapes without requiring a hosted browser session. Saved workspace-view payloads
+are capped at 64 KiB, imports must explicitly send `dry_run`, and export/import
+sanitization strips embedded current/selected run IDs such as `primaryRunId`,
+`referenceRunId`, and `selectedRunIds`. Live saved views are capped at 200 per
+user and 1,000 per org, and hosted delete tombstones are pruned to the newest 50
+per user after delete. The data-plane `POST /api/workspace-view-data` route
+accepts browser sessions or `export:read` API keys, returns `404` for missing or
+inaccessible run IDs, and projects run summaries/metric series to the sanitized
+panel metric keys rather than every metric on each run.
 
 Report routes are tenant product-data routes in hosted split mode. The Next
 proxy sends `/api/reports` to the data plane so creation and auto-save write

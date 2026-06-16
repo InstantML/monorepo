@@ -178,6 +178,7 @@ const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 12;
 const MAX_EXPORT_SELECTED_RUNS = 100;
+const MAX_WORKSPACE_VIEW_IMPORT_BYTES = 128 * 1024;
 const ARTIFACT_PAGE_LIMIT = 100;
 const WORKSPACE_HISTOGRAM_TIMELINE_LIMIT = 3;
 const WORKSPACE_HISTORY_LIMIT = 50;
@@ -528,6 +529,10 @@ function initialActiveTab(initialTab: ShellTabId) {
   return legacyPath ? shellTabFromPath(legacyPath) : shellTabFromPath(window.location.pathname);
 }
 
+function workspaceViewImportByteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
 export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabId }) {
   const api = useMemo(() => new ApiClient(), []);
   const clerk = useClerk();
@@ -573,6 +578,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const dashboardSelectionFilterKeyRef = useRef("");
   const selectAllMatchingControllerRef = useRef<AbortController | null>(null);
   const applySavedViewRequestRef = useRef(0);
+  const viewImportTextRef = useRef("");
+  const viewImportRequestRef = useRef(0);
   const projectPreferenceWriteTimerRef = useRef<number | null>(null);
   const compareArtifactCacheRef = useRef<Map<string, Artifact[]>>(new Map());
   const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
@@ -666,6 +673,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const [viewImportText, setViewImportText] = useState("");
   const [viewImportFileName, setViewImportFileName] = useState("");
   const [viewImportPreview, setViewImportPreview] = useState<WorkspaceViewImportPreview | null>(null);
+  const [viewImportPreviewText, setViewImportPreviewText] = useState("");
   const [viewImportBusy, setViewImportBusy] = useState(false);
   const [viewImportError, setViewImportError] = useState("");
   const [deleteViewTarget, setDeleteViewTarget] = useState<SavedViewOption | null>(null);
@@ -1041,7 +1049,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   }, [activeOrgId, resetRunPagination]);
   const workspacePanelMetrics = useMemo(() => workspaceMetricKeys(workspaceView, panelSearch), [panelSearch, workspaceView]);
   const workspacePanelMetricKey = useMemo(() => workspacePanelMetrics.join("\u0000"), [workspacePanelMetrics]);
-  const workspaceSeriesViewKey = useMemo(() => `${workspaceView.id}\u0000${workspaceView.updatedAt}`, [workspaceView.id, workspaceView.updatedAt]);
+  const workspaceSeriesViewKey = workspaceView.id;
   const availableWorkspaceMetrics = useMemo(() => allMetricOptions.slice(0, MAX_METRIC_OPTIONS), [allMetricOptions]);
   const maxWorkspacePanelRuns = useMemo(() => {
     const values = workspaceView.sections.flatMap((section) => (
@@ -2791,36 +2799,77 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     }
     setViewImportError("");
     setViewImportPreview(null);
+    setViewImportPreviewText("");
     setViewImportOpen(true);
+  }
+
+  function updateImportSavedViewText(value: string) {
+    viewImportTextRef.current = value;
+    viewImportRequestRef.current += 1;
+    setViewImportText(value);
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    setViewImportError(
+      workspaceViewImportByteLength(value) > MAX_WORKSPACE_VIEW_IMPORT_BYTES
+        ? "Import JSON must be 128 KiB or smaller."
+        : "",
+    );
   }
 
   async function updateImportSavedViewFile(file: File | null) {
     setViewImportError("");
     setViewImportPreview(null);
+    setViewImportPreviewText("");
+    const requestId = viewImportRequestRef.current + 1;
+    viewImportRequestRef.current = requestId;
     if (!file) {
       setViewImportFileName("");
       return;
     }
+    setViewImportFileName(file.name);
+    if (file.size > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+      viewImportTextRef.current = "";
+      setViewImportText("");
+      setViewImportError("Import JSON files must be 128 KiB or smaller.");
+      return;
+    }
     try {
       const text = await file.text();
-      setViewImportFileName(file.name);
+      if (requestId !== viewImportRequestRef.current) return;
+      if (workspaceViewImportByteLength(text) > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+        viewImportTextRef.current = "";
+        setViewImportText("");
+        setViewImportError("Import JSON files must be 128 KiB or smaller.");
+        return;
+      }
+      viewImportTextRef.current = text;
       setViewImportText(text);
     } catch {
+      if (requestId !== viewImportRequestRef.current) return;
       setViewImportError("Unable to read import file.");
     }
   }
 
   async function previewImportSavedView() {
     if (viewImportBusy) return;
+    const previewText = viewImportTextRef.current;
+    if (workspaceViewImportByteLength(previewText) > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+      setViewImportError("Import JSON must be 128 KiB or smaller.");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      return;
+    }
     setViewImportError("");
     setViewImportPreview(null);
+    setViewImportPreviewText("");
     let exportedView: unknown = null;
     try {
-      exportedView = JSON.parse(viewImportText);
+      exportedView = JSON.parse(previewText);
     } catch {
       setViewImportError("Import file must be valid JSON.");
       return;
     }
+    const requestId = viewImportRequestRef.current;
     setViewImportBusy(true);
     try {
       const preview = await api.post("/api/workspace-views/import", {
@@ -2828,7 +2877,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         dry_run: true,
         conflict_strategy: "create",
       }) as WorkspaceViewImportPreview;
+      if (requestId !== viewImportRequestRef.current || previewText !== viewImportTextRef.current) {
+        setViewImportError("Import JSON changed. Preview it again before importing.");
+        return;
+      }
       setViewImportPreview(preview);
+      setViewImportPreviewText(previewText);
       setMessage("Import preview ready.");
     } catch (error) {
       setViewImportError(error instanceof Error ? error.message : "Unable to preview import.");
@@ -2839,10 +2893,16 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
 
   async function confirmImportSavedView() {
     if (viewImportBusy || !viewImportPreview) return;
+    if (!viewImportPreviewText || viewImportPreviewText !== viewImportTextRef.current) {
+      setViewImportError("Import JSON changed. Preview it again before importing.");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      return;
+    }
     setViewImportError("");
     let exportedView: unknown = null;
     try {
-      exportedView = JSON.parse(viewImportText);
+      exportedView = JSON.parse(viewImportPreviewText);
     } catch {
       setViewImportError("Import file must be valid JSON.");
       return;
@@ -2863,8 +2923,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       }
       setViewImportOpen(false);
       setViewImportText("");
+      viewImportTextRef.current = "";
       setViewImportFileName("");
       setViewImportPreview(null);
+      setViewImportPreviewText("");
       setMessage("Imported saved view.");
     } catch (error) {
       setViewImportError(error instanceof Error ? error.message : "Unable to import saved view.");
@@ -4341,12 +4403,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
           onConfirm={confirmImportSavedView}
           onFile={updateImportSavedViewFile}
           onPreview={previewImportSavedView}
-          onText={(value) => {
-            setViewImportText(value);
-            setViewImportPreview(null);
-            setViewImportError("");
-          }}
+          onText={updateImportSavedViewText}
           preview={viewImportPreview}
+          previewCurrent={Boolean(viewImportPreview && viewImportPreviewText && viewImportPreviewText === viewImportText)}
           text={viewImportText}
         />
       ) : null}
@@ -4373,6 +4432,7 @@ function WorkspaceViewImportModal({
   onPreview,
   onText,
   preview,
+  previewCurrent,
   text,
 }: {
   busy: boolean;
@@ -4384,11 +4444,17 @@ function WorkspaceViewImportModal({
   onPreview: () => void;
   onText: (value: string) => void;
   preview: WorkspaceViewImportPreview | null;
+  previewCurrent: boolean;
   text: string;
 }) {
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "#workspace-view-import-file");
-  const canPreview = Boolean(text.trim()) && !busy;
-  const canConfirm = Boolean(preview) && !busy;
+  const dialogRef = useFocusTrap<HTMLDivElement>(
+    true,
+    onClose,
+    "#workspace-view-import-file",
+    "[data-view-actions-trigger='true']",
+  );
+  const canPreview = Boolean(text.trim()) && !busy && workspaceViewImportByteLength(text) <= MAX_WORKSPACE_VIEW_IMPORT_BYTES;
+  const canConfirm = Boolean(preview) && previewCurrent && !busy;
   return (
     <div className="workspace-modal-backdrop" role="presentation">
       <section className="workspace-create-modal workspace-view-modal" role="dialog" aria-modal="true" aria-label="Import saved view" ref={dialogRef} tabIndex={-1}>
@@ -4458,7 +4524,12 @@ function WorkspaceViewDeleteModal({
   onConfirm: () => void;
   updatedAt: string;
 }) {
-  const dialogRef = useFocusTrap<HTMLDivElement>(true, onClose, "button[data-delete-view-confirm='true']");
+  const dialogRef = useFocusTrap<HTMLDivElement>(
+    true,
+    onClose,
+    "button[data-delete-view-cancel='true']",
+    "[data-view-actions-trigger='true']",
+  );
   return (
     <div className="workspace-modal-backdrop" role="presentation">
       <section className="workspace-create-modal workspace-view-modal compact" role="dialog" aria-modal="true" aria-label="Delete saved view" ref={dialogRef} tabIndex={-1}>
@@ -4478,8 +4549,8 @@ function WorkspaceViewDeleteModal({
             </dl>
           </div>
           <div className="workspace-create-actions">
-            <button className="secondary" disabled={busy} type="button" onClick={onClose}>Cancel</button>
-            <button className="primary-button danger-action" data-delete-view-confirm="true" disabled={busy} type="button" onClick={onConfirm}>{busy ? "Deleting..." : "Delete"}</button>
+            <button className="secondary" data-delete-view-cancel="true" disabled={busy} type="button" onClick={onClose}>Cancel</button>
+            <button className="secondary danger-action" data-delete-view-confirm="true" disabled={busy} type="button" onClick={onConfirm}>{busy ? "Deleting..." : "Delete"}</button>
           </div>
         </div>
       </section>

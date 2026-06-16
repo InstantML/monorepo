@@ -32,7 +32,7 @@ const MAX_WORKSPACE_VIEW_DATA_BODY_BYTES: usize = 256 * 1024;
     get,
     path = "/api/dashboard/preferences",
     tag = "dashboard",
-    security(("browserSession" = []), ("bearerApiKey" = [])),
+    security(("browserSession" = [])),
     responses(
         (status = 200, description = "Dashboard preferences for the caller's tenant", body = crate::http::openapi::DashboardPreferencesEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
@@ -53,7 +53,7 @@ pub async fn get_dashboard_preferences(
     path = "/api/dashboard/preferences",
     tag = "dashboard",
     request_body = crate::domain::UpdateDashboardPreferencesRequest,
-    security(("browserSession" = []), ("bearerApiKey" = [])),
+    security(("browserSession" = [])),
     responses(
         (status = 200, description = "Updated dashboard preferences", body = crate::http::openapi::DashboardPreferencesEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
@@ -84,7 +84,7 @@ pub async fn update_dashboard_preferences(
         ("limit" = Option<i64>, Query, description = "Page size"),
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
     ),
-    security(("browserSession" = []), ("bearerApiKey" = [])),
+    security(("browserSession" = [])),
     responses(
         (status = 200, description = "Saved workspace view summaries", body = crate::http::openapi::WorkspaceViewSummariesEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
@@ -106,7 +106,7 @@ pub async fn list_workspace_views(
     path = "/api/workspace-views",
     tag = "dashboard",
     request_body = crate::domain::SaveWorkspaceViewRequest,
-    security(("browserSession" = []), ("bearerApiKey" = [])),
+    security(("browserSession" = [])),
     responses(
         (status = 200, description = "Created workspace view", body = crate::http::openapi::WorkspaceViewEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
@@ -134,7 +134,7 @@ pub async fn create_workspace_view(
     params(
         ("view_id" = String, Path, description = "Workspace view UUID"),
     ),
-    security(("browserSession" = []), ("bearerApiKey" = [])),
+    security(("browserSession" = [])),
     responses(
         (status = 200, description = "Workspace view", body = crate::http::openapi::WorkspaceViewEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
@@ -161,7 +161,7 @@ pub async fn get_workspace_view(
         ("view_id" = String, Path, description = "Workspace view UUID"),
     ),
     request_body = crate::domain::SaveWorkspaceViewRequest,
-    security(("browserSession" = []), ("bearerApiKey" = [])),
+    security(("browserSession" = [])),
     responses(
         (status = 200, description = "Updated workspace view", body = crate::http::openapi::WorkspaceViewEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),

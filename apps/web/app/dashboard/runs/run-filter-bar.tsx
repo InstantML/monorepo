@@ -266,6 +266,7 @@ export function RunFilterBar({
           aria-expanded={viewActionsOpen}
           aria-haspopup="dialog"
           className="secondary compact-button view-actions-trigger"
+          data-view-actions-trigger="true"
           onClick={() => setViewActionsOpen((open) => !open)}
           ref={viewActionsTriggerRef}
           type="button"

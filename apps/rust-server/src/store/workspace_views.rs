@@ -7,6 +7,9 @@ const WORKSPACE_VIEW_SCHEMA_VERSION: i32 = 1;
 const WORKSPACE_VIEW_EXPORT_KIND: &str = "instantml.workspace_view";
 const MAX_WORKSPACE_VIEW_PAYLOAD_BYTES: usize = 64 * 1024;
 const MAX_WORKSPACE_VIEW_DATA_VIEW_BYTES: usize = 256 * 1024;
+const MAX_LIVE_WORKSPACE_VIEWS_PER_USER: usize = 200;
+const MAX_LIVE_WORKSPACE_VIEWS_PER_ORG: usize = 1_000;
+const MAX_WORKSPACE_VIEW_TOMBSTONES_PER_USER: usize = 50;
 const DEFAULT_WORKSPACE_VIEW_LIMIT: i64 = 50;
 const MAX_WORKSPACE_VIEW_LIMIT: i64 = 100;
 const DEFAULT_WORKSPACE_VIEW_DATA_PANEL_LIMIT: usize = 20;
@@ -130,9 +133,7 @@ pub async fn create_workspace_view(
         updated_at: now,
         deleted_at: None,
     };
-    store
-        .persist_locked("workspace_view", ctx.org_id, &row.id.to_string(), &row)
-        .await?;
+    persist_new_workspace_view_with_capacity(store, &row).await?;
     let mut data = store.data.lock().await;
     data.insert_workspace_view(row.clone());
     Ok(json!({ "workspace_view": row }))
@@ -258,9 +259,12 @@ pub async fn import_workspace_view(
     let now = Utc::now();
     let row = match replace_target {
         Some((view_id, expected_updated_at)) => {
-            let mut data = store.data.lock().await;
-            let existing = workspace_view_for_user(&data, ctx.org_id, user_id, view_id)?;
-            ensure_workspace_view_expected_updated_at(&existing, expected_updated_at)?;
+            let existing = {
+                let data = store.data.lock().await;
+                let existing = workspace_view_for_user(&data, ctx.org_id, user_id, view_id)?;
+                ensure_workspace_view_expected_updated_at(&existing, expected_updated_at)?;
+                existing
+            };
             let row = WorkspaceViewRow {
                 name,
                 project,
@@ -269,6 +273,7 @@ pub async fn import_workspace_view(
                 ..existing
             };
             persist_workspace_view_current(store, ctx.org_id, &row, expected_updated_at).await?;
+            let mut data = store.data.lock().await;
             data.insert_workspace_view(row.clone());
             row
         }
@@ -285,9 +290,7 @@ pub async fn import_workspace_view(
                 updated_at: now,
                 deleted_at: None,
             };
-            store
-                .persist_locked("workspace_view", ctx.org_id, &row.id.to_string(), &row)
-                .await?;
+            persist_new_workspace_view_with_capacity(store, &row).await?;
             let mut data = store.data.lock().await;
             data.insert_workspace_view(row.clone());
             row
@@ -312,16 +315,35 @@ pub async fn delete_workspace_view(
 ) -> AppResult<WorkspaceViewDeleteResponse> {
     let user_id = require_dashboard_write(store, ctx)?;
     let deleted_at = Utc::now();
-    let mut data = store.data.lock().await;
-    let existing = workspace_view_for_user(&data, ctx.org_id, user_id, view_id)?;
-    ensure_workspace_view_expected_updated_at(&existing, expected_updated_at)?;
+    let existing = {
+        let data = store.data.lock().await;
+        let existing = workspace_view_for_user(&data, ctx.org_id, user_id, view_id)?;
+        ensure_workspace_view_expected_updated_at(&existing, expected_updated_at)?;
+        existing
+    };
     let row = WorkspaceViewRow {
         updated_at: deleted_at,
         deleted_at: Some(deleted_at),
         ..existing
     };
     persist_workspace_view_current(store, ctx.org_id, &row, expected_updated_at).await?;
+    if let Some(control_db) = &store.control_db {
+        control_db
+            .prune_workspace_view_tombstones(
+                ctx.org_id,
+                user_id,
+                MAX_WORKSPACE_VIEW_TOMBSTONES_PER_USER as i64,
+            )
+            .await?;
+    }
+    let mut data = store.data.lock().await;
     data.insert_workspace_view(row);
+    prune_workspace_view_tombstones_in_data(
+        &mut data,
+        ctx.org_id,
+        user_id,
+        MAX_WORKSPACE_VIEW_TOMBSTONES_PER_USER,
+    );
     Ok(WorkspaceViewDeleteResponse {
         deleted: true,
         view_id,
@@ -351,14 +373,6 @@ pub async fn workspace_view_data(
         .and_then(|options| options.max_panels)
         .unwrap_or(DEFAULT_WORKSPACE_VIEW_DATA_PANEL_LIMIT)
         .clamp(1, MAX_WORKSPACE_VIEW_DATA_PANEL_LIMIT);
-    let runs = {
-        let data = store.data.lock().await;
-        run_ids
-            .iter()
-            .map(|run_id| fetch_run_in_data(&data, ctx, *run_id))
-            .collect::<AppResult<Vec<_>>>()?
-    };
-    let summaries = summarize_runs(store, runs).await?;
     let (payload, mut warnings) = workspace_view_data_payload(&input.view)?;
     let (panels, panel_warnings) = workspace_view_data_panels(&payload, max_panels)?;
     warnings.extend(panel_warnings);
@@ -383,43 +397,39 @@ pub async fn workspace_view_data(
             line_metric_keys.insert(metric_key);
         }
     }
+    let metric_key_vec = metric_keys.iter().cloned().collect::<Vec<_>>();
+    let line_metric_key_vec = line_metric_keys.iter().cloned().collect::<Vec<_>>();
+    let runs = {
+        let data = store.data.lock().await;
+        run_ids
+            .iter()
+            .map(|run_id| workspace_view_data_run_for_ctx(&data, ctx, *run_id))
+            .collect::<AppResult<Vec<_>>>()?
+    };
+    let summaries = summarize_runs_for_metric_keys(store, runs, &metric_key_vec).await?;
     let metric_point_limit = workspace_view_data_effective_point_limit(
         requested_metric_point_limit,
         run_ids.len(),
-        line_metric_keys.len(),
+        line_metric_key_vec.len(),
         &mut warnings,
     );
 
-    let mut total_points = 0usize;
-    let mut metric_series = Vec::new();
-    for key in line_metric_keys.iter() {
-        let mut query = HashMap::new();
-        query.insert("key".to_string(), key.clone());
-        query.insert(
-            "run_ids".to_string(),
-            run_ids
-                .iter()
-                .map(Uuid::to_string)
-                .collect::<Vec<_>>()
-                .join(","),
-        );
-        query.insert("limit".to_string(), metric_point_limit.to_string());
-        let series = metrics_series_batched(store, ctx, &query).await?;
-        let series = series
-            .get("series")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        total_points = total_points.saturating_add(metric_series_point_count(&series));
-        if total_points > MAX_WORKSPACE_VIEW_DATA_TOTAL_POINTS {
-            return Err(AppError::validation(format!(
-                "workspace view data would exceed {MAX_WORKSPACE_VIEW_DATA_TOTAL_POINTS} metric points"
-            )));
-        }
-        metric_series.push(WorkspaceViewMetricSeries {
-            metric_key: key.clone(),
-            series,
-        });
+    let metric_series = workspace_view_metric_series_for_keys(
+        store,
+        ctx.org_id,
+        &run_ids,
+        &line_metric_key_vec,
+        metric_point_limit,
+    )
+    .await?;
+    let total_points = metric_series
+        .iter()
+        .map(|item| metric_series_point_count(&item.series))
+        .sum::<usize>();
+    if total_points > MAX_WORKSPACE_VIEW_DATA_TOTAL_POINTS {
+        return Err(AppError::validation(format!(
+            "workspace view data would exceed {MAX_WORKSPACE_VIEW_DATA_TOTAL_POINTS} metric points"
+        )));
     }
 
     let panel_values = panels
@@ -465,7 +475,7 @@ pub async fn workspace_view_data(
             generated_at: Utc::now(),
             run_ids,
             runs: summaries,
-            metric_keys: metric_keys.into_iter().collect::<Vec<_>>(),
+            metric_keys: metric_key_vec,
             metric_series,
             panels: panel_values,
             warnings,
@@ -555,6 +565,166 @@ fn workspace_view_for_user(
         .filter(|view| view.deleted_at.is_none())
         .cloned()
         .ok_or_else(|| AppError::not_found("workspace view not found"))
+}
+
+fn workspace_view_data_run_for_ctx(
+    data: &StoreData,
+    ctx: &RequestContext,
+    run_id: Uuid,
+) -> AppResult<RunRow> {
+    let run = data
+        .runs
+        .get(&run_id)
+        .cloned()
+        .ok_or_else(|| AppError::not_found("run not found"))?;
+    if !is_visible_run(data, &run) || run.org_id != ctx.org_id {
+        return Err(AppError::not_found("run not found"));
+    }
+    if ctx
+        .auth
+        .as_ref()
+        .and_then(|auth| auth.project_id)
+        .map(|project_id| project_id != run.project_id)
+        .unwrap_or(false)
+    {
+        return Err(AppError::not_found("run not found"));
+    }
+    Ok(run)
+}
+
+fn ensure_workspace_view_create_capacity(
+    data: &StoreData,
+    org_id: Uuid,
+    user_id: Option<Uuid>,
+) -> AppResult<()> {
+    let live_for_org = data
+        .workspace_views
+        .values()
+        .filter(|view| view.org_id == org_id)
+        .filter(|view| view.deleted_at.is_none())
+        .count();
+    if live_for_org >= MAX_LIVE_WORKSPACE_VIEWS_PER_ORG {
+        return Err(AppError::validation(format!(
+            "workspace cannot have more than {MAX_LIVE_WORKSPACE_VIEWS_PER_ORG} saved views"
+        )));
+    }
+    let live_for_user = data
+        .workspace_views
+        .values()
+        .filter(|view| view.org_id == org_id)
+        .filter(|view| view.owner_user_id == user_id)
+        .filter(|view| view.deleted_at.is_none())
+        .count();
+    if live_for_user >= MAX_LIVE_WORKSPACE_VIEWS_PER_USER {
+        return Err(AppError::validation(format!(
+            "user cannot have more than {MAX_LIVE_WORKSPACE_VIEWS_PER_USER} saved views"
+        )));
+    }
+    Ok(())
+}
+
+async fn persist_new_workspace_view_with_capacity(
+    store: &Store,
+    row: &WorkspaceViewRow,
+) -> AppResult<()> {
+    if let Some(control_db) = &store.control_db {
+        return control_db
+            .insert_workspace_view_with_capacity(
+                row,
+                MAX_LIVE_WORKSPACE_VIEWS_PER_USER as i64,
+                MAX_LIVE_WORKSPACE_VIEWS_PER_ORG as i64,
+            )
+            .await;
+    }
+    {
+        let data = store.data.lock().await;
+        ensure_workspace_view_create_capacity(&data, row.org_id, row.owner_user_id)?;
+    }
+    store
+        .persist_locked("workspace_view", row.org_id, &row.id.to_string(), row)
+        .await
+}
+
+fn prune_workspace_view_tombstones_in_data(
+    data: &mut StoreData,
+    org_id: Uuid,
+    user_id: Option<Uuid>,
+    keep: usize,
+) {
+    let mut tombstones = data
+        .workspace_views
+        .values()
+        .filter(|view| view.org_id == org_id)
+        .filter(|view| view.owner_user_id == user_id)
+        .filter(|view| view.deleted_at.is_some())
+        .map(|view| {
+            (
+                view.deleted_at.unwrap_or(view.updated_at),
+                view.updated_at,
+                view.id,
+            )
+        })
+        .collect::<Vec<_>>();
+    tombstones.sort_by(|left, right| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| right.1.cmp(&left.1))
+            .then_with(|| right.2.cmp(&left.2))
+    });
+    for (_, _, id) in tombstones.into_iter().skip(keep) {
+        data.workspace_views.remove(&id);
+    }
+}
+
+async fn workspace_view_metric_series_for_keys(
+    store: &Store,
+    org_id: Uuid,
+    run_ids: &[Uuid],
+    keys: &[String],
+    metric_point_limit: i64,
+) -> AppResult<Vec<WorkspaceViewMetricSeries>> {
+    if keys.is_empty() {
+        return Ok(Vec::new());
+    }
+    let metric_store = store.metric_store_for_org(org_id).await?;
+    let rows = metric_store
+        .query_points_for_runs_keys(org_id, run_ids, keys, metric_point_limit)
+        .await?;
+    let mut grouped: BTreeMap<String, BTreeMap<Uuid, Vec<Value>>> = BTreeMap::new();
+    for row in rows {
+        let key = row.key;
+        grouped
+            .entry(key.clone())
+            .or_default()
+            .entry(row.run_id)
+            .or_default()
+            .push(json!({
+                "key": key,
+                "step": row.step,
+                "value": row.value,
+                "created_at": row.created_at
+            }));
+    }
+    Ok(keys
+        .iter()
+        .map(|key| {
+            let mut per_run = grouped.remove(key).unwrap_or_default();
+            let series = run_ids
+                .iter()
+                .map(|run_id| {
+                    json!({
+                        "run_id": run_id,
+                        "metrics": per_run.remove(run_id).unwrap_or_default()
+                    })
+                })
+                .collect::<Vec<_>>();
+            WorkspaceViewMetricSeries {
+                metric_key: key.clone(),
+                series,
+            }
+        })
+        .collect())
 }
 
 fn workspace_view_summary(view: &WorkspaceViewRow) -> WorkspaceViewSummary {
@@ -762,6 +932,10 @@ fn sanitize_workspace_view_json(
             }
             Ok(Some(Value::Array(out)))
         }
+        Value::String(value) if is_sensitive_json_string(&value) => {
+            warnings.push(format!("dropped sensitive string at {path}"));
+            Ok(None)
+        }
         other => Ok(Some(other)),
     }
 }
@@ -783,6 +957,64 @@ fn is_sensitive_json_key(key: &str) -> bool {
         || normalized.contains("authorization")
         || normalized.contains("credential")
         || normalized.contains("cookie")
+        || matches!(
+            normalized.as_str(),
+            "orgid"
+                | "organizationid"
+                | "owneruserid"
+                | "userid"
+                | "sessionid"
+                | "tenantid"
+                | "runid"
+                | "runids"
+                | "primaryrunid"
+                | "referencerunid"
+                | "selectedrunid"
+                | "selectedrunids"
+                | "localstoragekey"
+                | "storagekey"
+                | "bucket"
+                | "objectpath"
+                | "artifacturi"
+                | "artifacturl"
+                | "signedurl"
+                | "presignedurl"
+                | "url"
+                | "uri"
+        )
+        || normalized.contains("tenantroute")
+        || normalized.contains("localstorage")
+        || normalized.contains("signedurl")
+        || normalized.contains("presigned")
+        || normalized.contains("bucketname")
+        || normalized.contains("objectkey")
+        || normalized.contains("objectpath")
+        || normalized.contains("artifacturi")
+}
+
+fn is_sensitive_json_string(value: &str) -> bool {
+    let trimmed = value.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("s3://")
+        || lower.starts_with("gs://")
+        || lower.starts_with("bearer ")
+        || lower.contains("x-amz-signature")
+        || lower.contains("x-amz-credential")
+        || lower.contains("signature=")
+        || lower.contains("token=")
+        || lower.contains("api_key=")
+        || lower.contains("apikey=")
+        || lower.contains("password=")
+        || lower.contains("secret=")
+        || lower.contains("credential=")
+        || lower.contains("session=")
+        || lower.contains("localstorage")
+        || trimmed.starts_with("sk_")
+        || trimmed.starts_with("pk_")
+        || trimmed.starts_with("AKIA")
+        || trimmed.contains("-----BEGIN ")
 }
 
 fn dedupe_workspace_view_data_run_ids(run_ids: Vec<Uuid>) -> AppResult<Vec<Uuid>> {
@@ -1010,6 +1242,26 @@ mod tests {
         }
     }
 
+    fn test_run(id: Uuid, org_id: Uuid, project_id: Uuid, name: &str) -> RunRow {
+        RunRow {
+            id,
+            org_id,
+            project_id,
+            project: "default".to_string(),
+            name: name.to_string(),
+            status: "finished".to_string(),
+            config: json!({}),
+            tags: Vec::new(),
+            metadata: json!({}),
+            created_at: Utc::now(),
+            started_at: Utc::now(),
+            finished_at: Some(Utc::now()),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
+        }
+    }
+
     #[test]
     fn workspace_view_payload_must_be_small_object() {
         assert!(validate_workspace_view_payload(Some(json!({ "ok": true }))).is_ok());
@@ -1088,14 +1340,61 @@ mod tests {
     fn workspace_view_import_sanitizer_drops_sensitive_keys_and_rejects_proto_keys() {
         let (sanitized, warnings) = sanitize_workspace_view_import_payload(json!({
             "workspaceView": {
-                "settings": { "apiToken": "secret", "maxRuns": 10 },
-                "sections": [{ "panels": [{ "metricKey": "eval/reward" }] }]
+                "org_id": Uuid::new_v4().to_string(),
+                "primaryRunId": Uuid::new_v4().to_string(),
+                "referenceRunId": Uuid::new_v4().to_string(),
+                "selectedRunIds": [Uuid::new_v4().to_string()],
+                "settings": {
+                    "apiToken": "secret",
+                    "maxRuns": 10,
+                    "signedUrl": "https://storage.example.invalid/object?X-Amz-Signature=abc",
+                    "artifactUri": "s3://bucket/checkpoint.pt",
+                    "objectPath": "runs/secret/checkpoint.pt"
+                },
+                "sections": [{ "panels": [{
+                    "id": "panel-a",
+                    "metricKey": "eval/reward",
+                    "title": "https://example.invalid/share"
+                }] }]
             }
         }))
         .unwrap();
         assert!(warnings.iter().any(|warning| warning.contains("apiToken")));
+        assert!(warnings.iter().any(|warning| warning.contains("org_id")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("selectedRunIds")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("primaryRunId")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("referenceRunId")));
+        assert!(warnings.iter().any(|warning| warning.contains("signedUrl")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("artifactUri")));
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("sensitive string")));
         assert!(sanitized
             .pointer("/workspaceView/settings/apiToken")
+            .is_none());
+        assert!(sanitized.pointer("/workspaceView/org_id").is_none());
+        assert!(sanitized.pointer("/workspaceView/primaryRunId").is_none());
+        assert!(sanitized.pointer("/workspaceView/referenceRunId").is_none());
+        assert!(sanitized.pointer("/workspaceView/selectedRunIds").is_none());
+        assert!(sanitized
+            .pointer("/workspaceView/settings/signedUrl")
+            .is_none());
+        assert!(sanitized
+            .pointer("/workspaceView/settings/artifactUri")
+            .is_none());
+        assert!(sanitized
+            .pointer("/workspaceView/settings/objectPath")
+            .is_none());
+        assert!(sanitized
+            .pointer("/workspaceView/sections/0/panels/0/title")
             .is_none());
         assert_eq!(
             sanitized
@@ -1227,6 +1526,97 @@ mod tests {
         assert!(workspace_view_for_user(&data, other_org_id, owner_user_id, view_id).is_err());
         assert!(workspace_view_for_user(&data, org_id, other_user_id, view_id).is_err());
         assert!(workspace_view_for_user(&data, org_id, owner_user_id, deleted_view_id).is_err());
+    }
+
+    #[test]
+    fn workspace_view_create_capacity_caps_live_user_and_org_rows() {
+        let now = Utc::now();
+        let org_id = Uuid::from_u128(20);
+        let owner_user_id = Some(Uuid::from_u128(21));
+        let mut data = StoreData::default();
+        for index in 0..MAX_LIVE_WORKSPACE_VIEWS_PER_USER {
+            data.insert_workspace_view(WorkspaceViewRow {
+                schema_version: WORKSPACE_VIEW_SCHEMA_VERSION,
+                id: Uuid::from_u128(1_000 + index as u128),
+                org_id,
+                owner_user_id,
+                name: format!("view-{index}"),
+                project: None,
+                payload: json!({ "metricKey": "eval/reward" }),
+                created_at: now,
+                updated_at: now,
+                deleted_at: None,
+            });
+        }
+        assert!(ensure_workspace_view_create_capacity(&data, org_id, owner_user_id).is_err());
+        let first_id = Uuid::from_u128(1_000);
+        let first = data.workspace_views.get_mut(&first_id).unwrap();
+        first.deleted_at = Some(now);
+        assert!(ensure_workspace_view_create_capacity(&data, org_id, owner_user_id).is_ok());
+
+        let mut org_data = StoreData::default();
+        for index in 0..MAX_LIVE_WORKSPACE_VIEWS_PER_ORG {
+            org_data.insert_workspace_view(WorkspaceViewRow {
+                schema_version: WORKSPACE_VIEW_SCHEMA_VERSION,
+                id: Uuid::from_u128(10_000 + index as u128),
+                org_id,
+                owner_user_id: Some(Uuid::from_u128(30_000 + index as u128)),
+                name: format!("org-view-{index}"),
+                project: None,
+                payload: json!({ "metricKey": "eval/reward" }),
+                created_at: now,
+                updated_at: now,
+                deleted_at: None,
+            });
+        }
+        assert!(ensure_workspace_view_create_capacity(
+            &org_data,
+            org_id,
+            Some(Uuid::from_u128(99_999))
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn workspace_view_data_run_lookup_hides_inaccessible_runs() {
+        let org_id = Uuid::from_u128(30);
+        let project_id = Uuid::from_u128(31);
+        let other_project_id = Uuid::from_u128(32);
+        let other_org_id = Uuid::from_u128(33);
+        let visible_run_id = Uuid::from_u128(34);
+        let other_project_run_id = Uuid::from_u128(35);
+        let other_org_run_id = Uuid::from_u128(36);
+        let mut data = StoreData::default();
+        data.insert_run(test_run(visible_run_id, org_id, project_id, "visible"));
+        data.insert_run(test_run(
+            other_project_run_id,
+            org_id,
+            other_project_id,
+            "other-project",
+        ));
+        data.insert_run(test_run(
+            other_org_run_id,
+            other_org_id,
+            project_id,
+            "other-org",
+        ));
+        let ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::from_u128(40),
+                service_account_id: Uuid::from_u128(41),
+                project_id: Some(project_id),
+                scopes: vec!["export:read".to_string()],
+            }),
+            session: None,
+        };
+
+        assert!(workspace_view_data_run_for_ctx(&data, &ctx, visible_run_id).is_ok());
+        for run_id in [other_project_run_id, other_org_run_id, Uuid::from_u128(37)] {
+            let error = workspace_view_data_run_for_ctx(&data, &ctx, run_id).unwrap_err();
+            assert_eq!(error.status(), axum::http::StatusCode::NOT_FOUND);
+        }
     }
 
     #[tokio::test]

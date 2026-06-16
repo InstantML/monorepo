@@ -17,6 +17,27 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
         .collect::<AppResult<Vec<_>>>()
 }
 
+pub(super) async fn summarize_runs_for_metric_keys(
+    store: &Store,
+    runs: Vec<RunRow>,
+    metric_keys: &[String],
+) -> AppResult<Vec<Value>> {
+    let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
+    let series = if let Some(first) = runs.first().filter(|_| !metric_keys.is_empty()) {
+        let metric_store = store.metric_store_for_org(first.org_id).await?;
+        metric_series_for_runs_keys(&metric_store, first.org_id, &run_ids, metric_keys).await?
+    } else {
+        Vec::new()
+    };
+    let counts = {
+        let data = store.data.lock().await;
+        artifact_counts_for_runs(&data, &run_ids)
+    };
+    runs.into_iter()
+        .map(|run| summarize_run(run, &series, &counts))
+        .collect::<AppResult<Vec<_>>>()
+}
+
 pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<Value> {
     let run_ids = vec![run.id];
     let metric_store = store.metric_store_for_org(run.org_id).await?;
@@ -136,6 +157,18 @@ pub(super) async fn metric_series_for_runs_key(
 ) -> AppResult<Vec<MetricSeriesRow>> {
     let rows = metric_store
         .query_series_for_runs_key(org_id, run_ids, key)
+        .await?;
+    Ok(rows.into_iter().map(series_row_from_aggregate).collect())
+}
+
+pub(super) async fn metric_series_for_runs_keys(
+    metric_store: &MetricStore,
+    org_id: Uuid,
+    run_ids: &[Uuid],
+    keys: &[String],
+) -> AppResult<Vec<MetricSeriesRow>> {
+    let rows = metric_store
+        .query_series_for_runs_keys(org_id, run_ids, keys)
         .await?;
     Ok(rows.into_iter().map(series_row_from_aggregate).collect())
 }

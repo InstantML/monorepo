@@ -48,8 +48,11 @@ export const publicOpenApiPaths = [
   "/api/reports/panels",
   "/api/reports/{report_id}/markdown",
   "/api/dashboard/preferences",
+  "/api/workspace-view-data",
   "/api/workspace-views",
+  "/api/workspace-views/import",
   "/api/workspace-views/{view_id}",
+  "/api/workspace-views/{view_id}/export",
 ];
 
 const defaultServers = [

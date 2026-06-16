@@ -521,6 +521,33 @@ test("workspace view API normalizes generated and legacy envelopes", () => {
   assert.equal(workspaceViewFromPayload({ view: { id: "bad", name: "Bad", payload: [] } }), null);
 });
 
+test("saved-view import requires a current dry-run preview and bounded JSON", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+
+  assert.match(shell, /const MAX_WORKSPACE_VIEW_IMPORT_BYTES = 128 \* 1024;/, "client should mirror the 128 KiB import body cap");
+  assert.match(shell, /file\.size > MAX_WORKSPACE_VIEW_IMPORT_BYTES/, "selected files should be rejected before reading oversized JSON into the textarea");
+  assert.match(shell, /workspaceViewImportByteLength\(previewText\) > MAX_WORKSPACE_VIEW_IMPORT_BYTES/, "pasted JSON should be size checked before preview");
+  assert.match(shell, /const requestId = viewImportRequestRef\.current \+ 1;/, "file imports should capture a request id before async file reads");
+  assert.match(shell, /if \(requestId !== viewImportRequestRef\.current\) return;/, "stale async file reads should not replace newer import text");
+  assert.match(shell, /viewImportPreviewText !== viewImportTextRef\.current/, "confirm should require the previewed payload to still be current");
+  assert.match(shell, /JSON\.parse\(viewImportPreviewText\)/, "confirm should submit the exact JSON that was dry-run previewed");
+  assert.match(shell, /previewCurrent=\{Boolean\(viewImportPreview && viewImportPreviewText && viewImportPreviewText === viewImportText\)\}/, "import button should disable when the preview no longer matches the textarea");
+});
+
+test("workspace saved-view controls stay reachable on mobile and local layout edits do not refetch series", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+  const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
+  const filterBar = readFileSync(`${root}app/dashboard/runs/run-filter-bar.tsx`, "utf8");
+
+  assert.match(filterBar, /data-view-actions-trigger="true"/, "saved-view modals should have a stable focus-return target");
+  assert.match(shell, /"#workspace-view-import-file",\s*"\[data-view-actions-trigger='true'\]"/, "import modal should return focus to the View actions trigger");
+  assert.match(shell, /"button\[data-delete-view-cancel='true'\]",\s*"\[data-view-actions-trigger='true'\]"/, "delete modal should focus Cancel first and return to the View actions trigger");
+  assert.match(shell, /const workspaceSeriesViewKey = workspaceView\.id;/, "series fetch signatures should not include updatedAt from local layout edits");
+  assert.doesNotMatch(shell, /workspaceSeriesViewKey = useMemo\(\(\) => `\$\{workspaceView\.id\}\\u0000\$\{workspaceView\.updatedAt\}`/, "layout timestamps should not force workspace metric refetches");
+  assert.match(css, /\.workbar > #save-view,/, "mobile workbar hide rule should only target direct children");
+  assert.match(css, /\.workbar > \.custom-select-control\.compact,/, "mobile workbar hide rule should not hide controls inside the View actions popover");
+});
+
 test("workspace view API paths are redacted before telemetry logging", () => {
   const apiClient = readFileSync(`${root}src/api.js`, "utf8");
 

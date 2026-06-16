@@ -1041,7 +1041,6 @@ pub struct WorkspaceViewExportEnvelope {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ImportWorkspaceViewRequest {
     pub exported_view: WorkspaceViewExportEnvelope,
-    #[serde(default)]
     pub dry_run: bool,
     pub conflict_strategy: Option<String>,
     pub existing_view_id: Option<Uuid>,

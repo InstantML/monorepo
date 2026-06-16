@@ -1844,9 +1844,6 @@
         "security": [
           {
             "browserSession": []
-          },
-          {
-            "bearerApiKey": []
           }
         ]
       },
@@ -1890,9 +1887,6 @@
         "security": [
           {
             "browserSession": []
-          },
-          {
-            "bearerApiKey": []
           }
         ]
       }
@@ -6605,9 +6599,6 @@
         "security": [
           {
             "browserSession": []
-          },
-          {
-            "bearerApiKey": []
           }
         ]
       },
@@ -6661,9 +6652,6 @@
         "security": [
           {
             "browserSession": []
-          },
-          {
-            "bearerApiKey": []
           }
         ]
       }
@@ -6785,9 +6773,6 @@
         "security": [
           {
             "browserSession": []
-          },
-          {
-            "bearerApiKey": []
           }
         ]
       },
@@ -6862,9 +6847,6 @@
         "security": [
           {
             "browserSession": []
-          },
-          {
-            "bearerApiKey": []
           }
         ]
       },
@@ -12247,7 +12229,8 @@
       "ImportWorkspaceViewRequest": {
         "type": "object",
         "required": [
-          "exported_view"
+          "exported_view",
+          "dry_run"
         ],
         "properties": {
           "conflict_strategy": {
