@@ -4673,6 +4673,20 @@
           "runs"
         ],
         "operationId": "stop_runs",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate bulk stop retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6278,9 +6292,6 @@
         "security": [
           {
             "bearerApiKey": []
-          },
-          {
-            "browserSession": []
           }
         ]
       }
@@ -6347,9 +6358,6 @@
         "security": [
           {
             "bearerApiKey": []
-          },
-          {
-            "browserSession": []
           }
         ]
       }
@@ -7409,6 +7417,18 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate stop retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         ],
@@ -13986,6 +14006,14 @@
               "string",
               "null"
             ]
+          },
+          "share_token_issued_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the current share token was minted (S6). Tokens older than the\nconfigured TTL stop resolving. `None` on rows persisted before this\nfield existed — those legacy tokens stay valid until rotated."
           },
           "title": {
             "type": "string"

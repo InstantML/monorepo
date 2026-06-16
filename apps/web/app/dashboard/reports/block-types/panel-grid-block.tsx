@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 
-import { ApiClient } from "../../../../src/api.js";
+import { ApiClient, isAbortError } from "../../../../src/api.js";
 import {
   AddPanelModal,
 } from "./add-panel-modal";
@@ -196,6 +196,7 @@ export function PanelGridBlock({ block, readOnly = false, onChange, siblingPanel
                 runset={runset}
                 index={index}
                 readOnly={readOnly}
+                api={api}
                 projectOptions={projectOptions}
                 onChange={(patch) => updateRunset(index, patch)}
                 onRemove={() => removeRunset(index)}
@@ -282,8 +283,16 @@ export function PanelGridBlock({ block, readOnly = false, onChange, siblingPanel
   );
 }
 
-function useProjectOptions(api: ApiClient): string[] {
-  const [projects, setProjects] = useState<string[]>([]);
+type ProjectOptionsState = {
+  status: "loading" | "ready" | "error";
+  options: string[];
+};
+
+function useProjectOptions(api: ApiClient): ProjectOptionsState {
+  const [state, setState] = useState<ProjectOptionsState>({
+    status: "loading",
+    options: [],
+  });
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -293,22 +302,25 @@ function useProjectOptions(api: ApiClient): string[] {
         const names = list
           .map((project: { name?: string }) => project?.name)
           .filter((name: unknown): name is string => typeof name === "string" && name.length > 0);
-        if (!cancelled) setProjects(names);
+        if (!cancelled) setState({ status: "ready", options: names });
       } catch {
-        // Project typeahead is best-effort — fall back to free text input.
+        // Picker is best-effort — flag the failure so the runset editor
+        // falls back to the raw comma-separated text input.
+        if (!cancelled) setState({ status: "error", options: [] });
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [api]);
-  return projects;
+  return state;
 }
 
 function RunsetEditor({
   runset,
   index,
   readOnly,
+  api,
   projectOptions,
   onChange,
   onRemove,
@@ -316,27 +328,40 @@ function RunsetEditor({
   runset: RunsetData;
   index: number;
   readOnly: boolean;
-  projectOptions: string[];
+  api: ApiClient;
+  projectOptions: ProjectOptionsState;
   onChange: (patch: Partial<RunsetData>) => void;
   onRemove: () => void;
 }) {
   const [pinnedDraft, setPinnedDraft] = useState("");
-  const projectListId = `runset-${index}-projects`;
   const pinnedRunIds = runset.pinned_run_ids ?? [];
 
-  const addPinnedRun = () => {
-    const trimmed = pinnedDraft.trim();
-    if (!trimmed) return;
-    if (pinnedRunIds.includes(trimmed)) {
-      setPinnedDraft("");
-      return;
-    }
+  const pinRunId = (id: string) => {
+    const trimmed = id.trim();
+    if (!trimmed || pinnedRunIds.includes(trimmed)) return;
     onChange({ pinned_run_ids: [...pinnedRunIds, trimmed] });
+  };
+  const addPinnedRun = () => {
+    pinRunId(pinnedDraft);
     setPinnedDraft("");
   };
   const removePinnedRun = (target: string) => {
     onChange({ pinned_run_ids: pinnedRunIds.filter((id) => id !== target) });
   };
+  const toggleProject = (name: string) => {
+    if (runset.projects.includes(name)) {
+      onChange({ projects: runset.projects.filter((project) => project !== name) });
+    } else {
+      onChange({ projects: [...runset.projects, name] });
+    }
+  };
+  // Projects already on the runset that the org's project list does not
+  // know about (renamed/deleted projects, or values typed via the legacy
+  // comma-separated input). Render them as removable chips so they never
+  // become un-editable.
+  const unknownSelected = runset.projects.filter(
+    (project) => !projectOptions.options.includes(project),
+  );
 
   return (
     <li className="report-block__runset">
@@ -361,33 +386,85 @@ function RunsetEditor({
           </button>
         ) : null}
       </div>
-      <span className="report-block__label">
-        Projects (comma-separated, supports cross-project)
-      </span>
-      <input
-        className="report-block__input"
-        value={runset.projects.join(", ")}
-        placeholder="proj-a, proj-b"
-        list={projectOptions.length ? projectListId : undefined}
-        onChange={(event) =>
-          onChange({
-            projects: event.target.value
-              .split(",")
-              .map((value) => value.trim())
-              .filter((value) => value.length > 0),
-          })
-        }
-        aria-label={`Runset ${index + 1} projects`}
-        readOnly={readOnly}
-      />
-      {projectOptions.length ? (
-        <datalist id={projectListId}>
-          {projectOptions.map((option) => (
-            <option key={option} value={option}>{option}</option>
+      <span className="report-block__label">Projects (cross-project supported)</span>
+      {readOnly ? (
+        <ul className="report-block__pinned-list">
+          {runset.projects.map((name) => (
+            <li key={name} className="report-block__pinned-chip">
+              <code>{name}</code>
+            </li>
           ))}
-        </datalist>
-      ) : null}
-      <span className="report-block__label">Pinned run IDs (UUID or project/name)</span>
+          {runset.projects.length === 0 ? (
+            <li className="report-block__hint">No projects selected.</li>
+          ) : null}
+        </ul>
+      ) : projectOptions.status === "error" ? (
+        <>
+          {/* Fallback path: the /projects fetch failed, so keep the raw
+              comma-separated input — runsets stay editable even when the
+              project list is unavailable. */}
+          <input
+            className="report-block__input"
+            value={runset.projects.join(", ")}
+            placeholder="proj-a, proj-b"
+            onChange={(event) =>
+              onChange({
+                projects: event.target.value
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter((value) => value.length > 0),
+              })
+            }
+            aria-label={`Runset ${index + 1} projects`}
+          />
+          <span className="report-block__hint">
+            Project list unavailable — enter comma-separated project names.
+          </span>
+        </>
+      ) : (
+        <div
+          className="report-block__project-picker"
+          role="group"
+          aria-label={`Runset ${index + 1} projects`}
+        >
+          {unknownSelected.map((name) => (
+            <span key={name} className="report-block__pinned-chip">
+              <code>{name}</code>
+              <button
+                type="button"
+                className="report-block__pinned-remove"
+                onClick={() => toggleProject(name)}
+                aria-label={`Remove project ${name} from runset ${index + 1}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {projectOptions.options.map((name) => {
+            const selected = runset.projects.includes(name);
+            return (
+              <button
+                key={name}
+                type="button"
+                className="report-block__project-chip"
+                aria-pressed={selected}
+                onClick={() => toggleProject(name)}
+                aria-label={`${selected ? "Remove" : "Add"} project ${name} ${
+                  selected ? "from" : "to"
+                } runset ${index + 1}`}
+              >
+                {name}
+              </button>
+            );
+          })}
+          {projectOptions.status === "loading" ? (
+            <span className="report-block__hint">Loading projects…</span>
+          ) : projectOptions.options.length === 0 && unknownSelected.length === 0 ? (
+            <span className="report-block__hint">No projects in this workspace yet.</span>
+          ) : null}
+        </div>
+      )}
+      <span className="report-block__label">Pinned runs</span>
       <ul className="report-block__pinned-list">
         {pinnedRunIds.map((id) => (
           <li key={id} className="report-block__pinned-chip">
@@ -409,31 +486,178 @@ function RunsetEditor({
         ) : null}
       </ul>
       {!readOnly ? (
-        <div className="report-block__row">
-          <input
-            className="report-block__input"
-            value={pinnedDraft}
-            placeholder="run-uuid or project/run-name"
-            onChange={(event) => setPinnedDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                addPinnedRun();
-              }
-            }}
-            aria-label={`Runset ${index + 1} pinned run input`}
+        <>
+          <RunSearchPicker
+            api={api}
+            runsetIndex={index}
+            pinnedRunIds={pinnedRunIds}
+            onPick={pinRunId}
           />
-          <button
-            type="button"
-            className="report-block__action"
-            onClick={addPinnedRun}
-            aria-label={`Add pinned run to runset ${index + 1}`}
-          >
-            + Run
-          </button>
-        </div>
+          <details className="report-block__advanced">
+            <summary>Advanced: pin by run ID (UUID or project/name)</summary>
+            <div className="report-block__row">
+              <input
+                className="report-block__input"
+                value={pinnedDraft}
+                placeholder="run-uuid or project/run-name"
+                onChange={(event) => setPinnedDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    addPinnedRun();
+                  }
+                }}
+                aria-label={`Runset ${index + 1} pinned run input`}
+              />
+              <button
+                type="button"
+                className="report-block__action"
+                onClick={addPinnedRun}
+                aria-label={`Add pinned run to runset ${index + 1}`}
+              >
+                + Run
+              </button>
+            </div>
+          </details>
+        </>
       ) : null}
     </li>
+  );
+}
+
+const RUN_SEARCH_LIMIT = 10;
+const RUN_SEARCH_DEBOUNCE_MS = 250;
+
+type RunSearchMatch = { id: string; name: string; project: string };
+
+type RunSearchState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "error" }
+  | { kind: "ready"; matches: RunSearchMatch[] };
+
+/**
+ * Search-and-pick for pinned runs (audit RP2b). Debounced query against the
+ * same `/api/runs/summary?q=` search the runs dashboard uses; lists up to
+ * 10 matches (name + project) and a click pins the run id. The raw "pin by
+ * ID" input stays available behind the Advanced disclosure as the fallback.
+ */
+function RunSearchPicker({
+  api,
+  runsetIndex,
+  pinnedRunIds,
+  onPick,
+}: {
+  api: ApiClient;
+  runsetIndex: number;
+  pinnedRunIds: string[];
+  onPick: (id: string) => void;
+}) {
+  const [term, setTerm] = useState("");
+  const [state, setState] = useState<RunSearchState>({ kind: "idle" });
+
+  useEffect(() => {
+    const trimmed = term.trim();
+    if (!trimmed) {
+      setState({ kind: "idle" });
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setState({ kind: "loading" });
+      try {
+        const params = new URLSearchParams({
+          q: trimmed,
+          limit: String(RUN_SEARCH_LIMIT),
+        });
+        const payload = await api.get(`/api/runs/summary?${params.toString()}`, {
+          signal: controller.signal,
+        });
+        const rows = Array.isArray(payload?.runs) ? payload.runs : [];
+        const matches: RunSearchMatch[] = [];
+        for (const raw of rows.slice(0, RUN_SEARCH_LIMIT)) {
+          const id = typeof raw?.id === "string" ? raw.id : null;
+          if (!id) continue;
+          matches.push({
+            id,
+            name: typeof raw?.name === "string" && raw.name ? raw.name : id,
+            project: typeof raw?.project === "string" ? raw.project : "",
+          });
+        }
+        setState({ kind: "ready", matches });
+      } catch (error) {
+        if (isAbortError(error)) return;
+        setState({ kind: "error" });
+      }
+    }, RUN_SEARCH_DEBOUNCE_MS);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [api, term]);
+
+  return (
+    <div className="report-block__run-search">
+      <input
+        className="report-block__input"
+        type="search"
+        value={term}
+        placeholder="Search runs to pin…"
+        onChange={(event) => setTerm(event.target.value)}
+        aria-label={`Search runs to pin in runset ${runsetIndex + 1}`}
+      />
+      {state.kind === "loading" ? (
+        <span className="report-block__hint" aria-live="polite">
+          Searching runs…
+        </span>
+      ) : null}
+      {state.kind === "error" ? (
+        <span className="report-block__hint" role="alert">
+          Run search failed — pin by ID below.
+        </span>
+      ) : null}
+      {state.kind === "ready" && state.matches.length === 0 ? (
+        <span className="report-block__hint" aria-live="polite">
+          No runs match that search.
+        </span>
+      ) : null}
+      {state.kind === "ready" && state.matches.length > 0 ? (
+        <ul
+          className="report-block__run-results"
+          aria-label={`Run search results for runset ${runsetIndex + 1}`}
+        >
+          {state.matches.map((match) => {
+            const pinned = pinnedRunIds.includes(match.id);
+            return (
+              <li key={match.id}>
+                <button
+                  type="button"
+                  className="report-block__run-result"
+                  onClick={() => {
+                    onPick(match.id);
+                    setTerm("");
+                  }}
+                  disabled={pinned}
+                  aria-label={
+                    pinned
+                      ? `Run ${match.name} already pinned`
+                      : `Pin run ${match.name}${match.project ? ` from ${match.project}` : ""}`
+                  }
+                >
+                  <span className="report-block__run-result-name">{match.name}</span>
+                  {match.project ? (
+                    <span className="report-block__run-result-project">{match.project}</span>
+                  ) : null}
+                  {pinned ? (
+                    <span className="report-block__run-result-pinned">pinned</span>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

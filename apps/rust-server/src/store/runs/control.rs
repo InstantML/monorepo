@@ -8,6 +8,41 @@ pub async fn request_run_stop(
     store: &Store,
     ctx: &RequestContext,
     run_id: Uuid,
+    raw: Value,
+    input: StopRunRequest,
+    idempotency_key: Option<String>,
+) -> AppResult<Value> {
+    if let Some(key) = idempotency_key {
+        let request_hash = hash_idempotency(run_id, &raw)?;
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            if let Some(existing) =
+                live_idempotency_response(store, ctx.org_id, &key, &request_hash).await?
+            {
+                return Ok(existing);
+            }
+            let response = request_run_stop_once(store, ctx, run_id, input).await?;
+            persist_stop_idempotency_response(
+                store,
+                ctx.org_id,
+                key.clone(),
+                request_hash,
+                response.clone(),
+            )
+            .await?;
+            Ok(response)
+        }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
+    request_run_stop_once(store, ctx, run_id, input).await
+}
+
+async fn request_run_stop_once(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
     input: StopRunRequest,
 ) -> AppResult<Value> {
     ensure_billing_write_allowed(store, ctx.org_id, "request a run stop").await?;
@@ -36,6 +71,40 @@ pub async fn request_run_stop(
 }
 
 pub async fn request_bulk_run_stop(
+    store: &Store,
+    ctx: &RequestContext,
+    raw: Value,
+    input: StopRunsRequest,
+    idempotency_key: Option<String>,
+) -> AppResult<Value> {
+    if let Some(key) = idempotency_key {
+        let request_hash = hash_idempotency(Uuid::nil(), &raw)?;
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            if let Some(existing) =
+                live_idempotency_response(store, ctx.org_id, &key, &request_hash).await?
+            {
+                return Ok(existing);
+            }
+            let response = request_bulk_run_stop_once(store, ctx, input).await?;
+            persist_stop_idempotency_response(
+                store,
+                ctx.org_id,
+                key.clone(),
+                request_hash,
+                response.clone(),
+            )
+            .await?;
+            Ok(response)
+        }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
+    request_bulk_run_stop_once(store, ctx, input).await
+}
+
+async fn request_bulk_run_stop_once(
     store: &Store,
     ctx: &RequestContext,
     input: StopRunsRequest,
@@ -99,6 +168,54 @@ pub async fn request_bulk_run_stop(
     }))
 }
 
+async fn live_idempotency_response(
+    store: &Store,
+    org_id: Uuid,
+    key: &str,
+    request_hash: &[u8],
+) -> AppResult<Option<Value>> {
+    let data = store.data.lock().await;
+    let Some(existing) = data
+        .idempotency
+        .get(&(org_id, key.to_string()))
+        .filter(|record| record.expires_at > Utc::now())
+    else {
+        return Ok(None);
+    };
+    if existing.request_hash.as_slice() == request_hash {
+        return Ok(Some(existing.response_json.clone()));
+    }
+    Err(AppError::conflict(
+        "idempotency key was already used with a different request body",
+    ))
+}
+
+async fn persist_stop_idempotency_response(
+    store: &Store,
+    org_id: Uuid,
+    key: String,
+    request_hash: Vec<u8>,
+    response: Value,
+) -> AppResult<()> {
+    let record = IdempotencyRecord {
+        org_id,
+        key: key.clone(),
+        request_hash,
+        response_json: response,
+        expires_at: Utc::now() + ChronoDuration::days(7),
+    };
+    store
+        .persist_locked("idempotency", org_id, &key, &record)
+        .await?;
+    store
+        .data
+        .lock()
+        .await
+        .idempotency
+        .insert((org_id, key), record);
+    Ok(())
+}
+
 pub async fn run_stop_signal(
     store: &Store,
     ctx: &RequestContext,
@@ -116,7 +233,7 @@ pub async fn run_stop_signal(
         "run_status": run.status,
         "terminal": matches!(run.status.as_str(), "finished" | "failed"),
         "stop_requested": active,
-        "poll_after_seconds": 10,
+        "poll_after_seconds": 30,
         "stop_request": control.filter(|_| active).map(|item| json!({
             "stop_request_id": item.stop_request_id,
             "requested_at": item.requested_at.clone(),

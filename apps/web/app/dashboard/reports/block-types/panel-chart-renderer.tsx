@@ -370,10 +370,6 @@ async function fetchSeriesForMetrics(
 }
 
 function LineChart({ panel, series }: { panel: LinePanelData; series: MetricSeries[] }) {
-  const [hover, setHover] = useState<HoverPoint>(null);
-  const width = chartWidth;
-  const height = chartHeight;
-  const padding = chartPadding;
   const smoothed = useMemo(
     () => smoothSeries(series, panel.smoothing ?? 0),
     [series, panel.smoothing],
@@ -382,33 +378,17 @@ function LineChart({ panel, series }: { panel: LinePanelData; series: MetricSeri
     smoothed,
     panel.metric_key,
   ]);
-  const normalizedSeries = useMemo(
-    () => normalizeSeries(smoothed, width, height, padding, "step", panel.metric_key),
-    [smoothed, width, height, padding, panel.metric_key],
-  );
 
   if (!series.length || !domain) {
     return <div className="panel-chart panel-chart--empty">No data points for `{panel.metric_key}` yet.</div>;
   }
 
-  const onMove = (event: MouseEvent<SVGSVGElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, width, height);
-    const next = nearestPoint(normalizedSeries, point.x, point.y);
-    setHover(next ?? null);
-  };
-
   return (
     <div className="panel-chart panel-chart--line">
       <MetricChart
-        domain={domain}
-        fullDomain={domain}
-        hover={hover}
+        height={320}
         metricKey={panel.metric_key}
-        normalizedSeries={normalizedSeries}
-        onMove={onMove}
-        onPointHover={(point) => setHover(point)}
-        onLeave={() => setHover(null)}
+        series={smoothed}
         showRange={false}
         xMode="step"
       />

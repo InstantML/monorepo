@@ -10,11 +10,11 @@ import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest }
 import { downloadBlob, filenameFromContentDisposition, safeExportFilename } from "../../src/chart-export.js";
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
-import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
+import { averageGroupedSeries, chartSummary, smoothSeries } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
-import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
@@ -22,7 +22,8 @@ import { ArtifactsTabPane } from "./artifacts/tab-pane";
 import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
-import { DashboardTopbar } from "./chrome/topbar";
+import { SelectionTray } from "./chrome/selection-tray";
+import { AccountWorkspaceMenu, DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
@@ -30,21 +31,21 @@ import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
 import { ImportsTabPane } from "./imports/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
-import { CheckpointsTabPane } from "./checkpoints/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
+import { RunFilterBar } from "./runs/run-filter-bar";
 import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { useFocusTrap } from "./ui/use-focus-trap";
-import { isTabId, tabs } from "../dashboard-config";
+import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
+import type { ShellTabId } from "../dashboard-config";
 import {
   artifactTotalsForRuns,
   buildAlertRows,
   buildApiRows,
   buildDatasetRows,
   buildMetricCatalogRows,
-  buildCheckpointRows,
   buildRunMetricRows,
   buildRunTimelineRows,
   buildAutomaticWorkspace,
@@ -52,9 +53,6 @@ import {
   COMPARE_ARTIFACT_LIMIT,
   COMPARE_RUN_LIMIT,
   DEFAULT_METRIC_KEY,
-  chartHeight,
-  chartPadding,
-  chartWidth,
   defaultTableColumns,
   metricTitle,
   sanitizePanelLayout,
@@ -69,7 +67,7 @@ import {
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HistogramTimelineState, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
 import type { RunWorkspaceTabId } from "./components/run-workspace";
-import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
+import { LEGACY_SAVED_VIEW_PREFIX, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
 import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "./state/workspace-view-api";
 import type { components } from "../../src/types/api.generated";
@@ -200,7 +198,16 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts", "checkpoints"]);
+const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
+
+const EMPTY_OVERVIEW: Overview = { total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 };
+// The Overview cockpit lives at a static route segment while every other tab is
+// served by the catch-all, so crossing between them remounts the whole shell
+// and resets overview state to zero — the telemetry ticker would flash
+// "LIVE 0 / PTS 0" until the next load resolves. Cache the last real overview at
+// module scope (per browser tab, cleared on full reload) so a remount restores
+// the previous numbers instead of flashing placeholders.
+let lastKnownOverview: Overview | null = null;
 
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
@@ -245,7 +252,7 @@ function isWarehouseStartingError(error: unknown) {
   return error instanceof ApiError && error.code === "warehouse_unavailable";
 }
 
-function shouldSurfaceRunLoadMessage(tab: TabId) {
+function shouldSurfaceRunLoadMessage(tab: ShellTabId) {
   return RUN_LOAD_STATUS_TABS.has(tab);
 }
 
@@ -544,13 +551,13 @@ function safeSavedView(raw: string | null) {
   }
 }
 
-function initialActiveTab(initialTab: TabId) {
+function initialActiveTab(initialTab: ShellTabId) {
   if (typeof window === "undefined") return initialTab;
   const legacyPath = pathFromLegacyHash(window.location.hash);
-  return legacyPath ? tabFromPath(legacyPath) as TabId : tabFromPath(window.location.pathname) as TabId;
+  return legacyPath ? shellTabFromPath(legacyPath) : shellTabFromPath(window.location.pathname);
 }
 
-export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) {
+export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabId }) {
   const api = useMemo(() => new ApiClient(), []);
   const clerk = useClerk();
   const dashboardRequestRef = useRef(0);
@@ -566,7 +573,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const projectPreferenceLoadedRef = useRef(false);
   const previousOrgIdRef = useRef("");
   const userTouchedDashboardFiltersRef = useRef(false);
-  const defaultSelectionInitializedRef = useRef(false);
+  // True once a default page selection has been applied OR the URL supplied an
+  // explicit ?runs= selection (which must never be replaced by the default).
+  const defaultSelectionInitializedRef = useRef(
+    typeof window !== "undefined" && runSelectionFromSearch(window.location.search).length > 0,
+  );
+  // URL sync starts enabled only for deep links; it switches on permanently the
+  // first time the user changes the selection themselves, so default
+  // auto-selections never spray run ids into the address bar.
+  const selectionUrlSyncRef = useRef(
+    typeof window !== "undefined" && runSelectionFromSearch(window.location.search).length > 0,
+  );
+  // One-shot guard: a popstate-restored ?runs= selection must survive the
+  // project/filter clear effect that fires in the same render batch.
+  const applyingUrlSelectionRef = useRef(false);
   const runDirectoryRef = useRef<Map<string, RunSummary>>(new Map());
   // Signatures of the last series fetch per chart group. When only the live
   // refresh tick changes (signature unchanged), we refetch in place without
@@ -587,7 +607,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
   const compareArtifactCacheVersionRef = useRef(0);
   const messageRef = useRef("Loading runs...");
-  const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
+  const [activeTab, setActiveTab] = useState<ShellTabId>(() => initialActiveTab(initialTab));
   const activeTabRef = useRef(activeTab);
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardSessionChecked, setDashboardSessionChecked] = useState(false);
@@ -607,7 +627,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       : (new URLSearchParams(window.location.search).get("project") ?? "")
   );
   const [status, setStatus] = useState("");
-  const [displayStatus, setDisplayStatus] = useState("");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [searchError, setSearchError] = useState<RunSearchError | null>(null);
@@ -638,8 +657,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [pageNavigationPending, setPageNavigationPending] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
   const [summary, setSummary] = useState<Summary>({ runs: [], metric_keys: [], total: 0 });
-  const [overview, setOverview] = useState<Overview>({ total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 });
-  const [selectedRunIds, setSelectedRunIds] = useState<string[]>([]);
+  const [overview, setOverviewState] = useState<Overview>(() => lastKnownOverview ?? EMPTY_OVERVIEW);
+  // Persist every real overview to the module cache so a shell remount (Overview
+  // route ⇄ catch-all tabs) restores the last numbers instead of flashing zero.
+  const setOverview = useCallback((value: Overview | ((current: Overview) => Overview)) => {
+    setOverviewState((current) => {
+      const next = typeof value === "function" ? (value as (c: Overview) => Overview)(current) : value;
+      lastKnownOverview = next;
+      return next;
+    });
+  }, []);
+  // Seed selection from ?runs=… so compare links survive reloads and can be
+  // shared. The default auto-select skips when the URL provided a selection.
+  const [selectedRunIds, setSelectedRunIds] = useState<string[]>(() =>
+    typeof window === "undefined" ? [] : runSelectionFromSearch(window.location.search));
   const [bulkStopSelectionArmed, setBulkStopSelectionArmed] = useState(false);
   const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
@@ -664,7 +695,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [tableColumns, setTableColumns] = useState<TableColumns>(defaultTableColumns);
   const [pinnedMetrics, setPinnedMetrics] = useState<string[]>([]);
-  const [navPinned, setNavPinned] = useState(false);
   const [navAutoOpen, setNavAutoOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -699,7 +729,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
-  const [apiKeyName, setApiKeyName] = useState("Dashboard SDK key");
+  // Empty by default; the input shows a placeholder and create falls back to
+  // "Dashboard SDK key" so typed names never append to prefilled text.
+  const [apiKeyName, setApiKeyName] = useState("");
   const [newApiKey, setNewApiKey] = useState("");
   const [apiAdminMessage, setApiAdminMessage] = useState("");
   const [apiAdminTone, setApiAdminTone] = useState<"status" | "error">("status");
@@ -763,7 +795,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return metricSeriesRuns;
   }, [activeTab, metricSeriesRuns, primaryRun?.id]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
-  const dashboardSelectionFilterKey = [project, status, displayStatus, queryInput, query, sortBy, metricKey].join("\u0000");
+  const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
     hasSeriesRef.current = series.length > 0;
     hasPanelSeriesRef.current = Object.keys(panelSeries).length > 0;
@@ -852,10 +884,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return smoothSeries(grouped, smoothing);
   }, [groupAverage, seriesWithGroups, smoothing]);
 
-  const fullDomain = useMemo(() => chartDomain(displaySeries, xMode, metricKey), [displaySeries, metricKey, xMode]);
-  const rangeSeries = useMemo(() => normalizeSeries(displaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey), [displaySeries, metricKey, xMode]);
-  const normalizedSeries = useMemo(() => normalizeSeries(displaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
-  const domain = useMemo(() => chartDomain(displaySeries, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
   const chartSummaries = useMemo(() => chartSummary(displaySeries), [displaySeries]);
   const metricCatalogSelectionIds = useMemo(
     () => (selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id)),
@@ -868,10 +896,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const found = seriesWithGroups.find((item) => item.id === primaryRun?.id);
     return found ? smoothSeries([found], smoothing) : [];
   }, [primaryRun?.id, seriesWithGroups, smoothing]);
-  const primaryFullDomain = useMemo(() => chartDomain(primaryDisplaySeries, xMode, metricKey), [metricKey, primaryDisplaySeries, xMode]);
-  const primaryRangeSeries = useMemo(() => normalizeSeries(primaryDisplaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey), [metricKey, primaryDisplaySeries, xMode]);
-  const primaryNormalizedSeries = useMemo(() => normalizeSeries(primaryDisplaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey, primaryChartZoomRange), [metricKey, primaryChartZoomRange, primaryDisplaySeries, xMode]);
-  const primaryDomain = useMemo(() => chartDomain(primaryDisplaySeries, xMode, metricKey, primaryChartZoomRange), [metricKey, primaryChartZoomRange, primaryDisplaySeries, xMode]);
   const pinnedChartPanels = useMemo(() => (
     pinnedMetrics
       .filter((metric) => metric && metric !== metricKey)
@@ -890,23 +914,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return {
           metric,
           series: preparedSeries,
-          normalizedSeries: normalizeSeries(preparedSeries, chartWidth, chartHeight, chartPadding, xMode, metric, zoomRange),
-          domain: chartDomain(preparedSeries, xMode, metric, zoomRange),
-          fullDomain: chartDomain(preparedSeries, xMode, metric),
-          rangeSeries: normalizeSeries(preparedSeries, chartWidth, chartHeight, chartPadding, xMode, metric),
           summaries: chartSummary(preparedSeries),
           zoomRange,
         };
       })
-  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns, xMode]);
+  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns]);
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
+  // Rail count badges: total runs on Runs, open-alert count on Run Health.
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
-  const checkpointRows = useMemo(() => buildCheckpointRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
-  const apiRows = useMemo(() => buildApiRows(metricKey, project, displayStatus || status), [displayStatus, metricKey, project, status]);
+  const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
   const localSavedViewScope = useMemo(
     () => storageScopeId([activeOrgId, sessionPayload?.user?.primary_email ?? ""].filter(Boolean).join(":")),
@@ -925,7 +945,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const sharedDemoSession = isSharedDemoSession(sessionPayload);
   const canManageOrg = roleCanManageOrg(activeMembershipRole) && !sharedDemoSession;
   const canWriteWorkspace = canWriteRuns && !sharedDemoSession;
-  const canControlRuns = canWriteWorkspace;
+  const canControlRuns = canWriteRuns && !sharedDemoSession;
   const selectedStopCandidateTotal = useMemo(
     () => selectedRuns.filter((run) => canRequestStop(run, canControlRuns)).length,
     [canControlRuns, selectedRuns],
@@ -933,13 +953,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const selectedStopCandidateCount = bulkStopSelectionArmed
     ? Math.min(MAX_STOP_DIALOG_RUNS, selectedStopCandidateTotal)
     : 0;
-  const selectedStopDisabledReason = !canControlRuns
-    ? "Your role can view runs but cannot stop them."
-    : !bulkStopSelectionArmed
-      ? "Select runs explicitly to enable bulk Stop."
-      : selectedRunIds.length
-        ? "Selected runs are not running or are already stopping."
-        : "Select running runs that are not already stopping.";
+  const selectedStopDisabledReason = selectedStopCandidateCount
+    ? ""
+    : !canControlRuns
+      ? "Your role can view runs but cannot stop them."
+      : !bulkStopSelectionArmed
+        ? "Select runs explicitly to enable bulk Stop."
+        : selectedRunIds.length
+          ? "Selected runs are not running or are already stopping."
+          : "Select running runs that are not already stopping.";
   const canEditReports = canWriteWorkspace;
   const activeMembershipSummary = useMemo(
     () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
@@ -998,8 +1020,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const changeProject = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
-    setBulkStopSelectionArmed(false);
     setProject(value);
+    setBulkStopSelectionArmed(false);
     // Push the project change onto history so the browser back/forward
     // gestures can restore the prior selection.
     if (typeof window !== "undefined") {
@@ -1025,9 +1047,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const changeStatus = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
+    setStatus(value);
     setBulkStopSelectionArmed(false);
-    setStatus("");
-    setDisplayStatus(normalizeDisplayStatus(value));
   }, [resetRunPagination]);
   const changeRunQueryInput = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
@@ -1037,15 +1058,22 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setSortBy(value);
+    setBulkStopSelectionArmed(false);
   }, [resetRunPagination]);
   const changeMetricKey = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setMetricKey(value);
+    setBulkStopSelectionArmed(false);
   }, [resetRunPagination]);
   useEffect(() => {
     if (previousOrgIdRef.current === activeOrgId) return;
+    // First session load is not an org switch: keep the ?project= deep link
+    // seeded into state instead of wiping it (the wipe let a stale persisted
+    // preference win over the URL).
+    const isInitialSession = previousOrgIdRef.current === "";
     previousOrgIdRef.current = activeOrgId;
+    if (isInitialSession) return;
     projectPreferenceLoadedRef.current = false;
     userTouchedDashboardFiltersRef.current = false;
     setProjectPreferenceReady(false);
@@ -1108,8 +1136,23 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     [editingFieldCatalogMaxRuns, workspacePanelRuns],
   );
   const workspaceFetchRuns = useMemo(() => {
-    if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
-    return sortedRuns.slice(0, maxWorkspacePanelRuns);
+    // Always fetch the visible page's runs so the Runs-table Trend column keeps
+    // its sparklines no matter what is selected — and so toggling a *visible*
+    // row never changes this set (which would otherwise clear workspaceSeries
+    // and collapse every Trend cell mid-reload). Union in any off-page selected
+    // runs so the workspace line panels (which filter series by run id) still
+    // plot selections that aren't on the current page.
+    const pageRuns = sortedRuns.slice(0, maxWorkspacePanelRuns);
+    if (!selectedRuns.length) return pageRuns;
+    const seen = new Set(pageRuns.map((run) => run.id));
+    const merged = pageRuns.slice();
+    for (const run of selectedRuns) {
+      if (seen.has(run.id)) continue;
+      seen.add(run.id);
+      merged.push(run);
+      if (merged.length >= MAX_SELECTED_RUNS) break;
+    }
+    return merged.slice(0, MAX_SELECTED_RUNS);
   }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
   const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
   const hasLiveWorkspaceRun = useMemo(() => workspaceFetchRuns.some((run) => run.status === "running"), [workspaceFetchRuns]);
@@ -1140,6 +1183,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     { id: "escape", group: "General", label: "Close top overlay", shortcut: "Esc", enabled: true },
     { id: "undo-workspace", group: "Workspace", label: "Undo workspace change", shortcut: `${modifierLabel}+Z`, enabled: workspaceUndoStack.length > 0 },
     { id: "redo-workspace", group: "Workspace", label: "Redo workspace change", shortcut: `${modifierLabel}+Shift+Z`, enabled: workspaceRedoStack.length > 0 },
+    { id: "tab-jump", group: "Navigation", label: "Jump to tab (rail order)", shortcut: "1-9", enabled: true, description: "1 opens Runs, 2 Metrics, and so on down the sidebar." },
     { id: "runs-rail", group: "Navigation", label: runsRailCollapsed ? "Restore Runs selector" : "Collapse Runs selector", shortcut: `${modifierLabel}+.`, enabled: activeTab === "runs" },
     { id: "focus-workspace", group: "Navigation", label: "Focus Runs selector or workspace", shortcut: `${modifierLabel}+J`, enabled: activeTab === "runs" },
     { id: "fullscreen-prev", group: "Panels", label: "Previous fullscreen panel", shortcut: "Left Arrow", enabled: Boolean(fullscreenPanelContext && fullscreenPanelIndex > 0) },
@@ -1154,7 +1198,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     Boolean(stopDialog),
     closeStopDialog,
     "#stop-reason",
-    "button[aria-label='Refresh runs']",
   );
   const quickSearchItems = useMemo<QuickSearchItem[]>(() => {
     const items: QuickSearchItem[] = [
@@ -1300,6 +1343,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     let keepInitialRunsLoading = false;
     try {
+      const displayStatus = normalizeDisplayStatus(status);
       const statusParams = dashboardStatusQueryParams(displayStatus, status);
       const params = currentPageCursor
         ? { project, ...statusParams, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
@@ -1378,7 +1422,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         if (!keepInitialRunsLoading && !options.signal?.aborted) setInitialLoadDone(true);
       }
     }
-  }, [api, currentPageCursor, displayStatus, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
+  }, [api, currentPageCursor, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1593,6 +1637,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const timer = window.setTimeout(() => {
       resetRunPagination();
       setQuery(queryInput);
+      setBulkStopSelectionArmed(false);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [query, queryInput, resetRunPagination]);
@@ -1616,10 +1661,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       applyingSavedViewRef.current = false;
       return;
     }
+    if (applyingUrlSelectionRef.current) {
+      applyingUrlSelectionRef.current = false;
+      return;
+    }
+    // Programmatic project fills (preference load on mount) must not wipe a
+    // URL-seeded or explicitly made selection — only user-driven filter
+    // changes reset the selection.
+    if (!userTouchedDashboardFiltersRef.current && selectionUrlSyncRef.current) return;
     setSelectedRunIds([]);
+    setBulkStopSelectionArmed(false);
     setPrimaryRunId("");
     setReferenceRunId("");
-  }, [displayStatus, project, query, status]);
+  }, [project, query, status]);
 
   useEffect(() => {
     summaryTotalRef.current = summary.total;
@@ -1646,12 +1700,22 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         const canonicalPath = canonicalDashboardPath(window.location.pathname);
         if (window.location.pathname !== canonicalPath) window.history.replaceState(null, "", canonicalPath + search);
       }
-      const nextTab = tabFromPath(window.location.pathname) as TabId;
+      const nextTab = shellTabFromPath(window.location.pathname);
       setActiveTab(nextTab);
       // Sync project state from the URL on popstate so back/forward restores
       // the previously-selected project.
       const projectParam = new URLSearchParams(window.location.search).get("project") ?? "";
       setProject(projectParam);
+      // Restore an explicit run selection carried by the history entry. The
+      // one-shot ref stops the project/filter clear effect from wiping the
+      // restored selection in the same render batch.
+      const urlRunIds = runSelectionFromSearch(window.location.search);
+      if (urlRunIds.length) {
+        defaultSelectionInitializedRef.current = true;
+        selectionUrlSyncRef.current = true;
+        applyingUrlSelectionRef.current = true;
+        setSelectedRunIds(urlRunIds);
+      }
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
       const summaryTotal = summaryTotalRef.current;
       setMessage(nextTab === "runs" && summaryTotal ? runsPageMessage(summaryTotal, 0, 0) : `Opened ${label}.`);
@@ -1713,12 +1777,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     setSavedViews(localSavedViewOptions(localSavedViewProjectScope));
-    setNavPinned(localStorage.getItem(NAV_PINNED_KEY) === "true");
     setRunsRailCollapsed(localStorage.getItem(RUNS_RAIL_COLLAPSED_KEY) === "true");
     const storedTheme = localStorage.getItem(THEME_KEY);
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
       ? storedTheme
-      : "dark";
+      : "light";
     setTheme(nextTheme);
     setThemeReady(true);
   }, [localSavedViewProjectScope]);
@@ -1788,9 +1851,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     localStorage.setItem(scopedWorkspaceStorageKey, JSON.stringify({ ...workspaceView, updatedAt: new Date().toISOString() }));
   }, [project, scopedWorkspaceStorageKey, workspaceReady, workspaceView]);
 
+  // Mirror explicit run selections into ?runs=… (replaceState, capped) so the
+  // current compare/chart context survives reloads and can be shared.
   useEffect(() => {
-    localStorage.setItem(NAV_PINNED_KEY, String(navPinned));
-  }, [navPinned]);
+    if (typeof window === "undefined" || !selectionUrlSyncRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const encoded = runSelectionSearchParam(selectedRunIds);
+    if ((params.get("runs") ?? "") === encoded) return;
+    if (encoded) params.set("runs", encoded);
+    else params.delete("runs");
+    const qs = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }, [selectedRunIds]);
 
   useEffect(() => {
     localStorage.setItem(RUNS_RAIL_COLLAPSED_KEY, String(runsRailCollapsed));
@@ -1850,6 +1922,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const invalidIds = new Set(results.filter((result) => result.notFound).map((result) => result.id));
       const keepValidatedIds = keepIds.filter((id) => !invalidIds.has(id));
       setSelectedRunIds((current) => {
+        // Identity-stable when nothing pruned: a new array here re-triggers
+        // this effect and can fetch-loop while detail requests are failing.
+        if (invalidIds.size === 0) return current;
         const retained = current.filter((id) => !invalidIds.has(id));
         if (retained.length) return retained;
         if (current.length) return [];
@@ -2043,7 +2118,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "checkpoints" || activeTab === "artifacts";
+      const shouldLoad = activeTab === "detail" || activeTab === "artifacts";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         setArtifactsRunId("");
@@ -2624,6 +2699,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage("API key management is available to workspace admins.");
       return;
     }
+    // Irreversible for any SDK still using the key — always confirm.
+    if (!window.confirm("Revoke this API key? SDK clients using it stop authenticating immediately. This cannot be undone.")) return;
     setAdminBusy(true);
     setApiAdminTone("status");
     setApiAdminMessage("Revoking API key...");
@@ -2670,8 +2747,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const payload = {
       project,
       activeTab,
-      status: "",
-      displayStatus,
+      status,
       query: queryInput,
       sortBy,
       metricKey,
@@ -2765,14 +2841,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     const viewProject = savedViewString(view.project);
     const viewMetricKey = savedViewString(view.metricKey) || DEFAULT_METRIC_KEY;
-    const nextDisplayStatus = normalizeDisplayStatus(savedViewString(view.displayStatus) || savedViewString(view.status));
     setProject(viewProject);
     const nextActiveTab = typeof view.activeTab === "string" && isTabId(view.activeTab) && view.activeTab !== "detail"
       ? view.activeTab as TabId
       : null;
-    setStatus("");
-    setDisplayStatus(nextDisplayStatus);
-    setBulkStopSelectionArmed(false);
+    setStatus(savedViewString(view.status));
     setSearchError(null);
     setQueryInput(savedViewString(view.query));
     setQuery(savedViewString(view.query));
@@ -2792,6 +2865,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setCompareTableMetrics(savedViewStringArray(view.compareTableMetrics, Math.max(0, MAX_COMPARE_TABLE_METRICS - 1)));
     setCompareSearch(savedViewString(view.compareSearch));
     setCompareConfigSortKey(savedViewString(view.compareConfigSortKey));
+    // Saved views restore an explicit selection; reflect it in the URL too.
+    selectionUrlSyncRef.current = true;
+    defaultSelectionInitializedRef.current = true;
     setSelectedRunIds(savedViewStringArray(view.selectedRunIds, MAX_SELECTED_RUNS));
     setSelectedRunDetails({});
     setPrimaryRunId(savedViewString(view.primaryRunId));
@@ -2858,6 +2934,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [selectAllMatchingBusy, setSelectAllMatchingBusy] = useState(false);
 
   function toggleRun(runId: string, options?: { shift?: boolean }) {
+    selectionUrlSyncRef.current = true;
     setBulkStopSelectionArmed(true);
     if (options?.shift && selectionAnchorRunIdRef.current && selectionAnchorRunIdRef.current !== runId) {
       const orderedIds = sortedRuns.map((run) => run.id);
@@ -2870,6 +2947,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function selectAllVisibleRuns() {
+    selectionUrlSyncRef.current = true;
     setBulkStopSelectionArmed(true);
     const visibleIds = sortedRuns.map((run) => run.id);
     const state = visibleSelectionState(selectedRunIds, visibleIds);
@@ -2878,7 +2956,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const hasCrossPageSelection = selectedRunIds.some((id) => !visibleSet.has(id));
       if (hasCrossPageSelection) {
         setSelectedRunIds([]);
-        setBulkStopSelectionArmed(false);
         selectionAnchorRunIdRef.current = "";
       } else {
         setSelectedRunIds((current) => deselectVisible(current, visibleIds));
@@ -2891,9 +2968,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   async function selectAllMatchingRuns() {
     if (selectAllMatchingBusy) return;
+    selectionUrlSyncRef.current = true;
     if (queryInput !== query) {
       resetRunPagination();
       setQuery(queryInput);
+      setBulkStopSelectionArmed(false);
       setMessage("Applying the latest search filter. Select matching runs again after the results refresh.");
       return;
     }
@@ -2915,13 +2994,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       let offset = 0;
       let cursor = "";
       let total = 0;
+      const displayStatus = normalizeDisplayStatus(status);
+      const statusParams = dashboardStatusQueryParams(displayStatus, status);
       while (matchingRuns.length < BULK_SELECT_MATCHING_LIMIT) {
         if (controller.signal.aborted || requestFilterKey !== dashboardSelectionFilterKeyRef.current) {
           controller.abort();
           setMessage("Selection cancelled because filters changed.");
           return;
         }
-        const statusParams = dashboardStatusQueryParams(displayStatus, status);
         const params = cursor ? {
           project,
           ...statusParams,
@@ -2965,6 +3045,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         if (!pageRuns.length || !hasNextPage || offset >= total) break;
       }
       const ids = capSelectionToMatching(matchingRuns.map((run) => run.id).filter(Boolean));
+      setBulkStopSelectionArmed(ids.length > 0);
       setSelectedRunDetails((current) => {
         const next = { ...current };
         for (const run of matchingRuns) {
@@ -2975,7 +3056,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return next;
       });
       setSelectedRunIds(ids);
-      setBulkStopSelectionArmed(ids.length > 0);
       if (ids.length) selectionAnchorRunIdRef.current = ids[0];
       setMessage(`${ids.length} runs selected (filter matched ${total || ids.length}).`);
     } catch (error) {
@@ -3017,177 +3097,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage(error instanceof Error ? error.message : "Unable to export selected runs.");
     } finally {
       setExportSelectedBusy(false);
-    }
-  }
-
-  function runSummaryForId(runId: string) {
-    return selectedRunDetails[runId]
-      ?? sortedRuns.find((run) => run.id === runId)
-      ?? runDirectoryRef.current.get(runId)
-      ?? null;
-  }
-
-  function stopCandidatesForIds(runIds: string[]) {
-    const seen = new Set<string>();
-    const runs: RunSummary[] = [];
-    let eligibleRunCount = 0;
-    let ineligibleRunCount = 0;
-    for (const runId of runIds) {
-      if (seen.has(runId)) continue;
-      seen.add(runId);
-      const run = runSummaryForId(runId);
-      if (!run || !canRequestStop(run, canControlRuns)) {
-        ineligibleRunCount += 1;
-        continue;
-      }
-      eligibleRunCount += 1;
-      if (runs.length < MAX_STOP_DIALOG_RUNS) runs.push(run);
-    }
-    return {
-      runs,
-      ineligibleRunCount,
-      skippedRunCount: Math.max(0, eligibleRunCount - runs.length),
-    };
-  }
-
-  function nextStopIdempotencyKey(source: "single" | "bulk") {
-    const entropy = typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    return `instantml-stop:${source}:${entropy}`;
-  }
-
-  function openStopDialogForRuns(runIds: string[], source: "single" | "bulk" = "single") {
-    if (!canControlRuns) {
-      setMessage("Read only workspaces can view runs but cannot stop them.");
-      return;
-    }
-    if (source === "bulk" && !bulkStopSelectionArmed) {
-      setMessage("Select runs explicitly before requesting a bulk stop.");
-      return;
-    }
-    const { runs: candidates, ineligibleRunCount, skippedRunCount } = stopCandidatesForIds(runIds);
-    if (!candidates.length) {
-      setMessage(source === "bulk" ? "No selected running runs can be stopped." : "This run cannot be stopped.");
-      return;
-    }
-    const dialogSource = candidates.length > 1 ? "bulk" : source;
-    setStopError("");
-    setStopDialog({
-      idempotencyKey: nextStopIdempotencyKey(dialogSource),
-      ineligibleRunCount,
-      reason: "",
-      runIds: candidates.map((run) => run.id),
-      skippedRunCount,
-      source: dialogSource,
-    });
-  }
-
-  function closeStopDialog() {
-    if (stopSubmitting) return;
-    setStopDialog(null);
-    setStopError("");
-  }
-
-  function setStopDialogReason(reason: string) {
-    setStopDialog((current) => current ? { ...current, reason } : current);
-  }
-
-  function patchRunControls(controlsByRunId: Map<string, GeneratedRunControlSummary>) {
-    if (!controlsByRunId.size) return;
-    const displayTransitions: Array<[string, string]> = [];
-    for (const [runId, control] of controlsByRunId) {
-      const cached = runDirectoryRef.current.get(runId);
-      const existing = runSummaryForId(runId);
-      if (existing) {
-        const before = displayStatusForRun(existing);
-        const after = displayStatusForRun(mergeRunControl(existing, control));
-        if (before !== after) displayTransitions.push([before, after]);
-      }
-      if (cached) runDirectoryRef.current.set(runId, mergeRunControl(cached, control));
-    }
-    if (displayTransitions.length) {
-      setOverview((current) => displayTransitions.reduce(
-        (next, [before, after]) => adjustOverviewForDisplayStatus(next, before, after),
-        current,
-      ));
-    }
-    setSummary((current) => ({
-      ...current,
-      runs: current.runs.flatMap((run) => {
-        const control = controlsByRunId.get(run.id);
-        if (!control) return [run];
-        const nextRun = mergeRunControl(run, control);
-        return displayStatus && displayStatusForRun(nextRun) !== displayStatus ? [] : [nextRun];
-      }),
-    }));
-    setSelectedRunDetails((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const [runId, control] of controlsByRunId) {
-        if (!next[runId]) continue;
-        next[runId] = mergeRunControl(next[runId], control);
-        changed = true;
-      }
-      return changed ? next : current;
-    });
-    setSideBySide((current: any) => current ? {
-      ...current,
-      runs: (current.runs ?? []).map((run: RunSummary) => {
-        const control = controlsByRunId.get(run.id);
-        return control ? mergeRunControl(run, control) : run;
-      }),
-    } : current);
-  }
-
-  function collectStopControls(payload: GeneratedRunStopEnvelope | GeneratedRunStopBulkEnvelope) {
-    const controls = new Map<string, GeneratedRunControlSummary>();
-    const failures: string[] = [];
-    if ("results" in payload) {
-      for (const result of payload.results ?? []) {
-        if (result.run_control?.stop_requested) controls.set(result.run_id, result.run_control);
-        else if (result.ok) failures.push(`Run ${result.run_id} is no longer running.`);
-        if (!result.ok) failures.push(result.error || `Unable to stop ${result.run_id}.`);
-      }
-    } else if (payload.run_control?.stop_requested) {
-      controls.set(payload.run_id, payload.run_control);
-    } else {
-      failures.push("This run is no longer running.");
-    }
-    return { controls, failures };
-  }
-
-  async function submitStopDialog() {
-    if (!stopDialog || stopSubmitting) return;
-    const runIds = stopDialog.runIds.slice(0, MAX_STOP_DIALOG_RUNS);
-    if (!runIds.length) {
-      setStopError("No eligible runs remain.");
-      return;
-    }
-    setStopSubmitting(true);
-    setStopError("");
-    try {
-      const reason = stopDialog.reason.trim();
-      const headers = { "Idempotency-Key": stopDialog.idempotencyKey };
-      const payload = runIds.length === 1
-        ? await api.post(`/api/runs/${runIds[0]}/stop`, { reason: reason || null }, { headers }) as GeneratedRunStopEnvelope
-        : await api.post("/api/runs/stop", { run_ids: runIds, reason: reason || null }, { headers }) as GeneratedRunStopBulkEnvelope;
-      const { controls, failures } = collectStopControls(payload);
-      if (!controls.size && failures.length) throw new Error(failures[0]);
-      patchRunControls(controls);
-      setStopDialog(null);
-      setStopError("");
-      const okCount = controls.size;
-      setMessage(failures.length
-        ? `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. ${failures.length} could not be updated.`
-        : `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. Waiting for SDK acknowledgement.`);
-      void loadDashboard({ silent: true });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unable to request stop.";
-      setStopError(detail);
-      setMessage(detail);
-    } finally {
-      setStopSubmitting(false);
     }
   }
 
@@ -3259,6 +3168,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }));
     }
     setSelectedRunDetails((current) => ({ ...current, [child.id]: child }));
+    // Forking is an explicit selection change; keep the URL in sync with it.
+    selectionUrlSyncRef.current = true;
+    defaultSelectionInitializedRef.current = true;
     setSelectedRunIds((current) => [child.id, ...current.filter((id) => id !== child.id)].slice(0, MAX_SELECTED_RUNS));
     preserveRunWorkspaceTabOnceRef.current = true;
     setPrimaryRunId(child.id);
@@ -3266,16 +3178,171 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setMessage("Forked run created. InstantML did not start training.");
   }
 
+  function runSummaryForId(runId: string) {
+    return selectedRunDetails[runId]
+      ?? sortedRuns.find((run) => run.id === runId)
+      ?? runDirectoryRef.current.get(runId)
+      ?? null;
+  }
+
+  function stopCandidatesForIds(runIds: string[]) {
+    const seen = new Set<string>();
+    const runs: RunSummary[] = [];
+    let ineligibleRunCount = 0;
+    for (const runId of runIds) {
+      if (seen.has(runId)) continue;
+      seen.add(runId);
+      const run = runSummaryForId(runId);
+      if (!run || !canRequestStop(run, canControlRuns)) {
+        ineligibleRunCount += 1;
+        continue;
+      }
+      runs.push(run);
+    }
+    const cappedRuns = runs.slice(0, MAX_STOP_DIALOG_RUNS);
+    return {
+      runs: cappedRuns,
+      ineligibleRunCount,
+      skippedRunCount: Math.max(0, runs.length - cappedRuns.length),
+    };
+  }
+
+  function nextStopIdempotencyKey(source: "single" | "bulk") {
+    const entropy = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    return `instantml-stop:${source}:${entropy}`;
+  }
+
+  function openStopDialogForRuns(runIds: string[], source: "single" | "bulk" = "single") {
+    if (!canControlRuns) {
+      setMessage("Read only workspaces can view runs but cannot stop them.");
+      return;
+    }
+    if (source === "bulk" && !bulkStopSelectionArmed) {
+      setMessage("Select runs explicitly before requesting a bulk stop.");
+      return;
+    }
+    const { runs: candidates, ineligibleRunCount, skippedRunCount } = stopCandidatesForIds(runIds);
+    if (!candidates.length) {
+      setMessage(source === "bulk" ? "No selected running runs can be stopped." : "This run cannot be stopped.");
+      return;
+    }
+    const dialogSource = candidates.length > 1 ? "bulk" : "single";
+    setStopError("");
+    setStopDialog({
+      idempotencyKey: nextStopIdempotencyKey(dialogSource),
+      ineligibleRunCount,
+      reason: "",
+      runIds: candidates.map((run) => run.id),
+      skippedRunCount,
+      source: dialogSource,
+    });
+  }
+
+  function closeStopDialog() {
+    if (stopSubmitting) return;
+    setStopDialog(null);
+    setStopError("");
+  }
+
+  function setStopDialogReason(reason: string) {
+    setStopDialog((current) => current ? { ...current, reason } : current);
+  }
+
+  function collectStopControls(payload: GeneratedRunStopEnvelope | GeneratedRunStopBulkEnvelope) {
+    const controls = new Map<string, GeneratedRunControlSummary>();
+    const failures: string[] = [];
+    let terminalCount = 0;
+    if ("results" in payload) {
+      for (const result of payload.results ?? []) {
+        if (result.run_control?.stop_requested) controls.set(result.run_id, result.run_control);
+        if (result.ok && result.already_terminal) terminalCount += 1;
+        if (!result.ok) failures.push(result.error || `Unable to stop ${result.run_id}.`);
+      }
+    } else {
+      if (payload.run_control?.stop_requested) controls.set(payload.run_id, payload.run_control);
+      if (payload.ok && payload.already_terminal) terminalCount += 1;
+    }
+    return { controls, failures, terminalCount };
+  }
+
+  async function submitStopDialog() {
+    if (!stopDialog || stopSubmitting) return;
+    const runIds = stopDialog.runIds.slice(0, MAX_STOP_DIALOG_RUNS);
+    if (!runIds.length) {
+      setStopError("No eligible runs remain.");
+      return;
+    }
+    setStopSubmitting(true);
+    setStopError("");
+    try {
+      const reason = stopDialog.reason.trim();
+      const headers = { "Idempotency-Key": stopDialog.idempotencyKey };
+      const payload = runIds.length === 1
+        ? await api.post(`/api/runs/${runIds[0]}/stop`, { reason: reason || null }, { headers }) as GeneratedRunStopEnvelope
+        : await api.post("/api/runs/stop", { run_ids: runIds, reason: reason || null }, { headers }) as GeneratedRunStopBulkEnvelope;
+      const { controls, failures, terminalCount } = collectStopControls(payload);
+      const okCount = controls.size;
+      if (!okCount && failures.length) throw new Error(failures[0]);
+      if (!okCount && terminalCount) {
+        setStopError("These runs are no longer running. Refresh the run list and try again if needed.");
+        return;
+      }
+      setStopDialog(null);
+      setStopError("");
+      setBulkStopSelectionArmed(false);
+      setMessage(failures.length
+        ? `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. ${failures.length + terminalCount} could not be updated.`
+        : `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. Waiting for SDK acknowledgement.`);
+      setSummary((current) => ({
+        ...current,
+        runs: current.runs.map((run) => controls.has(run.id) ? mergeRunControl(run, controls.get(run.id)!) : run),
+      }));
+      setSelectedRunDetails((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [runId, control] of controls.entries()) {
+          const existing = next[runId] ?? sortedRuns.find((run) => run.id === runId) ?? runDirectoryRef.current.get(runId);
+          if (!existing) continue;
+          next[runId] = mergeRunControl(existing, control);
+          runDirectoryRef.current.set(runId, next[runId]);
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+      setSideBySide((current: any) => current ? {
+        ...current,
+        runs: (current.runs ?? []).map((run: RunSummary) => controls.has(run.id) ? mergeRunControl(run, controls.get(run.id)!) : run),
+      } : current);
+      setOverview((current) => {
+        let next = current;
+        for (const [runId, control] of controls.entries()) {
+          const before = displayStatusForRun(runSummaryForId(runId));
+          const after = normalizeDisplayStatus(control.display_status) || before;
+          next = adjustOverviewForDisplayStatus(next, before, after);
+        }
+        return next;
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to request stop.";
+      setStopError(detail);
+      setMessage(detail);
+    } finally {
+      setStopSubmitting(false);
+    }
+  }
+
   function clearFilters() {
     setProject("");
     setStatus("");
-    setDisplayStatus("");
-    setBulkStopSelectionArmed(false);
+    setSortBy("created");
     setQueryInput("");
     setQuery("");
     setSearchError(null);
     setPageCursorStack([]);
     setPageOffset(0);
+    setBulkStopSelectionArmed(false);
     setMessage("Filters cleared.");
   }
 
@@ -3465,7 +3532,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         ? {
           ...section,
           panels: section.panels.map((panel) => panel.id === panelId
-            ? { ...panel, layout: sanitizePanelLayout(layout) }
+            ? { ...panel, layout: sanitizePanelLayout(layout, panel.type) }
             : panel),
         }
         : section),
@@ -3583,7 +3650,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function setWorkspaceMode(mode: "automatic" | "manual") {
-    commitWorkspace(() => mode === "automatic" ? buildAutomaticWorkspace(allMetricOptions, project) : buildManualWorkspace(project), `Workspace switched to ${mode} mode. Undo available.`);
+    commitWorkspace(
+      (current) => {
+        if (mode === "automatic") return buildAutomaticWorkspace(allMetricOptions, project);
+        // Manual mode seeds from whatever is on the board right now — switching
+        // modes must never present an empty board (reads as data loss).
+        const seeded = buildManualWorkspace(project);
+        const hasPanels = current.sections?.some((section) => section.panels.length);
+        return hasPanels ? { ...seeded, sections: current.sections } : seeded;
+      },
+      `Workspace switched to ${mode} mode. Undo available.`,
+    );
     setAddPanelSectionId("");
   }
 
@@ -3665,6 +3742,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function dismissTopOverlay() {
+    if (stopDialog) {
+      closeStopDialog();
+      return true;
+    }
     if (quickSearchOpen) {
       clearChartHover();
       setQuickSearchOpen(false);
@@ -3722,25 +3803,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }, 0);
   }
 
-  function handleChartMove(event: MouseEvent<SVGSVGElement>) {
-    handleChartMoveFor(event, normalizedSeries, metricKey);
-  }
-
-  function handleChartMoveFor(event: MouseEvent<SVGSVGElement>, chartSeries: any[], chartMetricKey: string) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, chartWidth, chartHeight);
-    pendingHoverRef.current = { chartMetricKey, chartSeries, x: point.x, y: point.y };
-    if (hoverFrameRef.current !== null) return;
-    hoverFrameRef.current = window.requestAnimationFrame(() => {
-      hoverFrameRef.current = null;
-      const pending = pendingHoverRef.current;
-      if (!pending) return;
-      const nextHover = nearestPoint(pending.chartSeries, pending.x, pending.y, 10000) as HoverPoint;
-      setHover(nextHover);
-      if (nextHover) setHoverMetricKey(pending.chartMetricKey);
-    });
-  }
-
   globalKeyHandlerRef.current = (event: globalThis.KeyboardEvent) => {
     if (event.key === "Escape" && dismissTopOverlay()) {
       event.preventDefault();
@@ -3752,6 +3814,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       return;
     }
     if (quickSearchOpen || shortcutHelpOpen) return;
+    if (stopDialog) return;
     if (fullscreenPanelRef && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
       moveFullscreenPanel(event.key === "ArrowLeft" ? -1 : 1);
@@ -3782,6 +3845,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } else if (matchesShortcut(event, "focus-workspace", platform)) {
       event.preventDefault();
       focusWorkspaceRegion();
+    } else if (/^[1-9]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey && !fullscreenPanelRef) {
+      // Number keys jump between nav tabs (1 = Runs … in rail order).
+      const target = tabs[Number(event.key) - 1];
+      if (target) {
+        event.preventDefault();
+        selectTab(target.id);
+      }
     }
   };
 
@@ -3793,15 +3863,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return () => window.removeEventListener("keydown", handleGlobalKey);
   }, []);
 
+  const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
+  const ActiveIcon = activeTabIcon;
   const stopDialogRuns = stopDialog
     ? stopDialog.runIds.map((runId) => runSummaryForId(runId)).filter(Boolean) as RunSummary[]
     : [];
   const stopDialogTitle = stopDialogRuns.length === 1
     ? `Request stop for ${stopDialogRuns[0]?.name ?? "run"}`
     : `Request stop for ${stopDialogRuns.length} runs`;
-
-  const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
-  const ActiveIcon = activeTabIcon;
 
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
@@ -3811,7 +3880,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           <p className="eyebrow">Session</p>
           <h1>Sign in required</h1>
           <p>{dashboardAuthMessage}</p>
-          <Link className="button-link" href={`/signin?next=${encodeURIComponent("/dashboard/runs")}`}>Open sign in</Link>
+          <SignInLink />
         </section>
       </main>
     );
@@ -3824,16 +3893,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         activeTab={activeTab}
         accountUser={sessionPayload?.user ?? null}
         detailRunName={primaryRun?.name ?? ""}
-        message={message}
         mobileNavOpen={mobileNavOpen}
-        onApplySavedView={applySavedView}
         onMobileMenuToggle={() => setMobileNavOpen((open) => !open)}
         onProject={changeProject}
-        onQuery={changeRunQueryInput}
         onQuickSearch={() => setQuickSearchOpen(true)}
-        onRefresh={loadDashboard}
-        onSaveView={saveView}
-        canSaveView={canWriteWorkspace}
         onCheckWorkspaceName={checkWorkspaceName}
         onCreateWorkspace={createWorkspace}
         onOpenBilling={() => selectTab("settings")}
@@ -3841,31 +3904,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onSelectTab={selectTab}
         onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
-        onSortBy={changeRunSort}
-        onStatus={changeStatus}
-        onViewName={setViewName}
+        onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+        theme={theme}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
         orgSwitchError={orgSwitchError}
         onSwitchOrg={switchOrganization}
-        overview={overview}
         metricUsagePercent={metricPercent}
         apiRequestUsagePercent={apiRequestsPercent}
         planLabel={activePlan}
         project={project}
         projects={projects}
-        query={queryInput}
-        searchError={searchError}
-        searchErrorStale={Boolean(searchError && searchError.query !== queryInput)}
-        savedViewKey={savedViewKey}
-        savedViews={savedViews}
-        sortBy={sortBy}
-        status={displayStatus || status}
         storageUsagePercent={storagePercent}
-        tone={currentMessageTone}
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
-        viewName={viewName}
         workspaceName={sessionPayload?.organization?.name ?? ""}
         workspaceId={activeOrgId}
       />
@@ -3918,7 +3970,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             </div>
             <div className="checkpoint-fork-actions">
               <button className="secondary" disabled={stopSubmitting} onClick={closeStopDialog} type="button">Cancel</button>
-              <button className="primary" disabled={stopSubmitting || !stopDialogRuns.length} onClick={submitStopDialog} type="button">
+              <button className="primary-button stop-dialog-submit" disabled={stopSubmitting || !stopDialogRuns.length} onClick={submitStopDialog} type="button">
                 <Square size={14} /> {stopSubmitting ? "Requesting..." : "Send stop request"}
               </button>
             </div>
@@ -3934,23 +3986,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         />
       ) : null}
 
-      <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
+      <section className={`shell ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
         <DashboardNav
           activeTab={activeTab}
           compactNav={isMobile}
           mobileOpen={mobileNavOpen}
           onAutoOpenChange={setNavAutoOpen}
           onMobileClose={closeMobileNav}
-          onPinnedChange={setNavPinned}
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
-          pinned={navPinned}
+          onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+          theme={theme}
         />
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
           {activeTab === "runs" ? (
             <RunsTabPane
               addPanelSectionId={addPanelSectionId}
+              primaryRunId={primaryRun?.id ?? ""}
               allMetricOptions={allMetricOptions}
               availableWorkspaceMetrics={availableWorkspaceMetrics}
               canControlRuns={canControlRuns}
@@ -3968,6 +4021,32 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               hasNextPage={hasNextPage}
               hasPreviousPage={hasPreviousPage}
               initialLoadDone={initialLoadDone}
+              filterBar={(
+                <RunFilterBar
+                  overview={overview}
+                  status={status}
+                  onStatus={changeStatus}
+                  query={queryInput}
+                  onQuery={changeRunQueryInput}
+                  sortBy={sortBy}
+                  onSortBy={changeRunSort}
+                  project={project}
+                  onProject={changeProject}
+                  searchError={searchError}
+                  searchErrorStale={Boolean(searchError && searchError.query !== queryInput)}
+                  savedViews={savedViews}
+                  savedViewKey={savedViewKey}
+                  viewName={viewName}
+                  onViewName={setViewName}
+                  onSaveView={saveView}
+                  canSaveView={canWriteWorkspace}
+                  onApplySavedView={applySavedView}
+                  onClearFilters={clearFilters}
+                  onRefresh={loadDashboard}
+                  message={message}
+                  tone={currentMessageTone}
+                />
+              )}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
               onAddPanel={addWorkspacePanel}
@@ -4004,7 +4083,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");
               }}
               onSelectAllMatching={selectAllMatchingRuns}
+              onClearSelection={() => {
+                selectionUrlSyncRef.current = true;
+                selectionAnchorRunIdRef.current = "";
+                setBulkStopSelectionArmed(false);
+                setSelectedRunIds([]);
+              }}
               onSelectAllVisible={selectAllVisibleRuns}
+              onSelectProject={changeProject}
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
@@ -4033,7 +4119,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               selectedStopCandidateCount={selectedStopCandidateCount}
               selectedStopDisabledReason={selectedStopDisabledReason}
               sortedRuns={sortedRuns}
-              status={displayStatus || status}
+              status={status}
               summaryTotal={summary.total}
               tableColumns={tableColumns}
               workspaceHistogramTimelines={workspaceHistogramTimelines}
@@ -4052,8 +4138,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               activeMetricCatalogRow={activeMetricCatalogRow}
               chartSummaries={chartSummaries}
               chartZoomRange={chartZoomRange}
-              domain={domain}
-              fullDomain={fullDomain}
               groupAverage={groupAverage}
               groupBy={groupBy}
               hover={hover}
@@ -4063,14 +4147,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               metricFilterValid={metricFilterValid}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
-              normalizedSeries={normalizedSeries}
               onGroupAverage={setGroupAverage}
               onGroupBy={setGroupBy}
               onMetricFilter={setMetricFilter}
               onMetricKey={changeMetricKey}
               onChartLeave={() => setHover(null)}
-              onChartMove={handleChartMove}
-              onChartMoveFor={handleChartMoveFor}
               onPinnedMetric={togglePinnedMetric}
               onPointHoverChange={(point, key) => { setHoverMetricKey(key); setHover(point); }}
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
@@ -4081,8 +4162,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onZoomRangeChange={setChartZoomRange}
               pinnedChartPanels={pinnedChartPanels}
               pinnedMetrics={pinnedMetrics}
-              rangeSeries={rangeSeries}
               selectedRuns={metricSeriesRuns}
+              series={displaySeries}
               smoothing={smoothing}
               sortedRuns={sortedRuns}
               visibleMetricCatalogRows={visibleMetricCatalogRows}
@@ -4095,6 +4176,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "distributed" ? (
             <DistributedTabPane
               api={api}
+              availableRuns={sortedRuns}
+              onSelectRun={setPrimaryRunId}
               primaryRun={primaryRun}
             />
           ) : null}
@@ -4127,17 +4210,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               loggedObjects={loggedObjects}
               objectRowsById={objectRowsById}
               onChartLeave={() => setHover(null)}
-              onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
               onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
-              primaryDomain={primaryDomain}
-              primaryFullDomain={primaryFullDomain}
-              primaryNormalizedSeries={primaryNormalizedSeries}
-              primaryRangeSeries={primaryRangeSeries}
+              primarySeries={primaryDisplaySeries}
               primaryChartZoomRange={primaryChartZoomRange}
               run={primaryRun}
               runMetricRows={runMetricRows}
@@ -4155,6 +4234,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
             <CompareTabPane
               addAllCompareTableMetrics={addAllCompareTableMetrics}
               addCompareTableMetric={addCompareTableMetric}
+              availableRuns={sortedRuns}
+              onAddCompareRun={(runId) => {
+                selectionUrlSyncRef.current = true;
+                defaultSelectionInitializedRef.current = true;
+                setSelectedRunIds((current) => current.includes(runId) ? current : [...current, runId].slice(-MAX_SELECTED_RUNS));
+              }}
+              onOpenRunsTab={() => selectTab("runs")}
               compareAddMetricOptions={compareAddMetricOptions}
               compareArtifactsByRun={compareArtifactsByRun}
               compareConfigKeys={compareConfigKeys}
@@ -4203,7 +4289,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
         <section className={`tab-pane ${activeTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {activeTab === "datasets" ? (
-            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} projectCount={projects.length} runsInView={sortedRuns.length} />
+            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} projectCount={project ? 1 : projects.length} runsInView={sortedRuns.length} />
           ) : null}
         </section>
 
@@ -4238,12 +4324,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "checkpoints" ? "active" : ""}`} aria-label="Checkpoints">
-          {activeTab === "checkpoints" ? (
-            <CheckpointsTabPane checkpointRows={checkpointRows} primaryRun={primaryRun} />
-          ) : null}
-        </section>
-
         <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
           {activeTab === "reports" ? <ReportsTabPane canEditReports={canEditReports} /> : null}
         </section>
@@ -4251,6 +4331,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
           {activeTab === "settings" ? (
             <SettingsTabPane
+              accountUser={sessionPayload?.user ?? null}
               activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
               activePlan={activePlan}
               activeUsageWarnings={activeUsageOrg?.warnings ?? []}
@@ -4286,11 +4367,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onXMode={setXMode}
               orgName={sessionPayload?.organization?.name ?? ""}
               orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
-              project={project}
               reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
               seats={seats}
-              selectedRunCount={selectedRunIds.length}
-              status={status}
               storagePercent={storagePercent}
               storageUsed={storageUsed}
               storageLimit={storageLimit}
@@ -4330,6 +4408,23 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
       </section>
+      <SelectionTray
+        count={selectedRunIds.length}
+        exportDisabled={selectedRunExportDisabled}
+        exportTitle={selectedRunExportTitle}
+        onClear={() => {
+          // Mark the default as initialized so the page auto-select doesn't
+          // immediately refill the selection the user just cleared.
+          defaultSelectionInitializedRef.current = true;
+          selectionUrlSyncRef.current = true;
+          setBulkStopSelectionArmed(false);
+          setSelectedRunIds([]);
+          selectionAnchorRunIdRef.current = "";
+        }}
+        onCompare={() => selectTab("compare")}
+        onExport={exportSelectedRunsCsv}
+        sampleNames={selectedRuns.slice(0, 3).map((run) => run.name)}
+      />
       {quickSearchOpen ? (
         <QuickSearchModal
           activeIndex={quickSearchActiveIndex}
@@ -4492,4 +4587,18 @@ async function runWithConcurrency(tasks: Array<() => Promise<void>>, concurrency
     }
   });
   await Promise.all(workers);
+}
+
+function SignInLink() {
+  // The real destination (current path + query) is only known in the browser;
+  // resolve it after mount so server and client render the same initial href.
+  const [next, setNext] = useState("/dashboard/runs");
+  useEffect(() => {
+    setNext(`${window.location.pathname}${window.location.search}`);
+  }, []);
+  return (
+    <Link className="button-link" href={`/signin?next=${encodeURIComponent(next)}`}>
+      Open sign in
+    </Link>
+  );
 }

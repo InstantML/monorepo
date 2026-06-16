@@ -6,7 +6,11 @@
 // the shell, models, and components stop re-declaring the prefixes inline.
 
 export const THEME_KEY = "instantml:next:theme";
-export const NAV_PINNED_KEY = "instantml:next:nav-pinned";
+// v2: the old "instantml:next:nav-pinned" key was auto-written as "false" by
+// the previous unpinned default on every visit, so honoring it would deny all
+// returning users the new pinned-by-default rail. The boolean preference is
+// cheap to re-state (one click), unlike saved views/workspaces below.
+export const NAV_PINNED_KEY = "instantml:next:nav-pinned-v2";
 export const RUNS_RAIL_COLLAPSED_KEY = "instantml:next:runs-rail-collapsed";
 
 export const SAVED_VIEW_PREFIX = "instantml:next:local:view:";

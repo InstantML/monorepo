@@ -7,7 +7,7 @@
  * ─────────────────────────────────────────────────────────────────────────── */
 
 :root[data-theme="dark"] .topbar {
-  border-bottom-color: rgba(31, 184, 119, 0.18);
+  border-bottom-color: rgba(43, 224, 130, 0.18);
   background: rgba(7, 8, 12, 0.96);
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
 }
@@ -107,16 +107,16 @@
 }
 
 :root[data-theme="dark"] button.primary-button {
-  border-color: rgba(31, 184, 119, 0.88);
-  background: linear-gradient(180deg, #1fb877 0%, #0A4D33 100%);
-  color: #04130d;
-  box-shadow: 0 0 0 1px rgba(39, 232, 150, 0.1), 0 0 22px rgba(31, 184, 119, 0.18);
+  border-color: rgba(43, 224, 130, 0.58);
+  background: linear-gradient(180deg, #2be082 0%, #0e5a36 100%);
+  color: #06140c;
+  box-shadow: 0 0 0 1px rgba(84, 240, 160, 0.08), 0 12px 24px -18px rgba(0, 0, 0, 0.72);
 }
 
 :root[data-theme="dark"] button.primary-button:hover {
   border-color: var(--accent-strong);
-  background: linear-gradient(180deg, #27e896 0%, #1fb877 100%);
-  color: #04130d;
+  background: linear-gradient(180deg, #54f0a0 0%, #2be082 100%);
+  color: #06140c;
 }
 
 :root[data-theme="dark"] button.primary-button:disabled,
@@ -133,14 +133,14 @@
 :root[data-theme="dark"] .copy-button:hover,
 :root[data-theme="dark"] .select-trigger:hover,
 :root[data-theme="dark"] button.ghost:hover {
-  border-color: #2a3f35;
-  background: #102018;
+  border-color: #2e3a31;
+  background: #15201a;
 }
 
 :root[data-theme="dark"] button:focus-visible,
 :root[data-theme="dark"] .select-trigger:focus-visible {
-  border-color: rgba(39, 232, 150, 0.72);
-  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.24), 0 0 20px rgba(31, 184, 119, 0.12);
+  border-color: rgba(84, 240, 160, 0.58);
+  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.18);
 }
 
 :root[data-theme="dark"] .icon-button {
@@ -149,14 +149,14 @@
 
 :root[data-theme="dark"] .icon-button:hover,
 :root[data-theme="dark"] .icon-button.framed:hover {
-  border-color: #2a3f35;
-  background: #102018;
+  border-color: #2e3a31;
+  background: #15201a;
   color: var(--text);
 }
 
 :root[data-theme="dark"] .avatar,
 :root[data-theme="dark"] .tabs {
-  background: #080a0f;
+  background: #0a0c09;
 }
 
 :root[data-theme="dark"] .tab-button {
@@ -169,8 +169,8 @@
 
 :root[data-theme="dark"] .tab-button:hover,
 :root[data-theme="dark"] .tab-button.active {
-  border-color: rgba(31, 184, 119, 0.32);
-  background: #112118;
+  border-color: rgba(43, 224, 130, 0.32);
+  background: #122419;
   color: var(--accent-strong);
 }
 
@@ -181,7 +181,7 @@
 :root[data-theme="dark"] .select-trigger,
 :root[data-theme="dark"] .table-footer .select-trigger {
   border-color: var(--line);
-  background: #101820;
+  background: #141712;
   color: var(--text);
 }
 
@@ -193,7 +193,7 @@
 :root[data-theme="dark"] .column-popover {
   border-color: var(--line);
   background: var(--color-ink);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(31, 184, 119, 0.08);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.48), 0 0 0 1px var(--line-soft);
 }
 
 :root[data-theme="dark"] .select-option {
@@ -206,7 +206,7 @@
 :root[data-theme="dark"] .select-option:hover,
 :root[data-theme="dark"] .select-option:focus,
 :root[data-theme="dark"] .select-option.active {
-  background: rgba(31, 184, 119, 0.12);
+  background: rgba(43, 224, 130, 0.12);
   color: var(--accent-strong);
 }
 
@@ -220,7 +220,7 @@
 :root[data-theme="dark"] .workspace-run-row:hover,
 :root[data-theme="dark"] .quick-search-row:hover,
 :root[data-theme="dark"] .quick-search-row.active {
-  background: #0a101b;
+  background: #0a0c09;
 }
 
 :root[data-theme="dark"] .workspace-panel-toolbar {
@@ -230,14 +230,20 @@
 }
 
 :root[data-theme="dark"] .workspace-run-row.selected {
-  border-color: rgba(31, 184, 119, 0.2);
+  border-color: rgba(43, 224, 130, 0.2);
   border-left-color: var(--accent);
-  background: rgba(31, 184, 119, 0.075);
-  box-shadow: inset 1px 0 0 rgba(39, 232, 150, 0.22);
+  background: rgba(43, 224, 130, 0.075);
+  box-shadow: inset 1px 0 0 rgba(84, 240, 160, 0.22);
 }
 
 :root[data-theme="dark"] .workspace-run-row.selected + .workspace-run-row.selected {
   border-top-color: transparent;
+}
+
+:root[data-theme="dark"] .workspace-run-row.is-highlighted {
+  border-color: var(--line);
+  background: #141712;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 :root[data-theme="dark"] .workspace-eye span {
@@ -263,17 +269,17 @@
 }
 
 :root[data-theme="dark"] .panel-drag-handle:hover {
-  background: #102018;
+  background: #15201a;
 }
 
 :root[data-theme="dark"] .workspace-unsectioned-drop-zone {
   border-color: var(--line);
-  background: #0e1623;
+  background: #141712;
 }
 
 :root[data-theme="dark"] .workspace-unsectioned-drop-zone.active {
   border-color: var(--accent);
-  background: rgba(31, 184, 119, 0.12);
+  background: rgba(43, 224, 130, 0.12);
 }
 
 :root[data-theme="dark"] .legend-chip {
@@ -323,12 +329,12 @@
 :root[data-theme="dark"] .command-card,
 :root[data-theme="dark"] .workspace-modal-card,
 :root[data-theme="dark"] .edit-drawer {
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(31, 184, 119, 0.035);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(43, 224, 130, 0.035);
 }
 
 :root[data-theme="dark"] .workspace-run-rail,
 :root[data-theme="dark"] .panel-drawer {
-  background: #0e1623;
+  background: #141712;
 }
 
 :root[data-theme="dark"] .analysis-stat,
@@ -347,7 +353,7 @@
 :root[data-theme="dark"] .timeline-row,
 :root[data-theme="dark"] .setting-row,
 :root[data-theme="dark"] .api-row {
-  background: #0d1624;
+  background: #141712;
 }
 
 :root[data-theme="dark"] .workspace-panel-meta span {
@@ -361,14 +367,14 @@
 }
 
 :root[data-theme="dark"] .metric-catalog-row.active .metric-catalog-main {
-  border-color: rgba(31, 184, 119, 0.44);
+  border-color: rgba(43, 224, 130, 0.44);
   background: var(--accent-soft);
 }
 
 :root[data-theme="dark"] .metric-pin.active,
 :root[data-theme="dark"] .rank {
   border-color: rgba(98, 182, 255, 0.44);
-  background: rgba(31, 184, 119, 0.16);
+  background: rgba(43, 224, 130, 0.16);
   color: var(--accent-strong);
 }
 
@@ -397,11 +403,15 @@
 :root[data-theme="dark"] .compare-attribute,
 :root[data-theme="dark"] .compare-row-head,
 :root[data-theme="dark"] .compare-run-identity {
-  background: #0b121e;
+  background: #0d0f0c;
   color: var(--muted);
 }
 
-:root[data-theme="dark"] tbody tr:hover,
+/* Hover raises the surface; it never recolors text (green = live/best only). */
+:root[data-theme="dark"] tbody tr:hover {
+  background: var(--surface-hover);
+}
+
 :root[data-theme="dark"] .compare-cell.changed,
 :root[data-theme="dark"] .compare-run-cell.changed {
   background: #0b2f24;
@@ -427,17 +437,17 @@
 :root[data-theme="dark"] .compare-summary > div,
 :root[data-theme="dark"] .compare-run-cell {
   border-color: var(--line);
-  background: #0d1624;
+  background: #141712;
   color: var(--text);
 }
 
 :root[data-theme="dark"] tr.selected {
-  background: rgba(31, 184, 119, 0.075);
-  box-shadow: inset 2px 0 0 rgba(31, 184, 119, 0.58);
+  background: rgba(43, 224, 130, 0.075);
+  box-shadow: inset 2px 0 0 rgba(43, 224, 130, 0.58);
 }
 
 :root[data-theme="dark"] tr.inspected {
-  background: rgba(31, 184, 119, 0.105);
+  background: rgba(43, 224, 130, 0.105);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
@@ -463,7 +473,7 @@
 :root[data-theme="dark"] .pill.live,
 :root[data-theme="dark"] .pin-button.active {
   border-color: rgba(98, 182, 255, 0.42);
-  background: rgba(31, 184, 119, 0.14);
+  background: rgba(43, 224, 130, 0.14);
 }
 
 :root[data-theme="dark"] .pill.warning,
@@ -497,11 +507,11 @@
 
 :root[data-theme="dark"] .chart-range {
   border-color: var(--line);
-  background: #0a101b;
+  background: #0a0c09;
 }
 
 :root[data-theme="dark"] .range-window {
-  fill: rgba(31, 184, 119, 0.16);
+  fill: rgba(43, 224, 130, 0.16);
   stroke: var(--accent);
 }
 
@@ -523,30 +533,30 @@
 :root[data-theme="dark"] select,
 :root[data-theme="dark"] textarea {
   border-color: var(--line);
-  background: #101820;
+  background: #141712;
   color: var(--text);
 }
 
 :root[data-theme="dark"] input::placeholder,
 :root[data-theme="dark"] textarea::placeholder {
-  color: #6f8198;
+  color: #8a9180;
 }
 
 :root[data-theme="dark"] input:focus,
 :root[data-theme="dark"] select:focus,
 :root[data-theme="dark"] textarea:focus {
-  border-color: rgba(39, 232, 150, 0.72);
-  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.22), 0 0 20px rgba(31, 184, 119, 0.12);
+  border-color: rgba(84, 240, 160, 0.58);
+  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.18);
 }
 
 :root[data-theme="dark"] .status-message {
-  border-color: rgba(31, 184, 119, 0.18);
-  background: #0d1624;
+  border-color: rgba(43, 224, 130, 0.18);
+  background: #141712;
 }
 
 :root[data-theme="dark"] .status-message.loading {
   border-color: rgba(98, 182, 255, 0.32);
-  background: rgba(31, 184, 119, 0.11);
+  background: rgba(43, 224, 130, 0.11);
 }
 
 :root[data-theme="dark"] .status-message.error {
@@ -555,7 +565,7 @@
 }
 
 :root[data-theme="dark"] .quick-add-card span {
-  background: rgba(31, 184, 119, 0.16);
+  background: rgba(43, 224, 130, 0.16);
   color: var(--accent-strong);
 }
 
@@ -566,11 +576,11 @@
 :root[data-theme="dark"] .chart-tooltip {
   border: 1px solid rgba(98, 182, 255, 0.22);
   background: rgba(5, 10, 18, 0.96);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42), 0 0 24px rgba(31, 184, 119, 0.1);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(98, 182, 255, 0.06);
 }
 
 :root[data-theme="dark"] .chart-tooltip span {
-  color: #c6d4e6;
+  color: #d8dccd;
 }
 
 :root[data-theme="dark"] .chart-tooltip span.active,
@@ -914,9 +924,16 @@
   color: var(--text);
 }
 
-.run-workspace-tab.active,
-.segment-button.active {
+/* Tabs use the accent underline as their active indicator (matching the primary
+   nav). The stdout/stderr segmented control is a pill toggle, not a tab — its
+   fill + border + brighter text already mark the active segment, so it skips the
+   green underline (which read as a stray link rule and broke green = live/best). */
+.run-workspace-tab.active {
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.segment-button.active {
+  border-color: var(--line-strong);
 }
 
 .run-workspace-panel {
@@ -1004,7 +1021,7 @@
   min-height: 32px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding: 0 10px;
-  color: #7f8ea3;
+  color: #8b9280;
   font-size: 0.72rem;
   font-weight: 760;
   text-transform: uppercase;
@@ -1041,7 +1058,7 @@
 
 .terminal-ts,
 .terminal-line {
-  color: #7f8ea3;
+  color: #8b9280;
 }
 
 .terminal-message {
@@ -1054,7 +1071,7 @@
 .terminal-empty {
   position: absolute;
   inset: 48px 16px auto;
-  color: #7f8ea3;
+  color: #8b9280;
   font-size: 0.86rem;
 }
 
@@ -1262,4 +1279,8 @@
   .segment-button {
     min-height: 38px;
   }
+}
+
+:root[data-theme="dark"] .chart-y-range-hint {
+  color: #f0b43e;
 }

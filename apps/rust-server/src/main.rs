@@ -1,7 +1,8 @@
 use std::{net::SocketAddr, process::ExitCode, time::Duration};
 
 use instantml_rust_server::{
-    config::{AppConfig, ClickHouseProvisioner, ServicePlaneRole},
+    capacity,
+    config::{AppConfig, AuthMode, ClickHouseProvisioner, ServicePlaneRole},
     control_db::ControlDb,
     domain::{DevGoogleAuthRequest, RequestContext},
     http::AppState,
@@ -21,9 +22,23 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> instantml_rust_server::AppResult<()> {
-    let command = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "serve".to_string());
+    let mut args = std::env::args().skip(1);
+    let command = args.next().unwrap_or_else(|| "serve".to_string());
+    match command.as_str() {
+        "capacity-plan" => return capacity_plan(args),
+        "emit-openapi" => return emit_openapi(),
+        "help" | "--help" | "-h" => {
+            print_help();
+            return Ok(());
+        }
+        "serve" | "all" | "migrate" | "migrate-control" | "worker" | "seed-demo" => {}
+        other => {
+            return Err(instantml_rust_server::AppError::config(format!(
+                "unknown command {other}; expected serve, worker, migrate, migrate-control, seed-demo, emit-openapi, capacity-plan, or all"
+            )));
+        }
+    }
+
     let config = AppConfig::from_env()?;
     telemetry::init(&config.log_format);
     match command.as_str() {
@@ -33,15 +48,40 @@ async fn run() -> instantml_rust_server::AppResult<()> {
         "migrate-control" => migrate_control(config).await,
         "worker" => worker(config).await,
         "seed-demo" => seed_demo(config).await,
-        "emit-openapi" => emit_openapi(),
-        "help" | "--help" | "-h" => {
-            print_help();
-            Ok(())
-        }
-        other => Err(instantml_rust_server::AppError::config(format!(
-            "unknown command {other}; expected serve, worker, migrate, migrate-control, seed-demo, emit-openapi, or all"
-        ))),
+        _ => unreachable!("command was validated before config loading"),
     }
+}
+
+fn capacity_plan<I>(args: I) -> instantml_rust_server::AppResult<()>
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut allow_unknown_limit = false;
+    for arg in args {
+        match arg.as_str() {
+            "--allow-unknown-limit" => allow_unknown_limit = true,
+            other => {
+                return Err(instantml_rust_server::AppError::config(format!(
+                    "unknown capacity-plan flag {other}; expected --allow-unknown-limit"
+                )));
+            }
+        }
+    }
+    let input = capacity::control_db_connection_budget_from_env()?;
+    let report = capacity::evaluate_control_db_connection_budget(input)?;
+    let json = serde_json::to_string_pretty(&report).map_err(|err| {
+        instantml_rust_server::AppError::internal(format!("serialize capacity plan: {err}"))
+    })?;
+    println!("{json}");
+    if report.is_over_budget() {
+        return Err(instantml_rust_server::AppError::config(report.message));
+    }
+    if report.is_unknown_limit() && !allow_unknown_limit {
+        return Err(instantml_rust_server::AppError::config(
+            "INSTANTML_CLOUD_SQL_CONNECTION_LIMIT is required for capacity-plan; pass --allow-unknown-limit for local exploratory output",
+        ));
+    }
+    Ok(())
 }
 
 /// Print the utoipa-generated OpenAPI spec to stdout. Used by the TypeScript
@@ -70,6 +110,13 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
             .min(u128::from(u64::MAX)) as u64),
         "rust server starting"
     );
+    if local_auth_exposed_beyond_loopback(&config.auth_mode, &config.bind_addr) {
+        tracing::warn!(
+            bind_addr = %config.bind_addr,
+            "local auth mode accepts unauthenticated requests and should not be exposed beyond \
+             loopback; bind to 127.0.0.1 or set INSTANTML_AUTH_MODE=api-key"
+        );
+    }
     let metrics = metric_store::connect(&config)?;
     if should_migrate_primary_metric_store(&config) {
         metric_store::migrate(&metrics).await?;
@@ -126,6 +173,13 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         handle.abort();
     }
     result
+}
+
+/// Local auth mode serves every request with an unauthenticated local
+/// context, so it is only safe while the server is reachable solely from the
+/// machine itself (127.0.0.1 / ::1).
+fn local_auth_exposed_beyond_loopback(auth_mode: &AuthMode, bind_addr: &SocketAddr) -> bool {
+    matches!(auth_mode, AuthMode::Local) && !bind_addr.ip().is_loopback()
 }
 
 async fn connect_store_with_retry(
@@ -353,11 +407,58 @@ async fn shutdown_signal() {
 
 fn print_help() {
     println!(
-        "Usage: instantml-rust-server [serve|all|migrate|migrate-control|worker|seed-demo|emit-openapi]\n\n\
+        "Usage: instantml-rust-server [serve|all|migrate|migrate-control|worker|seed-demo|emit-openapi|capacity-plan]\n\n\
          emit-openapi: prints the utoipa-generated OpenAPI spec to stdout (used by\n  \
                    `npm run codegen:api`).\n\n\
+         capacity-plan [--allow-unknown-limit]: prints the Phase 0 Cloud SQL connection-budget preflight as JSON.\n\n\
          Environment: CLICKHOUSE_URL, INSTANTML_BIND_ADDR, INSTANTML_AUTH_MODE, \
          INSTANTML_BOOTSTRAP_TOKEN, INSTANTML_ARTIFACT_ROOT, INSTANTML_MAX_BODY_BYTES, INSTANTML_MAX_UPLOAD_BODY_BYTES, \
-         INSTANTML_HOSTED_CLICKHOUSE_ENABLED, INSTANTML_SERVICE_PLANE, DATABASE_URL"
+         INSTANTML_HOSTED_CLICKHOUSE_ENABLED, INSTANTML_SERVICE_PLANE, DATABASE_URL, CONTROL_DB_MAX_CONNECTIONS, \
+         INSTANTML_CAPACITY_ACTIVE_REVISIONS, INSTANTML_CAPACITY_ACTIVE_INSTANCES, INSTANTML_CLOUD_SQL_CONNECTION_LIMIT"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(value: &str) -> SocketAddr {
+        value.parse().expect("test bind address must parse")
+    }
+
+    #[test]
+    fn local_auth_on_loopback_is_not_flagged() {
+        assert!(!local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("127.0.0.1:8001")
+        ));
+        assert!(!local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("[::1]:8001")
+        ));
+    }
+
+    #[test]
+    fn local_auth_on_public_bind_is_flagged() {
+        assert!(local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("0.0.0.0:8001")
+        ));
+        assert!(local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("[::]:8001")
+        ));
+        assert!(local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("10.0.0.5:8001")
+        ));
+    }
+
+    #[test]
+    fn api_key_auth_is_never_flagged() {
+        assert!(!local_auth_exposed_beyond_loopback(
+            &AuthMode::ApiKey,
+            &addr("0.0.0.0:8001")
+        ));
+    }
 }

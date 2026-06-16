@@ -42,7 +42,9 @@ async function importDashboardModelsForTest() {
 
 const REQUIRED = {
   THEME_KEY: "instantml:next:theme",
-  NAV_PINNED_KEY: "instantml:next:nav-pinned",
+  // v2 migration (2026-06): the v1 key was auto-written "false" by the old
+  // unpinned default, so it cannot distinguish an explicit unpin.
+  NAV_PINNED_KEY: "instantml:next:nav-pinned-v2",
   RUNS_RAIL_COLLAPSED_KEY: "instantml:next:runs-rail-collapsed",
   SAVED_VIEW_PREFIX: "instantml:next:local:view:",
   LEGACY_SAVED_VIEW_PREFIX: "instantml:next:view:",
@@ -154,6 +156,7 @@ test("workspace sanitizer round-trips scatter panels and keeps non-scatter migra
           type: "line",
           title: "Loss",
           metricKey: "train/loss",
+          layout: { w: 12, h: 3 },
           xField: "run:duration_seconds",
           yField,
         },
@@ -209,6 +212,7 @@ test("workspace sanitizer round-trips scatter panels and keeps non-scatter migra
   assert.equal(line.type, "line");
   assert.equal(line.xField, undefined);
   assert.equal(line.yField, undefined);
+  assert.deepEqual(line.layout, { w: 12, h: models.MIN_LINE_WORKSPACE_PANEL_ROWS }, "saved short line charts should migrate to a usable minimum height");
 });
 
 test("workspace sanitizer round-trips second-slice research panels", async () => {
@@ -307,12 +311,19 @@ test("workspace sanitizer preserves legacy v1 panel payloads without scatter fie
     ],
   );
   assert.deepEqual(models.workspaceMetricKeys(sanitized), ["custom/value", "train/loss"]);
+  assert.equal(sanitized.sections[0].panels[0].layout.h, models.MIN_LINE_WORKSPACE_PANEL_ROWS);
+  assert.equal(sanitized.sections[0].panels[1].layout.h, 4);
+  assert.equal(sanitized.sections[0].panels[4].layout.h, models.MIN_LINE_WORKSPACE_PANEL_ROWS);
 });
 
 test("workspace scatter panel creation emits parser-safe default field ids", async () => {
   const models = await importDashboardModelsForTest();
+  const line = models.workspacePanelForMetric("eval/return_mean", "line");
+  assert.equal(line.layout.h, models.MIN_LINE_WORKSPACE_PANEL_ROWS);
+
   const normalScatter = models.workspacePanelForMetric("eval/return_mean", "scatter");
   assert.equal(normalScatter.type, "scatter");
+  assert.equal(normalScatter.layout.h, 4);
   assert.equal(parseFieldId(normalScatter.xField)?.source, "run");
   assert.equal(parseFieldId(normalScatter.yField)?.source, "metric");
 
@@ -427,14 +438,18 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.equal(/onMouseDown=\{\(event\)[\s\S]{0,240}onClose\(\)/.test(quickSearch), false, "mouse-down must not close before the paired click is swallowed");
 
   const runsWorkspace = readFileSync(`${root}app/dashboard/runs/runs-workspace.tsx`, "utf8");
-  assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow;/, "overflowed result sets should offer bulk select even when no rows are selected");
+  assert.match(runsWorkspace, /const showSelectAllMatching = matchingOverflow && selectedRunIds\.length > 0;/, "overflowed result sets should defer cross-page bulk selection until row selection starts");
   assert.match(runsWorkspace, /disabled=\{selectAllMatchingBusy \|\| selectAllMatchingDisabled\}/, "select-all matching should honor invalid-search disabled state");
   assert.match(runsWorkspace, /pointerDragCleanupRef/, "pointer drag listeners should be cleaned up on unmount or interrupted drag");
   assert.match(runsWorkspace, /removeEventListener\("pointercancel"/, "pointer drag cleanup should remove cancellation listeners");
 
-  const topbar = readFileSync(`${root}app/dashboard/chrome/topbar.tsx`, "utf8");
-  assert.match(topbar, /workbar-search-popover/, "run search should include syntax help beside the actual search box");
-  assert.match(topbar, /aria-invalid=\{Boolean\(searchError && !searchErrorStale\)\}/, "search syntax errors should be associated with the input without marking stale edits invalid");
+  const filterBar = readFileSync(`${root}app/dashboard/runs/run-filter-bar.tsx`, "utf8");
+  assert.match(filterBar, /workbar-search-popover/, "run search should include syntax help beside the actual search box");
+  assert.match(filterBar, /aria-invalid=\{Boolean\(searchError && !searchErrorStale\)\}/, "search syntax errors should be associated with the input without marking stale edits invalid");
+
+  const navRail = readFileSync(`${root}app/dashboard/chrome/nav-rail.tsx`, "utf8");
+  assert.doesNotMatch(shell, /\bnavPinned\b|nav-pinned/, "dashboard shell should always render the side nav unpinned");
+  assert.doesNotMatch(navRail, /\bpinned\b/, "side nav should not expose a pinned state");
 
   const workspacePanelCard = readFileSync(`${root}app/dashboard/runs/workspace-panel-card.tsx`, "utf8");
   assert.match(workspacePanelCard, /resizeCleanupRef/, "panel resize listeners should be cleaned up on unmount or interrupted resize");
@@ -451,6 +466,9 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(distributedPane, /function changeRankKey[\s\S]*setSummary\(null\)/, "rank-key changes should clear old reducer data before relabeling charts");
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
+  assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-button \{[\s\S]*?justify-content: flex-start;[\s\S]*?gap: 0;[\s\S]*?padding: 8px 12px;/, "collapsed nav icons should keep the same origin as expanded nav items");
+  assert.match(css, /\.shell:not\(\.nav-pinned\)\.nav-auto-open \.tab-button,[\s\S]*?\.shell:not\(\.nav-pinned\) \.tabs:has\(:focus-visible\) \.tab-button \{[\s\S]*?justify-content: flex-start;[\s\S]*?gap: 8px;[\s\S]*?padding: 8px 12px;/, "auto-open nav should reveal labels without shifting icons");
+  assert.match(css, /\.tab-button svg \{ flex: 0 0 16px; \}/, "nav icons should use a fixed flex slot");
 });
 
 test("settings seat summary falls back to org membership metadata for read-only users", () => {

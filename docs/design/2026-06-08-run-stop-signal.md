@@ -665,6 +665,10 @@ Polling budget:
 - Start helper intervals at 60 seconds for Free, 30 seconds for Pro, and 15
   seconds for Premium/local defaults. The server may return a longer interval
   under load or after repeated no-op polls.
+- First implementation note: until plan-aware stop polling is wired through the
+  SDK/server contract, the Python SDK default and Rust `poll_after_seconds`
+  response use a conservative 30-second cadence to stay below the initial
+  control-poll budget.
 - Stop polling after terminal state.
 - Keep a future option to piggyback stop state on metric/log responses to reduce
   polling for sync or directly observed upload paths.

@@ -7,6 +7,45 @@ use crate::domain::{ReportSummary, REPORT_VISIBILITY_PUBLIC};
 
 const DEFAULT_REPORT_LIMIT: i64 = 50;
 const MAX_REPORT_LIMIT: i64 = 200;
+/// S6: share links stop resolving this many days after the token was minted.
+/// Override with `INSTANTML_SHARE_TOKEN_TTL_DAYS` (`0` disables expiry).
+const DEFAULT_SHARE_TOKEN_TTL_DAYS: i64 = 30;
+
+fn share_token_ttl_days() -> i64 {
+    static TTL: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
+    *TTL.get_or_init(|| {
+        std::env::var("INSTANTML_SHARE_TOKEN_TTL_DAYS")
+            .ok()
+            .and_then(|raw| raw.trim().parse::<i64>().ok())
+            .filter(|days| *days >= 0)
+            .unwrap_or(DEFAULT_SHARE_TOKEN_TTL_DAYS)
+    })
+}
+
+/// Whether the row's share token is still within its TTL. Rows persisted
+/// before issuance was recorded (`share_token_issued_at: None`) stay valid
+/// until rotated — invalidating every pre-existing share link on deploy would
+/// be a worse failure than a one-time grace window.
+fn share_token_active(row: &ReportRow, now: chrono::DateTime<chrono::Utc>) -> bool {
+    share_token_active_with_ttl(row, now, share_token_ttl_days())
+}
+
+fn share_token_active_with_ttl(
+    row: &ReportRow,
+    now: chrono::DateTime<chrono::Utc>,
+    ttl_days: i64,
+) -> bool {
+    if row.share_token.is_none() {
+        return false;
+    }
+    if ttl_days == 0 {
+        return true;
+    }
+    match row.share_token_issued_at {
+        None => true,
+        Some(issued) => now.signed_duration_since(issued) <= chrono::Duration::days(ttl_days),
+    }
+}
 
 pub async fn list_reports(
     store: &Store,
@@ -79,6 +118,7 @@ pub async fn get_report(
             .share_token
             .as_deref()
             .is_some_and(|stored| stored == token)
+            && share_token_active(&row, chrono::Utc::now())
         {
             return Ok(row);
         }
@@ -94,6 +134,7 @@ pub async fn get_report(
 /// Public lookup by share token — used by the unauthenticated `/r/:token`
 /// frontend route. Org membership and login are not required.
 pub async fn get_report_by_share_token(store: &Store, share_token: &str) -> AppResult<ReportRow> {
+    let now = chrono::Utc::now();
     let data = store.data.lock().await;
     data.reports
         .values()
@@ -103,6 +144,7 @@ pub async fn get_report_by_share_token(store: &Store, share_token: &str) -> AppR
                     .share_token
                     .as_deref()
                     .is_some_and(|stored| stored == share_token)
+                && share_token_active(row, now)
         })
         .cloned()
         .ok_or_else(|| AppError::not_found("report not found"))
@@ -162,7 +204,9 @@ pub fn report_summary(row: &ReportRow) -> ReportSummary {
         description: row.description.clone(),
         project_id: row.project_id,
         visibility: row.visibility.clone(),
-        has_share_token: row.share_token.is_some(),
+        // Advertise only tokens that still resolve — an expired link reading
+        // as "shared" would send users to a 404.
+        has_share_token: share_token_active(row, chrono::Utc::now()),
         author_user_id: row.author_user_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -309,6 +353,7 @@ mod tests {
             updated_at: chrono::Utc::now(),
             author_user_id: None,
             share_token: None,
+            share_token_issued_at: None,
             visibility: REPORT_VISIBILITY_PRIVATE.to_string(),
             deleted_at: None,
         }
@@ -355,6 +400,30 @@ mod tests {
         row.share_token = Some("instantml_share_xxx".to_string());
         let summary = report_summary(&row);
         assert!(summary.has_share_token);
+    }
+
+    #[test]
+    fn share_tokens_expire_after_the_configured_ttl() {
+        let now = chrono::Utc::now();
+        let mut report = row(4, json!([]));
+
+        // No token at all: never active.
+        assert!(!share_token_active_with_ttl(&report, now, 30));
+
+        report.share_token = Some("instantml_share_xxx".to_string());
+
+        // Legacy token (no issuance recorded) stays valid until rotated.
+        report.share_token_issued_at = None;
+        assert!(share_token_active_with_ttl(&report, now, 30));
+
+        // Fresh token: active. Past the TTL: expired.
+        report.share_token_issued_at = Some(now - chrono::Duration::days(5));
+        assert!(share_token_active_with_ttl(&report, now, 30));
+        report.share_token_issued_at = Some(now - chrono::Duration::days(31));
+        assert!(!share_token_active_with_ttl(&report, now, 30));
+
+        // TTL 0 is the explicit "never expire" opt-out.
+        assert!(share_token_active_with_ttl(&report, now, 0));
     }
 
     #[test]

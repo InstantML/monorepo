@@ -3297,6 +3297,13 @@ export interface components {
             /** Format: int32 */
             schema_version: number;
             share_token?: string | null;
+            /**
+             * Format: date-time
+             * @description When the current share token was minted (S6). Tokens older than the
+             *     configured TTL stop resolving. `None` on rows persisted before this
+             *     field existed — those legacy tokens stay valid until rotated.
+             */
+            share_token_issued_at?: string | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -6832,7 +6839,10 @@ export interface operations {
     stop_runs: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate bulk stop retries */
+                "Idempotency-Key"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -8646,7 +8656,10 @@ export interface operations {
     get_run: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate stop retries */
+                "Idempotency-Key"?: string | null;
+            };
             path: {
                 /** @description Run UUID */
                 run_id: string;

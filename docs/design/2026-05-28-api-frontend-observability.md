@@ -153,11 +153,10 @@ Add a pure, segment-aware route classifier in
 - `platform`: `/health`, `/healthz`, `/readyz`, `/metrics`, `/openapi.json`,
   `/api/auth/config`.
 - `control`: auth/session/device-code, invitations, billing, dashboard
-  preferences, workspace views, reports, users/orgs/seats/API keys/service
-  accounts.
+  preferences, workspace views, users/orgs/seats/API keys/service accounts.
 - `data`: projects, runs, metrics, rank metrics, console logs, artifacts,
-  objects, overview, summaries, comparison, export, usage, imports, demo reset,
-  and customer-owned ClickHouse routes.
+  reports, objects, overview, summaries, comparison, export, usage, imports,
+  demo reset, and customer-owned ClickHouse routes.
 - `unknown`: fallback and future routes until classified.
 
 Classification must use exact matches or segment-boundary prefixes, not naive

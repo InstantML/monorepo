@@ -1,18 +1,18 @@
 .docs-route {
   min-height: 100vh;
   background: #f7f8f5;
-  color: #17211b;
+  color: #171a14;
   --docs-topbar-height: 104px;
   --docs-sidebar-width: 264px;
   --scrollbar-track: #f7f8f5;
-  --scrollbar-thumb: rgba(8, 115, 75, 0.28);
-  --scrollbar-thumb-hover: rgba(8, 115, 75, 0.48);
+  --scrollbar-thumb: rgba(14, 107, 67, 0.28);
+  --scrollbar-thumb-hover: rgba(14, 107, 67, 0.48);
 }
 
 body:has(.docs-route) {
   --scrollbar-track: #f7f8f5;
-  --scrollbar-thumb: rgba(8, 115, 75, 0.28);
-  --scrollbar-thumb-hover: rgba(8, 115, 75, 0.48);
+  --scrollbar-thumb: rgba(14, 107, 67, 0.28);
+  --scrollbar-thumb-hover: rgba(14, 107, 67, 0.48);
 }
 
 /* ---------- Top header (two rows, full-bleed) ---------- */
@@ -68,7 +68,7 @@ body:has(.docs-route) {
 }
 
 .docs-route-brand small {
-  color: #65756d;
+  color: #5d644f;
   font-size: 12px;
   line-height: 1;
 }
@@ -84,7 +84,7 @@ body:has(.docs-route) {
   background: #ffffff;
   border: 1px solid rgba(23, 33, 27, 0.08);
   border-radius: 8px;
-  color: #17211b;
+  color: #171a14;
   overflow: hidden;
 }
 .docs-route-brand-mark svg {
@@ -113,7 +113,7 @@ body:has(.docs-route) {
   border: 1px solid rgba(23, 33, 27, 0.14);
   border-radius: 8px;
   background: #ffffff;
-  color: #65756d;
+  color: #5d644f;
   font-size: 13px;
 }
 
@@ -129,7 +129,7 @@ body:has(.docs-route) {
   border-radius: 0 !important;
   background: transparent !important;
   background-color: transparent !important;
-  color: #17211b !important;
+  color: #171a14 !important;
   font: inherit !important;
   outline: none !important;
   min-height: 0 !important;
@@ -160,7 +160,7 @@ body:has(.docs-route) {
   border: 1px solid rgba(23, 33, 27, 0.16) !important;
   border-radius: 4px !important;
   background: #ffffff !important;
-  color: #65756d !important;
+  color: #5d644f !important;
   font: inherit !important;
   font-size: 11px !important;
   font-weight: 600 !important;
@@ -191,7 +191,7 @@ body:has(.docs-route) {
   gap: 2px;
   padding: 8px 10px;
   border-radius: 6px;
-  color: #17211b;
+  color: #171a14;
   text-decoration: none;
 }
 .docs-route-search-result-title {
@@ -210,7 +210,7 @@ body:has(.docs-route) {
 }
 .docs-route-search-result.is-active .docs-route-search-result-title,
 .docs-route-search-result:hover .docs-route-search-result-title {
-  color: #08734b;
+  color: #0e6b43;
 }
 .docs-route-search-empty {
   padding: 14px 12px;
@@ -263,12 +263,12 @@ body:has(.docs-route) {
 }
 
 .docs-route-tab:hover {
-  color: #17211b;
+  color: #171a14;
 }
 
 .docs-route-tab.is-active {
-  color: #08734b;
-  border-bottom-color: #08734b;
+  color: #0e6b43;
+  border-bottom-color: #0e6b43;
   font-weight: 600;
 }
 
@@ -308,7 +308,7 @@ body:has(.docs-route) {
   padding: 6px 8px;
   margin-bottom: 18px;
   border-radius: 6px;
-  color: #17211b;
+  color: #171a14;
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
@@ -316,7 +316,7 @@ body:has(.docs-route) {
 
 .docs-route-sidebar-overview:hover {
   background: #ecf3ee;
-  color: #08734b;
+  color: #0e6b43;
 }
 
 .docs-route-sidebar section + section {
@@ -351,10 +351,10 @@ body:has(.docs-route) {
   user-select: none;
 }
 .docs-route-nav-group-summary:hover h3 {
-  color: #08734b;
+  color: #0e6b43;
 }
 .docs-route-nav-group-summary:hover .docs-route-nav-chevron {
-  color: #08734b;
+  color: #0e6b43;
 }
 
 .docs-route-nav-group h3 {
@@ -396,12 +396,12 @@ body:has(.docs-route) {
 
 .docs-route-nav-link:hover {
   background: #ecf3ee;
-  color: #08734b;
+  color: #0e6b43;
 }
 
 .docs-route-nav-link.is-active {
   background: #e6f2eb;
-  color: #08734b;
+  color: #0e6b43;
   font-weight: 600;
 }
 
@@ -431,7 +431,7 @@ body:has(.docs-route) {
 
 .docs-route-sidebar-locale:hover {
   background: #ecf3ee;
-  color: #17211b;
+  color: #171a14;
 }
 
 /* ---------- Article ---------- */
@@ -564,8 +564,8 @@ body:has(.docs-route) {
 
 .docs-route-body a,
 .docs-route-article a {
-  color: #08734b;
-  text-decoration-color: rgba(8, 115, 75, 0.28);
+  color: #0e6b43;
+  text-decoration-color: rgba(14, 107, 67, 0.28);
   text-underline-offset: 3px;
 }
 
@@ -619,7 +619,7 @@ body:has(.docs-route) {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 7px;
-  color: rgba(248, 250, 252, 0.88);
+  color: rgba(231, 234, 223, 0.88);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
@@ -673,7 +673,7 @@ body:has(.docs-route) {
 }
 
 .docs-route-card:hover {
-  border-color: rgba(31, 184, 119, 0.42);
+  border-color: rgba(43, 224, 130, 0.42);
   box-shadow: 0 12px 28px rgba(21, 32, 26, 0.06);
   transform: translateY(-1px);
 }
@@ -698,7 +698,7 @@ body:has(.docs-route) {
 .docs-route-card small {
   display: block;
   margin-top: 6px;
-  color: #65756d;
+  color: #5d644f;
   font-size: 13px;
   line-height: 1.5;
 }
@@ -775,7 +775,7 @@ body:has(.docs-route) {
 .docs-route-api-row p {
   grid-column: 2;
   margin: 0;
-  color: #65756d;
+  color: #5d644f;
   font-size: 14px;
   line-height: 1.5;
 }
@@ -803,7 +803,7 @@ body:has(.docs-route) {
   min-width: 0;
   overflow-wrap: anywhere;
   white-space: normal;
-  color: #17211b;
+  color: #171a14;
   font-size: 14px;
 }
 

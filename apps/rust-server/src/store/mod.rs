@@ -1483,7 +1483,7 @@ fn run_control_display_status(run: &RunRow, control: Option<&RunControlRow>) -> 
         control.map(|item| item.stop_state.as_str()),
     ) {
         ("running", Some("requested" | "acknowledged")) => "stopping",
-        (_, Some("completed")) => "stopped",
+        ("finished" | "failed", Some("completed")) => "stopped",
         ("running", _) => "running",
         ("finished", _) => "finished",
         ("failed", _) => "failed",
@@ -2324,6 +2324,16 @@ mod tests {
     }
 
     #[test]
+    fn completed_control_does_not_expose_stopped_for_running_replay() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let run = replay_run(org_id, run_id, "running");
+        let control = replay_run_control(org_id, run_id, "completed");
+
+        assert_eq!(run_control_display_status(&run, Some(&control)), "running");
+    }
+
+    #[test]
     fn run_control_summary_redacts_actor_identifiers() {
         let org_id = Uuid::from_u128(1);
         let run_id = Uuid::from_u128(10);
@@ -2387,9 +2397,11 @@ mod tests {
             &store,
             &ctx,
             run_id,
+            json!({"reason": "bad sweep"}),
             StopRunRequest {
                 reason: Some("bad sweep".to_string()),
             },
+            None,
         )
         .await
         .unwrap();
@@ -2456,6 +2468,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stop_request_idempotency_replays_and_rejects_different_body() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(45);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        let raw = json!({"reason": "bad sweep"});
+        let first = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            raw.clone(),
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            Some("stop-key".to_string()),
+        )
+        .await
+        .unwrap();
+        let retried = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            raw,
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            Some("stop-key".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            first["run_control"]["stop_request_id"],
+            retried["run_control"]["stop_request_id"]
+        );
+
+        let err = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            json!({"reason": "different"}),
+            StopRunRequest {
+                reason: Some("different".to_string()),
+            },
+            Some("stop-key".to_string()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
     async fn terminal_patch_marks_active_stop_without_completion() {
         let store = store_without_control_db();
         let ctx = RequestContext::local();
@@ -2470,9 +2538,11 @@ mod tests {
             &store,
             &ctx,
             run_id,
+            json!({"reason": "bad sweep"}),
             StopRunRequest {
                 reason: Some("bad sweep".to_string()),
             },
+            None,
         )
         .await
         .unwrap();
@@ -2534,10 +2604,12 @@ mod tests {
         let result = request_bulk_run_stop(
             &store,
             &ctx,
+            json!({"run_ids": [run_id], "reason": "bad sweep"}),
             StopRunsRequest {
                 run_ids: vec![run_id, run_id],
                 reason: Some("bad sweep".to_string()),
             },
+            None,
         )
         .await
         .unwrap();
@@ -3049,6 +3121,7 @@ mod tests {
             updated_at: epoch(),
             author_user_id: None,
             share_token: None,
+            share_token_issued_at: None,
             visibility: visibility.to_string(),
             deleted_at: if deleted { Some(epoch()) } else { None },
         }

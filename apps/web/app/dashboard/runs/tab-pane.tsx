@@ -1,17 +1,18 @@
 "use client";
 
-import type { Dispatch, RefObject, SetStateAction } from "react";
-import { useEffect, useRef } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, LayoutGrid, Table2, X } from "lucide-react";
 
 import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
 import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
 import { RunsCommandbar } from "./runs-commandbar";
+import { RunsTable } from "./runs-table";
 import { RunsWorkspace } from "./runs-workspace";
 import { WorkspacePanelCard } from "./workspace-panel-card";
 import { fieldLabel } from "../../../src/dashboard-panels.js";
-import type { HistogramTimelineState, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
+import type { HistogramTimelineState, Overview, RunSummary, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 import type { MetricSeries } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 
@@ -43,6 +44,7 @@ type Props = {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   initialLoadDone: boolean;
+  filterBar?: ReactNode;
   metricKey: string;
   metricOptionsForControls: string[];
   onAddPanel: (sectionId: string, panelMetric: string, type?: WorkspacePanelType) => void;
@@ -59,6 +61,7 @@ type Props = {
   onFullscreenPanelClose: () => void;
   onFullscreenPanelMove: (direction: -1 | 1) => void;
   onInspectRun: (runId: string) => void;
+  primaryRunId: string;
   onMode: (mode: "automatic" | "manual") => void;
   onMovePanel: (sourceSectionId: string, panelId: string, targetSectionId: string, targetIndex: number) => void;
   onGoToPage: (page: number) => void;
@@ -76,7 +79,9 @@ type Props = {
   onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
   onRunRailCollapsed: (collapsed: boolean) => void;
   onSelectAllMatching: () => void;
+  onClearSelection: () => void;
   onSelectAllVisible: () => void;
+  onSelectProject: (project: string) => void;
   onSetAddPanelSection: (sectionId: string) => void;
   onSwitchOrganization: (orgId: string) => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
@@ -146,6 +151,7 @@ export function RunsTabPane({
   hasNextPage,
   hasPreviousPage,
   initialLoadDone,
+  filterBar,
   metricKey,
   metricOptionsForControls,
   onAddPanel,
@@ -162,6 +168,7 @@ export function RunsTabPane({
   onFullscreenPanelClose,
   onFullscreenPanelMove,
   onInspectRun,
+  primaryRunId,
   onMode,
   onMovePanel,
   onGoToPage,
@@ -179,7 +186,9 @@ export function RunsTabPane({
   onPanelSmoothing,
   onRunRailCollapsed,
   onSelectAllMatching,
+  onClearSelection,
   onSelectAllVisible,
+  onSelectProject,
   onSetAddPanelSection,
   onSwitchOrganization,
   onTableColumns,
@@ -218,6 +227,16 @@ export function RunsTabPane({
   workspaceSeries,
   workspaceView,
 }: Props) {
+  // Panels (rail + chart canvas) vs a flat sortable runs table. Persisted
+  // per-browser; additive key, never renamed (see state/storage-keys.ts).
+  const [runsView, setRunsView] = useState<"panels" | "table">("panels");
+  useEffect(() => {
+    if (localStorage.getItem("instantml:next:runs-view") === "table") setRunsView("table");
+  }, []);
+  function changeRunsView(view: "panels" | "table") {
+    setRunsView(view);
+    localStorage.setItem("instantml:next:runs-view", view);
+  }
   const showEmptyCallout = initialLoadDone && !dashboardLoading && summaryTotal === 0 && projects.length === 0 && !project && !query && !status;
   const nonCurrentMemberships = orgMemberships.filter((m) => !m.is_current);
   // The sticky run rail and panel toolbar sit directly below the sticky filter
@@ -274,12 +293,14 @@ export function RunsTabPane({
 
   return (
     <>
-      <PageHead
-        eyebrow="Workspace"
-        title="Runs"
-        emphasis="in flight"
-        lede={`${project || "All projects"} · ${metricKey}`}
-      />
+      <PageHead eyebrow="Workspace" title="Runs" />
+      <>
+      {/* The run filter row (status / search / sort / saved views) lives in the
+          Runs tab, between the page head and the metric/Runs-actions row. */}
+      {filterBar}
+      {/* The Run health summary cards were removed from this header (2026-06):
+          they duplicated the Run health tab and pushed the actual run list
+          below the fold. Health stats live on /dashboard/alerts. */}
       {showEmptyCallout ? (
         <>
           {nonCurrentMemberships.length ? (
@@ -333,7 +354,58 @@ export function RunsTabPane({
           tableColumns={tableColumns}
           onRequestSelectedStop={() => onRequestStop(selectedRunIds)}
         />
+        <div className="runs-view-toggle" role="group" aria-label="Runs view">
+          <button
+            aria-pressed={runsView === "panels"}
+            className={runsView === "panels" ? "active" : ""}
+            onClick={() => changeRunsView("panels")}
+            title="Run selector with chart panels"
+            type="button"
+          >
+            <LayoutGrid size={13} /> Panels
+          </button>
+          <button
+            aria-pressed={runsView === "table"}
+            className={runsView === "table" ? "active" : ""}
+            onClick={() => changeRunsView("table")}
+            title="Flat sortable runs table"
+            type="button"
+          >
+            <Table2 size={13} /> Table
+          </button>
+        </div>
       </div>
+      {runsView === "table" ? (
+        <div className="runs-table-view">
+          <RunsTable
+            canControlRuns={canControlRuns}
+            columns={tableColumns}
+            hasNextPage={hasNextPage}
+            hasPreviousPage={hasPreviousPage}
+            metricKey={metricKey}
+            onClearFilters={onClearFilters}
+            onClearSelection={onClearSelection}
+            onInspectRun={onInspectRun}
+            onNextPage={onNextPage}
+            onOpenRun={onOpenRun}
+            onPreviousPage={onPreviousPage}
+            onRequestStop={onRequestStop}
+            onSelectAllVisible={onSelectAllVisible}
+            onToggleRun={(runId) => onToggleRun(runId)}
+            pageSize={pageSize}
+            pageStart={pageStart}
+            paginationBusy={paginationBusy}
+            pinnedMetrics={pinnedMetrics}
+            primaryRunId={primaryRunId}
+            query={query}
+            runs={sortedRuns}
+            selectedRunIds={selectedRunIds}
+            status={status}
+            summaryTotal={summaryTotal}
+            workspaceSeries={workspaceSeries}
+          />
+        </div>
+      ) : (
       <RunsWorkspace
         addPanelSectionId={addPanelSectionId}
         availableMetricKeys={availableWorkspaceMetrics}
@@ -358,11 +430,13 @@ export function RunsTabPane({
         onPanelSmoothing={onPanelSmoothing}
         onRunRailCollapsed={onRunRailCollapsed}
         onSelectAllMatching={onSelectAllMatching}
+        onClearSelection={onClearSelection}
         onSelectAllVisible={onSelectAllVisible}
         onSetAddPanelSection={onSetAddPanelSection}
         onTableColumns={onTableColumns}
         onToggleRun={onToggleRun}
         onToggleSection={onToggleSection}
+        metricKey={metricKey}
         selectAllMatchingBusy={selectAllMatchingBusy}
         selectAllMatchingDisabled={selectAllMatchingDisabled}
         hasNextPage={hasNextPage}
@@ -389,6 +463,8 @@ export function RunsTabPane({
         workspaceRuns={sortedRuns}
         workspaceSeries={workspaceSeries}
       />
+      )}
+      </>
       {editingPanelContext ? (
         <PanelEditDrawer
           categoricalFieldOptions={workspaceCategoricalFieldOptions}

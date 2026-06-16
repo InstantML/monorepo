@@ -13,8 +13,10 @@ function read(relPath) {
 
 test("dashboard workbar dropdown menus are not clipped by the filter row", () => {
   const topbarSrc = read("app/dashboard/chrome/topbar.tsx");
-  assert.match(topbarSrc, /<CustomSelect id="project-filter"/);
-  assert.match(topbarSrc, /id="status-filter"/);
+  // Project is a global control in the topbar; status lives in the Runs-tab filter bar.
+  assert.match(topbarSrc, /id="project-filter"/);
+  const filterBarSrc = read("app/dashboard/runs/run-filter-bar.tsx");
+  assert.match(filterBarSrc, /id="status-filter"/);
 
   const css = read("app/styles/overhaul.css");
   const workbarRule = css.match(/\.workbar\s*\{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? "";
@@ -73,16 +75,17 @@ test("mobile navigation closes without leaving focus inside the hidden drawer", 
   assert.match(navSrc, /onMobileClose\?\.\(\);\n\s+onSelect\(tabId\);/);
 });
 
-test("selected run export remains reachable when validation has feedback", () => {
+test("selected run export is natively disabled when validation has feedback", () => {
   const commandbarSrc = read("app/dashboard/runs/runs-commandbar.tsx");
 
   assert.match(commandbarSrc, /aria-disabled=\{selectedRunExportDisabled \|\| undefined\}/);
-  assert.match(commandbarSrc, /disabled=\{exportSelectedBusy\}/);
-  assert.doesNotMatch(commandbarSrc, /disabled=\{exportSelectedBusy \|\| selectedRunExportDisabled\}/);
+  assert.match(commandbarSrc, /disabled=\{selectedRunExportDisabled \|\| exportSelectedBusy\}/);
+  assert.match(commandbarSrc, /selectedRunExportDisabled \? <span className="export-selected-runs-help">\{selectedRunExportTitle\}<\/span> : null/);
 });
 
-test("dashboard breadcrumb labels the empty project scope as all projects", () => {
+test("topbar project selector labels the empty project scope as all projects", () => {
   const topbarSrc = read("app/dashboard/chrome/topbar.tsx");
-  assert.match(topbarSrc, /\{project \|\| "All projects"\}/);
+  // The empty scope is the project select's first option.
+  assert.match(topbarSrc, /value: "", label: "All projects"/);
   assert.doesNotMatch(topbarSrc, /\{project \|\| "demo"\}/);
 });

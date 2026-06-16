@@ -1,0 +1,78 @@
+/* ============================================================
+   INSTRUMENT — design tokens
+   InstantML reimagined · dark control-room theme (v1)
+   ============================================================ */
+
+:root {
+  /* ---- Surfaces (warm graphite ramp, green undertone) ---- */
+  --bg-void:          #080907;   /* page backdrop behind everything       */
+  --bg-canvas:        #0d0f0c;   /* main content canvas                   */
+  --bg-panel:         #121511;   /* default panel surface                 */
+  --bg-panel-raised:  #171a15;   /* hover / raised panel surface          */
+  --bg-inset:         #0a0c09;   /* wells: inputs, code, chart plots      */
+  --bg-flood:         rgba(43, 224, 130, 0.05);
+
+  /* ---- Hairlines & strokes ---- */
+  --line-hair:        #20241d;   /* default 1px borders                   */
+  --line-strong:      #2e332a;   /* emphasized borders, corner ticks      */
+  --line-grid:        #1a1d17;   /* chart gridlines                       */
+
+  /* ---- Text ramp ---- */
+  --text-hi:          #e7eadf;   /* primary values, names                 */
+  --text-mid:         #aab0a0;   /* body, secondary cells                 */
+  --text-dim:         #848c78;   /* micro-labels, units, axis ticks       */
+  --text-faint:       #4d5345;   /* decorative only                       */
+
+  /* ---- Signal colors (semantic, used sparingly) ---- */
+  --signal:           #2be082;   /* LIVE. running, healthy, primary action */
+  --signal-bright:    #54f0a0;
+  --signal-dim:       rgba(43, 224, 130, 0.13);
+  --warn:             #f0b43e;
+  --warn-dim:         rgba(240, 180, 62, 0.13);
+  --crit:             #f25555;
+  --crit-dim:         rgba(242, 85, 85, 0.13);
+  --info:             #4da3ff;
+  --info-dim:         rgba(77, 163, 255, 0.13);
+  --idle:             #7d8472;   /* finished / neutral status             */
+
+  /* ---- Chart series palette (8, ordered) ---- */
+  --s1: #2be082;  /* signal green — series 1 / the run you care about */
+  --s2: #4da3ff;  /* cyan-blue   */
+  --s3: #f0b43e;  /* amber       */
+  --s4: #e36ad8;  /* magenta     */
+  --s5: #9a7bff;  /* violet      */
+  --s6: #ff8a5c;  /* coral       */
+  --s7: #43d6c5;  /* teal        */
+  --s8: #d4dc5a;  /* chartreuse  */
+
+  /* ---- Typography ---- */
+  --font-mono: "Spline Sans Mono", "SFMono-Regular", ui-monospace, monospace;
+  --font-display: "Archivo", "Helvetica Neue", sans-serif;
+
+  --fs-micro: 10px;    /* uppercase micro-labels  */
+  --fs-data:  12px;    /* table cells, chips      */
+  --fs-body:  13px;    /* prose, descriptions     */
+  --fs-title: 15px;    /* panel-level titles      */
+  --fs-page:  20px;    /* page titles             */
+  --fs-stat:  26px;    /* big stat numerals       */
+
+  --track-micro: 0.14em;  /* letter-spacing for uppercase mono labels */
+
+  /* ---- Geometry ---- */
+  --r: 6px;             /* universal radius — soft precision (v1.1, was 3px) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  --rail-w: 224px;
+  --ticker-h: 38px;
+  --row-h: 36px;
+
+  /* ---- Effects ---- */
+  --glow-signal: drop-shadow(0 0 4px rgba(43, 224, 130, 0.55));
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55);
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.25, 1);
+}

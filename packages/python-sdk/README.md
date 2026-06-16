@@ -237,6 +237,10 @@ or `run.raise_if_stop_requested()`. The SDK uses a short foreground timeout and
 does not run a background polling thread by default, so stop checks should be
 placed at safe interruption points in the training loop.
 
+The default helper interval is 30 seconds. Pass
+`stop_check_interval_seconds=0` to disable polling, or a lower value when a
+training loop has explicit low-latency stop requirements.
+
 ```python
 run = ro.init(project="cartpole", stop_check_interval_seconds=5)
 

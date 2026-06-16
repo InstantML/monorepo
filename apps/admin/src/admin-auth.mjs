@@ -1,4 +1,5 @@
 export const DEFAULT_ADMIN_ALLOWED_EMAILS = ["instantml.ai@gmail.com"];
+export const DEFAULT_CLERK_DOMAIN = "instantml.ai";
 
 export function normalizeAdminEmail(email) {
   return String(email ?? "").trim().toLowerCase();
@@ -42,4 +43,14 @@ export function canLoadClerkForRequest(publishableKey, host, protocol) {
   if (!publishableKey) return false;
   if (!isProductionClerkKey(publishableKey)) return true;
   return isInstantMlHost(host) && String(protocol ?? "") === "https";
+}
+
+export function adminClerkDomain(raw = process.env.NEXT_PUBLIC_CLERK_DOMAIN ?? process.env.CLERK_DOMAIN) {
+  const configured = String(raw ?? "").trim().toLowerCase();
+  if (!configured) return DEFAULT_CLERK_DOMAIN;
+
+  const withoutProtocol = configured.replace(/^https?:\/\//, "");
+  const host = withoutProtocol.split("/")[0]?.split(":")[0] ?? "";
+  if (!host) return DEFAULT_CLERK_DOMAIN;
+  return host.startsWith("clerk.") ? host.slice("clerk.".length) : host;
 }

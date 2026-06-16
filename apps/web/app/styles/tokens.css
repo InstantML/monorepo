@@ -1,148 +1,149 @@
 /* ── tokens.css — InstantML brand primitives and design tokens ──────────────
  * Do not modify brand values without updating the brand doc.
- * Source: brand spec 2026-05 (Bolt green #1FB877, Ink #0E1116).
+ * Source: Instrument design language 2026-06-11
+ * (docs/design/reimagine/DESIGN-SYSTEM.md). Signal green #2be082 on warm
+ * graphite; Spline Sans Mono carries data, Archivo carries prose.
  * ─────────────────────────────────────────────────────────────────────────── */
-
-/* ──────────────────────────────────────────────────────────────────────────
- * InstantML brand primitives — do not modify without updating the brand doc.
- * Source: brand spec 2026-05 (Bolt green #1FB877, Ink #0E1116).
- * ────────────────────────────────────────────────────────────────────────── */
 :root {
-  --color-ink: #0E1116;
-  --color-bolt: #1FB877;
-  --color-deep: #0A4D33;
-  --color-soft: #F5F4F1;
-  --color-paper: #FFFFFF;
-  /* Wordmark letter-spacing per brand spec (Space Grotesk 600) */
-  --tracking-wordmark: -0.035em;
+  --color-ink: #0d0f0c;
+  --color-bolt: #2be082;
+  --color-deep: #0e5a36;
+  --color-soft: #f6f7f3;
+  --color-paper: #ffffff;
+  /* Wordmark letter-spacing per brand spec (Archivo 650) */
+  --tracking-wordmark: -0.02em;
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
- * InstantML design tokens — reference https://instantml.ai/
- * Dark is the product default; light is a maintained toggle.
+ * InstantML design tokens — Instrument language.
+ * Dark is the product default; light is a maintained, harmonized toggle.
+ * Token names are load-bearing (consumed across app/styles/*); values follow
+ * docs/design/reimagine/tokens.css.
  * ────────────────────────────────────────────────────────────────────────── */
 :root {
   color-scheme: light;
-  --bg: #ffffff;
-  --bg-soft: #f8fafc;
+  --bg: #f6f7f3;
+  --bg-soft: #eff1ea;
   --surface: #ffffff;
-  --surface-soft: #f8fafc;
-  --surface-2: #f1f5f9;
-  --surface-3: #e8eef5;
-  --surface-hover: #eef2f7;
-  --surface-selected: #ecfdf5;
-  --surface-tint: #ecfdf5;
-  --line: #e2e8f0;
-  --line-soft: #eef2f7;
-  --line-strong: #cbd5e1;
-  --text: #0f172a;
-  --text-2: #334155;
-  --muted: #475569;
-  --faint: #54606f;          /* light: AA on #fff/#f8fafc (>=4.5:1) for 11px text */
-  --dim: #94a3b8;
-  --accent: var(--color-bolt);
-  --accent-strong: var(--color-deep);
-  --accent-soft: #ecfdf5;
-  --accent-line: rgba(31, 184, 119, 0.32);
-  --blue: #5d89dd;
-  --amber: #b7791f;
-  --coral: #dc5b55;
-  --green: #15803d;
-  --warm: #b7791f;
-  --warm-soft: rgba(183, 121, 31, 0.12);
-  --danger: #dc2626;
-  --danger-soft: rgba(220, 38, 38, 0.1);
-  --info: #5d89dd;
-  --series-1: #2f80ed;
-  --series-2: #12a67a;
-  --series-3: #d65f74;
-  --series-4: #e0a33f;
-  --series-5: #7c5cc4;
-  --series-6: #3b9ba7;
+  --surface-soft: #f4f6f0;
+  --surface-2: #eef0e8;
+  --surface-3: #e7eadf;
+  --surface-hover: #eef0e9;
+  --surface-selected: #e6f7ec;
+  --surface-tint: #e6f7ec;
+  --line: #e0e3d8;
+  --line-soft: #eaece2;
+  --line-strong: #c8ccbc;
+  --text: #171a14;
+  --text-2: #3a3f33;
+  --muted: #555b4c;
+  --faint: #5d644f;          /* light: AA on #fff/#f6f7f3 (>=4.5:1) for 11px text */
+  --dim: #8b9280;
+  --accent: #16915c;
+  --accent-strong: #0e6b43;
+  --accent-soft: #e6f7ec;
+  --accent-line: rgba(22, 145, 92, 0.35);
+  --blue: #2d6fd1;
+  --amber: #9c6f10;
+  --coral: #d23b3b;
+  --green: #16915c;
+  --warm: #9c6f10;
+  --warm-soft: rgba(156, 111, 16, 0.12);
+  --danger: #d23b3b;
+  --danger-soft: rgba(210, 59, 59, 0.1);
+  --info: #2d6fd1;
+  --series-1: #168a52;
+  --series-2: #2d6fd1;
+  --series-3: #a87613;
+  --series-4: #b13fa4;
+  --series-5: #6b4fd8;
+  --series-6: #1f9d8f;
   --chart-card-bg: #ffffff;
-  --chart-grid: #e5e7eb;
-  --chart-axis: #cbd5e1;
-  --chart-tick: #94a3b8;
+  --chart-grid: #e7eadf;
+  --chart-axis: #c8ccbc;
+  --chart-tick: #8b9280;
   --chart-tooltip-bg: rgba(255, 255, 255, 0.98);
-  --chart-tooltip-border: rgba(15, 23, 42, 0.1);
-  --chart-tooltip-text: #1e2933;
-  --shadow: 0 1px 2px rgba(24, 34, 45, 0.06);
+  --chart-tooltip-border: rgba(23, 26, 20, 0.12);
+  --chart-tooltip-text: #1e2218;
+  --shadow: 0 1px 2px rgba(26, 30, 22, 0.06);
   --radius: 6px;
   --radius-sm: 4px;
   --radius-lg: 10px;
   --radius-pill: 999px;
-  --control-radius: 4px;
-  --tight-radius: 3px;
+  --control-radius: 6px;
+  --tight-radius: 4px;
   --topbar-height: 48px;
   --workbar-height: 44px;
-  --tracking-eyebrow: 0.1em;
-  --tracking-display: -0.02em;
+  --tracking-eyebrow: 0.14em;
+  --tracking-display: -0.01em;
   --scrollbar-size: 10px;
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(15, 23, 42, 0.18);
-  --scrollbar-thumb-hover: rgba(15, 23, 42, 0.34);
+  --scrollbar-thumb: rgba(23, 26, 20, 0.18);
+  --scrollbar-thumb-hover: rgba(23, 26, 20, 0.34);
   --z-chrome: 50;
   --z-workbar: 40;
   --z-sticky-th: 5;
   --z-pop: 100;
-  --font-sans: var(--font-sans-next, "Geist"), "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: var(--font-mono-next, "Geist Mono"), "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --font-display: var(--font-sans-next, "Archivo"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ui: var(--font-sans-next, "Archivo"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono-next, "Spline Sans Mono"), ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-serif: var(--font-serif-next, "Instrument Serif"), Georgia, "Times New Roman", serif;
   --bg-grid: var(--bg);
+  --bg-grid-size: auto;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: var(--color-ink);
-  --bg-soft: #0c1118;
-  --surface: #161b22;
-  --surface-soft: #1a2030;
-  --surface-2: #1a2030;
-  --surface-3: #171a24;
-  --surface-hover: #1a1d28;
-  --surface-selected: #11231d;
-  --surface-tint: #0b2f24;
-  --line: #1c1f2a;
-  --line-soft: #151923;
-  --line-strong: #242937;
-  --text: #f8fafc;
-  --text-2: #cbd5e1;
-  --muted: #94a3b8;
-  --faint: #8b97a8;
-  --dim: #5b6678;
+  --bg-soft: #0a0c09;
+  --surface: #121511;
+  --surface-soft: #171a15;
+  --surface-2: #171a15;
+  --surface-3: #141712;
+  --surface-hover: #181b16;
+  --surface-selected: #122419;
+  --surface-tint: #0f2a1d;
+  --line: #20241d;
+  --line-soft: #1a1d17;
+  --line-strong: #2e332a;
+  --text: #e7eadf;
+  --text-2: #c6ccba;
+  --muted: #aab0a0;
+  --faint: #8a9180;
+  --dim: #79816d;
   --accent: var(--color-bolt);
-  --accent-strong: #27e896;
-  --accent-soft: rgba(31, 184, 119, 0.12);
-  --accent-line: rgba(31, 184, 119, 0.32);
-  --blue: #7da1e8;
-  --amber: #e0b07a;
-  --coral: #f87171;
-  --green: #4ade80;
-  --warm: #e0b07a;
-  --warm-soft: rgba(224, 176, 122, 0.14);
-  --danger: #f87171;
-  --danger-soft: rgba(248, 113, 113, 0.14);
-  --info: #7da1e8;
-  --series-1: #70a8ff;
-  --series-2: #4ed5a2;
-  --series-3: #f07a8e;
-  --series-4: #e6b95b;
-  --series-5: #a994ff;
-  --series-6: #5fc4cf;
-  --chart-card-bg: #11141c;
-  --chart-grid: rgba(255, 255, 255, 0.045);
-  --chart-axis: rgba(255, 255, 255, 0.2);
-  --chart-tick: #8b97a8;
-  --chart-tooltip-bg: rgba(20, 26, 34, 0.96);
-  --chart-tooltip-border: rgba(255, 255, 255, 0.12);
-  --chart-tooltip-text: #f1f5f9;
-  --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  --accent-strong: #54f0a0;
+  --accent-soft: rgba(43, 224, 130, 0.13);
+  --accent-line: rgba(43, 224, 130, 0.35);
+  --blue: #4da3ff;
+  --amber: #f0b43e;
+  --coral: #f25555;
+  --green: #2be082;
+  --warm: #f0b43e;
+  --warm-soft: rgba(240, 180, 62, 0.13);
+  --danger: #f25555;
+  --danger-soft: rgba(242, 85, 85, 0.14);
+  --info: #4da3ff;
+  --series-1: #2be082;
+  --series-2: #4da3ff;
+  --series-3: #f0b43e;
+  --series-4: #e36ad8;
+  --series-5: #9a7bff;
+  --series-6: #43d6c5;
+  --chart-card-bg: #111410;
+  --chart-grid: #1a1d17;
+  --chart-axis: rgba(231, 234, 223, 0.18);
+  --chart-tick: #79816d;
+  --chart-tooltip-bg: rgba(8, 9, 7, 0.97);
+  --chart-tooltip-border: rgba(231, 234, 223, 0.14);
+  --chart-tooltip-text: #e7eadf;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
   --scrollbar-track: transparent;
-  --scrollbar-thumb: rgba(248, 250, 252, 0.16);
-  --scrollbar-thumb-hover: rgba(248, 250, 252, 0.32);
+  --scrollbar-thumb: rgba(231, 234, 223, 0.14);
+  --scrollbar-thumb-hover: rgba(231, 234, 223, 0.28);
   --bg-grid:
-    radial-gradient(900px 600px at 50% -8%, rgba(31, 184, 119, 0.06), transparent 70%),
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    radial-gradient(circle at 1px 1px, rgba(231, 234, 223, 0.025) 1px, transparent 0),
     var(--bg);
+  --bg-grid-size: 26px 26px, auto;
 }

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
 import { formatMetricValue } from "../../../src/charts.js";
+import { identityColor } from "../../../src/chart-colors.js";
 import { displayStatusForRun, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import {
   artifactHasStoredBytes,
@@ -35,22 +36,11 @@ type CompareRowView = {
   values: Record<string, unknown>;
 };
 
-// Run-identity palette: deliberately excludes the brand green, amber, and coral —
-// those hues are reserved for delta semantics (green=better, coral=worse, amber=
-// differs), so a run's identity swatch can never be mistaken for a value judgement.
-// Reference identity is conveyed by the row tint + REF tag, not by swatch color.
-const IDENTITY_PALETTE = [
-  "#7da1e8", // blue
-  "#c084fc", // violet
-  "#5eead4", // teal
-  "#7c5cc4", // indigo
-  "#38bdf8", // sky
-  "#f0abfc", // orchid
-  "#22d3ee", // cyan
-  "#818cf8", // periwinkle
-  "#a3b3cc", // slate
-  "#2dd4bf", // aqua
-];
+// Run-identity swatch colors come from `identityColor()` (src/chart-colors.js),
+// which is the canonical chart palette with the reserved delta-semantic families
+// (green=better, amber=differs, coral=worse) removed — so a run's identity swatch
+// can never be mistaken for a value judgement. Reference identity is conveyed by
+// the row tint + REF tag, not by swatch color.
 
 type SortDir = "asc" | "desc";
 type SortState = { col: string; dir: SortDir };
@@ -328,26 +318,43 @@ function TagList({ tags }: { tags: string[] }) {
   );
 }
 
+// Duplicate filenames are versions of the same artifact: show the latest once
+// with a version-count chip instead of listing identical names side by side.
+export function groupCompareArtifacts(artifacts: Artifact[]) {
+  const byName = new Map<string, Artifact[]>();
+  for (const artifact of artifacts) {
+    const list = byName.get(artifact.name) ?? [];
+    list.push(artifact);
+    byName.set(artifact.name, list);
+  }
+  return [...byName.values()].map((versions) => {
+    const sorted = [...versions].sort((a, b) => (b.step ?? -1) - (a.step ?? -1));
+    return { latest: sorted[0], versionCount: sorted.length };
+  });
+}
+
 function CompareArtifactStrip({ artifactsByRun, runs }: { artifactsByRun: Record<string, Artifact[]>; runs: RunSummary[] }) {
   const runArtifacts = runs.map((run) => ({
     run,
-    artifacts: (artifactsByRun[run.id] ?? []).slice(0, 3),
+    groups: groupCompareArtifacts(artifactsByRun[run.id] ?? []).slice(0, 3),
     expected: Boolean(artifactsByRun[run.id]),
   }));
-  if (!runArtifacts.some((item) => item.artifacts.length || !item.expected)) return null;
+  if (!runArtifacts.some((item) => item.groups.length || !item.expected)) return null;
   return (
     <section className="compare-artifact-strip">
-      {runArtifacts.map(({ run, artifacts, expected }) => (
+      {runArtifacts.map(({ run, groups, expected }) => (
         <article className="compare-artifact-run" key={run.id}>
           <strong title={run.name}>{run.name}</strong>
-          {artifacts.length ? artifacts.map((artifact) => (
-            <div className="compare-artifact-card" key={artifact.id}>
-              <strong>{artifact.name}</strong>
-              <small>{artifact.step === null ? "no step" : `step ${artifact.step}`} · {formatBytes(artifact.size_bytes)}</small>
-              <ArtifactMediaPreview artifact={artifact} compact />
+          {groups.length ? groups.map(({ latest, versionCount }) => (
+            <div className="compare-artifact-card" key={latest.id}>
+              <strong>{latest.name}</strong>
+              <small>
+                {latest.step === null ? "no step" : `step ${latest.step}`} · {formatBytes(latest.size_bytes)}
+                {versionCount > 1 ? ` · ${versionCount} versions` : ""}
+              </small>
+              <ArtifactMediaPreview artifact={latest} compact />
             </div>
           )) : <small>{expected ? "Loading metadata..." : "No artifacts"}</small>}
-          {artifacts.length > 2 ? <small>+{artifacts.length - 2} more</small> : null}
         </article>
       ))}
     </section>
@@ -466,6 +473,7 @@ function CompareRunTable({
   const referenceRun = runs.find((run) => run.id === referenceRunId);
   const gridTemplate = `minmax(220px, 1.4fr) ${columns.map((column) => column.kind === "metric" ? "minmax(132px, 1fr)" : "minmax(96px, 0.7fr)").join(" ")}`;
   return (
+    <div className="cmp-table-shell">
     <div className="cmp-table-wrap">
       <div className="cmp-table" role="table" style={{ "--cmp-cols": gridTemplate } as CSSProperties}>
         <div className="cmp-row cmp-head-row" role="row">
@@ -586,6 +594,7 @@ function CompareRunTable({
         })}
       </div>
     </div>
+    </div>
   );
 }
 
@@ -652,7 +661,7 @@ export function SideBySide({
 
   // Stable run-identity color by selected order (independent of sort), so a run
   // keeps the same swatch across re-sorts and matches the charts' color identity.
-  const colorByRunId = new Map(rawRuns.map((run, index) => [run.id, IDENTITY_PALETTE[index % IDENTITY_PALETTE.length]]));
+  const colorByRunId = new Map(rawRuns.map((run, index) => [run.id, identityColor(index)]));
 
   const searchTokens = compareSearchTokens(search);
   const runMatches = searchTokens.length
@@ -681,7 +690,9 @@ export function SideBySide({
   const anyArtifacts = visibleRuns.some((run) => artifactTotalForRun(run) > 0 || (artifactsByRun[run.id]?.length ?? 0) > 0);
   const columns: CompareColumn[] = [
     ...metricTableKeys.map((key): MetricColumn => ({ kind: "metric", key: `metric:${key}`, metricKey: key, goal: metricGoal(key) })),
-    { kind: "status", key: "status" },
+    // Status lives in the sticky identity column (always visible while scrolling
+    // wide metric tables), so it deliberately has no standalone column here —
+    // a second Status column just printed every run's status twice.
     { kind: "duration", key: "duration" },
     ...(anyArtifacts ? [{ kind: "artifacts", key: "artifacts" } as AttrColumn] : []),
     ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),
@@ -766,7 +777,7 @@ function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: s
     } else if (sort.col.startsWith("config:")) {
       const key = sort.col.slice("config:".length);
       result = compareConfigValues(left.config?.[key], right.config?.[key]) * dir;
-    } else if (sort.col === "status") result = left.status.localeCompare(right.status) * dir;
+    } else if (sort.col === "status") result = displayStatusForRun(left).localeCompare(displayStatusForRun(right)) * dir;
     else if (sort.col === "duration") result = numericNullsLast(runDurationMs(left), runDurationMs(right), dir);
     else if (sort.col === "artifacts") result = numericNullsLast(artifactTotalForRun(left), artifactTotalForRun(right), dir);
     return result || tie(left, right);

@@ -5,21 +5,21 @@
 // run.checkpoint, run.finish) — they do not stream from a real backend.
 
 const ENTRIES = [
-  { kind: "init",       line: "run.init        project=llm-7b-sft  id=r_a4e2  config=24 keys" },
-  { kind: "metric",     line: "run.metric      step=4200   loss=1.82  lr=2.0e-4  thr=41k tok/s" },
-  { kind: "artifact",   line: "run.artifact    name=eval/confusion  bytes=128KiB  mime=image/png" },
-  { kind: "metric",     line: "run.metric      step=4800   loss=1.74  grad_norm=0.94" },
-  { kind: "checkpoint", line: "run.checkpoint  step=5000   shard=0    bytes=12.4GiB  sha=4f9c…" },
-  { kind: "flush",      line: "sdk.flush       queued=2,048  uploaded=2,048  spool=0" },
-  { kind: "metric",     line: "run.metric      step=5400   loss=1.66  vram_used=78.2GiB" },
-  { kind: "finish",     line: "run.finish      status=ok    duration=4h12m  events=18,420" },
+  { kind: "init",       line: "init cfg=24" },
+  { kind: "metric",     line: "loss=1.82 lr=2e-4" },
+  { kind: "artifact",   line: "artifact png 128KiB" },
+  { kind: "metric",     line: "loss=1.74 grad=.94" },
+  { kind: "checkpoint", line: "ckpt model.pt 12.4GiB" },
+  { kind: "flush",      line: "flush 2048/2048" },
+  { kind: "metric",     line: "loss=1.66 vram=78GiB" },
+  { kind: "finish",     line: "finish 4h12m 18k ev" },
 ];
 
 const KIND_COLOR: Record<string, string> = {
   init:       "var(--accent)",
   metric:     "#94A3B8",
   artifact:   "#E0B07A",
-  checkpoint: "#A78BFA",
+  checkpoint: "#7DA1E8",
   flush:      "#60A5FA",
   finish:     "#4ADE80",
 };

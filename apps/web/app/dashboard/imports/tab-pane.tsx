@@ -45,7 +45,9 @@ export function ImportsTabPane({ api, project }: Props) {
   const activeSource = sources.find((item) => item.id === source) ?? sources[0];
   const cliCommand = useMemo(() => {
     const target = shellQuote(project || "my-project");
-    if (source === "wandb") return `instantml import wandb --project ${target} --entity my-team --source-project old-project --dry-run`;
+    // <your-entity>/<source-project> are explicit placeholders so a verbatim
+    // paste fails loudly instead of importing from someone else's namespace.
+    if (source === "wandb") return `instantml import wandb --project ${target} --entity <your-entity> --source-project <source-project> --dry-run`;
     if (source === "neptune") return `instantml import neptune --project ${target} --input ./neptune-export/data --files-path ./neptune-export/files --source-project ${shellQuote("workspace/project")} --dry-run`;
     if (source === "tensorboard") return `instantml sync tensorboard ./runs --project ${target} --dry-run`;
     return `instantml import mlflow --project ${target} --input mlflow-export.json --source-project ${shellQuote("mlflow-export")} --dry-run`;
@@ -138,6 +140,20 @@ export function ImportsTabPane({ api, project }: Props) {
 
       {mode === "import" ? (
         <div className="imports-grid">
+          <ol className="imports-steps" aria-label="Import workflow">
+            {IMPORT_STEPS.map((label, index) => {
+              const state = index < IMPORT_ACTIVE_STEP ? "is-done" : index === IMPORT_ACTIVE_STEP ? "is-current" : "";
+              return (
+                <li className={`imports-step ${state}`.trim()} key={label} aria-current={state === "is-current" ? "step" : undefined}>
+                  <span className="imports-step-marker" aria-hidden="true">
+                    {index < IMPORT_ACTIVE_STEP ? <Check size={13} /> : index + 1}
+                  </span>
+                  <span className="imports-step-label">{label}</span>
+                  {state ? <span className="visually-hidden">{state === "is-done" ? " (completed)" : " (current step)"}</span> : null}
+                </li>
+              );
+            })}
+          </ol>
           <aside className="imports-sources" aria-label="Import sources">
             {sources.map((item) => {
               const Icon = item.icon;
@@ -155,20 +171,6 @@ export function ImportsTabPane({ api, project }: Props) {
           </aside>
 
           <section className="imports-workflow" aria-label="Import dry-run workflow">
-            <ol className="imports-steps" aria-label="Import workflow">
-              {IMPORT_STEPS.map((label, index) => {
-                const state = index < IMPORT_ACTIVE_STEP ? "is-done" : index === IMPORT_ACTIVE_STEP ? "is-current" : "";
-                return (
-                  <li className={`imports-step ${state}`.trim()} key={label} aria-current={state === "is-current" ? "step" : undefined}>
-                    <span className="imports-step-marker" aria-hidden="true">
-                      {index < IMPORT_ACTIVE_STEP ? <Check size={13} /> : index + 1}
-                    </span>
-                    <span className="imports-step-label">{label}</span>
-                    {state ? <span className="visually-hidden">{state === "is-done" ? " (completed)" : " (current step)"}</span> : null}
-                  </li>
-                );
-              })}
-            </ol>
             <div className="imports-panel">
               <div className="imports-panel-head">
                 <div>

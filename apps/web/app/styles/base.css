@@ -16,10 +16,10 @@ body {
 body {
   margin: 0;
   background: var(--bg-grid);
-  background-size: auto, 48px 48px, 48px 48px, auto;
+  background-size: var(--bg-grid-size, auto);
   background-attachment: fixed;
   color: var(--text);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-ui, var(--font-sans)), system-ui, sans-serif;
   letter-spacing: 0;
 }
 
@@ -64,13 +64,13 @@ code, pre, .mono, .eyebrow {
 .landing-wordmark {
   letter-spacing: var(--tracking-wordmark);
   font-weight: 600;
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--font-display, var(--font-sans)), system-ui, sans-serif;
   font-size: 18px;
   color: var(--text);
   line-height: 1;
 }
 .brand-wordmark__accent {
-  color: var(--color-bolt, #1FB877);
+  color: var(--color-bolt, #2be082);
   font-weight: 700;
 }
 
@@ -118,8 +118,8 @@ textarea {
 select:focus,
 input:focus,
 textarea:focus {
-  border-color: rgba(31, 184, 119, 0.48);
-  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.12);
+  border-color: rgba(43, 224, 130, 0.48);
+  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.12);
 }
 
 input[type="checkbox"] {
@@ -145,8 +145,8 @@ button {
 }
 
 button:hover {
-  border-color: #b9c5d0;
-  background: #f7f9fb;
+  border-color: #c8ccbc;
+  background: #f6f7f3;
 }
 
 button.primary-button {
@@ -163,8 +163,8 @@ button.primary-button:hover {
 button:focus-visible,
 .select-trigger:focus-visible {
   outline: none;
-  border-color: rgba(31, 184, 119, 0.54);
-  box-shadow: 0 0 0 2px rgba(31, 184, 119, 0.14);
+  border-color: rgba(43, 224, 130, 0.54);
+  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.14);
 }
 
 button.secondary {
@@ -174,8 +174,8 @@ button.secondary {
 }
 
 button.secondary:hover {
-  border-color: #b9c5d0;
-  background: #f7f9fb;
+  border-color: #c8ccbc;
+  background: #f6f7f3;
 }
 
 button.ghost {
@@ -219,20 +219,20 @@ p {
   min-height: 100vh;
   place-items: center;
   background:
-    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(23, 26, 20, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 26, 20, 0.035) 1px, transparent 1px),
     var(--bg, #ffffff);
   background-size: 44px 44px;
-  color: var(--text, #0f172a);
+  color: var(--text, #171a14);
   padding: 24px;
   overflow: hidden;
 }
 
 :root[data-theme="dark"] .app-loading-screen {
   background:
-    linear-gradient(rgba(248, 250, 252, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(248, 250, 252, 0.025) 1px, transparent 1px),
-    var(--bg, #0e1116);
+    linear-gradient(rgba(231, 234, 223, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(231, 234, 223, 0.025) 1px, transparent 1px),
+    var(--bg, #0d0f0c);
 }
 
 .app-loading-shell {
@@ -240,16 +240,16 @@ p {
   gap: 18px;
   width: min(560px, 100%);
   padding: 24px;
-  border: 1px solid var(--line, #e2e8f0);
+  border: 1px solid var(--line, #e0e3d8);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface, #ffffff) 96%, transparent);
-  box-shadow: 0 20px 54px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 20px 54px rgba(23, 26, 20, 0.12);
   animation: app-loading-shell-in 420ms ease-out both;
 }
 
 :root[data-theme="dark"] .app-loading-shell {
-  border-color: rgba(248, 250, 252, 0.08);
-  background: #11161d;
+  border-color: rgba(231, 234, 223, 0.08);
+  background: #141712;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
 }
 
@@ -266,10 +266,10 @@ p {
   width: 48px;
   height: 48px;
   place-items: center;
-  color: var(--text, #0f172a);
-  border: 1px solid var(--line, #e2e8f0);
+  color: var(--text, #171a14);
+  border: 1px solid var(--line, #e0e3d8);
   border-radius: 8px;
-  background: var(--surface-soft, #f8fafc);
+  background: var(--surface-soft, #f4f6f0);
 }
 
 .app-loading-mark .instantml-mark-svg {
@@ -278,8 +278,8 @@ p {
 }
 
 :root[data-theme="dark"] .app-loading-mark {
-  border-color: rgba(248, 250, 252, 0.09);
-  background: #171d27;
+  border-color: rgba(231, 234, 223, 0.09);
+  background: #181b16;
 }
 
 .app-loading-text {
@@ -289,7 +289,7 @@ p {
 }
 
 .app-loading-shell h1 {
-  color: var(--text, #0f172a);
+  color: var(--text, #171a14);
   font-size: 16px;
   font-weight: 720;
   line-height: 1.2;
@@ -297,7 +297,7 @@ p {
 }
 
 .app-loading-shell p {
-  color: var(--muted, #475569);
+  color: var(--muted, #555b4c);
   font-size: 13px;
   font-weight: 520;
   letter-spacing: 0;
@@ -312,7 +312,7 @@ p {
   height: 3px;
   overflow: hidden;
   border-radius: var(--radius-pill, 999px);
-  background: var(--surface-2, #f1f5f9);
+  background: var(--surface-2, #eef0e8);
 }
 
 .app-loading-track span {
@@ -321,20 +321,20 @@ p {
   width: 42%;
   min-width: 120px;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, var(--accent, #1fb877), var(--blue, #5d89dd), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent, #2be082), var(--blue, #3b82e0), transparent);
   animation: app-loading-track-sweep 1.55s ease-in-out infinite;
 }
 
 .app-loading-preview {
   overflow: hidden;
-  border: 1px solid var(--line, #e2e8f0);
+  border: 1px solid var(--line, #e0e3d8);
   border-radius: 8px;
   background: var(--surface, #ffffff);
 }
 
 :root[data-theme="dark"] .app-loading-preview {
-  border-color: rgba(248, 250, 252, 0.08);
-  background: #0f141b;
+  border-color: rgba(231, 234, 223, 0.08);
+  background: #101310;
 }
 
 .app-loading-preview-toolbar {
@@ -343,7 +343,7 @@ p {
   gap: 8px;
   min-height: 38px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--line, #e2e8f0);
+  border-bottom: 1px solid var(--line, #e0e3d8);
 }
 
 .app-loading-preview-toolbar span,
@@ -352,7 +352,7 @@ p {
 .app-loading-chart-skeleton span {
   display: block;
   border-radius: var(--radius-sm, 4px);
-  background: linear-gradient(90deg, var(--surface-2, #f1f5f9), var(--surface-3, #e8eef5), var(--surface-2, #f1f5f9));
+  background: linear-gradient(90deg, var(--surface-2, #eef0e8), var(--surface-3, #e7eadf), var(--surface-2, #eef0e8));
   background-size: 220% 100%;
   animation: app-loading-skeleton 1.7s ease-in-out infinite;
 }
@@ -361,7 +361,7 @@ p {
 :root[data-theme="dark"] .app-loading-preview-line,
 :root[data-theme="dark"] .app-loading-preview-row small,
 :root[data-theme="dark"] .app-loading-chart-skeleton span {
-  background: linear-gradient(90deg, #151d2a, #1b2534, #151d2a);
+  background: linear-gradient(90deg, #171a15, #1d211b, #171a15);
   background-size: 220% 100%;
 }
 
@@ -390,7 +390,7 @@ p {
   align-content: start;
   gap: 10px;
   padding: 14px;
-  border-right: 1px solid var(--line, #e2e8f0);
+  border-right: 1px solid var(--line, #e0e3d8);
 }
 
 .app-loading-preview-row {
@@ -405,7 +405,7 @@ p {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent, #1fb877);
+  background: var(--accent, #2be082);
   opacity: 0.6;
 }
 
@@ -439,20 +439,20 @@ p {
 .app-loading-chart-grid {
   position: absolute;
   inset: 18px;
-  border-left: 1px solid var(--line, #e2e8f0);
-  border-bottom: 1px solid var(--line, #e2e8f0);
+  border-left: 1px solid var(--line, #e0e3d8);
+  border-bottom: 1px solid var(--line, #e0e3d8);
   background:
-    linear-gradient(var(--line-soft, #eef2f7) 1px, transparent 1px),
-    linear-gradient(90deg, var(--line-soft, #eef2f7) 1px, transparent 1px);
+    linear-gradient(var(--line-soft, #eaece2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-soft, #eaece2) 1px, transparent 1px);
   background-size: 100% 33%, 25% 100%;
   opacity: 0.9;
 }
 
 :root[data-theme="dark"] .app-loading-chart-grid {
-  border-color: rgba(248, 250, 252, 0.09);
+  border-color: rgba(231, 234, 223, 0.09);
   background:
-    linear-gradient(rgba(248, 250, 252, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(248, 250, 252, 0.045) 1px, transparent 1px);
+    linear-gradient(rgba(231, 234, 223, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(231, 234, 223, 0.045) 1px, transparent 1px);
   background-size: 100% 33%, 25% 100%;
 }
 
@@ -479,13 +479,13 @@ p {
 
 .app-loading-chart-skeleton .is-short {
   width: 44%;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #1fb877) 38%, var(--surface-2, #f1f5f9)), color-mix(in srgb, var(--blue, #5d89dd) 32%, var(--surface-3, #e8eef5)), color-mix(in srgb, var(--accent, #1fb877) 38%, var(--surface-2, #f1f5f9)));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #2be082) 38%, var(--surface-2, #eef0e8)), color-mix(in srgb, var(--blue, #3b82e0) 32%, var(--surface-3, #e7eadf)), color-mix(in srgb, var(--accent, #2be082) 38%, var(--surface-2, #eef0e8)));
   background-size: 220% 100%;
   animation-delay: 110ms;
 }
 
 :root[data-theme="dark"] .app-loading-chart-skeleton .is-short {
-  background: linear-gradient(90deg, rgba(31, 184, 119, 0.22), rgba(93, 137, 221, 0.22), rgba(31, 184, 119, 0.22));
+  background: linear-gradient(90deg, rgba(43, 224, 130, 0.22), rgba(93, 137, 221, 0.22), rgba(43, 224, 130, 0.22));
   background-size: 220% 100%;
 }
 
@@ -544,7 +544,7 @@ p {
 
   .app-loading-preview-rail {
     border-right: 0;
-    border-bottom: 1px solid var(--line, #e2e8f0);
+    border-bottom: 1px solid var(--line, #e0e3d8);
   }
 
   .app-loading-preview-row:nth-child(n + 4) {

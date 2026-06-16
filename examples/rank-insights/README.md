@@ -22,8 +22,11 @@ npm run dev:api
 Then run the example from the repo root:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 examples/rank-insights/train.py
+PYTHONPATH=packages/python-sdk python3 examples/rank-insights/train.py --server http://127.0.0.1:8000
 ```
+
+`--server` defaults to the local API (`http://127.0.0.1:8000`); the example
+never targets the hosted API unless you pass its URL explicitly.
 
 Open the dashboard, choose the `rank-insights-research` project, and inspect the
 `Distributed` and `Insights` tabs.

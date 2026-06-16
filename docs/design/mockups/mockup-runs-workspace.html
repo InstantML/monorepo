@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Runs workspace redesign</title>
+<style>
+  /* InstantML tokens (brand spec 2026-05) */
+  :root{
+    --ink:#0E1116; --bolt:#1FB877; --deep:#0A4D33;
+    --bg:#0b0e13; --surface:#11151c; --surface-2:#171c25; --surface-3:#1d2330;
+    --line:#222936; --line-soft:#1a202b;
+    --text:#e8edf4; --text-2:#aeb9c8; --muted:#7e8b9d; --faint:#5e6b7d;
+    --accent:#1FB877; --accent-soft:rgba(31,184,119,.12); --accent-line:rgba(31,184,119,.32);
+    --amber:#d9a23a; --coral:#e0635c; --blue:#5d89dd;
+    --s1:#8a5ccf; --s2:#2e8b57; --s3:#2a7fbd; --s4:#c26300; --s5:#d04a3a; --s6:#168a96;
+    --radius:6px; --radius-lg:10px;
+    font-size:14px;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--text);font:400 1rem/1.45 "Inter","SF Pro Text",system-ui,sans-serif;}
+  code,.mono{font-family:"SFMono-Regular","JetBrains Mono",ui-monospace,monospace;}
+  .app{display:grid;grid-template-columns:232px 1fr;grid-template-rows:48px 1fr 44px;height:100vh;
+       grid-template-areas:"top top" "side main" "side tray";}
+
+  /* Topbar */
+  .top{grid-area:top;display:flex;align-items:center;gap:16px;background:var(--ink);border-bottom:1px solid var(--line);padding:0 16px;}
+  .brand{font-weight:600;letter-spacing:-.035em}.brand b{color:var(--bolt);font-weight:600}
+  .crumb{color:var(--muted);font-size:.93rem}.crumb a{color:var(--text-2);text-decoration:none}.crumb a:hover{color:var(--text)}
+  .top .spacer{flex:1}
+  .search{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:5px 10px;color:var(--muted);font-size:.9rem;min-width:220px}
+  .kbd{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:.78rem;color:var(--text-2);font-family:ui-monospace,monospace}
+  .plan{font-size:.8rem;color:var(--text-2);background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+  .avatar{width:26px;height:26px;border-radius:50%;background:var(--deep);display:grid;place-items:center;font-size:.75rem;font-weight:600;color:#d9f5e9}
+
+  /* Sidebar: pinned, labeled, project-first */
+  .side{grid-area:side;background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:10px;gap:2px;overflow-y:auto}
+  .proj{display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-lg);padding:9px 10px;margin-bottom:10px;cursor:pointer}
+  .proj:hover{border-color:var(--accent-line)}
+  .proj .dot{width:8px;height:8px;border-radius:2px;background:var(--bolt)}
+  .proj .name{font-weight:600;font-size:.95rem;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .proj .meta{font-size:.75rem;color:var(--muted)}
+  .proj .chev{color:var(--muted)}
+  .group{font-size:.7rem;letter-spacing:.09em;color:var(--faint);text-transform:uppercase;padding:10px 8px 4px}
+  .nav{display:flex;align-items:center;gap:10px;color:var(--text-2);text-decoration:none;border-radius:var(--radius);padding:7px 8px;font-size:.95rem}
+  .nav:hover{background:var(--surface-2);color:var(--text)}
+  .nav.active{background:var(--accent-soft);color:#bdebd6;border:1px solid var(--accent-line)}
+  .nav .ic{width:16px;text-align:center;opacity:.85}
+  .nav .badge{margin-left:auto;font-size:.72rem;background:var(--surface-3);border-radius:999px;padding:1px 7px;color:var(--muted)}
+  .side .foot{margin-top:auto;padding-top:8px;border-top:1px solid var(--line-soft)}
+
+  /* Main */
+  .main{grid-area:main;display:grid;grid-template-columns:minmax(560px,1fr) 420px;overflow:hidden}
+  .runsPane{display:flex;flex-direction:column;border-right:1px solid var(--line);overflow:hidden}
+  .runsHead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .runsHead h1{font-size:1.05rem;font-weight:600}
+  .runsHead .sub{color:var(--muted);font-size:.85rem}
+  .chip{font-size:.78rem;border:1px solid var(--line);border-radius:999px;padding:2px 9px;color:var(--text-2);background:var(--surface-2)}
+  .chip.filter{border-color:var(--accent-line);color:#bdebd6;background:var(--accent-soft)}
+  .toolbar{display:flex;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line-soft)}
+  .input{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-size:.9rem;flex:1;max-width:300px}
+  .btn{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);color:var(--text-2);padding:6px 11px;font-size:.88rem;cursor:pointer}
+  .btn:hover{color:var(--text);border-color:var(--line)}
+  .btn.primary{background:var(--bolt);border-color:var(--bolt);color:#06281a;font-weight:600}
+  .btn.ghost{background:transparent}
+
+  table{width:100%;border-collapse:collapse;font-size:.88rem}
+  thead th{position:sticky;top:0;background:var(--surface);text-align:left;font-weight:500;color:var(--muted);font-size:.78rem;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  thead th.sorted{color:var(--text)}
+  tbody td{padding:8px 10px;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  tbody tr:hover{background:var(--surface-2)}
+  tbody tr.sel{background:var(--accent-soft)}
+  .num{font-family:ui-monospace,monospace;text-align:right}
+  th.num{text-align:right}
+  .runName{display:flex;align-items:center;gap:8px;font-weight:600}
+  .sw{width:9px;height:9px;border-radius:2px;flex:none}
+  .st{display:inline-flex;align-items:center;gap:6px;font-size:.82rem;color:var(--text-2)}
+  .st .d{width:7px;height:7px;border-radius:50%}
+  .st.ok .d{background:var(--bolt)} .st.run .d{background:var(--blue);animation:pulse 1.5s infinite} .st.fail .d{background:var(--coral)}
+  .st.fail{color:#f0a9a4}
+  @keyframes pulse{50%{opacity:.4}}
+  .dataState{font-size:.72rem;border-radius:999px;padding:1px 8px;border:1px solid var(--line)}
+  .dataState.incomplete{color:#f3cf8a;border-color:rgba(217,162,58,.5);background:rgba(217,162,58,.1)}
+  .tag{font-size:.74rem;background:var(--surface-3);border-radius:4px;padding:1px 6px;color:var(--text-2)}
+  .scroll{overflow:auto;flex:1}
+  .tfoot{display:flex;align-items:center;gap:12px;padding:8px 16px;color:var(--muted);font-size:.82rem;border-top:1px solid var(--line)}
+
+  /* Panels pane */
+  .panels{display:flex;flex-direction:column;overflow:auto;background:var(--bg)}
+  .panelsHead{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .panelsHead h2{font-size:.95rem;font-weight:600;flex:1}
+  .secTitle{display:flex;gap:8px;align-items:center;padding:12px 14px 4px;color:var(--text-2);font-size:.86rem;font-weight:600}
+  .secTitle .n{color:var(--faint);font-weight:400}
+  .panel{margin:8px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:12px}
+  .panel h3{font-size:.9rem;font-weight:600}
+  .panel .meta{color:var(--faint);font-size:.76rem;font-family:ui-monospace,monospace;margin:2px 0 8px}
+  .chart{height:120px;position:relative}
+  .chart svg{position:absolute;inset:0;width:100%;height:100%}
+  .hint{margin:10px 14px 16px;padding:10px 12px;border:1px dashed var(--line);border-radius:var(--radius-lg);color:var(--muted);font-size:.83rem}
+
+  /* Selection tray */
+  .tray{grid-area:tray;display:flex;align-items:center;gap:10px;background:var(--ink);border-top:1px solid var(--accent-line);padding:0 16px}
+  .tray .count{font-weight:600;color:#bdebd6}
+  .tray .runsList{color:var(--muted);font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+  .tray .spacer{flex:1}
+  .tray .url{font-size:.78rem;color:var(--faint);font-family:ui-monospace,monospace}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <span class="brand">instant<b>ml</b></span>
+    <span class="crumb"><a href="#">Stop Flow Local</a> / <a href="#">iris-classification</a> / Runs</span>
+    <span class="spacer"></span>
+    <span class="search">⌕ Search runs, metrics, tabs… <span class="kbd">⌘K</span></span>
+    <span class="plan">Premium · 0% used</span>
+    <span class="avatar">SF</span>
+  </div>
+
+  <!-- Pinned, labeled sidebar. No hover expansion. Collapse is an explicit toggle (bottom). -->
+  <aside class="side">
+    <div class="proj">
+      <span class="dot"></span>
+      <span><div class="name">iris-classification</div><div class="meta">6 runs · updated 2m ago</div></span>
+      <span class="chev">▾</span>
+    </div>
+    <div class="group">Analyze</div>
+    <a class="nav active" href="#"><span class="ic">〰</span> Runs <span class="badge">6</span></a>
+    <a class="nav" href="#"><span class="ic">▥</span> Metrics</a>
+    <a class="nav" href="#"><span class="ic">⛓</span> Compare <span class="badge">3</span></a>
+    <a class="nav" href="#"><span class="ic">⚌</span> Distributed</a>
+    <a class="nav" href="#"><span class="ic">✦</span> Insights</a>
+    <div class="group">Workspace</div>
+    <a class="nav" href="#"><span class="ic">⬡</span> Artifacts</a>
+    <a class="nav" href="#"><span class="ic">▤</span> Reports</a>
+    <a class="nav" href="#"><span class="ic">⚠</span> Run health <span class="badge">2</span></a>
+    <a class="nav" href="#"><span class="ic">⤓</span> Imports</a>
+    <div class="group">Admin</div>
+    <a class="nav" href="#"><span class="ic">⚙</span> Settings</a>
+    <div class="foot">
+      <a class="nav" href="#"><span class="ic">⌫</span> Collapse sidebar</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <!-- Runs as a real table: sortable metric/config columns, column chooser -->
+    <section class="runsPane">
+      <div class="runsHead">
+        <h1>Runs</h1>
+        <span class="sub">6 of 6 shown</span>
+        <span class="chip filter">status: all ▾</span>
+        <span class="chip">group by: none ▾</span>
+        <span class="chip">columns ▾</span>
+      </div>
+      <div class="toolbar">
+        <input class="input" placeholder="Filter: name, tag, note, config (e.g. lr > 0.1)">
+        <button class="btn">Sort: test/accuracy ↓</button>
+        <button class="btn primary">＋ New run snippet</button>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" checked></th>
+              <th class="sorted">Run</th>
+              <th>Status</th>
+              <th>Data</th>
+              <th class="num sorted">test/accuracy ↓</th>
+              <th class="num">test/ece</th>
+              <th class="num">lr</th>
+              <th class="num">l2</th>
+              <th>Tags</th>
+              <th class="num">Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="sel">
+              <td><input type="checkbox" checked></td>
+              <td class="runName"><span class="sw" style="background:var(--s1)"></span>iris-fast-lr-seed-17</td>
+              <td><span class="st ok"><span class="d"></span>Finished</span></td>
+              <td><span class="dataState">complete</span></td>
+              <td class="num">0.96667</td><td class="num">0.124</td><td class="num">0.22</td><td class="num">0.0010</td>
+              <td><span class="tag">fast-lr</span> <span class="tag">numpy</span></td>
+              <td class="num">11s</td>
+            </tr>
+            <tr class="sel">
+              <td><input type="checkbox" checked></td>
+              <td class="runName"><span class="sw" style="background:var(--s3)"></span>iris-fast-lr-seed-7</td>
+              <td><span class="st ok"><span class="d"></span>Finished</span></td>
+              <td><span class="dataState">complete</span></td>
+              <td class="num">0.96667</td><td class="num">0.134</td><td class="num">0.22</td><td class="num">0.0010</td>
+              <td><span class="tag">fast-lr</span></td>
+              <td class="num">11s</td>
+            </tr>
+            <tr class="sel">
+              <td><input type="checkbox" checked></td>
+              <td class="runName"><span class="sw" style="background:var(--s2)"></span>iris-baseline-seed-17</td>
+              <td><span class="st ok"><span class="d"></span>Finished</span></td>
+              <td><span class="dataState">complete</span></td>
+              <td class="num">0.93333</td><td class="num">0.110</td><td class="num">0.14</td><td class="num">0.00050</td>
+              <td><span class="tag">baseline</span></td>
+              <td class="num">10s</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="runName"><span class="sw" style="background:var(--s4)"></span>iris-regularized-seed-17</td>
+              <td><span class="st run"><span class="d"></span>Running · step 120</span></td>
+              <td><span class="dataState incomplete">uploading · 240 rows pending</span></td>
+              <td class="num">0.90000</td><td class="num">0.116</td><td class="num">0.12</td><td class="num">0.015</td>
+              <td><span class="tag">regularized</span></td>
+              <td class="num">8m</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="runName"><span class="sw" style="background:var(--s5)"></span>iris-regularized-seed-7</td>
+              <td><span class="st fail"><span class="d"></span>Failed</span></td>
+              <td><span class="dataState incomplete">incomplete · recover ↗</span></td>
+              <td class="num">0.90000</td><td class="num">0.134</td><td class="num">0.12</td><td class="num">0.015</td>
+              <td><span class="tag">regularized</span></td>
+              <td class="num">7s</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="runName"><span class="sw" style="background:var(--s6)"></span>iris-baseline-seed-7</td>
+              <td><span class="st ok"><span class="d"></span>Finished</span></td>
+              <td><span class="dataState">complete</span></td>
+              <td class="num">0.96667</td><td class="num">0.159</td><td class="num">0.14</td><td class="num">0.00050</td>
+              <td><span class="tag">baseline</span></td>
+              <td class="num">11s</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tfoot">
+        <span>Rows 100 ▾</span><span>Page 1 / 1</span>
+        <span style="margin-left:auto">Updated 5s ago · auto-refresh on</span>
+      </div>
+    </section>
+
+    <!-- Panels: auto-sections only for metrics present in the current run set -->
+    <section class="panels">
+      <div class="panelsHead">
+        <h2>Panels</h2>
+        <button class="btn ghost">Automatic ▾</button>
+        <button class="btn">＋ Add panel</button>
+      </div>
+      <div class="secTitle">train <span class="n">1</span></div>
+      <div class="panel">
+        <h3>Loss</h3>
+        <div class="meta">line · train/loss · 3 selected runs · step</div>
+        <div class="chart">
+          <svg viewBox="0 0 380 120" preserveAspectRatio="none">
+            <line x1="0" y1="100" x2="380" y2="100" stroke="#222936"/>
+            <path d="M0,14 C60,70 120,88 200,94 C280,98 340,99 380,100" fill="none" stroke="#8a5ccf" stroke-width="2"/>
+            <path d="M0,10 C70,60 140,84 220,92 C300,97 350,99 380,99" fill="none" stroke="#2a7fbd" stroke-width="2"/>
+            <path d="M0,22 C50,78 110,90 190,96 C270,99 340,100 380,100" fill="none" stroke="#2e8b57" stroke-width="2"/>
+          </svg>
+        </div>
+      </div>
+      <div class="secTitle">test <span class="n">2</span></div>
+      <div class="panel">
+        <h3>Accuracy</h3>
+        <div class="meta">line · test/accuracy · 3 selected runs · step · markers shown (sparse series)</div>
+        <div class="chart">
+          <svg viewBox="0 0 380 120" preserveAspectRatio="none">
+            <line x1="0" y1="100" x2="380" y2="100" stroke="#222936"/>
+            <circle cx="360" cy="22" r="4" fill="#8a5ccf"/><circle cx="360" cy="24" r="4" fill="#2a7fbd"/><circle cx="360" cy="38" r="4" fill="#2e8b57"/>
+            <text x="300" y="18" fill="#7e8b9d" font-size="9">step 160</text>
+          </svg>
+        </div>
+      </div>
+      <div class="hint">Sections are generated from metrics logged by the <b>selected runs</b>. Empty sections stay hidden — show them from “Automatic ▾”.</div>
+    </section>
+  </div>
+
+  <!-- Persistent selection tray: selection encoded in URL, survives reload, carried across tabs -->
+  <div class="tray">
+    <span class="count">3 selected</span>
+    <span class="runsList">iris-fast-lr-seed-17 · iris-fast-lr-seed-7 · iris-baseline-seed-17</span>
+    <span class="url">?runs=9f05,31fc,99e1</span>
+    <span class="spacer"></span>
+    <button class="btn primary">Compare 3 →</button>
+    <button class="btn">Export CSV</button>
+    <button class="btn">Tag</button>
+    <button class="btn ghost">Clear</button>
+  </div>
+</div>
+</body>
+</html>

@@ -5,7 +5,119 @@
 
 .detail-row strong,
 .summary-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   text-align: right;
+}
+
+/* Long unbroken values (commit hashes, platform triples) wrap inside the
+ * column instead of pushing the side rail past the viewport. */
+.detail-row .detail-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.detail-copy {
+  flex: none;
+  align-self: center;
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease;
+}
+
+.detail-row:hover .detail-copy,
+.detail-copy:focus-visible {
+  opacity: 1;
+}
+
+.detail-copy:hover {
+  color: var(--text);
+}
+
+.detail-section-note {
+  margin-left: 8px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.detail-link-button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.detail-link-button:hover {
+  text-decoration: underline;
+}
+
+/* Teaching empty state for reproducibility metadata. */
+.repro-empty {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed var(--line);
+  border-radius: var(--control-radius);
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.repro-empty p {
+  margin: 0;
+}
+
+.repro-empty code {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 8px 10px;
+  font-size: 11.5px;
+}
+
+/* Timeline values must never clip mid-date: let the value column wrap. */
+.run-timeline-row {
+  min-width: 0;
+}
+
+.run-timeline-row strong,
+.run-timeline-row small {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* Honest data-state banner: shown only when a run's upload health indicates
+ * missing or stalled metric rows. */
+.run-data-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  border: 1px solid var(--warm);
+  border-radius: var(--radius);
+  background: var(--warm-soft);
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.run-data-banner.bad {
+  border-color: color-mix(in srgb, var(--coral) 55%, var(--line));
+  background: var(--danger-soft);
+}
+
+.run-data-banner span {
+  color: var(--muted);
 }
 
 .run-metadata-editor {
@@ -45,7 +157,7 @@
 .metadata-read p,
 .form-error {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
 }
 
@@ -163,7 +275,7 @@
 }
 
 .detail-row.highlight {
-  border-color: rgba(31, 184, 119, 0.32);
+  border-color: rgba(43, 224, 130, 0.32);
   background: var(--surface-tint);
 }
 
@@ -223,7 +335,7 @@
 .workspace-summary-selection strong {
   margin-left: auto;
   color: var(--text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -285,7 +397,7 @@
 .metric-summary-head {
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -317,7 +429,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #273542;
+  color: #22261d;
   font-size: 13px;
   font-weight: 760;
 }
@@ -335,9 +447,9 @@
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--tight-radius);
-  background: var(--surface-muted);
+  background: var(--surface-soft);
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-style: normal;
   font-weight: 760;
   padding: 4px 8px;
@@ -358,10 +470,10 @@ pre {
   margin: 0;
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
-  background: #fbfcfd;
-  color: #223142;
+  background: #fdfdfb;
+  color: #22261d;
   padding: 10px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -385,19 +497,19 @@ pre {
 .inspector .detail-row strong {
   max-width: 62%;
   overflow: hidden;
-  color: #273542;
+  color: #22261d;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .inspector .detail-row .pill {
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .inspector pre {
-  background: #fbfcfd;
-  font-size: 11px;
+  background: #fdfdfb;
+  font-size: 12px;
 }
 
 .inspector .artifact-mini {
@@ -455,7 +567,7 @@ pre {
 
 .artifact-actions span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .artifact-card strong,
@@ -513,7 +625,7 @@ pre {
 
 .checkpoint-main small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .checkpoint-actions {
@@ -566,7 +678,7 @@ pre {
 .checkpoint-fork-grid span,
 .checkpoint-fork-field span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .checkpoint-fork-grid strong {
@@ -667,7 +779,7 @@ pre {
 .lineage-node span,
 .lineage-children-head span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .lineage-node strong {
@@ -717,7 +829,7 @@ pre {
   display: grid;
   min-height: 140px;
   place-items: center;
-  border: 1px dashed #cbd6e1;
+  border: 1px dashed #c8ccbc;
   border-radius: var(--radius);
   color: var(--muted);
   padding: 16px;
@@ -752,7 +864,7 @@ pre {
   border: 1px solid var(--line);
   border-radius: var(--tight-radius);
   background: #ffffff;
-  color: #344251;
+  color: #3a3f33;
   padding: 4px 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -788,9 +900,9 @@ pre {
   display: grid;
   gap: 2px;
   overflow: hidden;
-  background: #fbfcfd;
-  color: #4b5967;
-  font-size: 11px;
+  background: #fdfdfb;
+  color: #555b4c;
+  font-size: 12px;
   font-weight: 760;
 }
 
@@ -814,7 +926,7 @@ pre {
 
 .compare-head small {
   color: var(--accent-strong);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -846,7 +958,7 @@ pre {
 .compare-more,
 .compare-empty {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -856,7 +968,7 @@ pre {
   z-index: 1;
   display: grid;
   gap: 2px;
-  background: #fbfcfd;
+  background: #fdfdfb;
 }
 
 .compare-head.compare-attribute {
@@ -865,7 +977,7 @@ pre {
 
 .compare-attribute small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -873,7 +985,7 @@ pre {
 .compare-attribute strong {
   min-width: 0;
   overflow: hidden;
-  color: #1f2f3f;
+  color: #22261d;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -888,7 +1000,7 @@ pre {
   align-items: center;
   gap: 4px;
   overflow: hidden;
-  color: #344251;
+  color: #3a3f33;
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -902,7 +1014,7 @@ pre {
 .compare-cell small {
   flex: 0 0 auto;
   color: #5b6875;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 760;
 }
 
@@ -918,4 +1030,14 @@ pre {
   background: #eef9fb;
   color: #0c6570;
   font-weight: 700;
+}
+
+/* CK2: lineage URI shown inline now that the Checkpoints tab merged in. */
+.checkpoint-main .checkpoint-uri {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11.5px;
 }

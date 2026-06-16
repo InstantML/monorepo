@@ -184,6 +184,15 @@
             }
           },
           {
+            "name": "display_status",
+            "in": "query",
+            "description": "Filter by derived display status: running, stopping, stopped, finished, or failed",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "description": "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex.",
@@ -343,6 +352,18 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate stop retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         ],
@@ -705,6 +726,15 @@
             }
           },
           {
+            "name": "display_status",
+            "in": "query",
+            "description": "Filter by derived display status: running, stopping, stopped, finished, or failed",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "description": "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex.",
@@ -785,6 +815,15 @@
             "name": "status",
             "in": "query",
             "description": "Filter by run status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "display_status",
+            "in": "query",
+            "description": "Filter by derived display status: running, stopping, stopped, finished, or failed",
             "required": false,
             "schema": {
               "type": "string"
@@ -955,6 +994,88 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/stop": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "stop_runs",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate bulk stop retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded bulk stop requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStopBulkEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing runs:control scope",
             "content": {
               "application/json": {
                 "schema": {
@@ -1286,6 +1407,257 @@
           },
           {
             "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/stop": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "stop_run",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded stop request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStopEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing runs:control scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/stop-signal": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "stop_signal",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cooperative stop signal for SDK callers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopSignalEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing ingest scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/stop-ack": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "stop_ack",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StopAckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Acknowledged or completed stop request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunStopEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing ingest scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run or stop request not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stop request id mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
           }
         ]
       }
@@ -4362,6 +4734,46 @@
           }
         }
       },
+      "StopRunsRequest": {
+        "type": "object",
+        "required": [
+          "run_ids"
+        ],
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "RunStopBulkEnvelope": {
+        "type": "object",
+        "required": [
+          "results",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RunStopResult"
+            }
+          }
+        }
+      },
       "MetricsSeriesRequest": {
         "type": "object",
         "required": [
@@ -4590,6 +5002,112 @@
           },
           "run": {
             "$ref": "#/components/schemas/RunSummaryRow"
+          }
+        }
+      },
+      "StopRunRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RunStopEnvelope": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "run_control"
+        ],
+        "properties": {
+          "already_requested": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "already_terminal": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "run_control": {
+            "$ref": "#/components/schemas/RunControlSummary"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "StopSignalEnvelope": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "run_status",
+          "terminal",
+          "stop_requested",
+          "poll_after_seconds"
+        ],
+        "properties": {
+          "poll_after_seconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_status": {
+            "type": "string"
+          },
+          "stop_request": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StopSignalRequestSummary"
+              }
+            ]
+          },
+          "stop_requested": {
+            "type": "boolean"
+          },
+          "terminal": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StopAckRequest": {
+        "type": "object",
+        "required": [
+          "stop_request_id",
+          "state"
+        ],
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "stop_request_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -5368,6 +5886,50 @@
           }
         }
       },
+      "RunStopResult": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "ok"
+        ],
+        "properties": {
+          "already_requested": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "already_terminal": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "run_control": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RunControlSummary"
+              }
+            ]
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "RankCoveragePoint": {
         "type": "object",
         "required": [
@@ -5679,7 +6241,8 @@
           "latest_metrics",
           "metric_aggregates",
           "metric_keys",
-          "artifact_counts"
+          "artifact_counts",
+          "run_control"
         ],
         "properties": {
           "artifact_counts": {
@@ -5776,6 +6339,9 @@
             "type": "string",
             "format": "uuid"
           },
+          "run_control": {
+            "$ref": "#/components/schemas/RunControlSummary"
+          },
           "started_at": {
             "type": "string",
             "format": "date-time"
@@ -5817,6 +6383,104 @@
           },
           "parent_run_id": {
             "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "RunControlSummary": {
+        "type": "object",
+        "required": [
+          "stop_state",
+          "display_status",
+          "stop_requested"
+        ],
+        "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "completion_message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display_status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stop_acknowledged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stop_completed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stop_request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "stop_requested": {
+            "type": "boolean"
+          },
+          "stop_requested_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stop_state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "StopSignalRequestSummary": {
+        "type": "object",
+        "properties": {
+          "acknowledged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "requested_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "stop_request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid"
           }
         }
@@ -6268,6 +6932,14 @@
               "string",
               "null"
             ]
+          },
+          "share_token_issued_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the current share token was minted (S6). Tokens older than the\nconfigured TTL stop resolving. `None` on rows persisted before this\nfield existed — those legacy tokens stay valid until rotated."
           },
           "title": {
             "type": "string"

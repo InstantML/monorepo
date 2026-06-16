@@ -174,6 +174,14 @@ mod tests {
             ServicePlaneRole::Control
         ));
         assert!(openapi_path_available_for_plane(
+            "/api/reports",
+            ServicePlaneRole::Data
+        ));
+        assert!(!openapi_path_available_for_plane(
+            "/api/reports",
+            ServicePlaneRole::Control
+        ));
+        assert!(openapi_path_available_for_plane(
             "/api/storage/clickhouse-connections/current",
             ServicePlaneRole::Data
         ));

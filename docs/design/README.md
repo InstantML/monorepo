@@ -92,9 +92,14 @@ Current implemented design sequence, continued:
   JSON/CSV exports, per-chart plotted-data/image downloads, CSV safety rules,
   bounded synchronous limits, and the async export roadmap.
 - `2026-06-08-run-stop-signal.md`: reviewed cooperative stop-signal plan for
-  live runs, with run-control records, SDK helper polling/ack helpers,
-  dashboard request-stop controls, backwards-compatible legacy status behavior,
-  server-backed display-status filters, and PNG UI mockups.
+  Rust stop request endpoints, SDK polling/acknowledgement, dashboard request
+  controls, backwards-compatible legacy status behavior, and production rollout
+  checks.
+- `2026-06-10-backend-cluster-scaling-plan.md`: draft backend scaling plan for
+  moving from one control service, one data cell, and one ClickHouse host toward
+  a Postgres-backed cell registry, multiple single-writer data cells, explicit
+  route discovery, Free/Pro/Premium placement, org migration, control-plane
+  horizontal scale, and later data-plane multi-writer gates.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

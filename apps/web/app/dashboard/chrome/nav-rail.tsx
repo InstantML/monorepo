@@ -1,38 +1,47 @@
 "use client";
 
-import { BookOpen, CircleHelp, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { BookOpen, CircleHelp, Moon, Sun, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import type { MouseEvent } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
-import { tabToPath } from "../../../src/routes.js";
-import { navGroups } from "../../dashboard-config";
-import type { TabId } from "../../dashboard-types";
+import { navGroups, shellTabPath } from "../../dashboard-config";
+import type { ShellTabId } from "../../dashboard-config";
+
+const navGroupLabels: Record<(typeof navGroups)[number]["id"], string> = {
+  operate: "Operate",
+  data: "Data",
+  system: "System",
+};
 
 export function DashboardNav({
+  accountMenu,
   activeTab,
   compactNav = false,
   mobileOpen = false,
   onAutoOpenChange,
   onMobileClose,
-  onPinnedChange,
   onSelect,
   onShortcutHelp,
-  pinned,
+  onThemeToggle,
+  theme,
 }: {
-  activeTab: TabId;
+  accountMenu?: ReactNode;
+  activeTab: ShellTabId;
   compactNav?: boolean;
   mobileOpen?: boolean;
   onAutoOpenChange: (open: boolean) => void;
   onMobileClose?: () => void;
-  onPinnedChange: (pinned: boolean) => void;
-  onSelect: (tabId: TabId) => void;
+  onSelect: (tabId: ShellTabId) => void;
   onShortcutHelp?: () => void;
-  pinned: boolean;
+  onThemeToggle: () => void;
+  theme: "light" | "dark";
 }) {
   const navRef = useRef<HTMLElement>(null);
   const hiddenCompactNav = compactNav && !mobileOpen;
   const compactTabIndex = hiddenCompactNav ? -1 : undefined;
+  const dark = theme === "dark";
+  const themeLabel = dark ? "Switch to light mode" : "Switch to dark mode";
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -41,19 +50,7 @@ export function DashboardNav({
     }, 0);
   }, [activeTab, mobileOpen]);
 
-  function handlePinnedChange(nextPinned: boolean) {
-    function resetNavScroll() {
-      navRef.current?.scrollTo({ top: 0 });
-      navRef.current?.querySelector<HTMLElement>(".tab-scroll")?.scrollTo({ top: 0 });
-    }
-    resetNavScroll();
-    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-    if (!nextPinned) onAutoOpenChange(false);
-    onPinnedChange(nextPinned);
-    window.setTimeout(resetNavScroll, 0);
-  }
-
-  function handleTabSelect(event: MouseEvent<HTMLAnchorElement>, tabId: TabId) {
+  function handleTabSelect(event: MouseEvent<HTMLAnchorElement>, tabId: ShellTabId) {
     event.preventDefault();
     onMobileClose?.();
     onSelect(tabId);
@@ -63,12 +60,20 @@ export function DashboardNav({
 
   return (
     <nav
-      className={`tabs ${pinned ? "pinned" : ""}`}
+      className="tabs"
       aria-hidden={hiddenCompactNav ? true : undefined}
       aria-label="Dashboard sections"
-      onMouseEnter={() => onAutoOpenChange(true)}
-      onMouseLeave={() => onAutoOpenChange(false)}
-      onFocus={() => onAutoOpenChange(true)}
+      onMouseEnter={() => { if (!compactNav) onAutoOpenChange(true); }}
+      onMouseLeave={() => {
+        // Don't collapse out from under a focused rail item (keyboard user
+        // tabbing through while the pointer drifts off); onBlur handles those.
+        if (!compactNav && !navRef.current?.contains(document.activeElement)) onAutoOpenChange(false);
+      }}
+      onFocus={(event) => {
+        // Also expand for keyboard focus. Both hover and focus expand on enter —
+        // before any click — so an icon click still lands on its first press.
+        if (event.target instanceof HTMLElement && event.target.matches(":focus-visible")) onAutoOpenChange(true);
+      }}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onAutoOpenChange(false); }}
       ref={navRef}
     >
@@ -81,16 +86,19 @@ export function DashboardNav({
       <div className="tab-scroll">
         {navGroups.map((group) => (
           <div className="tab-group" key={group.id}>
+            <span className="tab-group-label">{navGroupLabels[group.id]}</span>
             {group.items.map((tab) => {
               const Icon = tab.icon;
               return (
                 <a
+                  aria-label={tab.label}
                   aria-current={activeTab === tab.id ? "page" : undefined}
                   className={`tab-button ${activeTab === tab.id ? "active" : ""}`}
-                  href={tabToPath(tab.id)}
+                  href={shellTabPath(tab.id)}
                   key={tab.id}
                   onClick={(event) => handleTabSelect(event, tab.id)}
                   tabIndex={compactTabIndex}
+                  title={tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
                 </a>
@@ -101,17 +109,18 @@ export function DashboardNav({
       </div>
       <div className="nav-footer">
         <button
-          aria-label={pinned ? "Unpin sidebar" : "Pin sidebar open"}
-          aria-pressed={pinned}
-          className={`tab-button nav-pin-button ${pinned ? "active" : ""}`}
-          onClick={() => handlePinnedChange(!pinned)}
+          aria-label={themeLabel}
+          aria-pressed={dark}
+          className="tab-button nav-theme-button"
+          onClick={onThemeToggle}
           tabIndex={compactTabIndex}
-          title={pinned ? "Unpin sidebar" : "Pin sidebar open"}
+          title={themeLabel}
           type="button"
         >
-          {pinned ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-          <span className="tab-label">{pinned ? "Unpin" : "Pin"}</span>
+          {dark ? <Sun size={15} /> : <Moon size={15} />}
+          <span className="tab-label">{dark ? "Light mode" : "Dark mode"}</span>
         </button>
+        {accountMenu ? <div className="rail-foot">{accountMenu}</div> : null}
       </div>
       <div className="nav-mobile-actions">
         <Link className="tab-button" href="/docs" aria-label="Docs" tabIndex={compactTabIndex}>
@@ -124,6 +133,10 @@ export function DashboardNav({
             <span className="tab-label">Shortcuts</span>
           </button>
         ) : null}
+        <button className="tab-button" type="button" onClick={onThemeToggle} aria-label={themeLabel} aria-pressed={dark} tabIndex={compactTabIndex}>
+          {dark ? <Sun size={15} /> : <Moon size={15} />}
+          <span className="tab-label">{dark ? "Light mode" : "Dark mode"}</span>
+        </button>
       </div>
     </nav>
   );

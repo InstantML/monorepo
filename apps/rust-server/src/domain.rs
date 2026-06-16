@@ -1077,6 +1077,11 @@ pub struct ReportRow {
     pub updated_at: DateTime<Utc>,
     pub author_user_id: Option<Uuid>,
     pub share_token: Option<String>,
+    /// When the current share token was minted (S6). Tokens older than the
+    /// configured TTL stop resolving. `None` on rows persisted before this
+    /// field existed — those legacy tokens stay valid until rotated.
+    #[serde(default)]
+    pub share_token_issued_at: Option<DateTime<Utc>>,
     /// One of `"private"`, `"org"`, `"public"`.
     pub visibility: String,
     pub deleted_at: Option<DateTime<Utc>>,

@@ -30,6 +30,7 @@ from typing import Any, Callable
 
 from .async_queue import (
     AsyncQueueRepository,
+    DEFAULT_ASYNC_QUEUE_DIR,
     DEFAULT_PRODUCER_BATCH_BYTES,
     DEFAULT_PRODUCER_BATCH_EVENTS,
     DEFAULT_PRODUCER_FLUSH_SECONDS,
@@ -125,6 +126,22 @@ def _default_base_url() -> str:
     return os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
 
 
+def _finish_drain_seconds(default: float) -> float:
+    """Drain budget for finish(); INSTANTML_FINISH_DRAIN_SECONDS overrides the default."""
+    raw = os.environ.get("INSTANTML_FINISH_DRAIN_SECONDS")
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        warnings.warn(
+            f"ignoring invalid INSTANTML_FINISH_DRAIN_SECONDS={raw!r}; using {default:g}s",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return default
+
+
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
 
 
@@ -156,7 +173,7 @@ class Client:
         async_init: bool = True,
         shadow_wandb: Any = False,
         queue_dir: str | None = None,
-        stop_check_interval_seconds: float = 10.0,
+        stop_check_interval_seconds: float = 30.0,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
@@ -264,7 +281,7 @@ class Client:
         capture_console: bool = False,
         queue_dir: str | None = None,
         validate: bool = True,
-        stop_check_interval_seconds: float = 10.0,
+        stop_check_interval_seconds: float = 30.0,
     ) -> "Run":
         """Return a Run handle for an existing server-side run."""
 
@@ -1147,7 +1164,7 @@ class Run:
         spool_dir: str | None = None,
         queue_dir: str | None = None,
         media_dir: str | None = None,
-        stop_check_interval_seconds: float = 10.0,
+        stop_check_interval_seconds: float = 30.0,
         _local_store: "_LocalStore | None" = None,
         shadow: "ShadowWandb | None" = None,
     ) -> None:
@@ -2374,7 +2391,10 @@ class Run:
             # (or a second finish() call) cannot double-PATCH or double-drain.
             self._finished = True
         async_processed = True
-        async_finish_timeout = max(0.0, getattr(self.client, "timeout", 10.0) if timeout is None else timeout)
+        async_finish_timeout = max(
+            0.0,
+            _finish_drain_seconds(getattr(self.client, "timeout", 10.0)) if timeout is None else timeout,
+        )
         sampler = self._system_sampler
         if sampler is not None:
             sampler.stop()
@@ -2395,10 +2415,16 @@ class Run:
                     if self._async_disabled_reason is not None:
                         message = f"async upload unavailable; finish status was not delivered: {self._async_disabled_reason}"
                     else:
+                        queued = 0
+                        if self._async_queue is not None:
+                            snapshot = self._async_queue.status()
+                            queued = snapshot["pending"] + snapshot["in_flight"]
+                        queue_dir = self.queue_dir or DEFAULT_ASYNC_QUEUE_DIR
                         message = (
-                            "async upload did not finish before finish() timeout; flushed queue rows remain on disk for the "
-                            "background uploader or instantml-uploader recovery, while any still-buffered producer events "
-                            "remain process-local"
+                            f"async upload did not finish before the finish() drain timeout ({async_finish_timeout:g}s); "
+                            f"{queued} queued row(s) remain on disk for the background uploader, while any still-buffered "
+                            f"producer events remain process-local. Recover now with "
+                            f"`instantml-uploader --queue-dir {queue_dir}` or raise INSTANTML_FINISH_DRAIN_SECONDS"
                         )
                     warnings.warn(message, RuntimeWarning, stacklevel=2)
                 return
@@ -2581,7 +2607,7 @@ def init(
     async_init: bool = True,
     shadow_wandb: Any = False,
     queue_dir: str | None = None,
-    stop_check_interval_seconds: float = 10.0,
+    stop_check_interval_seconds: float = 30.0,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 
@@ -2634,7 +2660,7 @@ def attach_run(
     capture_console: bool = False,
     queue_dir: str | None = None,
     validate: bool = True,
-    stop_check_interval_seconds: float = 10.0,
+    stop_check_interval_seconds: float = 30.0,
 ) -> Run:
     """Attach SDK logging to an existing run, such as a UI-created fork."""
 

@@ -17,7 +17,7 @@ use crate::{
         LogMetricsRequest, LogRankMetricsRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
         UpdateRunRequest,
     },
-    errors::AppResult,
+    errors::{AppError, AppResult},
     store,
 };
 
@@ -26,6 +26,15 @@ use super::helpers::{
     context, header_text, header_value, parse_uuid, read_json, read_json_with_raw, require_scope,
     validate_session_mutation_origin,
 };
+
+fn require_sdk_control_actor(ctx: &crate::domain::RequestContext) -> AppResult<()> {
+    if ctx.session.is_some() {
+        return Err(AppError::forbidden(
+            "SDK stop polling and acknowledgement require an SDK API key",
+        ));
+    }
+    Ok(())
+}
 
 #[utoipa::path(
     post,
@@ -151,6 +160,7 @@ pub async fn list_runs(
     tag = "runs",
     params(
         ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate stop retries"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
@@ -323,9 +333,11 @@ pub async fn stop_run(
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "runs:control", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
-    let input = read_json::<StopRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let (input, raw) =
+        read_json_with_raw::<StopRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
     Ok(Json(
-        store::request_run_stop(&state.store, &ctx, run_id, input).await?,
+        store::request_run_stop(&state.store, &ctx, run_id, raw, input, idempotency_key).await?,
     ))
 }
 
@@ -333,6 +345,9 @@ pub async fn stop_run(
     post,
     path = "/api/runs/stop",
     tag = "runs",
+    params(
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate bulk stop retries"),
+    ),
     request_body = crate::domain::StopRunsRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
@@ -350,9 +365,11 @@ pub async fn stop_runs(
     let ctx = context(&state, &headers, true).await?;
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "runs:control", &state)?;
-    let input = read_json::<StopRunsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let (input, raw) =
+        read_json_with_raw::<StopRunsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
     Ok(Json(
-        store::request_bulk_run_stop(&state.store, &ctx, input).await?,
+        store::request_bulk_run_stop(&state.store, &ctx, raw, input, idempotency_key).await?,
     ))
 }
 
@@ -363,7 +380,7 @@ pub async fn stop_runs(
     params(
         ("run_id" = String, Path, description = "Run UUID"),
     ),
-    security(("bearerApiKey" = []), ("browserSession" = [])),
+    security(("bearerApiKey" = [])),
     responses(
         (status = 200, description = "Cooperative stop signal for SDK callers", body = crate::http::openapi::StopSignalEnvelope),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
@@ -377,6 +394,7 @@ pub async fn stop_signal(
     Path(run_id): Path<String>,
 ) -> AppResult<Response> {
     let ctx = context(&state, &headers, true).await?;
+    require_sdk_control_actor(&ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let mut response =
@@ -398,7 +416,7 @@ pub async fn stop_signal(
         ("run_id" = String, Path, description = "Run UUID"),
     ),
     request_body = crate::domain::StopAckRequest,
-    security(("bearerApiKey" = []), ("browserSession" = [])),
+    security(("bearerApiKey" = [])),
     responses(
         (status = 200, description = "Acknowledged or completed stop request", body = crate::http::openapi::RunStopEnvelope),
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
@@ -415,7 +433,7 @@ pub async fn stop_ack(
     bytes: Bytes,
 ) -> AppResult<Json<Value>> {
     let ctx = context(&state, &headers, true).await?;
-    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_sdk_control_actor(&ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
     let input = read_json::<StopAckRequest>(&headers, bytes, state.config.max_body_bytes)?;
@@ -935,4 +953,27 @@ pub async fn list_object_rows(
     Ok(Json(
         store::list_object_rows(&state.store, &ctx, object_id, &query).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{RequestContext, SessionContext};
+
+    #[test]
+    fn sdk_stop_control_rejects_browser_session_context() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: Some(SessionContext {
+                session_id: Uuid::from_u128(2),
+                user_id: Uuid::from_u128(3),
+                role: "member".to_string(),
+                demo_read_only: false,
+            }),
+        };
+
+        let err = require_sdk_control_actor(&ctx).unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::FORBIDDEN);
+    }
 }

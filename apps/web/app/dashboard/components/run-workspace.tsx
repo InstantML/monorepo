@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Search,
   Server,
-  Square,
   Terminal,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -23,7 +22,7 @@ import { isAbortError, queryString, retryTransientRequest } from "../../../src/a
 import { buildCheckpointResumeCode } from "../../../src/checkpoints.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../../../src/evidence.js";
 import { ansiTokens, terminalWindow } from "../../../src/terminal.js";
-import { canRequestStop, displayStatusForRun, formatNumber, statusTone } from "../../../src/state.js";
+import { displayStatusForRun, formatNumber, statusTone } from "../../../src/state.js";
 import { ArtifactBrowser } from "../artifacts/artifact-browser";
 import { MetricCard } from "../ui/metric-card";
 import { MetricChart } from "../metrics/metric-chart";
@@ -82,13 +81,8 @@ export function RunWorkspace({
   activeMetricKey,
   api,
   artifacts,
-  chartDomain,
-  chartFullDomain,
-  chartHover,
-  chartNormalizedSeries,
-  chartRangeSeries,
+  chartSeries,
   chartZoomRange,
-  canControlRuns,
   dataControls,
   elementId,
   hover,
@@ -96,11 +90,9 @@ export function RunWorkspace({
   metricRows,
   objectRowsById,
   onChartLeave,
-  onChartMove,
   onChartPointHover,
   onChartZoomRangeChange,
   onForkCheckpoint,
-  onRequestStop,
   onRunMetadataSave,
   onWorkspaceTabChange,
   run,
@@ -113,13 +105,8 @@ export function RunWorkspace({
   activeMetricKey: string;
   api: ApiLike;
   artifacts: Artifact[];
-  chartDomain: any;
-  chartFullDomain: any;
-  chartHover: HoverPoint;
-  chartNormalizedSeries: MetricSeries[];
-  chartRangeSeries: MetricSeries[];
+  chartSeries: MetricSeries[];
   chartZoomRange: ChartZoomRange;
-  canControlRuns: boolean;
   dataControls?: ReactNode;
   elementId: string;
   hover: HoverPoint;
@@ -127,11 +114,9 @@ export function RunWorkspace({
   metricRows: RunMetricRow[];
   objectRowsById: Record<number, LoggedObjectRow[]>;
   onChartLeave: () => void;
-  onChartMove: (event: MouseEvent<SVGSVGElement>) => void;
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onForkCheckpoint?: (artifact: Artifact, options: { inheritConfig: boolean; name: string; reason: string }) => Promise<void>;
-  onRequestStop: (runIds: string[]) => void;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   run: RunSummary | null;
@@ -145,13 +130,12 @@ export function RunWorkspace({
     return (
       <div className="empty compact-empty run-detail-empty">
         <strong>No run open</strong>
-        <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics.</span>
+        <span>Pick a run from the Runs workspace to inspect its summary, logs, files, and system metrics. Checkpoints live here too — open a run to download, resume, or fork from its checkpoints.</span>
         <a className="secondary compact-button" href="/dashboard/runs">Go to Runs</a>
       </div>
     );
   }
   const displayStatus = displayStatusForRun(run);
-  const canStop = canRequestStop(run, canControlRuns);
   return (
     <div className="run-workspace" id={elementId}>
       <header className="run-workspace-header">
@@ -161,11 +145,6 @@ export function RunWorkspace({
           <span className="run-workspace-sub">{durationContext(run)} · {sourceContext(run)}</span>
           <div className="run-workspace-spacer" />
           <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
-          {canStop ? (
-            <button className="secondary compact-button run-stop-button" onClick={() => onRequestStop([run.id])} type="button">
-              <Square size={14} /> Request stop
-            </button>
-          ) : null}
           <div className="run-workspace-meta">
             {run.tags.slice(0, 2).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
             {run.tags.length > 2 ? <span className="chip">+{run.tags.length - 2}</span> : null}
@@ -190,14 +169,13 @@ export function RunWorkspace({
         <RunDetail
           activeMetricKey={activeMetricKey}
           artifacts={artifacts}
-          canControlRuns={canControlRuns}
           elementId={`${elementId}-summary`}
           hover={hover}
           loggedObjects={loggedObjects}
           metricRows={metricRows}
           objectRowsById={objectRowsById}
           onForkCheckpoint={onForkCheckpoint}
-          onRequestStop={onRequestStop}
+          onOpenFiles={() => onWorkspaceTabChange("files")}
           onRunMetadataSave={onRunMetadataSave}
           run={run}
           selectedCount={selectedCount}
@@ -215,18 +193,14 @@ export function RunWorkspace({
             <span className="chart-kind">bounded series</span>
           </div>
           <MetricChart
-            domain={chartDomain}
-            fullDomain={chartFullDomain}
             height={320}
-            hover={chartHover}
             metricKey={activeMetricKey}
-            normalizedSeries={chartNormalizedSeries}
+            emptyMessage={run ? `${run.name} has not logged the selected metric. Pick one of its logged metrics from the Metric selector above.` : undefined}
             onLeave={onChartLeave}
-            onMove={onChartMove}
             onPointHover={onChartPointHover}
             onZoomRangeChange={onChartZoomRangeChange}
             padding={48}
-            rangeSeries={chartRangeSeries}
+            series={chartSeries}
             showRange={false}
             xMode={xMode}
             zoomRange={chartZoomRange}
@@ -244,7 +218,7 @@ export function RunWorkspace({
   );
 }
 
-function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
+export function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [stream, setStream] = useState<"stdout" | "stderr">("stdout");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
@@ -383,7 +357,7 @@ function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   );
 }
 
-function RunEvidenceExplorer({
+export function RunEvidenceExplorer({
   artifacts,
   objects,
   rowsByObjectId,
@@ -434,7 +408,7 @@ function RunEvidenceExplorer({
       </aside>
       <div className="evidence-preview">
         {selected ? <EvidencePreview item={selected} rowsByObjectId={rowsByObjectId} run={run} /> : (
-          <div className="empty">No evidence logged for {run.name}.</div>
+          <div className="empty">No artifacts logged for {run.name} yet.</div>
         )}
       </div>
     </section>
@@ -484,7 +458,7 @@ function EvidencePreview({ item, rowsByObjectId, run }: { item: any; rowsByObjec
   return <div className="empty">Select evidence to preview it.</div>;
 }
 
-function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: RunSummary }) {
+export function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: RunSummary }) {
   const commit = metadataValue(run.metadata, "git_commit")
     ?? metadataValue(run.metadata, "commit")
     ?? nestedMetadataValue(run.metadata, ["_rlobs", "source", "git", "commit"]);
@@ -500,7 +474,20 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
   ];
   const systemRows = metricRows
     .filter((row) => /^(system|gpu|cpu|mem|memory|disk|network|hardware)[/_]/i.test(row.key))
+    .filter((row) => !/upload_health_unix_seconds$/.test(row.key))
     .sort((a, b) => a.key.localeCompare(b.key));
+  // Raw unix timestamps are meaningless in a stats table; surface the SDK
+  // heartbeat as a relative time in the identity strip instead.
+  const heartbeatRow = metricRows.find((row) => /upload_health_unix_seconds$/.test(row.key));
+  const heartbeatAgeSeconds = heartbeatRow?.latest ? Math.max(0, Math.round(Date.now() / 1000 - heartbeatRow.latest)) : null;
+  const heartbeatLabel = heartbeatAgeSeconds === null
+    ? "not logged"
+    : heartbeatAgeSeconds < 90
+      ? `${heartbeatAgeSeconds}s ago`
+      : heartbeatAgeSeconds < 5400
+        ? `${Math.round(heartbeatAgeSeconds / 60)}m ago`
+        : `${Math.round(heartbeatAgeSeconds / 3600)}h ago`;
+  identity.push(["Last SDK heartbeat", heartbeatLabel]);
   const fmt = (value: number | null) => (value === null ? "—" : formatNumber(value, 3));
   return (
     <section className="run-workspace-panel system-panel">
@@ -555,7 +542,7 @@ function RunSystemPanel({ metricRows, run }: { metricRows: RunMetricRow[]; run: 
   );
 }
 
-function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
+export function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   const [lineage, setLineage] = useState<RunLineage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -643,7 +630,7 @@ function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
                   {children.map((child) => (
                     <tr key={child.id}>
                       <td><strong title={child.name}>{child.name}</strong></td>
-                      <td><span className={`pill ${statusTone(displayStatusForRun(child))}`}>{displayStatusForRun(child)}</span></td>
+                      <td><span className={`pill ${statusTone(child.status)}`}>{child.status}</span></td>
                       <td>{child.forked_from_step ?? "unknown"}</td>
                       <td>{formatTimestamp(child.created_at)}</td>
                     </tr>
