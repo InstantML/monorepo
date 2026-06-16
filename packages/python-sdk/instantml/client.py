@@ -6,10 +6,12 @@ import atexit
 import base64
 import functools
 import hashlib
+import importlib.metadata
 import json
 import math
 import mimetypes
 import os
+import random
 import signal
 import sqlite3
 import sys
@@ -120,6 +122,21 @@ _PENDING_RUN_ID = "__instantml_pending__"
 _RATE_LIMIT_RETRY_ATTEMPTS = 3
 _RATE_LIMIT_RETRY_BASE_SECONDS = 0.25
 _RATE_LIMIT_RETRY_MAX_SECONDS = 5.0
+_STOP_POLL_JITTER_FRACTION = 0.10
+
+
+def _sdk_version() -> str:
+    try:
+        return importlib.metadata.version("instantml")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _sdk_metadata() -> dict[str, Any]:
+    return {
+        "sdk_version": _sdk_version(),
+        "stop_signal_capable": True,
+    }
 
 
 def _default_base_url() -> str:
@@ -183,6 +200,11 @@ class Client:
         if source_settings is not None:
             combined_metadata["_rlobs"] = {"source": _source_metadata(source_settings)}
         combined_metadata.update(metadata or {})
+        existing_sdk_metadata = combined_metadata.get("_instantml")
+        combined_metadata["_instantml"] = {
+            **(existing_sdk_metadata if isinstance(existing_sdk_metadata, dict) else {}),
+            **_sdk_metadata(),
+        }
         if notes is not None:
             combined_metadata["notes"] = _validate_note_text(notes)
         create_body = {
@@ -1489,9 +1511,16 @@ class Run:
         """Finish a run after honoring a cooperative dashboard stop request."""
 
         request = self._stop_request or self.stop_request(force=True)
+        completed_ack = False
         if request is not None:
-            self._ack_stop_request(request, "completed", message=message)
-        self.finish("failed", timeout=timeout)
+            completed_ack = self._ack_stop_request(request, "completed", message=message)
+        if completed_ack:
+            try:
+                self.finish("failed", timeout=timeout)
+            except InstantMLError:
+                return
+        else:
+            self.finish("failed", timeout=timeout)
 
     def _stop_poll_due(self) -> bool:
         if self.stop_check_interval_seconds <= 0:
@@ -1499,7 +1528,11 @@ class Run:
         return time.monotonic() >= self._next_stop_check_at
 
     def _schedule_next_stop_check(self, delay_seconds: float) -> None:
-        self._next_stop_check_at = time.monotonic() + max(0.0, delay_seconds)
+        delay = max(0.0, delay_seconds)
+        if delay > 0:
+            jitter = delay * _STOP_POLL_JITTER_FRACTION
+            delay = max(0.0, delay + random.uniform(-jitter, jitter))
+        self._next_stop_check_at = time.monotonic() + delay
 
     def _stop_poll_delay(self, payload: dict[str, Any], fallback_delay: float) -> float:
         raw = payload.get("poll_after_seconds")
@@ -1519,9 +1552,9 @@ class Run:
             api_key=getattr(self.client, "api_key", None),
         )
 
-    def _ack_stop_request(self, request: StopRequest, state: str, message: str | None = None) -> None:
+    def _ack_stop_request(self, request: StopRequest, state: str, message: str | None = None) -> bool:
         if state == "acknowledged" and self._stop_acknowledged:
-            return
+            return True
         body: dict[str, Any] = {"stop_request_id": request.stop_request_id, "state": state}
         if message is not None:
             body["message"] = message
@@ -1530,14 +1563,16 @@ class Run:
                 "POST",
                 f"/api/runs/{urllib.parse.quote(self.run_id, safe='')}/stop-ack",
                 body,
+                retry_rate_limits=False,
             )
             if state == "acknowledged":
                 self._stop_acknowledged = True
+            return True
         except InstantMLError:
             # Stop helpers should not make user shutdown less reliable than a
             # normal failed finish. The next helper call or finish_stopped() can
             # retry the acknowledgement.
-            pass
+            return False
 
     def __enter__(self) -> "Run":
         return self

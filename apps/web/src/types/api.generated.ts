@@ -3463,6 +3463,12 @@ export interface components {
             /** Format: uuid */
             run_id: string;
         };
+        RunSummariesEnvelope: {
+            runs: components["schemas"]["RunSummaryRow"][];
+        };
+        RunSummaryEnvelope: {
+            run: components["schemas"]["RunSummaryRow"];
+        };
         RunSummaryRow: {
             artifact_counts: {
                 [key: string]: number;
@@ -7709,7 +7715,10 @@ export interface operations {
     stop_run: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate stop retries */
+                "Idempotency-Key"?: string | null;
+            };
             path: {
                 /** @description Run UUID */
                 run_id: string;
@@ -8588,7 +8597,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunsEnvelope"];
+                    "application/json": components["schemas"]["RunSummariesEnvelope"];
                 };
             };
             /** @description Invalid run search or query parameter */
@@ -8656,10 +8665,7 @@ export interface operations {
     get_run: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description Stable client key used to deduplicate stop retries */
-                "Idempotency-Key"?: string | null;
-            };
+            header?: never;
             path: {
                 /** @description Run UUID */
                 run_id: string;
@@ -8674,7 +8680,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunEnvelope"];
+                    "application/json": components["schemas"]["RunSummaryEnvelope"];
                 };
             };
             /** @description Run not found */

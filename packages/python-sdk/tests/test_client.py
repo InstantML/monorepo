@@ -3954,6 +3954,8 @@ def test_client_init_applies_opt_in_source_tracking_at_payload_boundary(monkeypa
 
     metadata = calls[0][2]["metadata"]
     source_metadata = metadata["_rlobs"]["source"]
+    assert metadata["_instantml"]["stop_signal_capable"] is True
+    assert isinstance(metadata["_instantml"]["sdk_version"], str)
     assert metadata["hostname"] == "trainer-host"
     assert metadata["pid"] == 12345
     assert source_metadata["argv"] == ["/workspace/project/train.py", "--epochs", "2"]

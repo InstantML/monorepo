@@ -608,8 +608,9 @@ Session/subscription.
 Billing write gates return HTTP `402` with `code: "payment_required"` when an
 org is in `checkout_pending`, `read_only_payment_required`, or `canceled`.
 Plan-capacity guardrails keep using HTTP `402` with
-`code: "plan_limit_exceeded"`. Reads, exports, usage, billing status, and portal
-creation remain available during payment failures.
+`code: "plan_limit_exceeded"`. Reads, exports, usage, billing status, portal
+creation, and cooperative stop requests remain available during payment
+failures.
 
 ## Projects
 
@@ -776,13 +777,14 @@ IDs. The response is `{ "results": [...], "limit": 100 }` with per-run
 
 #### `GET /api/runs/:run_id/stop-signal`
 
-Auth: `sdk:ingest` API key or owner/admin/member browser session. No-op polls
-are exempt from monthly API-request metering. SDK callers receive only the
+Auth: `sdk:ingest` API key only. Browser sessions are rejected so dashboard
+users cannot forge SDK acknowledgement or completion. No-op polls are exempt
+from monthly API-request metering. SDK callers receive only the
 boolean/request-id/timestamp signal; stop reason text is not returned.
 
 #### `POST /api/runs/:run_id/stop-ack`
 
-Auth: `sdk:ingest` API key or owner/admin/member browser session. Body is
+Auth: `sdk:ingest` API key only. Browser sessions are rejected. Body is
 `{ "stop_request_id": "uuid", "state": "acknowledged" | "completed", "message": "optional" }`.
 Completion records the stop-control row and marks the legacy run terminal as
 `failed` for backwards-compatible clients, while new clients render

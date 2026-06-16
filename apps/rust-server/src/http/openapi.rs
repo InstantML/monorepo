@@ -111,8 +111,18 @@ pub struct RunEnvelope {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct RunSummaryEnvelope {
+    pub run: RunSummaryRow,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct RunsEnvelope {
     pub runs: Vec<RunRow>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RunSummariesEnvelope {
+    pub runs: Vec<RunSummaryRow>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -945,6 +955,8 @@ impl Modify for SecurityAddon {
         ProjectsEnvelope,
         RunEnvelope,
         RunsEnvelope,
+        RunSummaryEnvelope,
+        RunSummariesEnvelope,
         RunControlRow,
         RunControlSummary,
         RunStopEnvelope,

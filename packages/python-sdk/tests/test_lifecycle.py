@@ -140,6 +140,7 @@ def test_raise_if_stop_requested_acknowledges_before_raising(monkeypatch):
         "/api/runs/run-1/stop-ack",
         {"stop_request_id": "stop-1", "state": "acknowledged"},
     )
+    assert stop_client.requests[-1][3]["retry_rate_limits"] is False
     run.finish("failed")
 
 
@@ -151,6 +152,34 @@ def test_finish_stopped_completes_stop_and_legacy_failed(monkeypatch):
 
     run.finish_stopped(message="safe checkpoint")
 
+    assert (
+        "POST",
+        "/api/runs/run-1/stop-ack",
+        {"stop_request_id": "stop-1", "state": "completed", "message": "safe checkpoint"},
+    ) in [_request_triplet(request) for request in stop_client.requests]
+    completed_ack = next(request for request in stop_client.requests if request[2] and request[2].get("state") == "completed")
+    assert completed_ack[3]["retry_rate_limits"] is False
+    assert ("PATCH", "/runs/run-1", {"status": "failed"}) in [
+        _request_triplet(request) for request in client.requests
+    ]
+
+
+def test_finish_stopped_does_not_raise_when_legacy_patch_fails(monkeypatch):
+    class _PatchFailClient(_RecordingClient):
+        def _request(self, method, path, body=None, **kwargs):
+            self.requests.append((method, path, body, kwargs))
+            if method == "PATCH":
+                raise InstantMLError("PATCH /runs/run-1 failed: HTTP 402: billing required")
+            return {"run": {"id": "run-1"}}
+
+    client = _PatchFailClient()
+    stop_client = _StopClient()
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    monkeypatch.setattr(run, "_stop_client", lambda: stop_client)
+
+    run.finish_stopped(message="safe checkpoint")
+
+    assert run._is_finished()
     assert (
         "POST",
         "/api/runs/run-1/stop-ack",
@@ -247,6 +276,13 @@ def test_raise_if_stop_requested_respects_poll_interval(monkeypatch):
 def test_stop_poll_uses_server_poll_after_seconds(monkeypatch):
     now = [100.0]
     monkeypatch.setattr(client_module.time, "monotonic", lambda: now[0])
+    jitter_calls = []
+
+    def fake_jitter(lower, upper):
+        jitter_calls.append((lower, upper))
+        return 6.0
+
+    monkeypatch.setattr(client_module.random, "uniform", fake_jitter)
     client = _RecordingClient()
     stop_client = _StopClient(requested=False)
     run = Run(
@@ -265,6 +301,8 @@ def test_stop_poll_uses_server_poll_after_seconds(monkeypatch):
         request for request in stop_client.requests if request[1].endswith("/stop-signal")
     ]
     assert len(stop_signal_requests) == 1
+    assert jitter_calls == [(-6.0, 6.0)]
+    assert run._next_stop_check_at == 166.0
     run.finish("failed")
 
 

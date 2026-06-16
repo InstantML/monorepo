@@ -107,11 +107,18 @@ type SavedViewOption = {
   source: "control" | "local" | "system";
   value: string;
 };
+type StopDialogSkipCounts = {
+  alreadyStopping: number;
+  readOnly: number;
+  terminal: number;
+  unavailable: number;
+};
 type StopDialogState = {
   idempotencyKey: string;
   reason: string;
   runIds: string[];
   ineligibleRunCount: number;
+  skippedCounts: StopDialogSkipCounts;
   skippedRunCount: number;
   source: "single" | "bulk";
 } | null;
@@ -926,7 +933,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
-  const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
+  const apiStatusParams = useMemo(() => dashboardStatusQueryParams(status, status), [status]);
+  const apiRows = useMemo(() => buildApiRows(metricKey, project, apiStatusParams), [apiStatusParams, metricKey, project]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
   const localSavedViewScope = useMemo(
     () => storageScopeId([activeOrgId, sessionPayload?.user?.primary_email ?? ""].filter(Boolean).join(":")),
@@ -3188,21 +3196,45 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   function stopCandidatesForIds(runIds: string[]) {
     const seen = new Set<string>();
     const runs: RunSummary[] = [];
-    let ineligibleRunCount = 0;
+    const skippedCounts: StopDialogSkipCounts = {
+      alreadyStopping: 0,
+      readOnly: 0,
+      terminal: 0,
+      unavailable: 0,
+    };
     for (const runId of runIds) {
       if (seen.has(runId)) continue;
       seen.add(runId);
       const run = runSummaryForId(runId);
-      if (!run || !canRequestStop(run, canControlRuns)) {
-        ineligibleRunCount += 1;
+      if (!run) {
+        skippedCounts.unavailable += 1;
+        continue;
+      }
+      if (!canControlRuns) {
+        skippedCounts.readOnly += 1;
+        continue;
+      }
+      if (run.status !== "running") {
+        skippedCounts.terminal += 1;
+        continue;
+      }
+      if (!canRequestStop(run, canControlRuns)) {
+        skippedCounts.alreadyStopping += displayStatusForRun(run) === "stopping" || ["requested", "acknowledged"].includes(run.run_control?.stop_state || "")
+          ? 1
+          : 0;
+        skippedCounts.unavailable += displayStatusForRun(run) === "stopping" || ["requested", "acknowledged"].includes(run.run_control?.stop_state || "")
+          ? 0
+          : 1;
         continue;
       }
       runs.push(run);
     }
     const cappedRuns = runs.slice(0, MAX_STOP_DIALOG_RUNS);
+    const ineligibleRunCount = Object.values(skippedCounts).reduce((total, count) => total + count, 0);
     return {
       runs: cappedRuns,
       ineligibleRunCount,
+      skippedCounts,
       skippedRunCount: Math.max(0, runs.length - cappedRuns.length),
     };
   }
@@ -3223,18 +3255,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       setMessage("Select runs explicitly before requesting a bulk stop.");
       return;
     }
-    const { runs: candidates, ineligibleRunCount, skippedRunCount } = stopCandidatesForIds(runIds);
+    const { runs: candidates, ineligibleRunCount, skippedCounts, skippedRunCount } = stopCandidatesForIds(runIds);
     if (!candidates.length) {
       setMessage(source === "bulk" ? "No selected running runs can be stopped." : "This run cannot be stopped.");
       return;
     }
-    const dialogSource = candidates.length > 1 ? "bulk" : "single";
+    const dialogSource = source === "bulk" || candidates.length > 1 ? "bulk" : "single";
     setStopError("");
     setStopDialog({
       idempotencyKey: nextStopIdempotencyKey(dialogSource),
       ineligibleRunCount,
       reason: "",
       runIds: candidates.map((run) => run.id),
+      skippedCounts,
       skippedRunCount,
       source: dialogSource,
     });
@@ -3279,7 +3312,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     try {
       const reason = stopDialog.reason.trim();
       const headers = { "Idempotency-Key": stopDialog.idempotencyKey };
-      const payload = runIds.length === 1
+      const payload = stopDialog.source === "single" && runIds.length === 1
         ? await api.post(`/api/runs/${runIds[0]}/stop`, { reason: reason || null }, { headers }) as GeneratedRunStopEnvelope
         : await api.post("/api/runs/stop", { run_ids: runIds, reason: reason || null }, { headers }) as GeneratedRunStopBulkEnvelope;
       const { controls, failures, terminalCount } = collectStopControls(payload);
@@ -3295,10 +3328,24 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       setMessage(failures.length
         ? `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. ${failures.length + terminalCount} could not be updated.`
         : `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. Waiting for SDK acknowledgement.`);
-      setSummary((current) => ({
-        ...current,
-        runs: current.runs.map((run) => controls.has(run.id) ? mergeRunControl(run, controls.get(run.id)!) : run),
-      }));
+      setSummary((current) => {
+        let removed = 0;
+        const activeDisplayStatus = normalizeDisplayStatus(status);
+        const runs = current.runs.flatMap((run) => {
+          if (!controls.has(run.id)) return [run];
+          const next = mergeRunControl(run, controls.get(run.id)!);
+          if (activeDisplayStatus && displayStatusForRun(next) !== activeDisplayStatus) {
+            removed += 1;
+            return [];
+          }
+          return [next];
+        });
+        return {
+          ...current,
+          runs,
+          total: removed > 0 ? Math.max(0, current.total - removed) : current.total,
+        };
+      });
       setSelectedRunDetails((current) => {
         let changed = false;
         const next = { ...current };
@@ -3324,6 +3371,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         }
         return next;
       });
+      void loadDashboard({ silent: true });
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to request stop.";
       setStopError(detail);
@@ -3871,6 +3919,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const stopDialogTitle = stopDialogRuns.length === 1
     ? `Request stop for ${stopDialogRuns[0]?.name ?? "run"}`
     : `Request stop for ${stopDialogRuns.length} runs`;
+  const stopDialogSkipRows = stopDialog
+    ? [
+        { count: stopDialog.skippedCounts.alreadyStopping, label: "Already stopping" },
+        { count: stopDialog.skippedCounts.terminal, label: "Terminal" },
+        { count: stopDialog.skippedCounts.unavailable, label: "Unavailable" },
+        { count: stopDialog.skippedCounts.readOnly, label: "Read only" },
+      ].filter((row) => row.count > 0)
+    : [];
+  const stopDialogSkippedSummary = stopDialogSkipRows.length
+    ? stopDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
+    : "";
 
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
@@ -3935,15 +3994,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
               </button>
             </div>
             <div className="checkpoint-fork-body">
-              <p className="checkpoint-fork-notice">InstantML records a stop request and waits for the SDK to acknowledge it at the next poll.</p>
+              <p className="checkpoint-fork-notice">InstantML records a cooperative stop request and waits for SDK code that polls stop-signal to acknowledge it. Old, offline, or non-polling loops cannot be force-terminated from the dashboard.</p>
               <div className="checkpoint-fork-grid stop-request-grid">
                 <div><span>Eligible runs</span><strong>{stopDialogRuns.length}</strong></div>
                 <div><span>Mode</span><strong>{stopDialog.source === "bulk" ? "bulk" : "single"}</strong></div>
-                {stopDialog.ineligibleRunCount > 0 ? <div><span>Ineligible</span><strong>{stopDialog.ineligibleRunCount}</strong></div> : null}
+                {stopDialogSkipRows.map((row) => (
+                  <div key={row.label}><span>{row.label}</span><strong>{row.count}</strong></div>
+                ))}
                 {stopDialog.skippedRunCount > 0 ? <div><span>Skipped</span><strong>{stopDialog.skippedRunCount}</strong></div> : null}
               </div>
-              {stopDialog.ineligibleRunCount > 0 ? (
-                <p className="checkpoint-fork-notice">{stopDialog.ineligibleRunCount} selected {stopDialog.ineligibleRunCount === 1 ? "run is" : "runs are"} already stopped, stopping, terminal, unavailable, or read only.</p>
+              {stopDialogSkippedSummary ? (
+                <p className="checkpoint-fork-notice">Skipped selected runs ({stopDialogSkippedSummary}). Only eligible running runs receive a new stop request.</p>
               ) : null}
               {stopDialog.skippedRunCount > 0 ? (
                 <p className="checkpoint-fork-notice">Only the first {MAX_STOP_DIALOG_RUNS} eligible selected runs are included. {stopDialog.skippedRunCount} more will be left untouched.</p>

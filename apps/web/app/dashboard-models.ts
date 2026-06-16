@@ -811,11 +811,12 @@ export function buildReportRows(savedViews: Array<string | { label: string; valu
   });
 }
 
-export function buildApiRows(metricKey: string, project: string, status: string): ApiRow[] {
+export function buildApiRows(metricKey: string, project: string, statusParams: { display_status?: string; status?: string }): ApiRow[] {
+  const runQuery = { project, ...statusParams };
   return [
     { method: "GET", path: "/projects", description: "List tracked projects." },
-    { method: "GET", path: `/api/overview${queryString({ project, status, metric_key: metricKey })}`, description: "Current run and metric summary." },
-    { method: "GET", path: `/api/runs/summary${queryString({ project, status, limit: 100, offset: 0 })}`, description: "Paginated run summaries." },
+    { method: "GET", path: `/api/overview${queryString({ ...runQuery, metric_key: metricKey })}`, description: "Current run and metric summary." },
+    { method: "GET", path: `/api/runs/summary${queryString({ ...runQuery, limit: 100, offset: 0 })}`, description: "Paginated run summaries." },
     { method: "GET", path: `/runs/:id/metrics${queryString({ key: metricKey, limit: 1000 })}`, description: "Bounded metric series for one run." },
     { method: "GET", path: "/api/runs/:id/artifacts", description: "Artifacts for one selected run." },
     { method: "GET", path: "/api/runs/:id/objects", description: "Rich object manifests for one selected run." },

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration as StdDuration};
 
 use axum::http::StatusCode;
 
@@ -14,10 +14,22 @@ pub async fn request_run_stop(
 ) -> AppResult<Value> {
     if let Some(key) = idempotency_key {
         let request_hash = hash_idempotency(run_id, &raw)?;
-        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        if let Some(existing) =
+            live_stop_idempotency_response(store, ctx, &key, &request_hash).await?
+        {
+            return Ok(existing);
+        }
+        if let Err(error) = store.reserve_idempotency_key(ctx.org_id, &key).await {
+            if let Some(existing) =
+                wait_for_stop_idempotency_response(store, ctx, &key, &request_hash).await?
+            {
+                return Ok(existing);
+            }
+            return Err(error);
+        }
         let result = async {
             if let Some(existing) =
-                live_idempotency_response(store, ctx.org_id, &key, &request_hash).await?
+                live_stop_idempotency_response(store, ctx, &key, &request_hash).await?
             {
                 return Ok(existing);
             }
@@ -45,7 +57,6 @@ async fn request_run_stop_once(
     run_id: Uuid,
     input: StopRunRequest,
 ) -> AppResult<Value> {
-    ensure_billing_write_allowed(store, ctx.org_id, "request a run stop").await?;
     let reason = validate_stop_reason(input.reason.as_deref())?;
     let mut data = store.data.lock().await;
     let run = fetch_run_in_data(&data, ctx, run_id)?;
@@ -79,10 +90,22 @@ pub async fn request_bulk_run_stop(
 ) -> AppResult<Value> {
     if let Some(key) = idempotency_key {
         let request_hash = hash_idempotency(Uuid::nil(), &raw)?;
-        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        if let Some(existing) =
+            live_stop_idempotency_response(store, ctx, &key, &request_hash).await?
+        {
+            return Ok(existing);
+        }
+        if let Err(error) = store.reserve_idempotency_key(ctx.org_id, &key).await {
+            if let Some(existing) =
+                wait_for_stop_idempotency_response(store, ctx, &key, &request_hash).await?
+            {
+                return Ok(existing);
+            }
+            return Err(error);
+        }
         let result = async {
             if let Some(existing) =
-                live_idempotency_response(store, ctx.org_id, &key, &request_hash).await?
+                live_stop_idempotency_response(store, ctx, &key, &request_hash).await?
             {
                 return Ok(existing);
             }
@@ -109,7 +132,6 @@ async fn request_bulk_run_stop_once(
     ctx: &RequestContext,
     input: StopRunsRequest,
 ) -> AppResult<Value> {
-    ensure_billing_write_allowed(store, ctx.org_id, "request run stops").await?;
     if input.run_ids.is_empty() {
         return Err(AppError::validation(
             "run_ids must include at least one run",
@@ -190,6 +212,64 @@ async fn live_idempotency_response(
     ))
 }
 
+async fn live_stop_idempotency_response(
+    store: &Store,
+    ctx: &RequestContext,
+    key: &str,
+    request_hash: &[u8],
+) -> AppResult<Option<Value>> {
+    let Some(existing) = live_idempotency_response(store, ctx.org_id, key, request_hash).await?
+    else {
+        return Ok(None);
+    };
+    validate_cached_stop_response_access(store, ctx, &existing).await?;
+    Ok(Some(existing))
+}
+
+async fn wait_for_stop_idempotency_response(
+    store: &Store,
+    ctx: &RequestContext,
+    key: &str,
+    request_hash: &[u8],
+) -> AppResult<Option<Value>> {
+    for _ in 0..20 {
+        tokio::time::sleep(StdDuration::from_millis(25)).await;
+        if let Some(existing) =
+            live_stop_idempotency_response(store, ctx, key, request_hash).await?
+        {
+            return Ok(Some(existing));
+        }
+    }
+    Ok(None)
+}
+
+async fn validate_cached_stop_response_access(
+    store: &Store,
+    ctx: &RequestContext,
+    response: &Value,
+) -> AppResult<()> {
+    let data = store.data.lock().await;
+    if let Some(results) = response.get("results").and_then(Value::as_array) {
+        for result in results {
+            if result.get("ok").and_then(Value::as_bool) == Some(true) {
+                fetch_run_in_data(&data, ctx, cached_stop_run_id(result)?)?;
+            }
+        }
+        return Ok(());
+    }
+    fetch_run_in_data(&data, ctx, cached_stop_run_id(response)?)?;
+    Ok(())
+}
+
+fn cached_stop_run_id(value: &Value) -> AppResult<Uuid> {
+    let run_id = value
+        .get("run_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("cached stop response missing run_id"))?;
+    Uuid::parse_str(run_id)
+        .map_err(|_| AppError::internal("cached stop response has invalid run_id"))
+}
+
 async fn persist_stop_idempotency_response(
     store: &Store,
     org_id: Uuid,
@@ -228,18 +308,31 @@ pub async fn run_stop_signal(
         && control
             .map(|item| matches!(item.stop_state.as_str(), "requested" | "acknowledged"))
             .unwrap_or(false);
+    let poll_after_seconds = stop_poll_after_seconds(&data, ctx.org_id);
     Ok(json!({
         "run_id": run.id,
         "run_status": run.status,
         "terminal": matches!(run.status.as_str(), "finished" | "failed"),
         "stop_requested": active,
-        "poll_after_seconds": 30,
+        "poll_after_seconds": poll_after_seconds,
         "stop_request": control.filter(|_| active).map(|item| json!({
             "stop_request_id": item.stop_request_id,
             "requested_at": item.requested_at.clone(),
             "acknowledged_at": item.acknowledged_at.clone(),
         })),
     }))
+}
+
+fn stop_poll_after_seconds(data: &StoreData, org_id: Uuid) -> i64 {
+    match data
+        .organizations
+        .get(&org_id)
+        .map(|org| org.plan_tier.as_str())
+    {
+        Some("premium") => 10,
+        Some("pro") => 15,
+        _ => 30,
+    }
 }
 
 pub async fn acknowledge_run_stop(

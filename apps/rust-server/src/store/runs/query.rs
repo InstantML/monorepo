@@ -342,20 +342,10 @@ async fn collect_filtered_runs_with_search(
             .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
             .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
             .filter(|run| run_matches_display_status(&data, query, run))
-            .map(|run| {
-                let doc = data
-                    .run_search_documents
-                    .get(&run.id)
-                    .cloned()
-                    .unwrap_or_else(|| Arc::new(run_search_document(run)));
-                (run.id, doc)
-            })
+            .filter(|run| run_matches_search(&data, run, search))
+            .map(|run| run.id)
             .collect::<Vec<_>>()
     };
-    let matching_ids = matching_ids
-        .into_iter()
-        .filter_map(|(run_id, doc)| search.matches(doc.as_ref()).then_some(run_id))
-        .collect::<Vec<_>>();
     let mut data = store.data.lock().await;
     if let Some(cache_key) = cache_key {
         data.insert_run_filter_cache(cache_key, matching_ids.clone());
@@ -403,12 +393,15 @@ pub(super) async fn sort_runs(
                 .cmp(&b.name)
                 .then_with(|| b.created_at.cmp(&a.created_at))
         }),
-        "status" => runs.sort_by(|a, b| {
-            a.status
-                .cmp(&b.status)
-                .then_with(|| a.name.cmp(&b.name))
-                .then_with(|| b.created_at.cmp(&a.created_at))
-        }),
+        "status" => {
+            let data = store.data.lock().await;
+            runs.sort_by(|a, b| {
+                run_control_display_status(a, run_control_for(&data, a))
+                    .cmp(run_control_display_status(b, run_control_for(&data, b)))
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| b.created_at.cmp(&a.created_at))
+            })
+        }
         "created" => runs.sort_by_key(|run| std::cmp::Reverse(run.created_at)),
         _ => runs.sort_by_key(|run| std::cmp::Reverse(run.created_at)),
     }

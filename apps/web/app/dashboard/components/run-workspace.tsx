@@ -630,7 +630,7 @@ export function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
                   {children.map((child) => (
                     <tr key={child.id}>
                       <td><strong title={child.name}>{child.name}</strong></td>
-                      <td><span className={`pill ${statusTone(child.status)}`}>{child.status}</span></td>
+                      <td><span className={`pill ${statusTone(displayStatusForRun(child))}`}>{displayStatusForRun(child)}</span></td>
                       <td>{child.forked_from_step ?? "unknown"}</td>
                       <td>{formatTimestamp(child.created_at)}</td>
                     </tr>

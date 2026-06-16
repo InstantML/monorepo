@@ -139,7 +139,7 @@ pub async fn create_run(
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Page of runs", body = crate::http::openapi::RunsEnvelope),
+        (status = 200, description = "Page of runs", body = crate::http::openapi::RunSummariesEnvelope),
         (status = 400, description = "Invalid run search or query parameter", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
     ),
@@ -160,11 +160,10 @@ pub async fn list_runs(
     tag = "runs",
     params(
         ("run_id" = String, Path, description = "Run UUID"),
-        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate stop retries"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Run detail", body = crate::http::openapi::RunEnvelope),
+        (status = 200, description = "Run detail", body = crate::http::openapi::RunSummaryEnvelope),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -312,6 +311,7 @@ pub async fn update_run(
     tag = "runs",
     params(
         ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate stop retries"),
     ),
     request_body = crate::domain::StopRunRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),

@@ -336,6 +336,8 @@ mod tests {
             "ClickHouseConnectionValidationEnvelope",
             "AdminOverviewResponse",
             "ProjectEnvelope",
+            "RunSummaryEnvelope",
+            "RunSummariesEnvelope",
             "RunsEnvelope",
             "InsertedEnvelope",
             "LogRankMetricsRequest",

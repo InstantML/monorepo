@@ -231,7 +231,7 @@ export function metricGoalValue(run, key) {
 export function sortRuns(runs, sortBy, metricKey) {
   const copy = [...runs];
   if (sortBy === "name") return copy.sort((a, b) => a.name.localeCompare(b.name));
-  if (sortBy === "status") return copy.sort((a, b) => a.status.localeCompare(b.status) || a.name.localeCompare(b.name));
+  if (sortBy === "status") return copy.sort((a, b) => displayStatusForRun(a).localeCompare(displayStatusForRun(b)) || a.name.localeCompare(b.name));
   if (sortBy === "metric-latest") return copy.sort((a, b) => numericDesc(metricAggregate(a, metricKey, "latest"), metricAggregate(b, metricKey, "latest")));
   if (sortBy === "metric-best") return metricGoal(metricKey) === "minimize"
     ? copy.sort((a, b) => numericAsc(metricGoalValue(a, metricKey), metricGoalValue(b, metricKey)))
@@ -320,9 +320,12 @@ export function dashboardStatusQueryParams(displayStatus, legacyStatus = "") {
   if (normalizedDisplay === "stopping" || normalizedDisplay === "stopped") {
     return { status: "", display_status: normalizedDisplay };
   }
+  if (LEGACY_STATUS_VALUES.has(normalizedDisplay)) {
+    return { status: normalizedDisplay, display_status: normalizedDisplay };
+  }
   return {
-    status: LEGACY_STATUS_VALUES.has(normalizedDisplay) ? normalizedDisplay : "",
-    display_status: "",
+    status: "",
+    display_status: normalizedDisplay,
   };
 }
 
@@ -335,7 +338,7 @@ export function canRequestStop(run, canControl = true) {
 export function statusTone(status) {
   if (status === "finished") return "good";
   if (status === "failed") return "bad";
-  if (status === "stopped") return "warning";
-  if (status === "stopping") return "warning";
+  if (status === "stopped") return "warn";
+  if (status === "stopping") return "warn";
   return "live";
 }

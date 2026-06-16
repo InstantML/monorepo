@@ -246,7 +246,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunsEnvelope"
+                  "$ref": "#/components/schemas/RunSummariesEnvelope"
                 }
               }
             }
@@ -353,18 +353,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Stable client key used to deduplicate stop retries",
-            "required": false,
-            "schema": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
           }
         ],
         "responses": {
@@ -373,7 +361,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunEnvelope"
+                  "$ref": "#/components/schemas/RunSummaryEnvelope"
                 }
               }
             }
@@ -1425,6 +1413,18 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate stop retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         ],
@@ -4537,7 +4537,7 @@
           }
         }
       },
-      "RunsEnvelope": {
+      "RunSummariesEnvelope": {
         "type": "object",
         "required": [
           "runs"
@@ -4546,7 +4546,7 @@
           "runs": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/RunRow"
+              "$ref": "#/components/schemas/RunSummaryRow"
             }
           }
         }
@@ -4599,6 +4599,17 @@
         "properties": {
           "run": {
             "$ref": "#/components/schemas/RunRow"
+          }
+        }
+      },
+      "RunSummaryEnvelope": {
+        "type": "object",
+        "required": [
+          "run"
+        ],
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/RunSummaryRow"
           }
         }
       },
@@ -5799,6 +5810,139 @@
           }
         }
       },
+      "RunSummaryRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "project_id",
+          "project",
+          "name",
+          "status",
+          "config",
+          "tags",
+          "metadata",
+          "created_at",
+          "started_at",
+          "latest_metrics",
+          "metric_aggregates",
+          "metric_keys",
+          "artifact_counts",
+          "run_control"
+        ],
+        "properties": {
+          "artifact_counts": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "config": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "forked_from_artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "forked_from_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latest_metrics": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "metric_aggregates": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RunMetricAggregate"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "metric_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parent_run_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "project": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_control": {
+            "$ref": "#/components/schemas/RunControlSummary"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "RunRow": {
         "type": "object",
         "required": [
@@ -6221,139 +6365,6 @@
           },
           "uri": {
             "type": "string"
-          }
-        }
-      },
-      "RunSummaryRow": {
-        "type": "object",
-        "required": [
-          "id",
-          "org_id",
-          "project_id",
-          "project",
-          "name",
-          "status",
-          "config",
-          "tags",
-          "metadata",
-          "created_at",
-          "started_at",
-          "latest_metrics",
-          "metric_aggregates",
-          "metric_keys",
-          "artifact_counts",
-          "run_control"
-        ],
-        "properties": {
-          "artifact_counts": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "integer",
-              "format": "int64"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
-          "config": {
-            "type": "object"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "finished_at": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "forked_from_artifact_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid"
-          },
-          "forked_from_step": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
-          },
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "latest_metrics": {
-            "type": "object",
-            "additionalProperties": {
-              "type": [
-                "number",
-                "null"
-              ],
-              "format": "double"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "metric_aggregates": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/RunMetricAggregate"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          },
-          "metric_keys": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "name": {
-            "type": "string"
-          },
-          "org_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "parent_run_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid"
-          },
-          "project": {
-            "type": "string"
-          },
-          "project_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "run_control": {
-            "$ref": "#/components/schemas/RunControlSummary"
-          },
-          "started_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "type": "string"
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
           }
         }
       },

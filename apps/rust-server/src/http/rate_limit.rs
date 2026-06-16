@@ -23,8 +23,8 @@ use super::{handlers::helpers, observability, AppState};
 
 const UNAUTH_RATE_LIMIT_RPS: u32 = 25;
 const UNAUTH_RATE_LIMIT_BURST: u32 = 100;
-const CONTROL_POLL_RATE_LIMIT_RPS: u32 = 50;
-const CONTROL_POLL_RATE_LIMIT_BURST: u32 = 500;
+const CONTROL_POLL_RATE_LIMIT_RPS: u32 = 10;
+const CONTROL_POLL_RATE_LIMIT_BURST: u32 = 100;
 const MAX_BUCKETS_BEFORE_PRUNE: usize = 20_000;
 const BUCKET_IDLE_TTL: Duration = Duration::from_secs(5 * 60);
 
@@ -260,6 +260,14 @@ fn is_control_poll_route(method: &Method, path: &str) -> bool {
     *method == Method::GET && path.starts_with("/api/runs/") && path.ends_with("/stop-signal")
 }
 
+fn is_run_control_route(method: &Method, path: &str) -> bool {
+    is_control_poll_route(method, path)
+        || (*method == Method::POST && path == "/api/runs/stop")
+        || (*method == Method::POST
+            && path.starts_with("/api/runs/")
+            && (path.ends_with("/stop") || path.ends_with("/stop-ack")))
+}
+
 fn is_ingest_route(method: &Method, path: &str) -> bool {
     matches!(
         (method.as_str(), path),
@@ -295,7 +303,7 @@ fn is_import_route(method: &Method, path: &str) -> bool {
 
 fn is_monthly_quota_exempt_route(method: &Method, path: &str) -> bool {
     (*method == Method::GET && matches!(path, "/api/usage" | "/api/usage/export"))
-        || is_control_poll_route(method, path)
+        || is_run_control_route(method, path)
         || is_storage_setup_route(method, path)
 }
 
@@ -564,6 +572,16 @@ mod tests {
         assert_eq!(stop_signal.class, RequestClass::ControlPoll);
         assert!(!stop_signal.metered);
         assert!(!stop_signal.monthly_enforced);
+        for (method, path) in [
+            (Method::POST, "/api/runs/run-1/stop"),
+            (Method::POST, "/api/runs/stop"),
+            (Method::POST, "/api/runs/run-1/stop-ack"),
+        ] {
+            let policy = classify_route(&method, path).expect("policy");
+            assert_eq!(policy.class, RequestClass::General, "{method} {path}");
+            assert!(policy.metered, "{method} {path}");
+            assert!(!policy.monthly_enforced, "{method} {path}");
+        }
         assert!(
             !classify_route(&Method::GET, "/api/storage/clickhouse-connections/current")
                 .expect("policy")
@@ -712,7 +730,10 @@ mod tests {
         );
         assert_eq!(plan_limit(PLAN_FREE, RequestClass::Ingest).rps, 2);
         assert_eq!(plan_limit(PLAN_FREE, RequestClass::Import).rps, 2);
+        assert_eq!(plan_limit(PLAN_FREE, RequestClass::ControlPoll).rps, 10);
+        assert_eq!(plan_limit(PLAN_FREE, RequestClass::ControlPoll).burst, 100);
         assert_eq!(plan_limit(PLAN_PRO, RequestClass::General).rps, 50);
+        assert_eq!(plan_limit(PLAN_PRO, RequestClass::ControlPoll).rps, 50);
     }
 
     #[test]
