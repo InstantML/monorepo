@@ -1,12 +1,14 @@
 "use client";
 
-import { ChevronDown, Columns3, Download, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Columns3, Download, LayoutGrid, RefreshCw, Search, SlidersHorizontal, Table2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { shortMetricName } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import type { TableColumns } from "../../dashboard-types";
+
+export type RunsViewMode = "panels" | "table";
 
 // Keys are persisted (TableColumns); labels track the parity table columns
 // each key now controls: notes drives Owner, duration drives Step.
@@ -31,6 +33,7 @@ export function RunsCommandbar({
   onPinnedMetric,
   onRefresh,
   onTableColumns,
+  onViewMode,
   pinnedMetricFilter,
   pinnedMetricFilterValid,
   pinnedMetricOptions,
@@ -39,6 +42,7 @@ export function RunsCommandbar({
   selectedRunExportDisabled,
   selectedRunExportTitle,
   tableColumns,
+  viewMode,
 }: {
   columnsOpen: boolean;
   exportSelectedBusy: boolean;
@@ -51,6 +55,7 @@ export function RunsCommandbar({
   onPinnedMetric: (metric: string) => void;
   onRefresh: () => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
+  onViewMode: (view: RunsViewMode) => void;
   pinnedMetricFilter: string;
   pinnedMetricFilterValid: boolean;
   pinnedMetricOptions: string[];
@@ -59,6 +64,7 @@ export function RunsCommandbar({
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
   tableColumns: TableColumns;
+  viewMode: RunsViewMode;
 }) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
@@ -126,6 +132,26 @@ export function RunsCommandbar({
         value={metricOptions.length ? metricKey : ""}
       />
       <div className="command-spacer" />
+      <div className="runs-view-switch" role="group" aria-label="Runs view">
+        <button
+          aria-pressed={viewMode === "panels"}
+          className={viewMode === "panels" ? "active" : ""}
+          onClick={() => onViewMode("panels")}
+          title="Run selector with chart panels"
+          type="button"
+        >
+          <LayoutGrid size={14} /> Panels
+        </button>
+        <button
+          aria-pressed={viewMode === "table"}
+          className={viewMode === "table" ? "active" : ""}
+          onClick={() => onViewMode("table")}
+          title="Flat sortable runs table"
+          type="button"
+        >
+          <Table2 size={14} /> Table
+        </button>
+      </div>
       <div className="runs-actions-menu" ref={actionsMenuRef}>
         <button
           aria-controls="runs-actions-popover"

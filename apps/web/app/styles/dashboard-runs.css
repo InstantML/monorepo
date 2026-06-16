@@ -4,7 +4,7 @@
 
 .runs-commandbar {
   display: grid;
-  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: end;
   min-height: 34px;
@@ -231,7 +231,8 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  height: min(720px, calc(100vh - var(--topbar-height) - var(--runs-filter-sticky-height) - 12px));
+  height: calc(100vh - var(--topbar-height) - var(--runs-filter-sticky-height) - 12px);
+  max-height: calc(100vh - var(--topbar-height) - var(--runs-filter-sticky-height) - 12px);
   min-height: 0;
   overflow: hidden;
   border-radius: var(--radius) 0 0 var(--radius);
@@ -240,30 +241,53 @@
   overflow-anchor: none;
 }
 
-/* Panels ⇄ Table view toggle, docked at the right edge of the filter bar. */
-.runs-view-toggle {
-  display: inline-flex;
-  gap: 0;
-  margin-left: 10px;
+/* Panels ⇄ Table view switch, docked in the command bar above the content. */
+.runs-view-switch {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: end;
+  min-width: 162px;
+  height: 32px;
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
+  background: var(--surface-2);
   overflow: hidden;
 }
 
-.runs-view-toggle button {
+.runs-view-switch button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   border: 0;
-  background: var(--surface);
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
-  font-weight: 600;
-  padding: 6px 10px;
+  font-weight: 680;
+  line-height: 1;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
-.runs-view-toggle button.active {
+.runs-view-switch button + button {
+  border-left: 1px solid var(--line-soft);
+}
+
+.runs-view-switch button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.runs-view-switch button:focus-visible {
+  position: relative;
+  z-index: 1;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+  outline: none;
+}
+
+.runs-view-switch button.active {
   background: var(--surface-selected);
   color: var(--accent-strong);
 }
