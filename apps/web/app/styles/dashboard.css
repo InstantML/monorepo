@@ -565,16 +565,20 @@
 }
 
 .tab-group-label {
-  display: none;
+  display: block;
+  min-height: 17px;
   padding: 2px 9px 3px;
   color: var(--faint);
   font: 700 10px/1 var(--font-mono);
+  opacity: 0;
   text-transform: uppercase;
+  visibility: hidden;
 }
 
 .shell.nav-auto-open .tab-group-label,
 .shell.nav-pinned .tab-group-label {
-  display: block;
+  opacity: 1;
+  visibility: visible;
 }
 
 .tab-group + .tab-group {

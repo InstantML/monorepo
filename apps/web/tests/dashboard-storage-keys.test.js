@@ -466,6 +466,8 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(distributedPane, /function changeRankKey[\s\S]*setSummary\(null\)/, "rank-key changes should clear old reducer data before relabeling charts");
 
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-label \{[\s\S]*?max-width: 0;[\s\S]*?opacity: 0;/, "collapsed nav labels should stay hidden instead of intercepting run controls");
+  assert.match(css, /\.tab-group-label \{[\s\S]*?display: block;[\s\S]*?min-height: 17px;[\s\S]*?opacity: 0;[\s\S]*?visibility: hidden;/, "collapsed nav group labels should reserve title spacer height without showing title text");
+  assert.match(css, /\.shell\.nav-pinned \.tab-group-label,[\s\S]*?\.shell:not\(\.nav-pinned\)\.nav-auto-open \.tab-group-label,[\s\S]*?\.shell:not\(\.nav-pinned\) \.tabs:has\(:focus-visible\) \.tab-group-label \{[\s\S]*?opacity: 1;[\s\S]*?visibility: visible;/, "expanded nav should reveal group titles without inserting new vertical space");
   assert.match(css, /\.shell:not\(\.nav-pinned\) \.tab-button \{[\s\S]*?justify-content: flex-start;[\s\S]*?gap: 0;[\s\S]*?padding: 8px 12px;/, "collapsed nav icons should keep the same origin as expanded nav items");
   assert.match(css, /\.shell:not\(\.nav-pinned\)\.nav-auto-open \.tab-button,[\s\S]*?\.shell:not\(\.nav-pinned\) \.tabs:has\(:focus-visible\) \.tab-button \{[\s\S]*?justify-content: flex-start;[\s\S]*?gap: 8px;[\s\S]*?padding: 8px 12px;/, "auto-open nav should reveal labels without shifting icons");
   assert.match(css, /\.tab-button svg \{ flex: 0 0 16px; \}/, "nav icons should use a fixed flex slot");
