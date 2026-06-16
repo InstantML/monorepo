@@ -1010,6 +1010,128 @@ pub struct SaveWorkspaceViewRequest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct WorkspaceViewExportSource {
+    pub product: String,
+    pub format: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct WorkspaceViewExportedView {
+    pub name: String,
+    pub project: Option<String>,
+    #[schema(value_type = Object)]
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct WorkspaceViewExportIntegrity {
+    pub payload_sha256: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct WorkspaceViewExportEnvelope {
+    pub kind: String,
+    pub schema_version: i32,
+    pub exported_at: DateTime<Utc>,
+    pub source: WorkspaceViewExportSource,
+    pub view: WorkspaceViewExportedView,
+    pub integrity: WorkspaceViewExportIntegrity,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ImportWorkspaceViewRequest {
+    pub exported_view: WorkspaceViewExportEnvelope,
+    pub dry_run: bool,
+    pub conflict_strategy: Option<String>,
+    pub existing_view_id: Option<Uuid>,
+    pub expected_updated_at: Option<DateTime<Utc>>,
+    pub name: Option<String>,
+    pub project: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct WorkspaceViewImportResponse {
+    pub dry_run: bool,
+    pub action: String,
+    pub name: String,
+    pub project: Option<String>,
+    pub payload_bytes: usize,
+    pub warnings: Vec<String>,
+    pub workspace_view: Option<WorkspaceViewRow>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct WorkspaceViewDeleteResponse {
+    pub deleted: bool,
+    pub view_id: Uuid,
+    pub deleted_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct WorkspaceViewDataOptions {
+    pub metric_point_limit: Option<i64>,
+    pub max_panels: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct WorkspaceViewDataRequest {
+    #[schema(schema_with = json_object_schema)]
+    pub view: Value,
+    pub run_ids: Vec<Uuid>,
+    pub options: Option<WorkspaceViewDataOptions>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct WorkspaceViewDataResponse {
+    pub view_data: WorkspaceViewData,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct WorkspaceViewData {
+    pub schema_version: i32,
+    pub generated_at: DateTime<Utc>,
+    pub run_ids: Vec<Uuid>,
+    pub runs: Vec<Value>,
+    pub metric_keys: Vec<String>,
+    pub metric_series: Vec<WorkspaceViewMetricSeries>,
+    pub panels: Vec<WorkspaceViewDataPanelResult>,
+    pub warnings: Vec<String>,
+    pub limits: WorkspaceViewDataLimits,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct WorkspaceViewMetricSeries {
+    pub metric_key: String,
+    pub series: Vec<Value>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct WorkspaceViewDataPanelResult {
+    pub id: String,
+    pub title: String,
+    #[serde(rename = "type")]
+    pub panel_type: String,
+    pub section_id: String,
+    pub section_name: String,
+    pub metric_key: String,
+    pub data_kind: String,
+    pub series_key: Option<String>,
+    pub summary_values: Vec<Value>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct WorkspaceViewDataLimits {
+    pub run_ids: usize,
+    pub panels: usize,
+    pub points_per_series: i64,
+    pub max_points_per_series: i64,
+    pub total_points: usize,
+    pub max_total_points: usize,
+    pub max_response_bytes: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct WorkspaceViewRow {
     pub schema_version: i32,
     pub id: Uuid,

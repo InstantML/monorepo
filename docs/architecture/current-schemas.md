@@ -434,7 +434,7 @@ provider-backed path after payment and spend gates are in place.
 {
   "id": "uuid",
   "org_id": "uuid",
-  "user_id": "uuid",
+  "owner_user_id": "uuid",
   "name": "Daily comparison",
   "project": "hosted-scale-data",
   "payload": {
@@ -462,6 +462,35 @@ Workspace-view payloads are complete JSON objects. The first persisted frontend
 slice stores the active tab, selected runs/metrics, Compare settings, and the
 Runs workspace layout; future schema versions should keep backward-compatible
 read support for older payloads.
+
+### `WorkspaceViewExportEnvelope`
+
+Portable saved-view exports use a wrapper that intentionally omits
+`WorkspaceViewRow.id`, `org_id`, and `owner_user_id`.
+
+```json
+{
+  "kind": "instantml.workspace_view",
+  "schema_version": 1,
+  "exported_at": "2026-06-08T00:00:00Z",
+  "source": {
+    "product": "instantml",
+    "format": "workspace_view"
+  },
+  "view": {
+    "name": "Daily comparison",
+    "project": "hosted-scale-data",
+    "payload": {}
+  },
+  "integrity": {
+    "payload_sha256": "hex"
+  }
+}
+```
+
+Imports verify `kind`, `schema_version`, payload object size, and
+`payload_sha256` before sanitizing sensitive fields and creating or replacing a
+row for the current browser user.
 
 ## Data Plane
 

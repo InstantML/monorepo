@@ -1,0 +1,1046 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exportable Workspace Views Mockups</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7f4;
+        --surface: #ffffff;
+        --surface-2: #eef3ef;
+        --ink: #17201c;
+        --muted: #607067;
+        --line: #dce4dd;
+        --accent: #0f7f68;
+        --accent-2: #2f5eaa;
+        --warn: #a86207;
+        --danger: #a73535;
+        --green-soft: #e5f4ee;
+        --blue-soft: #e7edf9;
+        --warn-soft: #fff4dd;
+        --danger-soft: #fae8e8;
+        --shadow: 0 18px 50px rgba(30, 46, 37, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #dfe6e0;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        color: var(--ink);
+      }
+
+      .mockup {
+        width: 1440px;
+        height: 1000px;
+        margin: 0;
+        background: var(--bg);
+        overflow: hidden;
+        position: relative;
+      }
+
+      .topbar {
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 64px;
+        background: rgba(255, 255, 255, 0.94);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 0 24px;
+        z-index: 4;
+      }
+
+      .mark {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        background:
+          linear-gradient(135deg, #174038 0 48%, #ffffff00 49%),
+          linear-gradient(315deg, #0f7f68 0 48%, #ffffff00 49%),
+          #e7f4ef;
+        border: 1px solid #c9dbd1;
+      }
+
+      .brand {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0;
+        margin-right: 8px;
+      }
+
+      .tab {
+        font-size: 13px;
+        color: var(--muted);
+        padding: 8px 10px;
+        border-radius: 7px;
+      }
+
+      .tab.active {
+        color: var(--ink);
+        background: var(--surface-2);
+        font-weight: 650;
+      }
+
+      .topbar-spacer {
+        flex: 1;
+      }
+
+      .search {
+        width: 330px;
+        height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #f8faf8;
+        display: flex;
+        align-items: center;
+        padding: 0 12px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .button {
+        height: 34px;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 650;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 0 12px;
+      }
+
+      .button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      .button.danger {
+        color: var(--danger);
+        background: #fff;
+      }
+
+      .rail {
+        position: absolute;
+        top: 64px;
+        left: 0;
+        bottom: 0;
+        width: 64px;
+        background: #17201c;
+        color: #dfe8e2;
+        padding: 18px 10px;
+        display: grid;
+        grid-auto-rows: 42px;
+        justify-items: center;
+        gap: 6px;
+      }
+
+      .rail-dot {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        color: #aebdb3;
+      }
+
+      .rail-dot.active {
+        background: #26463e;
+        color: #fff;
+      }
+
+      .content {
+        position: absolute;
+        inset: 64px 0 0 64px;
+        display: grid;
+        grid-template-columns: 320px 1fr;
+      }
+
+      .run-rail {
+        border-right: 1px solid var(--line);
+        background: #fbfcfb;
+        padding: 18px;
+        overflow: hidden;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .eyebrow {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 21px;
+        line-height: 1.2;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        font-size: 14px;
+        letter-spacing: 0;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .filter-card,
+      .canvas-card,
+      .side-card,
+      .modal-card,
+      .drawer-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .filter-card {
+        margin-top: 18px;
+        padding: 12px;
+      }
+
+      .filter-row {
+        height: 34px;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        padding: 0 10px;
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 8px;
+      }
+
+      .run-row {
+        height: 58px;
+        border-bottom: 1px solid #edf1ee;
+        padding: 10px 0;
+        display: grid;
+        grid-template-columns: 12px 1fr auto;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .color {
+        width: 10px;
+        height: 34px;
+        border-radius: 4px;
+      }
+
+      .run-name {
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .run-meta {
+        margin-top: 3px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .badge {
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        background: var(--green-soft);
+        color: #17624f;
+      }
+
+      .canvas {
+        padding: 22px;
+        overflow: hidden;
+      }
+
+      .workspace-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 18px;
+        position: relative;
+        z-index: 2;
+      }
+
+      .view-select {
+        min-width: 292px;
+        height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 7px;
+        padding: 0 12px;
+        font-size: 13px;
+        font-weight: 650;
+      }
+
+      .menu {
+        position: absolute;
+        top: 46px;
+        left: 0;
+        width: 348px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .menu-section {
+        padding: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .menu-item {
+        height: 38px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 9px;
+        padding: 0 9px;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+
+      .menu-item.active {
+        background: var(--green-soft);
+        color: #0d664f;
+        font-weight: 700;
+      }
+
+      .menu-item.danger {
+        color: var(--danger);
+      }
+
+      .menu-kicker {
+        padding: 10px 12px 2px;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-weight: 800;
+      }
+
+      .charts {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .chart-card {
+        height: 242px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        position: relative;
+      }
+
+      .chart-title {
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .chart-sub {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 3px;
+      }
+
+      svg.chart {
+        position: absolute;
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        width: calc(100% - 28px);
+        height: 165px;
+      }
+
+      .drawer {
+        position: absolute;
+        top: 86px;
+        right: 28px;
+        width: 480px;
+        z-index: 3;
+      }
+
+      .drawer-card {
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .drawer-head,
+      .drawer-foot {
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .drawer-foot {
+        border-top: 1px solid var(--line);
+        border-bottom: 0;
+        justify-content: flex-end;
+      }
+
+      .drawer-body {
+        padding: 16px;
+      }
+
+      .dropzone {
+        border: 1px dashed #9eb4a8;
+        border-radius: 8px;
+        background: #f7fbf8;
+        padding: 22px;
+        text-align: center;
+        margin-bottom: 14px;
+      }
+
+      .filename {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        margin-top: 12px;
+      }
+
+      .field-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .field {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 10px;
+        background: #fff;
+      }
+
+      .field label {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        margin-bottom: 5px;
+      }
+
+      .field strong {
+        font-size: 13px;
+      }
+
+      .notice {
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 12px;
+        line-height: 1.45;
+        margin-top: 12px;
+      }
+
+      .notice.warn {
+        background: var(--warn-soft);
+        color: #754500;
+        border: 1px solid #f1d59e;
+      }
+
+      .notice.good {
+        background: var(--green-soft);
+        color: #155b49;
+        border: 1px solid #c9e8db;
+      }
+
+      .button.disabled {
+        color: #8c9990;
+        background: #f4f6f4;
+        border-color: #e1e7e2;
+      }
+
+      .api-layout {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 18px;
+      }
+
+      .api-card {
+        min-height: 778px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .api-card-head {
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .endpoint {
+        display: grid;
+        grid-template-columns: 76px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 13px 16px;
+        border-bottom: 1px solid #edf1ee;
+      }
+
+      .method {
+        border-radius: 6px;
+        padding: 5px 7px;
+        background: var(--blue-soft);
+        color: #274c91;
+        font-size: 11px;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .method.delete {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+
+      .code {
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.55;
+        color: #25342d;
+        background: #f6f8f6;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        white-space: pre-wrap;
+      }
+
+      .schema-list {
+        display: grid;
+        gap: 10px;
+        padding: 16px;
+      }
+
+      .schema-row {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 10px;
+        font-size: 13px;
+        line-height: 1.38;
+      }
+
+      .modal-backdrop {
+        position: absolute;
+        inset: 64px 0 0 64px;
+        background: rgba(15, 25, 20, 0.28);
+        z-index: 10;
+        display: grid;
+        place-items: center;
+      }
+
+      .modal-card {
+        width: 540px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .modal-body {
+        padding: 20px;
+      }
+
+      .delete-summary {
+        background: var(--danger-soft);
+        border: 1px solid #efc9c9;
+        border-radius: 8px;
+        padding: 13px;
+        margin-top: 14px;
+      }
+
+      .view-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #edf1ee;
+      }
+
+      .view-row strong {
+        font-size: 13px;
+      }
+
+      .view-row span {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .screen-title {
+        position: absolute;
+        left: 86px;
+        bottom: 20px;
+        color: rgba(23, 32, 28, 0.54);
+        font-size: 12px;
+        font-weight: 750;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="mockup" id="view-menu">
+      <div class="topbar">
+        <div class="mark"></div>
+        <div class="brand">InstantML</div>
+        <div class="tab active">Runs</div>
+        <div class="tab">Metrics</div>
+        <div class="tab">Compare</div>
+        <div class="tab">Reports</div>
+        <div class="topbar-spacer"></div>
+        <div class="search">Search runs, views, metrics</div>
+        <div class="button">Usage 43%</div>
+      </div>
+      <div class="rail">
+        <div class="rail-dot active">R</div>
+        <div class="rail-dot">M</div>
+        <div class="rail-dot">C</div>
+        <div class="rail-dot">A</div>
+      </div>
+      <div class="content">
+        <aside class="run-rail">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Selected runs</div>
+              <h1>128 matching</h1>
+            </div>
+            <span class="badge">42 selected</span>
+          </div>
+          <div class="filter-card">
+            <div class="filter-row">project: cartpole-prod</div>
+            <div class="filter-row">tag: baseline OR candidate</div>
+            <div class="filter-row">sort: eval/return best</div>
+          </div>
+          <div style="margin-top: 14px">
+            <div class="run-row">
+              <div class="color" style="background: #0f7f68"></div>
+              <div><div class="run-name">ppo-seed-143-a</div><div class="run-meta">finished - eval/return 912</div></div>
+              <span class="badge">best</span>
+            </div>
+            <div class="run-row">
+              <div class="color" style="background: #2f5eaa"></div>
+              <div><div class="run-name">ppo-seed-129-b</div><div class="run-meta">finished - eval/return 898</div></div>
+            </div>
+            <div class="run-row">
+              <div class="color" style="background: #a86207"></div>
+              <div><div class="run-name">ppo-seed-118-c</div><div class="run-meta">running - 18k steps</div></div>
+            </div>
+            <div class="run-row">
+              <div class="color" style="background: #6d5fb8"></div>
+              <div><div class="run-name">ppo-seed-117-c</div><div class="run-meta">finished - eval/return 871</div></div>
+            </div>
+          </div>
+        </aside>
+        <main class="canvas">
+          <div class="workspace-toolbar">
+            <div class="view-select">
+              <span>Daily eval comparison</span>
+              <span class="muted">Control saved</span>
+            </div>
+            <div class="button">View actions</div>
+            <div class="button">Save changes</div>
+            <div class="button primary">Add panel</div>
+            <div class="menu">
+              <div class="menu-kicker">Saved views</div>
+              <div class="menu-section">
+                <div class="menu-item active"><span>Daily eval comparison</span><span>just now</span></div>
+                <div class="menu-item"><span>Loss regression watch</span><span>May 31</span></div>
+                <div class="menu-item"><span>GPU saturation</span><span>May 27</span></div>
+              </div>
+              <div class="menu-kicker">Portable view</div>
+              <div class="menu-section">
+                <div class="menu-item"><span>Export saved view JSON</span><span>.json</span></div>
+                <div class="menu-item"><span>Import view JSON</span><span>review</span></div>
+                <div class="menu-item"><span>Duplicate saved view</span><span></span></div>
+              </div>
+              <div class="notice warn" style="margin: 8px 12px">Exports include dashboard metadata only: project names, run IDs, metric keys, and search text. No metric history or artifact bytes.</div>
+              <div class="menu-section" style="border-bottom: 0">
+                <div class="menu-item danger"><span>Delete saved view</span><span>confirm</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="charts">
+            <div class="chart-card">
+              <div class="chart-title">eval/return</div>
+              <div class="chart-sub">42 selected runs - smoothed 0.35</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <path d="M0 132 C60 118 90 122 130 96 S230 78 280 62 390 38 520 24" fill="none" stroke="#0f7f68" stroke-width="4" />
+                <path d="M0 150 C70 140 110 128 170 117 S270 88 330 74 420 60 520 50" fill="none" stroke="#2f5eaa" stroke-width="3" />
+                <path d="M0 155 C90 144 140 136 220 120 S340 104 520 90" fill="none" stroke="#a86207" stroke-width="3" />
+              </svg>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">train/loss</div>
+              <div class="chart-sub">plotted sample export available</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <path d="M0 22 C80 48 120 56 190 80 S330 115 520 142" fill="none" stroke="#0f7f68" stroke-width="4" />
+                <path d="M0 34 C80 58 130 72 230 96 S360 128 520 150" fill="none" stroke="#2f5eaa" stroke-width="3" />
+              </svg>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">system/gpu_utilization</div>
+              <div class="chart-sub">manual panel - 24 runs with data</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <path d="M0 96 C90 92 110 62 170 70 S260 122 340 84 420 50 520 54" fill="none" stroke="#6d5fb8" stroke-width="4" />
+              </svg>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">seed distribution</div>
+              <div class="chart-sub">derived from loaded summaries</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <rect x="40" y="58" width="38" height="84" fill="#0f7f68" rx="4" />
+                <rect x="100" y="28" width="38" height="114" fill="#2f5eaa" rx="4" />
+                <rect x="160" y="83" width="38" height="59" fill="#a86207" rx="4" />
+                <rect x="220" y="42" width="38" height="100" fill="#6d5fb8" rx="4" />
+                <rect x="280" y="70" width="38" height="72" fill="#0f7f68" rx="4" />
+              </svg>
+            </div>
+          </div>
+        </main>
+      </div>
+      <div class="screen-title">Mock 01 - Saved view menu with export, import, duplicate, and delete actions</div>
+    </section>
+
+    <section class="mockup" id="import-review">
+      <div class="topbar">
+        <div class="mark"></div>
+        <div class="brand">InstantML</div>
+        <div class="tab active">Runs</div>
+        <div class="tab">Metrics</div>
+        <div class="tab">Compare</div>
+        <div class="tab">Reports</div>
+        <div class="topbar-spacer"></div>
+        <div class="search">Search runs, views, metrics</div>
+        <div class="button">Cartpole Prod</div>
+      </div>
+      <div class="rail">
+        <div class="rail-dot active">R</div>
+        <div class="rail-dot">M</div>
+        <div class="rail-dot">C</div>
+        <div class="rail-dot">A</div>
+      </div>
+      <div class="content">
+        <aside class="run-rail">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Current view</div>
+              <h1>Manual workspace</h1>
+            </div>
+          </div>
+          <div class="filter-card">
+            <div class="filter-row">project: cartpole-prod</div>
+            <div class="filter-row">status: finished</div>
+            <div class="filter-row">selected: 42 runs</div>
+          </div>
+          <div style="margin-top: 14px">
+            <div class="view-row"><div><strong>Daily eval comparison</strong><br /><span>4 sections - 14 panels</span></div><span class="badge">active</span></div>
+            <div class="view-row"><div><strong>Loss regression watch</strong><br /><span>2 sections - 7 panels</span></div></div>
+            <div class="view-row"><div><strong>GPU saturation</strong><br /><span>3 sections - 9 panels</span></div></div>
+          </div>
+        </aside>
+        <main class="canvas">
+          <div class="workspace-toolbar">
+            <div class="view-select">
+              <span>Import view JSON</span>
+              <span class="muted">Dry run passed</span>
+            </div>
+            <div class="button">Cancel</div>
+            <div class="button primary">Import as copy</div>
+          </div>
+          <div class="charts">
+            <div class="chart-card">
+              <div class="chart-title">Preview: imported eval panel</div>
+              <div class="chart-sub">layout will be sanitized before applying</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <path d="M0 140 C70 130 110 124 170 110 S290 62 360 52 450 36 520 24" fill="none" stroke="#0f7f68" stroke-width="4" />
+              </svg>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">Preview: selected run set</div>
+              <div class="chart-sub">stale run IDs retained but pruned on apply</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <circle cx="82" cy="116" r="7" fill="#0f7f68" />
+                <circle cx="142" cy="90" r="7" fill="#2f5eaa" />
+                <circle cx="202" cy="74" r="7" fill="#a86207" />
+                <circle cx="262" cy="58" r="7" fill="#6d5fb8" />
+                <circle cx="322" cy="48" r="7" fill="#0f7f68" />
+              </svg>
+            </div>
+          </div>
+        </main>
+      </div>
+      <div class="drawer">
+        <div class="drawer-card">
+          <div class="drawer-head">
+            <div>
+              <h2>Review imported view</h2>
+              <p class="muted" style="font-size: 12px; margin-top: 3px">No view is saved until import is confirmed.</p>
+            </div>
+            <span class="badge">JSON</span>
+          </div>
+          <div class="drawer-body">
+            <div class="dropzone">
+              <h3>daily-eval-comparison.instantml-view.json</h3>
+              <p class="muted" style="font-size: 12px; margin-top: 5px">64.2 KB envelope - hash matches payload, not signed</p>
+              <div class="filename">instantml.workspace_view - schema 1</div>
+            </div>
+            <div class="field-grid">
+              <div class="field"><label>Imported name</label><strong>Daily eval comparison</strong></div>
+              <div class="field"><label>Save as</label><strong>Daily eval comparison copy</strong></div>
+              <div class="field"><label>Project in file</label><strong>cartpole-prod</strong></div>
+              <div class="field"><label>Payload</label><strong>4 sections, 14 panels</strong></div>
+              <div class="field"><label>Replace target</label><strong>Choose saved view</strong></div>
+              <div class="field"><label>Server validation</label><strong>No tenant query</strong></div>
+            </div>
+            <div class="notice good">Server dry run accepted the envelope. Org, owner, and source IDs from the file will be ignored and replaced with the current workspace context.</div>
+            <div class="notice warn">Client preview: 8 selected run IDs are not loaded in this browser. The server dry run did not query tenant data; the dashboard will prune stale IDs when applying the view.</div>
+          </div>
+          <div class="drawer-foot">
+            <div class="button disabled">Replace requires target</div>
+            <div class="button primary">Import as copy</div>
+          </div>
+        </div>
+      </div>
+      <div class="screen-title">Mock 02 - Import/upload review drawer with dry-run validation and compatibility warnings</div>
+    </section>
+
+    <section class="mockup" id="api-contract">
+      <div class="topbar">
+        <div class="mark"></div>
+        <div class="brand">InstantML</div>
+        <div class="tab active">Runs</div>
+        <div class="tab">Metrics</div>
+        <div class="tab">Compare</div>
+        <div class="tab">Reports</div>
+        <div class="topbar-spacer"></div>
+        <div class="search">Search API routes</div>
+        <div class="button primary">OpenAPI synced</div>
+      </div>
+      <div class="rail">
+        <div class="rail-dot active">R</div>
+        <div class="rail-dot">M</div>
+        <div class="rail-dot">C</div>
+        <div class="rail-dot">A</div>
+      </div>
+      <main class="canvas" style="position: absolute; inset: 64px 0 0 64px">
+        <div class="workspace-toolbar">
+          <div>
+            <div class="eyebrow">Production plan</div>
+            <h1>Exportable workspace-view API</h1>
+          </div>
+          <div class="topbar-spacer"></div>
+          <div class="button">Backwards compatible</div>
+          <div class="button">Control + data routes</div>
+        </div>
+        <div class="api-layout">
+          <div class="api-card">
+            <div class="api-card-head">
+              <div>
+                <h2>Route options in the recommended slice</h2>
+                <p class="muted" style="font-size: 12px; margin-top: 4px">Existing list/create/read/update routes stay unchanged.</p>
+              </div>
+            </div>
+            <div class="endpoint">
+              <div class="method">GET</div>
+              <div><strong>/api/workspace-views/:view_id/export</strong><br /><span class="muted">Portable JSON envelope without org/user internals</span></div>
+              <span class="badge">new</span>
+            </div>
+            <div class="endpoint">
+              <div class="method">POST</div>
+              <div><strong>/api/workspace-views/import</strong><br /><span class="muted">Wrapper request only; dry-run required before save</span></div>
+              <span class="badge">new</span>
+            </div>
+            <div class="endpoint">
+              <div class="method delete">DELETE</div>
+              <div><strong>/api/workspace-views/:view_id</strong><br /><span class="muted">Soft delete with expected_updated_at and JSON result</span></div>
+              <span class="badge">new</span>
+            </div>
+            <div class="endpoint">
+              <div class="method">POST</div>
+              <div><strong>/api/workspace-view-data</strong><br /><span class="muted">Data-plane panel data for agents from view + run IDs</span></div>
+              <span class="badge">new</span>
+            </div>
+            <div style="padding: 16px">
+              <div class="code">{
+  "kind": "instantml.workspace_view",
+  "schema_version": 1,
+  "exported_at": "2026-06-08T18:20:00Z",
+  "view": {
+    "name": "Daily eval comparison",
+    "project": "cartpole-prod",
+    "payload": {
+      "schema_version": 1,
+      "tab": "runs",
+      "workspace_view": { "schemaVersion": 2 }
+    }
+  },
+  "integrity": {
+    "payload_sha256": "sha256:..."
+  }
+}</div>
+            </div>
+          </div>
+          <div class="api-card">
+            <div class="api-card-head">
+              <div>
+                <h2>Production guardrails</h2>
+                <p class="muted" style="font-size: 12px; margin-top: 4px">Focused on compatibility, privacy, and bounded control writes.</p>
+              </div>
+            </div>
+            <div class="schema-list">
+              <div class="schema-row"><strong>1</strong><span>Export strips `org_id`, `owner_user_id`, API-key data, raw tenant routes, and browser-local storage keys.</span></div>
+              <div class="schema-row"><strong>2</strong><span>Import ignores embedded IDs, sanitizes payloads, validates object shape and byte limits, then writes a fresh row for the current browser user.</span></div>
+              <div class="schema-row"><strong>3</strong><span>Replace and delete require expected_updated_at so a stale tab cannot overwrite or resurrect a newer view.</span></div>
+              <div class="schema-row"><strong>4</strong><span>Existing `POST` and `PUT` bodies keep accepting `{ name, project, payload }` so old dashboard builds remain compatible.</span></div>
+              <div class="schema-row"><strong>5</strong><span>Import dry run performs no tenant/data-plane calls; stale-run checks are client-side previews from loaded summaries.</span></div>
+              <div class="schema-row"><strong>6</strong><span>`/api/workspace-view-data` is read-only, accepts API keys with export:read, and returns bounded panel data without artifact bytes.</span></div>
+            </div>
+          </div>
+        </div>
+      </main>
+      <div class="screen-title">Mock 03 - Backend contract summary used by docs and implementation planning</div>
+    </section>
+
+    <section class="mockup" id="delete-confirm">
+      <div class="topbar">
+        <div class="mark"></div>
+        <div class="brand">InstantML</div>
+        <div class="tab active">Runs</div>
+        <div class="tab">Metrics</div>
+        <div class="tab">Compare</div>
+        <div class="tab">Reports</div>
+        <div class="topbar-spacer"></div>
+        <div class="search">Search runs, views, metrics</div>
+        <div class="button">Cartpole Prod</div>
+      </div>
+      <div class="rail">
+        <div class="rail-dot active">R</div>
+        <div class="rail-dot">M</div>
+        <div class="rail-dot">C</div>
+        <div class="rail-dot">A</div>
+      </div>
+      <div class="content">
+        <aside class="run-rail">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow">Saved views</div>
+              <h1>3 personal</h1>
+            </div>
+          </div>
+          <div style="margin-top: 14px">
+            <div class="view-row"><div><strong>Daily eval comparison</strong><br /><span>last saved 2 minutes ago</span></div><span class="badge">active</span></div>
+            <div class="view-row"><div><strong>Loss regression watch</strong><br /><span>last saved May 31</span></div></div>
+            <div class="view-row"><div><strong>GPU saturation</strong><br /><span>last saved May 27</span></div></div>
+          </div>
+        </aside>
+        <main class="canvas">
+          <div class="workspace-toolbar">
+            <div class="view-select">
+              <span>Daily eval comparison</span>
+              <span class="muted">Control saved</span>
+            </div>
+            <div class="button">Export JSON</div>
+            <div class="button danger">Delete</div>
+          </div>
+          <div class="charts">
+            <div class="chart-card">
+              <div class="chart-title">eval/return</div>
+              <div class="chart-sub">view remains open until deletion succeeds</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <path d="M0 132 C60 118 90 122 130 96 S230 78 280 62 390 38 520 24" fill="none" stroke="#0f7f68" stroke-width="4" />
+              </svg>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title">train/loss</div>
+              <div class="chart-sub">no metrics or runs are deleted</div>
+              <svg class="chart" viewBox="0 0 520 170" aria-hidden="true">
+                <path d="M0 142 H520 M0 106 H520 M0 70 H520 M0 34 H520" stroke="#e7eee8" />
+                <path d="M0 22 C80 48 120 56 190 80 S330 115 520 142" fill="none" stroke="#2f5eaa" stroke-width="4" />
+              </svg>
+            </div>
+          </div>
+        </main>
+      </div>
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="drawer-head">
+            <div>
+              <h2>Delete saved view?</h2>
+              <p class="muted" style="font-size: 12px; margin-top: 3px">This removes only the saved dashboard layout.</p>
+            </div>
+            <span class="badge" style="background: var(--danger-soft); color: var(--danger)">soft delete</span>
+          </div>
+          <div class="modal-body">
+            <p style="font-size: 13px; line-height: 1.5">Runs, metrics, reports, and artifacts are untouched. The current canvas stays open as an unsaved layout after the saved record is deleted.</p>
+            <div class="delete-summary">
+              <h3>Daily eval comparison</h3>
+              <p class="muted" style="font-size: 12px; margin-top: 4px">cartpole-prod - 4 sections - 14 panels - 42 selected runs</p>
+            </div>
+          </div>
+          <div class="drawer-foot">
+            <div class="button">Cancel</div>
+            <div class="button">Export JSON first</div>
+            <div class="button danger">Delete saved record</div>
+          </div>
+        </div>
+      </div>
+      <div class="screen-title">Mock 04 - Delete confirmation that clarifies scope and offers export first</div>
+    </section>
+  </body>
+</html>

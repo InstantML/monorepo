@@ -489,6 +489,34 @@ impl MetricStore {
             .map_err(clickhouse_read_error)
     }
 
+    /// Fetch up to `limit` points per run and metric key for multiple runs and
+    /// multiple metric keys.
+    pub async fn query_points_for_runs_keys(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        keys: &[String],
+        limit_per_run_key: i64,
+    ) -> AppResult<Vec<PointReadRowWithRun>> {
+        if run_ids.is_empty() || keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = "SELECT run_id, key, step, value, created_at \
+                   FROM metric_points \
+                   WHERE org_id = ? AND run_id IN ? AND key IN ? \
+                   ORDER BY run_id, key, step ASC, created_at ASC \
+                   LIMIT ? BY key, run_id";
+        self.client
+            .query(sql)
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(keys)
+            .bind(limit_per_run_key)
+            .fetch_all::<PointReadRowWithRun>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
     /// Fetch the total point count per run for a specific metric key.
     ///
     /// Used by the M4 threshold check: if `count > 4 * buckets` for a run,
@@ -790,6 +818,40 @@ impl MetricStore {
             .bind(org_id)
             .bind(run_ids)
             .bind(key)
+            .fetch_all::<SeriesReadRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    pub async fn query_series_for_runs_keys(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        keys: &[String],
+    ) -> AppResult<Vec<SeriesReadRow>> {
+        if run_ids.is_empty() || keys.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.client
+            .query(
+                "SELECT \
+                   run_id, key, \
+                   toUInt64(countMerge(count)) AS count, \
+                   minMerge(min) AS min, \
+                   maxMerge(max) AS max, \
+                   sumMerge(sum) AS sum, \
+                   sumMerge(sum_sq) AS sum_sq, \
+                   argMaxMerge(latest) AS latest, \
+                   maxMerge(latest_step) AS latest_step, \
+                   argMaxMerge(best_step) AS best_step \
+                 FROM metric_series \
+                 WHERE org_id = ? AND run_id IN ? AND key IN ? \
+                 GROUP BY run_id, key \
+                 ORDER BY run_id, key",
+            )
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(keys)
             .fetch_all::<SeriesReadRow>()
             .await
             .map_err(clickhouse_read_error)

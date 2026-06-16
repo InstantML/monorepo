@@ -387,7 +387,7 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /scopedWorkspaceStorageKey/, "workspace layout storage should be scoped by active org/user/project");
   assert.match(shell, /workspaceStorageKey\(project, localSavedViewScope \? localSavedViewProjectScope : ""\)/, "workspace layouts should not share one project-only key across users");
   assert.match(shell, /legacyWorkspaceStorageKeys\(project, activeOrgId\)/, "authenticated workspace layout loads should migrate old org/project layout keys into the scoped key");
-  assert.match(shell, /upsertOption\(\{ label: name, source: "control"/, "control-plane view saves should appear without a reload");
+  assert.match(shell, /upsertOption\(\{\s*label: name,[\s\S]*?source: "control"/, "control-plane view saves should appear without a reload");
   assert.match(shell, /upsertOption\(\{ label: name, source: "local"/, "local fallback view saves should appear without a reload");
   assert.equal(/ADVANCED_REDUCERS_VIEW_KEY/.test(shell), false, "advanced reducer preset should be removed with the Advanced tab");
   assert.equal(/selectTab\("advanced"\)/.test(shell), false, "advanced route should not be opened from saved views");
@@ -507,6 +507,9 @@ test("workspace view API normalizes generated and legacy envelopes", () => {
 
   assert.match(generated, /WorkspaceViewEnvelope: \{\s*workspace_view:/, "generated OpenAPI type exposes runtime singular workspace_view envelope");
   assert.match(generated, /WorkspaceViewSummariesEnvelope: \{[\s\S]*next_cursor\?:[\s\S]*workspace_views:/, "generated OpenAPI type exposes runtime workspace_views envelope and cursor");
+  assert.match(generated, /"\/api\/workspace-views\/\{view_id\}\/export"/, "generated OpenAPI type exposes view export route");
+  assert.match(generated, /"\/api\/workspace-views\/import"/, "generated OpenAPI type exposes view import route");
+  assert.match(generated, /"\/api\/workspace-view-data"/, "generated OpenAPI type exposes agent view data route");
   assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewSummary"\]/, "typed wrapper should keep generated summary row linkage");
   assert.match(typedWrapper, /components\["schemas"\]\["WorkspaceViewRow"\]/, "typed wrapper should keep generated row linkage");
   assert.match(normalizer, /workspace_views/, "normalizer should accept runtime list envelopes");
@@ -518,6 +521,41 @@ test("workspace view API normalizes generated and legacy envelopes", () => {
   assert.deepEqual(workspaceViewFromPayload({ workspace_view: row }), row);
   assert.deepEqual(workspaceViewFromPayload({ view: row }), row);
   assert.equal(workspaceViewFromPayload({ view: { id: "bad", name: "Bad", payload: [] } }), null);
+});
+
+test("saved-view import requires a current dry-run preview and bounded JSON", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+
+  assert.match(shell, /const MAX_WORKSPACE_VIEW_IMPORT_BYTES = 128 \* 1024;/, "client should mirror the 128 KiB import body cap");
+  assert.match(shell, /file\.size > MAX_WORKSPACE_VIEW_IMPORT_BYTES/, "selected files should be rejected before reading oversized JSON into the textarea");
+  assert.match(shell, /workspaceViewImportByteLength\(previewText\) > MAX_WORKSPACE_VIEW_IMPORT_BYTES/, "pasted JSON should be size checked before preview");
+  assert.match(shell, /const requestId = viewImportRequestRef\.current \+ 1;/, "file imports should capture a request id before async file reads");
+  assert.match(shell, /if \(requestId !== viewImportRequestRef\.current\) return;/, "stale async file reads should not replace newer import text");
+  assert.match(shell, /viewImportPreviewText !== viewImportTextRef\.current/, "confirm should require the previewed payload to still be current");
+  assert.match(shell, /JSON\.parse\(viewImportPreviewText\)/, "confirm should submit the exact JSON that was dry-run previewed");
+  assert.match(shell, /previewCurrent=\{Boolean\(viewImportPreview && viewImportPreviewText && viewImportPreviewText === viewImportText\)\}/, "import button should disable when the preview no longer matches the textarea");
+});
+
+test("workspace saved-view controls stay reachable on mobile and local layout edits do not refetch series", () => {
+  const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
+  const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
+  const filterBar = readFileSync(`${root}app/dashboard/runs/run-filter-bar.tsx`, "utf8");
+
+  assert.match(filterBar, /data-view-actions-trigger="true"/, "saved-view modals should have a stable focus-return target");
+  assert.match(shell, /"#workspace-view-import-file",\s*"\[data-view-actions-trigger='true'\]"/, "import modal should return focus to the View actions trigger");
+  assert.match(shell, /"button\[data-delete-view-cancel='true'\]",\s*"\[data-view-actions-trigger='true'\]"/, "delete modal should focus Cancel first and return to the View actions trigger");
+  assert.match(shell, /const workspaceSeriesViewKey = workspaceView\.id;/, "series fetch signatures should not include updatedAt from local layout edits");
+  assert.doesNotMatch(shell, /workspaceSeriesViewKey = useMemo\(\(\) => `\$\{workspaceView\.id\}\\u0000\$\{workspaceView\.updatedAt\}`/, "layout timestamps should not force workspace metric refetches");
+  assert.match(css, /\.workbar > #save-view,/, "mobile workbar hide rule should only target direct children");
+  assert.match(css, /\.workbar > \.custom-select-control\.compact,/, "mobile workbar hide rule should not hide controls inside the View actions popover");
+});
+
+test("workspace view API paths are redacted before telemetry logging", () => {
+  const apiClient = readFileSync(`${root}src/api.js`, "utf8");
+
+  assert.match(apiClient, /workspace-views", ":view_id", "export"/, "view export route should redact dynamic IDs");
+  assert.match(apiClient, /"workspace-views\/import"/, "view import route should be a static known route");
+  assert.match(apiClient, /"workspace-view-data"/, "agent view data route should be a static known route");
 });
 
 test("API key UI does not expose admin controls to read-only members", () => {
