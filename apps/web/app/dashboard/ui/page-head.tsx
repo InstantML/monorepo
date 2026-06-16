@@ -16,9 +16,11 @@ export function PageHead({
   emphasis?: string;
   lede?: ReactNode;
 }) {
+  const showEyebrow = eyebrow !== "Workspace";
+
   return (
     <div className="page-head">
-      <span className="eyebrow eyebrow--accent">{eyebrow}</span>
+      {showEyebrow ? <span className="eyebrow eyebrow--accent">{eyebrow}</span> : null}
       <h2 className="ph-title">
         {title}
         {emphasis ? <> <span className="serif-em">{emphasis}</span></> : null}
