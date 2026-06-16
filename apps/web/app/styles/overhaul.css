@@ -2553,19 +2553,24 @@ button.compare-row-head.active {
 /* dashboard.css owns the base nav-label behavior. This later layer repeats the
  * state selectors because overhaul.css is currently the winning chrome layer. */
 .tab-group-label {
-  display: none;
+  display: block;
+  min-height: 17px;
   padding: 3px 9px 4px;
   color: var(--faint);
   font: 700 10px/1 var(--font-mono);
+  opacity: 0;
   text-transform: uppercase;
+  visibility: hidden;
 }
 .shell.nav-pinned .tab-group-label,
 .shell:not(.nav-pinned).nav-auto-open .tab-group-label,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-group-label {
-  display: block;
+  opacity: 1;
+  visibility: visible;
 }
-.shell:not(.nav-pinned):not(.nav-auto-open) .tab-group-label {
-  display: none;
+.shell:not(.nav-pinned):not(.nav-auto-open) .tabs:not(:has(:focus-visible)) .tab-group-label {
+  opacity: 0;
+  visibility: hidden;
 }
 /* WebKit / Blink — subtle thumb that matches the dark dashboard chrome,
  * brightens on hover. Track stays invisible so the rail stays clean. */
