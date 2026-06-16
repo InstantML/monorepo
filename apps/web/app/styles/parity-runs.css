@@ -540,3 +540,17 @@
   height: auto;
   padding: 24px 12px;
 }
+
+@media (max-width: 640px) {
+  .runs-table-view .runs-dtable .empty-row td {
+    position: sticky;
+    left: 0;
+    max-width: calc(100vw - 48px);
+    background: var(--surface);
+  }
+
+  .runs-table-view .runs-dtable .empty-row .table-empty {
+    width: min(320px, calc(100vw - 72px));
+    min-height: 150px;
+  }
+}

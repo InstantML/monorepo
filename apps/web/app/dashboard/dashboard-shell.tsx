@@ -104,7 +104,9 @@ type QuickSearchItem = {
 };
 type SavedViewOption = {
   label: string;
+  project?: string | null;
   source: "control" | "local" | "system";
+  updatedAt?: string;
   value: string;
 };
 type StopDialogSkipCounts = {
@@ -122,6 +124,15 @@ type StopDialogState = {
   skippedRunCount: number;
   source: "single" | "bulk";
 } | null;
+type WorkspaceViewImportPreview = {
+  action?: string;
+  dry_run?: boolean;
+  name?: string;
+  payload_bytes?: number;
+  project?: string | null;
+  warnings?: string[];
+  workspace_view?: { id?: string; updated_at?: string } | null;
+};
 type DashboardSessionPayload = {
   authenticated?: boolean;
   organization?: { id: string; name: string; slug: string; plan_tier?: string; seat_limit?: number; storage_choice?: string; storage_state?: string };
@@ -134,6 +145,7 @@ const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
 const DISPLAY_STATUS_VALUES = new Set(["running", "stopping", "stopped", "finished", "failed"]);
 const MAX_STOP_DIALOG_RUNS = 100;
+const SELECTED_RUN_DETAILS_HYDRATION_LIMIT = Math.max(COMPARE_RUN_LIMIT, MAX_STOP_DIALOG_RUNS);
 // Sourced from the generated OpenAPI spec; `list_org_memberships` returns
 // an `OrgMembershipsEnvelope { memberships: OrganizationMembershipSummary[] }`.
 // Rust struct `domain::OrganizationMembershipSummary`.
@@ -187,6 +199,7 @@ const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 12;
 const MAX_EXPORT_SELECTED_RUNS = 100;
+const MAX_WORKSPACE_VIEW_IMPORT_BYTES = 128 * 1024;
 const ARTIFACT_PAGE_LIMIT = 100;
 const WORKSPACE_HISTOGRAM_TIMELINE_LIMIT = 3;
 const WORKSPACE_HISTORY_LIMIT = 50;
@@ -564,6 +577,10 @@ function initialActiveTab(initialTab: ShellTabId) {
   return legacyPath ? shellTabFromPath(legacyPath) : shellTabFromPath(window.location.pathname);
 }
 
+function workspaceViewImportByteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
 export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabId }) {
   const api = useMemo(() => new ApiClient(), []);
   const clerk = useClerk();
@@ -609,6 +626,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const dashboardSelectionFilterKeyRef = useRef("");
   const selectAllMatchingControllerRef = useRef<AbortController | null>(null);
   const applySavedViewRequestRef = useRef(0);
+  const viewImportTextRef = useRef("");
+  const viewImportRequestRef = useRef(0);
   const projectPreferenceWriteTimerRef = useRef<number | null>(null);
   const compareArtifactCacheRef = useRef<Map<string, Artifact[]>>(new Map());
   const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
@@ -678,7 +697,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   // shared. The default auto-select skips when the URL provided a selection.
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>(() =>
     typeof window === "undefined" ? [] : runSelectionFromSearch(window.location.search));
-  const [bulkStopSelectionArmed, setBulkStopSelectionArmed] = useState(false);
   const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
   const [primaryRunId, setPrimaryRunId] = useState("");
@@ -699,6 +717,15 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const [savedViews, setSavedViews] = useState<SavedViewOption[]>([]);
   const [savedViewKey, setSavedViewKey] = useState("");
   const [viewName, setViewName] = useState("");
+  const [viewImportOpen, setViewImportOpen] = useState(false);
+  const [viewImportText, setViewImportText] = useState("");
+  const [viewImportFileName, setViewImportFileName] = useState("");
+  const [viewImportPreview, setViewImportPreview] = useState<WorkspaceViewImportPreview | null>(null);
+  const [viewImportPreviewText, setViewImportPreviewText] = useState("");
+  const [viewImportBusy, setViewImportBusy] = useState(false);
+  const [viewImportError, setViewImportError] = useState("");
+  const [deleteViewTarget, setDeleteViewTarget] = useState<SavedViewOption | null>(null);
+  const [viewActionBusy, setViewActionBusy] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [tableColumns, setTableColumns] = useState<TableColumns>(defaultTableColumns);
   const [pinnedMetrics, setPinnedMetrics] = useState<string[]>([]);
@@ -958,18 +985,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     () => selectedRuns.filter((run) => canRequestStop(run, canControlRuns)).length,
     [canControlRuns, selectedRuns],
   );
-  const selectedStopCandidateCount = bulkStopSelectionArmed
-    ? Math.min(MAX_STOP_DIALOG_RUNS, selectedStopCandidateTotal)
-    : 0;
+  const selectedStopCandidateCount = Math.min(MAX_STOP_DIALOG_RUNS, selectedStopCandidateTotal);
   const selectedStopDisabledReason = selectedStopCandidateCount
     ? ""
     : !canControlRuns
       ? "Your role can view runs but cannot stop them."
-      : !bulkStopSelectionArmed
-        ? "Select runs explicitly to enable bulk Stop."
-        : selectedRunIds.length
-          ? "Selected runs are not running or are already stopping."
-          : "Select running runs that are not already stopping.";
+      : selectedRunIds.length
+        ? "Selected runs are not running or are already stopping."
+        : "Select running runs that are not already stopping.";
   const canEditReports = canWriteWorkspace;
   const activeMembershipSummary = useMemo(
     () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
@@ -1029,7 +1052,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setProject(value);
-    setBulkStopSelectionArmed(false);
     // Push the project change onto history so the browser back/forward
     // gestures can restore the prior selection.
     if (typeof window !== "undefined") {
@@ -1056,7 +1078,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setStatus(value);
-    setBulkStopSelectionArmed(false);
   }, [resetRunPagination]);
   const changeRunQueryInput = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
@@ -1066,13 +1087,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setSortBy(value);
-    setBulkStopSelectionArmed(false);
   }, [resetRunPagination]);
   const changeMetricKey = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setMetricKey(value);
-    setBulkStopSelectionArmed(false);
   }, [resetRunPagination]);
   useEffect(() => {
     if (previousOrgIdRef.current === activeOrgId) return;
@@ -1087,7 +1106,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     setProjectPreferenceReady(false);
     setProject("");
     setSelectedRunIds([]);
-    setBulkStopSelectionArmed(false);
     setSelectedRunDetails({});
     setPrimaryRunId("");
     setReferenceRunId("");
@@ -1096,6 +1114,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   }, [activeOrgId, resetRunPagination]);
   const workspacePanelMetrics = useMemo(() => workspaceMetricKeys(workspaceView, panelSearch), [panelSearch, workspaceView]);
   const workspacePanelMetricKey = useMemo(() => workspacePanelMetrics.join("\u0000"), [workspacePanelMetrics]);
+  const workspaceSeriesViewKey = workspaceView.id;
   const availableWorkspaceMetrics = useMemo(() => allMetricOptions.slice(0, MAX_METRIC_OPTIONS), [allMetricOptions]);
   const maxWorkspacePanelRuns = useMemo(() => {
     const values = workspaceView.sections.flatMap((section) => (
@@ -1290,6 +1309,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       : quickSearchItems;
     return filtered.slice(0, 24);
   }, [quickSearchInput, quickSearchItems]);
+  const selectedControlSavedView = useMemo(
+    () => savedViews.find((view) => view.value === savedViewKey && view.source === "control") ?? null,
+    [savedViewKey, savedViews],
+  );
 
   const loadProjects = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     try {
@@ -1326,7 +1349,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       const controlOptions = workspaceViewSummariesFromPayload(payload)
         .map((view) => ({
           label: view.name,
+          project: view.project ?? null,
           source: "control" as const,
+          updatedAt: view.updated_at,
           value: controlSavedViewKey(view.id),
         }));
       setSavedViews([...controlOptions, ...localOptions]);
@@ -1645,7 +1670,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     const timer = window.setTimeout(() => {
       resetRunPagination();
       setQuery(queryInput);
-      setBulkStopSelectionArmed(false);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [query, queryInput, resetRunPagination]);
@@ -1678,7 +1702,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     // changes reset the selection.
     if (!userTouchedDashboardFiltersRef.current && selectionUrlSyncRef.current) return;
     setSelectedRunIds([]);
-    setBulkStopSelectionArmed(false);
     setPrimaryRunId("");
     setReferenceRunId("");
   }, [project, query, status]);
@@ -1905,7 +1928,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     const pageDetails = Object.fromEntries(sortedRuns.filter((run) => keepIds.includes(run.id)).map((run) => [run.id, run]));
     const missingIds = keepIds
       .filter((id) => (!selectedRunDetails[id] && !pageDetails[id]) || (runHasPendingStop(selectedRunDetails[id]) && !pageDetails[id]))
-      .slice(0, COMPARE_RUN_LIMIT);
+      .slice(0, SELECTED_RUN_DETAILS_HYDRATION_LIMIT);
     if (!missingIds.length) {
       setSelectedRunDetails((current) => pruneRunDetails(current, pageDetails, {}, keepIds));
       return () => {
@@ -2029,7 +2052,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    const signature = `${activeTab}|${workspaceFetchRunKey}|${workspacePanelMetricKey}`;
+    const signature = `${activeTab}|${workspaceSeriesViewKey}|${workspaceFetchRunKey}|${workspacePanelMetricKey}`;
     const isLiveRefresh = signature === workspaceSeriesSignatureRef.current;
     workspaceSeriesSignatureRef.current = signature;
     async function loadWorkspaceSeries() {
@@ -2050,7 +2073,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey, liveSeriesTick]);
+  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey, workspaceSeriesViewKey, liveSeriesTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2796,7 +2819,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         : await api.post("/api/workspace-views", { name, project: project || null, payload });
       const savedView = workspaceViewFromPayload(response);
       if (savedView) {
-        upsertOption({ label: name, source: "control", value: controlSavedViewKey(savedView.id) });
+        upsertOption({
+          label: name,
+          project: savedView.project ?? null,
+          source: "control",
+          updatedAt: savedView.updated_at,
+          value: controlSavedViewKey(savedView.id),
+        });
         await loadSavedViews();
         setMessage("Saved view.");
         return;
@@ -2808,6 +2837,209 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       upsertOption({ label: name, source: "local", value: key });
       setMessage("Saved view locally. Shared save unavailable.");
       return;
+    }
+  }
+
+  async function exportSavedView() {
+    const controlId = controlSavedViewId(savedViewKey);
+    if (!controlId || !selectedControlSavedView) {
+      setMessage("Choose a shared saved view before exporting.");
+      return;
+    }
+    setViewActionBusy(true);
+    setMessage("Exporting saved view...");
+    try {
+      const { blob, headers } = await api.download(`/api/workspace-views/${controlId}/export`, {
+        credentials: "same-origin",
+      });
+      const serverName = filenameFromContentDisposition(headers.get("content-disposition"));
+      const fallbackName = `${safeExportFilename(selectedControlSavedView.label, "workspace-view")}.instantml-view.json`;
+      const safeName = safeExportFilename(serverName || fallbackName, fallbackName);
+      downloadBlob(blob, safeName.endsWith(".json") ? safeName : `${safeName}.json`);
+      setMessage("Exported saved view.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to export saved view.");
+    } finally {
+      setViewActionBusy(false);
+    }
+  }
+
+  function openImportSavedView() {
+    if (!canWriteWorkspace) {
+      setMessage("Read only workspaces cannot import shared views.");
+      return;
+    }
+    setViewImportError("");
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    setViewImportOpen(true);
+  }
+
+  function updateImportSavedViewText(value: string) {
+    viewImportTextRef.current = value;
+    viewImportRequestRef.current += 1;
+    setViewImportText(value);
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    setViewImportError(
+      workspaceViewImportByteLength(value) > MAX_WORKSPACE_VIEW_IMPORT_BYTES
+        ? "Import JSON must be 128 KiB or smaller."
+        : "",
+    );
+  }
+
+  async function updateImportSavedViewFile(file: File | null) {
+    setViewImportError("");
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    const requestId = viewImportRequestRef.current + 1;
+    viewImportRequestRef.current = requestId;
+    if (!file) {
+      setViewImportFileName("");
+      return;
+    }
+    setViewImportFileName(file.name);
+    if (file.size > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+      viewImportTextRef.current = "";
+      setViewImportText("");
+      setViewImportError("Import JSON files must be 128 KiB or smaller.");
+      return;
+    }
+    try {
+      const text = await file.text();
+      if (requestId !== viewImportRequestRef.current) return;
+      if (workspaceViewImportByteLength(text) > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+        viewImportTextRef.current = "";
+        setViewImportText("");
+        setViewImportError("Import JSON files must be 128 KiB or smaller.");
+        return;
+      }
+      viewImportTextRef.current = text;
+      setViewImportText(text);
+    } catch {
+      if (requestId !== viewImportRequestRef.current) return;
+      setViewImportError("Unable to read import file.");
+    }
+  }
+
+  async function previewImportSavedView() {
+    if (viewImportBusy) return;
+    const previewText = viewImportTextRef.current;
+    if (workspaceViewImportByteLength(previewText) > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+      setViewImportError("Import JSON must be 128 KiB or smaller.");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      return;
+    }
+    setViewImportError("");
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    let exportedView: unknown = null;
+    try {
+      exportedView = JSON.parse(previewText);
+    } catch {
+      setViewImportError("Import file must be valid JSON.");
+      return;
+    }
+    const requestId = viewImportRequestRef.current;
+    setViewImportBusy(true);
+    try {
+      const preview = await api.post("/api/workspace-views/import", {
+        exported_view: exportedView,
+        dry_run: true,
+        conflict_strategy: "create",
+      }) as WorkspaceViewImportPreview;
+      if (requestId !== viewImportRequestRef.current || previewText !== viewImportTextRef.current) {
+        setViewImportError("Import JSON changed. Preview it again before importing.");
+        return;
+      }
+      setViewImportPreview(preview);
+      setViewImportPreviewText(previewText);
+      setMessage("Import preview ready.");
+    } catch (error) {
+      setViewImportError(error instanceof Error ? error.message : "Unable to preview import.");
+    } finally {
+      setViewImportBusy(false);
+    }
+  }
+
+  async function confirmImportSavedView() {
+    if (viewImportBusy || !viewImportPreview) return;
+    if (!viewImportPreviewText || viewImportPreviewText !== viewImportTextRef.current) {
+      setViewImportError("Import JSON changed. Preview it again before importing.");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      return;
+    }
+    setViewImportError("");
+    let exportedView: unknown = null;
+    try {
+      exportedView = JSON.parse(viewImportPreviewText);
+    } catch {
+      setViewImportError("Import file must be valid JSON.");
+      return;
+    }
+    setViewImportBusy(true);
+    try {
+      const response = await api.post("/api/workspace-views/import", {
+        exported_view: exportedView,
+        dry_run: false,
+        conflict_strategy: "create",
+      }) as WorkspaceViewImportPreview;
+      const savedView = response.workspace_view;
+      await loadSavedViews();
+      if (savedView?.id) {
+        const key = controlSavedViewKey(savedView.id);
+        await applySavedView(key);
+        setSavedViewKey(key);
+      }
+      setViewImportOpen(false);
+      setViewImportText("");
+      viewImportTextRef.current = "";
+      setViewImportFileName("");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      setMessage("Imported saved view.");
+    } catch (error) {
+      setViewImportError(error instanceof Error ? error.message : "Unable to import saved view.");
+    } finally {
+      setViewImportBusy(false);
+    }
+  }
+
+  function requestDeleteSavedView() {
+    if (!selectedControlSavedView) {
+      setMessage("Choose a shared saved view before deleting.");
+      return;
+    }
+    if (!selectedControlSavedView.updatedAt) {
+      setMessage("Refreshing saved views before delete...");
+      loadSavedViews();
+      return;
+    }
+    setDeleteViewTarget(selectedControlSavedView);
+  }
+
+  async function confirmDeleteSavedView() {
+    const target = deleteViewTarget;
+    const controlId = target ? controlSavedViewId(target.value) : "";
+    if (!target || !controlId || !target.updatedAt || viewActionBusy) return;
+    setViewActionBusy(true);
+    setMessage("Deleting saved view...");
+    try {
+      await api.delete(`/api/workspace-views/${controlId}${queryString({ expected_updated_at: target.updatedAt })}`);
+      setSavedViews((current) => current.filter((view) => view.value !== target.value));
+      if (savedViewKey === target.value) {
+        setSavedViewKey("");
+        setViewName("");
+      }
+      setDeleteViewTarget(null);
+      await loadSavedViews();
+      setMessage("Deleted saved view.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to delete saved view.");
+    } finally {
+      setViewActionBusy(false);
     }
   }
 
@@ -2943,7 +3175,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
 
   function toggleRun(runId: string, options?: { shift?: boolean }) {
     selectionUrlSyncRef.current = true;
-    setBulkStopSelectionArmed(true);
     if (options?.shift && selectionAnchorRunIdRef.current && selectionAnchorRunIdRef.current !== runId) {
       const orderedIds = sortedRuns.map((run) => run.id);
       setSelectedRunIds((current) => rangeSelect(current, orderedIds, selectionAnchorRunIdRef.current, runId));
@@ -2956,7 +3187,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
 
   function selectAllVisibleRuns() {
     selectionUrlSyncRef.current = true;
-    setBulkStopSelectionArmed(true);
     const visibleIds = sortedRuns.map((run) => run.id);
     const state = visibleSelectionState(selectedRunIds, visibleIds);
     if (state === "all") {
@@ -2980,7 +3210,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     if (queryInput !== query) {
       resetRunPagination();
       setQuery(queryInput);
-      setBulkStopSelectionArmed(false);
       setMessage("Applying the latest search filter. Select matching runs again after the results refresh.");
       return;
     }
@@ -3053,7 +3282,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
         if (!pageRuns.length || !hasNextPage || offset >= total) break;
       }
       const ids = capSelectionToMatching(matchingRuns.map((run) => run.id).filter(Boolean));
-      setBulkStopSelectionArmed(ids.length > 0);
       setSelectedRunDetails((current) => {
         const next = { ...current };
         for (const run of matchingRuns) {
@@ -3251,10 +3479,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       setMessage("Read only workspaces can view runs but cannot stop them.");
       return;
     }
-    if (source === "bulk" && !bulkStopSelectionArmed) {
-      setMessage("Select runs explicitly before requesting a bulk stop.");
-      return;
-    }
     const { runs: candidates, ineligibleRunCount, skippedCounts, skippedRunCount } = stopCandidatesForIds(runIds);
     if (!candidates.length) {
       setMessage(source === "bulk" ? "No selected running runs can be stopped." : "This run cannot be stopped.");
@@ -3324,7 +3548,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       }
       setStopDialog(null);
       setStopError("");
-      setBulkStopSelectionArmed(false);
       setMessage(failures.length
         ? `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. ${failures.length + terminalCount} could not be updated.`
         : `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. Waiting for SDK acknowledgement.`);
@@ -3390,7 +3613,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     setSearchError(null);
     setPageCursorStack([]);
     setPageOffset(0);
-    setBulkStopSelectionArmed(false);
     setMessage("Filters cleared.");
   }
 
@@ -3789,11 +4011,21 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     setMessage(item.group === "View" ? "Saved view applied." : `Opened ${item.label}.`);
   }
 
-  function dismissTopOverlay() {
-    if (stopDialog) {
-      closeStopDialog();
-      return true;
+function dismissTopOverlay() {
+  if (stopDialog) {
+    closeStopDialog();
+    return true;
+  }
+  if (deleteViewTarget) {
+    clearChartHover();
+    setDeleteViewTarget(null);
+    return true;
     }
+  if (viewImportOpen) {
+    clearChartHover();
+    setViewImportOpen(false);
+    return true;
+  }
     if (quickSearchOpen) {
       clearChartHover();
       setQuickSearchOpen(false);
@@ -4101,6 +4333,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
                   onViewName={setViewName}
                   onSaveView={saveView}
                   canSaveView={canWriteWorkspace}
+                  onExportSavedView={exportSavedView}
+                  onImportSavedView={openImportSavedView}
+                  onDeleteSavedView={requestDeleteSavedView}
+                  canExportSavedView={Boolean(selectedControlSavedView) && !viewActionBusy}
+                  canDeleteSavedView={Boolean(selectedControlSavedView?.updatedAt) && canWriteWorkspace && !viewActionBusy}
                   onApplySavedView={applySavedView}
                   onClearFilters={clearFilters}
                   onRefresh={loadDashboard}
@@ -4147,7 +4384,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
               onClearSelection={() => {
                 selectionUrlSyncRef.current = true;
                 selectionAnchorRunIdRef.current = "";
-                setBulkStopSelectionArmed(false);
                 setSelectedRunIds([]);
               }}
               onSelectAllVisible={selectAllVisibleRuns}
@@ -4350,7 +4586,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
 
         <section className={`tab-pane ${activeTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {activeTab === "datasets" ? (
-            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} projectCount={project ? 1 : projects.length} runsInView={sortedRuns.length} />
+            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} />
           ) : null}
         </section>
 
@@ -4478,7 +4714,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
           // immediately refill the selection the user just cleared.
           defaultSelectionInitializedRef.current = true;
           selectionUrlSyncRef.current = true;
-          setBulkStopSelectionArmed(false);
           setSelectedRunIds([]);
           selectionAnchorRunIdRef.current = "";
         }}
@@ -4506,7 +4741,170 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
           returnFocusSelector="[data-shortcut-help-trigger='true']"
         />
       ) : null}
+      {viewImportOpen ? (
+        <WorkspaceViewImportModal
+          busy={viewImportBusy}
+          error={viewImportError}
+          fileName={viewImportFileName}
+          onClose={() => {
+            clearChartHover();
+            setViewImportOpen(false);
+          }}
+          onConfirm={confirmImportSavedView}
+          onFile={updateImportSavedViewFile}
+          onPreview={previewImportSavedView}
+          onText={updateImportSavedViewText}
+          preview={viewImportPreview}
+          previewCurrent={Boolean(viewImportPreview && viewImportPreviewText && viewImportPreviewText === viewImportText)}
+          text={viewImportText}
+        />
+      ) : null}
+      {deleteViewTarget ? (
+        <WorkspaceViewDeleteModal
+          busy={viewActionBusy}
+          name={deleteViewTarget.label}
+          onClose={() => setDeleteViewTarget(null)}
+          onConfirm={confirmDeleteSavedView}
+          updatedAt={deleteViewTarget.updatedAt ?? ""}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function WorkspaceViewImportModal({
+  busy,
+  error,
+  fileName,
+  onClose,
+  onConfirm,
+  onFile,
+  onPreview,
+  onText,
+  preview,
+  previewCurrent,
+  text,
+}: {
+  busy: boolean;
+  error: string;
+  fileName: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  onFile: (file: File | null) => void;
+  onPreview: () => void;
+  onText: (value: string) => void;
+  preview: WorkspaceViewImportPreview | null;
+  previewCurrent: boolean;
+  text: string;
+}) {
+  const dialogRef = useFocusTrap<HTMLDivElement>(
+    true,
+    onClose,
+    "#workspace-view-import-file",
+    "[data-view-actions-trigger='true']",
+  );
+  const canPreview = Boolean(text.trim()) && !busy && workspaceViewImportByteLength(text) <= MAX_WORKSPACE_VIEW_IMPORT_BYTES;
+  const canConfirm = Boolean(preview) && previewCurrent && !busy;
+  return (
+    <div className="workspace-modal-backdrop" role="presentation">
+      <section className="workspace-create-modal workspace-view-modal" role="dialog" aria-modal="true" aria-label="Import saved view" ref={dialogRef} tabIndex={-1}>
+        <div className="workspace-create-head">
+          <div>
+            <h2>Import saved view</h2>
+            <p>{fileName || "Select an exported InstantML view JSON file."}</p>
+          </div>
+          <button className="icon-button framed" type="button" aria-label="Close import saved view" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div className="workspace-create-form">
+          <div className="workspace-create-body workspace-view-import-body">
+            <label className="workspace-create-field">
+              JSON file
+              <input
+                accept="application/json,.json"
+                id="workspace-view-import-file"
+                onChange={(event) => onFile(event.target.files?.[0] ?? null)}
+                type="file"
+              />
+            </label>
+            <label className="workspace-create-field">
+              JSON payload
+              <textarea
+                aria-label="Saved view JSON payload"
+                className="workspace-view-import-text"
+                onChange={(event) => onText(event.target.value)}
+                spellCheck={false}
+                value={text}
+              />
+            </label>
+            {error ? <p className="form-error" role="alert">{error}</p> : null}
+            {preview ? (
+              <div className="workspace-view-preview" role="status">
+                <div><span>Name</span><strong>{preview.name ?? "Untitled view"}</strong></div>
+                <div><span>Project</span><strong>{preview.project || "All projects"}</strong></div>
+                <div><span>Payload</span><strong>{formatBytes(preview.payload_bytes ?? 0)}</strong></div>
+                {preview.warnings?.length ? (
+                  <ul>
+                    {preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          <div className="workspace-create-actions">
+            <button className="secondary" disabled={busy} type="button" onClick={onClose}>Cancel</button>
+            <button className="secondary" disabled={!canPreview} type="button" onClick={onPreview}>{busy ? "Checking..." : "Preview"}</button>
+            <button className="primary-button" disabled={!canConfirm} type="button" onClick={onConfirm}>{busy ? "Importing..." : "Import"}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function WorkspaceViewDeleteModal({
+  busy,
+  name,
+  onClose,
+  onConfirm,
+  updatedAt,
+}: {
+  busy: boolean;
+  name: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  updatedAt: string;
+}) {
+  const dialogRef = useFocusTrap<HTMLDivElement>(
+    true,
+    onClose,
+    "button[data-delete-view-cancel='true']",
+    "[data-view-actions-trigger='true']",
+  );
+  return (
+    <div className="workspace-modal-backdrop" role="presentation">
+      <section className="workspace-create-modal workspace-view-modal compact" role="dialog" aria-modal="true" aria-label="Delete saved view" ref={dialogRef} tabIndex={-1}>
+        <div className="workspace-create-head">
+          <div>
+            <h2>Delete saved view</h2>
+            <p>{name}</p>
+          </div>
+          <button className="icon-button framed" type="button" aria-label="Close delete saved view" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div className="workspace-create-form">
+          <div className="workspace-create-body workspace-view-delete-body">
+            <p>This removes the shared view for your workspace account.</p>
+            <dl>
+              <dt>Last saved</dt>
+              <dd>{updatedAt || "Unknown"}</dd>
+            </dl>
+          </div>
+          <div className="workspace-create-actions">
+            <button className="secondary" data-delete-view-cancel="true" disabled={busy} type="button" onClick={onClose}>Cancel</button>
+            <button className="secondary danger-action" data-delete-view-confirm="true" disabled={busy} type="button" onClick={onConfirm}>{busy ? "Deleting..." : "Delete"}</button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 

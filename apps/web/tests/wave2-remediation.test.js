@@ -72,10 +72,11 @@ test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", ()
 // R1 — the runs table is mounted behind a panels/table view toggle.
 test("runs tab offers a persisted panels/table view toggle", () => {
   const paneSrc = read("app/dashboard/runs/tab-pane.tsx");
-  assert.match(paneSrc, /runs-view-toggle/);
+  const commandbarSrc = read("app/dashboard/runs/runs-commandbar.tsx");
+  assert.match(commandbarSrc, /runs-view-switch/);
   assert.match(paneSrc, /<RunsTable/);
   assert.match(paneSrc, /instantml:next:runs-view/);
-  assert.match(paneSrc, /aria-pressed=\{runsView === "table"\}/);
+  assert.match(commandbarSrc, /aria-pressed=\{viewMode === "table"\}/);
 });
 
 // C4 — compare artifact strips group duplicate filenames into version chips.

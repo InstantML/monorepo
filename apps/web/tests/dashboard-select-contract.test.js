@@ -83,6 +83,15 @@ test("selected run export is natively disabled when validation has feedback", ()
   assert.match(commandbarSrc, /selectedRunExportDisabled \? <span className="export-selected-runs-help">\{selectedRunExportTitle\}<\/span> : null/);
 });
 
+test("selected run stop stays available for restored explicit selections", () => {
+  const shellSrc = read("app/dashboard/dashboard-shell.tsx");
+
+  assert.doesNotMatch(shellSrc, /bulkStopSelectionArmed/);
+  assert.match(shellSrc, /const selectedStopCandidateCount = Math\.min\(MAX_STOP_DIALOG_RUNS, selectedStopCandidateTotal\)/);
+  assert.match(shellSrc, /const SELECTED_RUN_DETAILS_HYDRATION_LIMIT = Math\.max\(COMPARE_RUN_LIMIT, MAX_STOP_DIALOG_RUNS\)/);
+  assert.match(shellSrc, /\.slice\(0, SELECTED_RUN_DETAILS_HYDRATION_LIMIT\)/);
+});
+
 test("topbar project selector labels the empty project scope as all projects", () => {
   const topbarSrc = read("app/dashboard/chrome/topbar.tsx");
   // The empty scope is the project select's first option.

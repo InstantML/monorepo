@@ -2,12 +2,12 @@
 
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, LayoutGrid, Table2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
 import { EmptyWorkspaceSnippet } from "../components/empty-workspace-snippet";
 import { PageHead } from "../ui/page-head";
 import { PanelEditDrawer } from "./panel-edit-drawer";
-import { RunsCommandbar } from "./runs-commandbar";
+import { RunsCommandbar, type RunsViewMode } from "./runs-commandbar";
 import { RunsTable } from "./runs-table";
 import { RunsWorkspace } from "./runs-workspace";
 import { WorkspacePanelCard } from "./workspace-panel-card";
@@ -229,11 +229,11 @@ export function RunsTabPane({
 }: Props) {
   // Panels (rail + chart canvas) vs a flat sortable runs table. Persisted
   // per-browser; additive key, never renamed (see state/storage-keys.ts).
-  const [runsView, setRunsView] = useState<"panels" | "table">("panels");
+  const [runsView, setRunsView] = useState<RunsViewMode>("panels");
   useEffect(() => {
     if (localStorage.getItem("instantml:next:runs-view") === "table") setRunsView("table");
   }, []);
-  function changeRunsView(view: "panels" | "table") {
+  function changeRunsView(view: RunsViewMode) {
     setRunsView(view);
     localStorage.setItem("instantml:next:runs-view", view);
   }
@@ -342,6 +342,7 @@ export function RunsTabPane({
           onPinnedMetric={onPinnedMetric}
           onRefresh={onRefresh}
           onTableColumns={onTableColumns}
+          onViewMode={changeRunsView}
           pinnedMetricFilter={columnMetricFilter}
           pinnedMetricFilterValid={columnMetricFilterValid}
           pinnedMetricOptions={columnMetricOptionsForControls}
@@ -353,27 +354,8 @@ export function RunsTabPane({
           selectedStopDisabledReason={selectedStopDisabledReason}
           tableColumns={tableColumns}
           onRequestSelectedStop={() => onRequestStop(selectedRunIds)}
+          viewMode={runsView}
         />
-        <div className="runs-view-toggle" role="group" aria-label="Runs view">
-          <button
-            aria-pressed={runsView === "panels"}
-            className={runsView === "panels" ? "active" : ""}
-            onClick={() => changeRunsView("panels")}
-            title="Run selector with chart panels"
-            type="button"
-          >
-            <LayoutGrid size={13} /> Panels
-          </button>
-          <button
-            aria-pressed={runsView === "table"}
-            className={runsView === "table" ? "active" : ""}
-            onClick={() => changeRunsView("table")}
-            title="Flat sortable runs table"
-            type="button"
-          >
-            <Table2 size={13} /> Table
-          </button>
-        </div>
       </div>
       {runsView === "table" ? (
         <div className="runs-table-view">

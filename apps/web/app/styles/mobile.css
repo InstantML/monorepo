@@ -425,6 +425,13 @@
     width: 100%;
   }
   .runs-commandbar .command-spacer { display: none; }
+  .runs-commandbar .runs-view-switch {
+    min-width: 0;
+    height: 40px;
+  }
+  .runs-commandbar .runs-actions-menu {
+    grid-column: 1 / -1;
+  }
   .runs-commandbar .compact-button,
   .runs-commandbar .icon-button,
   .runs-commandbar .select-trigger,
@@ -767,6 +774,10 @@
   }
   .runs-workspace-filter .runs-commandbar {
     grid-template-columns: 1fr;
+  }
+  .runs-commandbar .runs-actions-menu,
+  .runs-commandbar .runs-view-switch {
+    grid-column: 1 / -1;
   }
   .topbar--workbar.mobile-filters-open .workbar {
     grid-template-columns: 1fr;

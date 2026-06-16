@@ -142,6 +142,8 @@ test("SVG export renders log charts with log ticks on the shared mapper", () => 
 
 test("MetricChart wires the y-axis controls, log empty state, and plot clipping", () => {
   const source = readSource("app/dashboard/metrics/metric-chart.tsx");
+  const chartsCss = readSource("app/styles/charts.css");
+  const dashboardCss = readSource("app/styles/dashboard.css");
   // Per-panel toggle with pressed state + non-positive disclosure.
   assert.match(source, /chart-log-toggle/);
   assert.match(source, /aria-pressed=\{yScale === "log"\}/);
@@ -159,4 +161,8 @@ test("MetricChart wires the y-axis controls, log empty state, and plot clipping"
   assert.match(source, /Log scale plots positive values only/);
   // The mini range overview shares the same y scale as the main plot.
   assert.match(source, /const miniY = yMapper\(domain, miniHeight, padY\)/);
+  // Number inputs must shrink inside the compact popover instead of keeping
+  // their intrinsic browser width and spilling past the panel edge.
+  assert.match(chartsCss, /\.chart-y-range-field input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);
+  assert.match(dashboardCss, /\.shell input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\[type="range"\]\),[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/);
 });

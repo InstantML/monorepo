@@ -872,6 +872,72 @@ textarea:focus {
   gap: 14px;
   padding: 14px;
 }
+.workspace-view-modal.compact {
+  width: min(460px, calc(100vw - 32px));
+}
+.workspace-view-import-body {
+  gap: 12px;
+}
+.workspace-view-import-text {
+  min-height: 180px;
+  resize: vertical;
+  font: 500 12px/1.5 var(--font-mono);
+}
+.workspace-view-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.workspace-view-preview div,
+.workspace-view-delete-body dl {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  margin: 0;
+}
+.workspace-view-preview span,
+.workspace-view-delete-body dt {
+  color: var(--muted);
+  font: 650 10.5px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+.workspace-view-preview strong,
+.workspace-view-delete-body dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 600 12px/1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.workspace-view-preview ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font: 500 12px/1.4 var(--font-sans);
+}
+.workspace-view-delete-body p {
+  margin: 0;
+  color: var(--text);
+  font: 500 13px/1.4 var(--font-sans);
+}
+button.secondary.danger-action,
+:root[data-theme="dark"] button.secondary.danger-action {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: var(--surface);
+  color: var(--danger);
+  box-shadow: none;
+}
+button.secondary.danger-action:hover:not(:disabled),
+:root[data-theme="dark"] button.secondary.danger-action:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
 .workspace-segment,
 .workspace-plan-grid {
   display: grid;
@@ -1222,6 +1288,13 @@ textarea:focus {
   color: var(--muted);
 }
 .topbar .icon-button.framed:hover { background: var(--surface-hover); color: var(--text); border-color: var(--line-strong); }
+.topbar .icon-button.framed:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.topbar .icon-button.framed.view-action-button.danger:not(:disabled) {
+  color: var(--danger);
+}
 
 /* Clerk UserButton: line up with the 30px square icon-buttons. */
 .brandbar-user-avatar {
@@ -1297,6 +1370,9 @@ textarea:focus {
 .workbar .status-message.error { color: var(--danger); }
 .workbar #demo-reset,
 .workbar #save-view { height: 32px; border-radius: var(--radius); white-space: nowrap; }
+.workbar .view-action-button {
+  flex: 0 0 30px;
+}
 
 /* ── Run Detail header — tight single row (run-detail.html mock) ────────── */
 .run-workspace-header {
@@ -1775,6 +1851,17 @@ textarea:focus {
 .view-actions-popover .secondary {
   justify-content: center;
   width: 100%;
+}
+.view-actions-divider {
+  height: 1px;
+  background: var(--line);
+}
+.view-actions-popover .secondary.danger:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
+  color: var(--danger);
+}
+.view-actions-popover .secondary.danger:not(:disabled):hover {
+  background: var(--danger-soft);
 }
 .view-actions-help {
   color: var(--muted);
@@ -2553,19 +2640,24 @@ button.compare-row-head.active {
 /* dashboard.css owns the base nav-label behavior. This later layer repeats the
  * state selectors because overhaul.css is currently the winning chrome layer. */
 .tab-group-label {
-  display: none;
+  display: block;
+  min-height: 17px;
   padding: 3px 9px 4px;
   color: var(--faint);
   font: 700 10px/1 var(--font-mono);
+  opacity: 0;
   text-transform: uppercase;
+  visibility: hidden;
 }
 .shell.nav-pinned .tab-group-label,
 .shell:not(.nav-pinned).nav-auto-open .tab-group-label,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-group-label {
-  display: block;
+  opacity: 1;
+  visibility: visible;
 }
-.shell:not(.nav-pinned):not(.nav-auto-open) .tab-group-label {
-  display: none;
+.shell:not(.nav-pinned):not(.nav-auto-open) .tabs:not(:has(:focus-visible)) .tab-group-label {
+  opacity: 0;
+  visibility: hidden;
 }
 /* WebKit / Blink — subtle thumb that matches the dark dashboard chrome,
  * brightens on hover. Track stays invisible so the rail stays clean. */
@@ -2830,9 +2922,9 @@ button.compare-row-head.active {
   .workbar-spacer,
   .workbar .system-status,
   .workbar-name,
-  .workbar #demo-reset,
-  .workbar #save-view,
-  .workbar .custom-select-control.compact,
+  .workbar > #demo-reset,
+  .workbar > #save-view,
+  .workbar > .custom-select-control.compact,
   .workbar > .icon-button {
     display: none;
   }

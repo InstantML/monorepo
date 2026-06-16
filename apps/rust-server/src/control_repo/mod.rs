@@ -12,6 +12,7 @@
 //!     run inside one transaction, so a crash can't leave an org with no owner.
 //!   * Read-after-write — reads hit the table, not a process-local projection.
 
+use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -794,6 +795,133 @@ impl ControlDb {
         .execute(self.pool())
         .await
         .map_err(|err| internal("upsert_workspace_view", err))?;
+        Ok(())
+    }
+
+    pub async fn insert_workspace_view_with_capacity(
+        &self,
+        view: &WorkspaceViewRow,
+        live_user_cap: i64,
+        live_org_cap: i64,
+    ) -> AppResult<()> {
+        let mut tx = self
+            .pool()
+            .begin()
+            .await
+            .map_err(|err| internal("insert_workspace_view_with_capacity begin", err))?;
+
+        // Saved views are low-volume control-plane rows. A short table lock keeps
+        // user/org live caps exact across Cloud Run instances without a broader
+        // quota subsystem.
+        sqlx::query("LOCK TABLE workspace_views IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| internal("insert_workspace_view_with_capacity lock", err))?;
+
+        let (org_live_count, user_live_count): (i64, i64) = sqlx::query_as(
+            "SELECT \
+               COUNT(*) FILTER (WHERE deleted_at IS NULL) AS org_live_count, \
+               COUNT(*) FILTER (WHERE deleted_at IS NULL AND owner_user_id IS NOT DISTINCT FROM $2) AS user_live_count \
+             FROM workspace_views \
+             WHERE org_id = $1",
+        )
+        .bind(view.org_id)
+        .bind(view.owner_user_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|err| internal("insert_workspace_view_with_capacity count", err))?;
+
+        if org_live_count >= live_org_cap {
+            return Err(AppError::validation(format!(
+                "workspace cannot have more than {live_org_cap} saved views"
+            )));
+        }
+        if user_live_count >= live_user_cap {
+            return Err(AppError::validation(format!(
+                "user cannot have more than {live_user_cap} saved views"
+            )));
+        }
+
+        sqlx::query(
+            "INSERT INTO workspace_views \
+             (schema_version, id, org_id, owner_user_id, name, project, payload, created_at, \
+              updated_at, deleted_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        )
+        .bind(view.schema_version)
+        .bind(view.id)
+        .bind(view.org_id)
+        .bind(view.owner_user_id)
+        .bind(&view.name)
+        .bind(&view.project)
+        .bind(&view.payload)
+        .bind(view.created_at)
+        .bind(view.updated_at)
+        .bind(view.deleted_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| internal("insert_workspace_view_with_capacity insert", err))?;
+
+        tx.commit()
+            .await
+            .map_err(|err| internal("insert_workspace_view_with_capacity commit", err))?;
+        Ok(())
+    }
+
+    pub async fn update_workspace_view_if_current(
+        &self,
+        view: &WorkspaceViewRow,
+        expected_updated_at: DateTime<Utc>,
+    ) -> AppResult<bool> {
+        let result = sqlx::query(
+            "UPDATE workspace_views SET \
+               schema_version = $1, name = $2, project = $3, payload = $4, \
+               updated_at = $5, deleted_at = $6 \
+             WHERE id = $7 \
+               AND org_id = $8 \
+               AND owner_user_id IS NOT DISTINCT FROM $9 \
+               AND updated_at = $10 \
+               AND deleted_at IS NULL",
+        )
+        .bind(view.schema_version)
+        .bind(&view.name)
+        .bind(&view.project)
+        .bind(&view.payload)
+        .bind(view.updated_at)
+        .bind(view.deleted_at)
+        .bind(view.id)
+        .bind(view.org_id)
+        .bind(view.owner_user_id)
+        .bind(expected_updated_at)
+        .execute(self.pool())
+        .await
+        .map_err(|err| internal("update_workspace_view_if_current", err))?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    pub async fn prune_workspace_view_tombstones(
+        &self,
+        org_id: Uuid,
+        owner_user_id: Option<Uuid>,
+        keep: i64,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "DELETE FROM workspace_views \
+             WHERE id IN ( \
+               SELECT id FROM workspace_views \
+               WHERE org_id = $1 \
+                 AND owner_user_id IS NOT DISTINCT FROM $2 \
+                 AND deleted_at IS NOT NULL \
+               ORDER BY deleted_at DESC, updated_at DESC, id DESC \
+               OFFSET $3 \
+             )",
+        )
+        .bind(org_id)
+        .bind(owner_user_id)
+        .bind(keep)
+        .execute(self.pool())
+        .await
+        .map_err(|err| internal("prune_workspace_view_tombstones", err))?;
         Ok(())
     }
 

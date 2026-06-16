@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, CircleHelp, RefreshCw, Save, Search, X } from "lucide-react";
+import { ChevronDown, CircleHelp, Download, RefreshCw, Save, Search, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { CustomSelect } from "../ui/select";
@@ -38,6 +38,11 @@ export function RunFilterBar({
   onViewName,
   onSaveView,
   canSaveView,
+  onExportSavedView,
+  onImportSavedView,
+  onDeleteSavedView,
+  canExportSavedView,
+  canDeleteSavedView,
   onApplySavedView,
   onClearFilters,
   onRefresh,
@@ -61,6 +66,11 @@ export function RunFilterBar({
   onViewName: (value: string) => void;
   onSaveView: () => void;
   canSaveView: boolean;
+  onExportSavedView: () => void;
+  onImportSavedView: () => void;
+  onDeleteSavedView: () => void;
+  canExportSavedView: boolean;
+  canDeleteSavedView: boolean;
   onApplySavedView: (key: string) => void;
   onClearFilters: () => void;
   onRefresh: () => void;
@@ -262,6 +272,7 @@ export function RunFilterBar({
           aria-expanded={viewActionsOpen}
           aria-haspopup="dialog"
           className="secondary compact-button view-actions-trigger"
+          data-view-actions-trigger="true"
           onClick={() => setViewActionsOpen((open) => !open)}
           ref={viewActionsTriggerRef}
           type="button"
@@ -286,6 +297,10 @@ export function RunFilterBar({
               value={savedViewKey}
             />
             <button className="secondary compact-button" type="button" aria-label="Refresh dashboard data" onClick={() => { setViewActionsOpen(false); onRefresh(); }}><RefreshCw size={14} /> Refresh data</button>
+            <div className="view-actions-divider" aria-hidden="true" />
+            <button className="secondary compact-button" disabled={!canExportSavedView} type="button" aria-label="Export saved view" title={canExportSavedView ? "Export saved view JSON" : "Select a shared saved view to export"} onClick={() => { setViewActionsOpen(false); onExportSavedView(); }}><Download size={14} /> Export JSON</button>
+            <button className="secondary compact-button" disabled={!canSaveView} type="button" aria-label="Import saved view" title={canSaveView ? "Import saved view JSON" : "Read-only workspaces cannot import shared views"} onClick={() => { setViewActionsOpen(false); onImportSavedView(); }}><Upload size={14} /> Import JSON</button>
+            <button className="secondary compact-button danger" disabled={!canDeleteSavedView} type="button" aria-label="Delete saved view" title={canDeleteSavedView ? "Delete saved view" : "Select a shared saved view to delete"} onClick={() => { setViewActionsOpen(false); onDeleteSavedView(); }}><Trash2 size={14} /> Delete view</button>
           </div>
         ) : null}
       </div>
