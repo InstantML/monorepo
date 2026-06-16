@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, GitFork, Server, Star, Tag, X } from "lucide-react";
 
 import { buildCheckpointResumeCode, checkpointStep, defaultForkRunName } from "../../../src/checkpoints.js";
-import { durationLabel, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, metricGoalLabel, preferredMetricKey, statusTone, uploadHealthForRun } from "../../../src/state.js";
+import { displayStatusForRun, durationLabel, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, metricGoalLabel, preferredMetricKey, statusTone, uploadHealthForRun } from "../../../src/state.js";
 import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, safeArtifactUri, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
@@ -287,6 +287,7 @@ export function RunDetail({
   workspaceSummary?: boolean;
   }) {
   if (!run) return <div className="empty">No run selected.</div>;
+  const displayStatus = displayStatusForRun(run);
   const chartRuns = selectedRuns?.length ? selectedRuns : [run];
   const uploadHealth = uploadHealthForRun(run);
   const commit = metadataScalar(run.metadata, "git_commit")
@@ -349,7 +350,7 @@ export function RunDetail({
             <p>{run.project} · {durationLabel(run)} · {selectedCount ? `${selectedCount} runs selected for charts` : "not in comparison set"}</p>
           </div>
           <div className="run-detail-badges">
-            <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
+            <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
             {run.tags?.slice(0, 3).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
             {(run.tags?.length ?? 0) > 3 ? <span className="chip">+{(run.tags?.length ?? 0) - 3}</span> : null}
           </div>
@@ -388,7 +389,7 @@ export function RunDetail({
         <MetricCard label="Artifacts" value={formatNumber(artifactCount, 0)} tone={artifactCount ? "good" : "neutral"} />
       </div>
       {hover ? <div className="detail-row highlight"><span>Hovered point</span><strong>{hover.runName} / step {hover.point.step} / {formatNumber(hover.point.value, 4)}</strong></div> : null}
-      {run.status === "failed" ? (
+      {displayStatus === "failed" ? (
         <section className="failure-card">
           <strong>Failed run triage</strong>
           <div><span>Last metric step</span><b>{lastMetricStep(run)}</b></div>

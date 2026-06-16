@@ -3057,7 +3057,7 @@ button.compare-row-head.active {
  * from comparison; the body = open the run. */
 .workspace-run-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr) 34px;
   align-items: stretch;
   gap: 0;
   padding: 0;
@@ -3089,7 +3089,15 @@ button.compare-row-head.active {
   padding: 8px 10px 8px 4px;
   cursor: pointer;
   min-width: 0;
-  border-radius: 0 var(--radius) var(--radius) 0;
+  border-radius: 0;
+}
+.workspace-run-stop {
+  align-self: center;
+  margin: 0 6px 0 0;
+}
+.workspace-run-stop:hover,
+.workspace-run-stop:focus-visible {
+  background: var(--danger-soft);
 }
 .workspace-run-open:hover { background: var(--surface-hover); }
 .workspace-run-open:hover .workspace-run-body strong { color: var(--accent-strong); }

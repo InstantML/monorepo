@@ -688,6 +688,31 @@ pre {
   font-size: 12px;
 }
 
+.stop-request-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stop-request-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stop-request-list span,
+.stop-request-list em {
+  max-width: 180px;
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 680;
+  padding: 4px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .checkpoint-fork-field {
   display: grid;
   gap: 6px;

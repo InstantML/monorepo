@@ -84,12 +84,18 @@ export function RunFilterBar({
   const viewActionsTriggerRef = useRef<HTMLButtonElement>(null);
 
   const showStatusCounts = !status;
-  const finishedRuns = Math.max(0, overview.total_runs - overview.active_runs - overview.failed_runs);
+  const stoppingRuns = Number(overview.stopping_runs ?? 0);
+  const stoppedRuns = Number(overview.stopped_runs ?? 0);
+  const runningRuns = Math.max(0, overview.active_runs - stoppingRuns);
+  const failedRuns = Math.max(0, overview.failed_runs - stoppedRuns);
+  const finishedRuns = Math.max(0, overview.total_runs - runningRuns - failedRuns - stoppingRuns - stoppedRuns);
   const statusOptions: SelectOption[] = [
     { value: "", label: `All${showStatusCounts ? countSuffix(overview.total_runs) : ""}` },
-    { value: "running", label: `Running${showStatusCounts ? countSuffix(overview.active_runs) : ""}` },
+    { value: "running", label: `Running${showStatusCounts ? countSuffix(runningRuns) : ""}` },
+    { value: "stopping", label: `Stopping${showStatusCounts ? countSuffix(stoppingRuns) : ""}` },
     { value: "finished", label: `Finished${showStatusCounts ? countSuffix(finishedRuns) : ""}` },
-    { value: "failed", label: `Failed${showStatusCounts ? countSuffix(overview.failed_runs) : ""}` },
+    { value: "failed", label: `Failed${showStatusCounts ? countSuffix(failedRuns) : ""}` },
+    { value: "stopped", label: `Stopped${showStatusCounts ? countSuffix(stoppedRuns) : ""}` },
   ];
   const searchErrorPositionSuffix = searchError?.position !== null && searchError?.position !== undefined && !/\bcol(?:umn)?\s+\d+\b/i.test(searchError.message)
     ? ` Column ${searchError.position}.`

@@ -198,7 +198,7 @@ fn validate_cached_fork_response_access(
 
 fn fork_response(run: RunRow, response_context: Value) -> AppResult<Value> {
     Ok(json!({
-        "run": selection_run_value(run)?,
+        "run": selection_run_value(run, None)?,
         "fork": response_context
     }))
 }

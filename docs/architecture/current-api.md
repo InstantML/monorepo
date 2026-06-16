@@ -672,6 +672,7 @@ imports:write
 usage:read
 api_keys:write
 export:read
+runs:control
 ```
 
 Tenant read access normally means owner/admin/member/viewer browser sessions for
@@ -705,8 +706,9 @@ Session/subscription.
 Billing write gates return HTTP `402` with `code: "payment_required"` when an
 org is in `checkout_pending`, `read_only_payment_required`, or `canceled`.
 Plan-capacity guardrails keep using HTTP `402` with
-`code: "plan_limit_exceeded"`. Reads, exports, usage, billing status, and portal
-creation remain available during payment failures.
+`code: "plan_limit_exceeded"`. Reads, exports, usage, billing status, portal
+creation, and cooperative stop requests remain available during payment
+failures.
 
 ## Projects
 
@@ -780,6 +782,7 @@ Query:
 | --- | --- |
 | `project` | Project name, omit or `all` for all projects |
 | `status` | `running`, `finished`, `failed`, omit or `all` for all statuses |
+| `display_status` | Derived UI lifecycle: `running`, `stopping`, `stopped`, `finished`, or `failed` |
 | `q` | Run search query over run name, project, tags, notes, config, metadata, status, and ID |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, `metric-best` |
 | `metric_key` | Metric used by metric sorts, default `eval/return_mean` |
@@ -826,6 +829,64 @@ Output:
 
 The returned run is a summary value that includes metric aggregates and artifact
 counts used by the dashboard.
+
+### Cooperative Stop Control
+
+Stop control is cooperative. The server records stop intent and exposes a cheap
+SDK poll endpoint; it does not terminate unmanaged training processes. The
+legacy `RunRow.status` field remains `running`, `finished`, or `failed`.
+Dashboards derive `stopping` and `stopped` from the `run_control` summary on run
+summary rows and from the `display_status` filter.
+
+#### `POST /api/runs/:run_id/stop`
+
+Auth: owner/admin/member browser session with mutation-origin validation, or an
+API key with `runs:control`. Project-scoped keys can only stop runs in their
+project.
+
+Request:
+
+```json
+{ "reason": "optional audit note" }
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "run_id": "uuid",
+  "run_control": {
+    "stop_state": "requested",
+    "display_status": "stopping",
+    "stop_requested": true,
+    "stop_request_id": "uuid",
+    "stop_requested_at": "2026-06-08T00:00:00Z"
+  }
+}
+```
+
+#### `POST /api/runs/stop`
+
+Auth: same as the single-run stop route. Body is
+`{ "run_ids": ["uuid"], "reason": "optional audit note" }`, capped at 100 run
+IDs. The response is `{ "results": [...], "limit": 100 }` with per-run
+`ok`, `error`, and optional `run_control`.
+
+#### `GET /api/runs/:run_id/stop-signal`
+
+Auth: `sdk:ingest` API key only. Browser sessions are rejected so dashboard
+users cannot forge SDK acknowledgement or completion. No-op polls are exempt
+from monthly API-request metering. SDK callers receive only the
+boolean/request-id/timestamp signal; stop reason text is not returned.
+
+#### `POST /api/runs/:run_id/stop-ack`
+
+Auth: `sdk:ingest` API key only. Browser sessions are rejected. Body is
+`{ "stop_request_id": "uuid", "state": "acknowledged" | "completed", "message": "optional" }`.
+Completion records the stop-control row and marks the legacy run terminal as
+`failed` for backwards-compatible clients, while new clients render
+`display_status: "stopped"`.
 
 ### `POST /api/runs/:run_id/forks`
 
@@ -1143,7 +1204,7 @@ Output:
 
 Auth: tenant read access.
 
-Query accepts `project`, `status`, `q`, and `metric_key`.
+Query accepts `project`, `status`, `display_status`, `q`, and `metric_key`.
 
 Output:
 
@@ -1153,6 +1214,8 @@ Output:
     "total_runs": 2,
     "active_runs": 1,
     "failed_runs": 0,
+    "stopping_runs": 0,
+    "stopped_runs": 0,
     "best_eval_return": 1,
     "metric_points": 6
   }

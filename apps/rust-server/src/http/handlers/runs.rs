@@ -4,7 +4,8 @@ use std::sync::Arc;
 use axum::{
     body::Bytes,
     extract::{Path, Query, State},
-    http::HeaderMap,
+    http::{header, HeaderMap},
+    response::{IntoResponse, Response},
     Json,
 };
 use serde_json::{json, Value};
@@ -13,17 +14,27 @@ use uuid::Uuid;
 use crate::{
     domain::{
         CreateConsoleLogsRequest, CreateProjectRequest, CreateRunForkRequest, CreateRunRequest,
-        LogMetricsRequest, LogRankMetricsRequest, UpdateRunRequest,
+        LogMetricsRequest, LogRankMetricsRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
+        UpdateRunRequest,
     },
-    errors::AppResult,
+    errors::{AppError, AppResult},
     store,
 };
 
 use super::super::{observability, AppState};
 use super::helpers::{
-    context, header_text, parse_uuid, read_json, read_json_with_raw, require_scope,
+    context, header_text, header_value, parse_uuid, read_json, read_json_with_raw, require_scope,
     validate_session_mutation_origin,
 };
+
+fn require_sdk_control_actor(ctx: &crate::domain::RequestContext) -> AppResult<()> {
+    if ctx.session.is_some() {
+        return Err(AppError::forbidden(
+            "SDK stop polling and acknowledgement require an SDK API key",
+        ));
+    }
+    Ok(())
+}
 
 #[utoipa::path(
     post,
@@ -119,6 +130,7 @@ pub async fn create_run(
     params(
         ("project" = Option<String>, Query, description = "Filter by project name"),
         ("status" = Option<String>, Query, description = "Filter by run status"),
+        ("display_status" = Option<String>, Query, description = "Filter by derived display status: running, stopping, stopped, finished, or failed"),
         ("q" = Option<String>, Query, description = "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex."),
         ("sort_by" = Option<String>, Query, description = "Sort key: created, name, status, duration, metric-latest, or metric-best"),
         ("metric_key" = Option<String>, Query, description = "Metric key used by metric-latest and metric-best sorts"),
@@ -127,7 +139,7 @@ pub async fn create_run(
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Page of runs", body = crate::http::openapi::RunsEnvelope),
+        (status = 200, description = "Page of runs", body = crate::http::openapi::RunSummariesEnvelope),
         (status = 400, description = "Invalid run search or query parameter", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
     ),
@@ -151,7 +163,7 @@ pub async fn list_runs(
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Run detail", body = crate::http::openapi::RunEnvelope),
+        (status = 200, description = "Run detail", body = crate::http::openapi::RunSummaryEnvelope),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -291,6 +303,143 @@ pub async fn update_run(
     );
     let run = result?;
     Ok(Json(json!({ "run": run })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/{run_id}/stop",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate stop retries"),
+    ),
+    request_body = crate::domain::StopRunRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Recorded stop request", body = crate::http::openapi::RunStopEnvelope),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing runs:control scope", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn stop_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "runs:control", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) =
+        read_json_with_raw::<StopRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    Ok(Json(
+        store::request_run_stop(&state.store, &ctx, run_id, raw, input, idempotency_key).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/stop",
+    tag = "runs",
+    params(
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate bulk stop retries"),
+    ),
+    request_body = crate::domain::StopRunsRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Recorded bulk stop requests", body = crate::http::openapi::RunStopBulkEnvelope),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing runs:control scope", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn stop_runs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "runs:control", &state)?;
+    let (input, raw) =
+        read_json_with_raw::<StopRunsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    Ok(Json(
+        store::request_bulk_run_stop(&state.store, &ctx, raw, input, idempotency_key).await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/runs/{run_id}/stop-signal",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    security(("bearerApiKey" = [])),
+    responses(
+        (status = 200, description = "Cooperative stop signal for SDK callers", body = crate::http::openapi::StopSignalEnvelope),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing ingest scope", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn stop_signal(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+) -> AppResult<Response> {
+    let ctx = context(&state, &headers, true).await?;
+    require_sdk_control_actor(&ctx)?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let mut response =
+        Json(store::run_stop_signal(&state.store, &ctx, run_id).await?).into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, header_value("private, no-store")?);
+    response
+        .headers_mut()
+        .insert(header::PRAGMA, header_value("no-cache")?);
+    Ok(response)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/{run_id}/stop-ack",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+    ),
+    request_body = crate::domain::StopAckRequest,
+    security(("bearerApiKey" = [])),
+    responses(
+        (status = 200, description = "Acknowledged or completed stop request", body = crate::http::openapi::RunStopEnvelope),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing ingest scope", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run or stop request not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Stop request id mismatch", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn stop_ack(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_sdk_control_actor(&ctx)?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let input = read_json::<StopAckRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        store::acknowledge_run_stop(&state.store, &ctx, run_id, input).await?,
+    ))
 }
 
 #[utoipa::path(
@@ -558,6 +707,7 @@ pub async fn list_console_logs(
     params(
         ("project" = Option<String>, Query, description = "Filter by project name"),
         ("status" = Option<String>, Query, description = "Filter by run status"),
+        ("display_status" = Option<String>, Query, description = "Filter by derived display status: running, stopping, stopped, finished, or failed"),
         ("q" = Option<String>, Query, description = "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex."),
         ("metric_key" = Option<String>, Query, description = "Metric key for best-value column"),
     ),
@@ -585,6 +735,7 @@ pub async fn overview(
     params(
         ("project" = Option<String>, Query, description = "Filter by project name"),
         ("status" = Option<String>, Query, description = "Filter by run status"),
+        ("display_status" = Option<String>, Query, description = "Filter by derived display status: running, stopping, stopped, finished, or failed"),
         ("q" = Option<String>, Query, description = "Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex."),
         ("sort_by" = Option<String>, Query, description = "Sort key"),
         ("metric_key" = Option<String>, Query, description = "Metric key for ranked column"),
@@ -802,4 +953,27 @@ pub async fn list_object_rows(
     Ok(Json(
         store::list_object_rows(&state.store, &ctx, object_id, &query).await?,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{RequestContext, SessionContext};
+
+    #[test]
+    fn sdk_stop_control_rejects_browser_session_context() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: Some(SessionContext {
+                session_id: Uuid::from_u128(2),
+                user_id: Uuid::from_u128(3),
+                role: "member".to_string(),
+                demo_read_only: false,
+            }),
+        };
+
+        let err = require_sdk_control_actor(&ctx).unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::FORBIDDEN);
+    }
 }

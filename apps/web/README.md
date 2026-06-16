@@ -53,6 +53,11 @@ Current navigation, workspace, and comparison controls:
 - Light/dark mode toggle (account menu and quick search) with a persisted local preference. Dark mode uses neutral dark surfaces with explicit accent states; primary button styling is opt-in via `.primary-button` instead of a broad global button selector.
 - Refresh/loading experience: the root layout applies the saved theme before paint. Direct dashboard entry keeps a brief branded shell only while the browser session is checked; once authorized, the dashboard chrome renders immediately and the Runs rail/workspace show skeleton rows and panels while the first run summary and overview requests load.
 - Desktop `Runs` workspace with a top filter rectangle, left run selector, searchable panel canvas, collapsible sections, add-panel drawer, edit drawer, and fullscreen panel inspection.
+- Cooperative stop requests are available from the Runs rail, selected-runs
+  command bar, and Run Detail for owner/admin/member sessions. Every entry point
+  opens the same confirmation dialog, sends `runs:control` stop requests to the
+  Rust API, and renders derived `stopping`/`stopped` status from `run_control`
+  without changing the legacy `run.status` contract.
 - Metrics, Run Detail, and Compare now share the analysis-suite layout: compact header stats, responsive toolbars, chart-first metric inspection, a Run Detail metric picker/dossier, and row-first comparison evidence that visually matches the Runs workspace.
 - Distributed is a rank-aware per-run dashboard backed by `GET /api/runs/:id/rank-metrics/summary`; it renders reduce mean/weighted mean/min/max/range/stddev/p50/p95, rank coverage, heatmap cells, and outlier rows only when the tab is active.
 - Insights is a local exploratory dashboard over the currently loaded/selected run summaries. It renders grouped reducer comparisons, evaluation cards, hyperparameter scatter, k-means clusters, and parallel-coordinate traces without introducing new persisted analysis state.

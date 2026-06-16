@@ -1,8 +1,9 @@
 "use client";
 
+import { Square } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { bestMetric, formatMetricValue, formatNumber, metricGoal, visibleSelectionState } from "../../../src/state.js";
+import { bestMetric, canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, metricGoal, visibleSelectionState } from "../../../src/state.js";
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { formatRunTime, shortMetricName } from "../../dashboard-models";
 import type { MetricSeries, RunSummary, TableColumns } from "../../dashboard-types";
@@ -20,7 +21,7 @@ function runDotClass(status: string) {
   const normalized = status.trim().toLowerCase();
   if (normalized === "running") return "run-dot--ok";
   if (normalized === "failed" || normalized === "error" || normalized === "crashed") return "run-dot--crit";
-  if (normalized === "killed" || normalized === "stopped") return "run-dot--warn";
+  if (normalized === "killed" || normalized === "stopping" || normalized === "stopped") return "run-dot--warn";
   if (normalized === "queued" || normalized === "pending") return "run-dot--queued";
   return "run-dot--idle";
 }
@@ -106,6 +107,7 @@ function navigateToTab(path: "/dashboard/compare" | "/dashboard/metrics") {
 }
 
 export function RunsTable({
+  canControlRuns,
   columns,
   hasNextPage,
   hasPreviousPage,
@@ -116,6 +118,7 @@ export function RunsTable({
   onNextPage,
   onOpenRun,
   onPreviousPage,
+  onRequestStop,
   onSelectAllVisible,
   onToggleRun,
   pageSize,
@@ -130,6 +133,7 @@ export function RunsTable({
   summaryTotal,
   workspaceSeries,
 }: {
+  canControlRuns: boolean;
   columns: TableColumns;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
@@ -140,6 +144,7 @@ export function RunsTable({
   onNextPage: () => void;
   onOpenRun: (runId: string) => void;
   onPreviousPage: () => void;
+  onRequestStop: (runIds: string[]) => void;
   onSelectAllVisible: () => void;
   onToggleRun: (runId: string) => void;
   pageSize: number;
@@ -161,7 +166,7 @@ export function RunsTable({
     const tokens = tableFilter.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!tokens.length) return runs;
     return runs.filter((run) => {
-      const haystack = `${run.name} ${run.id} ${run.project} ${run.status} ${run.tags.join(" ")} ${runOwner(run)}`.toLowerCase();
+    const haystack = `${run.name} ${run.id} ${run.project} ${displayStatusForRun(run)} ${run.tags.join(" ")} ${runOwner(run)}`.toLowerCase();
       return tokens.every((token) => haystack.includes(token));
     });
   }, [runs, tableFilter]);
@@ -198,7 +203,7 @@ export function RunsTable({
   const selectionState = visibleSelectionState(selectedRunIds, visibleRunIds);
   const totalPages = Math.max(1, Math.ceil(Math.max(summaryTotal, runs.length) / Math.max(1, pageSize)));
   const currentPage = summaryTotal ? Math.floor((pageStart - 1) / Math.max(1, pageSize)) + 1 : 1;
-  const visibleColumnCount = 4
+  const visibleColumnCount = 5
     + (columns.status ? 1 : 0)
     + (columns.latest ? 1 : 0)
     + (columns.duration ? 1 : 0)
@@ -217,7 +222,9 @@ export function RunsTable({
     const step = latestStep(run, metricSeries);
     const total = totalSteps(run);
     const owner = runOwner(run);
-    const running = run.status.trim().toLowerCase() === "running";
+    const displayStatus = displayStatusForRun(run);
+    const running = run.status === "running";
+    const canStopRun = canRequestStop(run, canControlRuns);
     const values = sparkValues(metricSeries?.find((item) => item.id === run.id)?.points);
     const sparkColor = running
       ? chartColor(stableChartIndex(run.id || run.name, runIndexById.get(run.id) ?? 0))
@@ -235,7 +242,7 @@ export function RunsTable({
         </td>
         {columns.status ? (
           <td className="col-dot">
-            <span className={`run-dot ${runDotClass(run.status)}`} role="img" aria-label={run.status} title={run.status} />
+            <span className={`run-dot ${runDotClass(displayStatus)}`} role="img" aria-label={displayStatus} title={displayStatus} />
           </td>
         ) : null}
         <td className="td-name">
@@ -267,6 +274,19 @@ export function RunsTable({
         {pinnedMetrics.map((metric) => (
           <td className="td-num" key={`${run.id}-${metric}`}>{formatNumber(bestMetric(run, metric), 2)}</td>
         ))}
+        <td className="col-stop">
+          {canStopRun ? (
+            <button
+              aria-label={`Request stop for ${run.name}`}
+              className="run-row-stop-button"
+              onClick={() => onRequestStop([run.id])}
+              title="Request stop"
+              type="button"
+            >
+              <Square size={13} />
+            </button>
+          ) : null}
+        </td>
       </tr>
     );
   }
@@ -346,6 +366,7 @@ export function RunsTable({
               {columns.tags ? <th>Tags</th> : null}
               {columns.started ? <th className="is-num">Started</th> : null}
               {pinnedMetrics.map((metric) => <th className="is-num" key={metric} title={metric}>{shortMetricName(metric)}</th>)}
+              <th className="col-stop"><span className="visually-hidden">Run actions</span></th>
             </tr>
           </thead>
           <tbody>

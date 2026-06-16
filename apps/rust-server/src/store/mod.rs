@@ -85,10 +85,11 @@ use crate::{
         OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow,
         PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
         RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
-        RenewArtifactUploadRequest, ReportRow, RequestContext, ReserveSeatRequest, RunRow,
-        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
-        SetArtifactAliasRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
-        UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+        RenewArtifactUploadRequest, ReportRow, RequestContext, ReserveSeatRequest, RunControlRow,
+        RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
+        SetArtifactAliasRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
+        UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest, UpdateReportRequest,
+        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
         VersionedArtifactManifestEntryInput, WorkspaceViewData, WorkspaceViewDataLimits,
         WorkspaceViewDataPanelResult, WorkspaceViewDataRequest, WorkspaceViewDataResponse,
         WorkspaceViewDeleteResponse, WorkspaceViewExportEnvelope, WorkspaceViewExportIntegrity,
@@ -131,7 +132,9 @@ const ALLOWED_SCOPES: &[&str] = &[
     "usage:read",
     "export:read",
     "api_keys:write",
+    "runs:control",
 ];
+const MAX_BULK_STOP_RUNS: usize = 100;
 const SESSION_TTL_DAYS: i64 = 30;
 const MAX_EXPORT_RUNS: usize = 500;
 const MAX_RUN_FILTER_CACHE_ENTRIES: usize = 64;
@@ -545,6 +548,33 @@ impl Store {
         metric_store.insert_operational_record(&row).await
     }
 
+    async fn persist_run_controls_locked(
+        &self,
+        org_id: Uuid,
+        controls: &[RunControlRow],
+    ) -> AppResult<()> {
+        if controls.is_empty() {
+            return Ok(());
+        }
+        let mut rows = Vec::with_capacity(controls.len());
+        for control in controls {
+            rows.push(OperationalRecordRow {
+                kind: "run_control".to_string(),
+                org_id,
+                entity_id: control.run_id.to_string(),
+                payload: serde_json::to_string(control)
+                    .map_err(|_| AppError::internal("operational payload serialization failed"))?,
+                created_at: self.next_record_created_at().await,
+            });
+        }
+        #[cfg(test)]
+        if self.control_db.is_none() && self.metric_store.database().ends_with("_test") {
+            return Ok(());
+        }
+        let metric_store = self.metric_store_for_persist(org_id).await?;
+        metric_store.insert_operational_records(&rows).await
+    }
+
     /// Route a serialized control record to the right typed Postgres upsert.
     /// The payload is the same JSON `persist_locked` would have appended to the
     /// ClickHouse log, so call sites are unchanged — only the destination moves.
@@ -702,6 +732,7 @@ struct StoreData {
     runs_by_parent_created: BTreeMap<(Uuid, Uuid, DateTime<Utc>, Uuid), Uuid>,
     run_count_by_org: HashMap<Uuid, usize>,
     run_count_by_org_project: HashMap<(Uuid, String), usize>,
+    run_controls: BTreeMap<Uuid, RunControlRow>,
     incomplete_import_runs: HashSet<Uuid>,
     run_search_documents: HashMap<Uuid, Arc<RunSearchDocument>>,
     run_filter_cache: HashMap<RunFilterCacheKey, Vec<Uuid>>,
@@ -742,6 +773,12 @@ struct StoreData {
     reports: BTreeMap<Uuid, ReportRow>,
     next_attribute_id_by_org: HashMap<Uuid, i64>,
     next_import_id_by_org: HashMap<Uuid, i64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RunControlPrivacy {
+    Public,
+    Private,
 }
 
 impl StoreData {
@@ -793,6 +830,7 @@ impl StoreData {
             "project" => self.insert_project(parse_payload(payload)?),
             "project_delete" => self.apply_project_delete(parse_payload(payload)?),
             "run" => self.insert_run(parse_payload(payload)?),
+            "run_control" => self.insert_run_control(parse_payload(payload)?),
             "attribute" => self.insert_attribute(parse_payload(payload)?),
             "artifact" => self.insert_artifact(parse_payload(payload)?),
             "artifact_collection" => self.insert_artifact_collection(parse_payload(payload)?),
@@ -998,6 +1036,11 @@ impl StoreData {
                 .insert(run.id, Arc::new(run_search_document(&run)));
         }
         self.runs.insert(run.id, run);
+        self.clear_run_filter_cache();
+    }
+
+    fn insert_run_control(&mut self, control: RunControlRow) {
+        self.run_controls.insert(control.run_id, control);
         self.clear_run_filter_cache();
     }
 
@@ -1261,6 +1304,7 @@ impl StoreData {
             }
             self.run_search_documents.remove(&run.id);
             self.incomplete_import_runs.remove(&run.id);
+            self.run_controls.remove(&run.id);
             self.clear_run_filter_cache();
         }
     }
@@ -1416,6 +1460,7 @@ struct RunFilterCacheKey {
     auth_project_id: Option<Uuid>,
     project: String,
     status: String,
+    display_status: String,
     q: String,
 }
 
@@ -1429,6 +1474,106 @@ fn run_has_incomplete_import_metadata(run: &RunRow) -> bool {
 
 fn is_visible_run(data: &StoreData, run: &RunRow) -> bool {
     data.incomplete_import_runs.is_empty() || !data.incomplete_import_runs.contains(&run.id)
+}
+
+fn run_control_for<'a>(data: &'a StoreData, run: &RunRow) -> Option<&'a RunControlRow> {
+    data.run_controls
+        .get(&run.id)
+        .filter(|control| control.org_id == run.org_id)
+}
+
+fn run_control_display_status(run: &RunRow, control: Option<&RunControlRow>) -> &'static str {
+    match (
+        run.status.as_str(),
+        control.map(|item| item.stop_state.as_str()),
+    ) {
+        ("running", Some("requested" | "acknowledged")) => "stopping",
+        ("finished" | "failed", Some("completed")) => "stopped",
+        ("running", _) => "running",
+        ("finished", _) => "finished",
+        ("failed", _) => "failed",
+        _ => "failed",
+    }
+}
+
+fn run_control_summary(
+    run: &RunRow,
+    control: Option<&RunControlRow>,
+    privacy: RunControlPrivacy,
+) -> Value {
+    let stop_state = control
+        .map(|item| item.stop_state.as_str())
+        .unwrap_or("none");
+    let mut summary = json!({
+        "stop_state": stop_state,
+        "display_status": run_control_display_status(run, control),
+        "stop_request_id": control.and_then(|item| item.stop_request_id),
+        "stop_requested": matches!(stop_state, "requested" | "acknowledged" | "completed"),
+        "actor": control.and_then(|item| display_stop_actor(item.actor.as_deref())),
+        "stop_requested_at": control.and_then(|item| item.requested_at),
+        "stop_acknowledged_at": control.and_then(|item| item.acknowledged_at),
+        "stop_completed_at": control.and_then(|item| item.completed_at),
+        "updated_at": control.map(|item| item.updated_at),
+    });
+    if privacy == RunControlPrivacy::Private {
+        if let Value::Object(map) = &mut summary {
+            map.insert(
+                "reason".to_string(),
+                control
+                    .and_then(|item| item.reason.clone())
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+            map.insert(
+                "completion_message".to_string(),
+                control
+                    .and_then(|item| item.completion_message.clone())
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            );
+        }
+    }
+    summary
+}
+
+fn can_read_private_run_control(ctx: &RequestContext) -> bool {
+    if let Some(auth) = &ctx.auth {
+        return auth.scopes.iter().any(|scope| scope == "export:read")
+            && auth.scopes.iter().any(|scope| scope == "runs:control");
+    }
+    if let Some(session) = &ctx.session {
+        return !session.demo_read_only
+            && matches!(session.role.as_str(), "owner" | "admin" | "member");
+    }
+    true
+}
+
+fn display_stop_actor(actor: Option<&str>) -> Option<&'static str> {
+    let actor = actor?;
+    if actor.starts_with("user:") {
+        Some("user")
+    } else if actor.starts_with("api_key:") {
+        Some("api_key")
+    } else if actor == "local" {
+        Some("local")
+    } else {
+        Some("unknown")
+    }
+}
+
+fn run_matches_display_status(
+    data: &StoreData,
+    query: &HashMap<String, String>,
+    run: &RunRow,
+) -> bool {
+    let Some(display_status) = query
+        .get("display_status")
+        .map(String::as_str)
+        .filter(|value| !value.is_empty() && *value != "all")
+    else {
+        return true;
+    };
+    run_control_display_status(run, run_control_for(data, run)) == display_status
 }
 
 fn decrement_count<K>(counts: &mut HashMap<K, usize>, key: &K)
@@ -1666,6 +1811,7 @@ fn payload_org_id(payload: &Value) -> AppResult<Option<Uuid>> {
 fn validate_tenant_record_entity(record: &OperationalRecordRow, payload: &Value) -> AppResult<()> {
     match record.kind.as_str() {
         "project" | "run" | "artifact" => validate_payload_string_id(record, payload, "id"),
+        "run_control" => validate_payload_string_id(record, payload, "run_id"),
         "artifact_collection"
         | "artifact_version"
         | "artifact_edge"
@@ -1850,17 +1996,14 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
-    /// Build a `Store` whose control plane is the given Postgres handle, with
-    /// the rest of the dependencies stubbed. Used by the Postgres-backed
-    /// chokepoint tests.
-    fn store_with_control_db(control_db: ControlDb) -> Store {
+    fn test_store(database: &str, control_db: Option<ControlDb>) -> Store {
         Store {
             metric_store: crate::metric_store::connect_url(
-                "http://default:@127.0.0.1:8123/instantml_pg_chokepoint_test",
+                &format!("http://default:@127.0.0.1:8123/{database}"),
                 "TEST_CLICKHOUSE_URL",
             )
             .unwrap(),
-            control_db: Some(control_db),
+            control_db,
             hosted_clickhouse: None,
             byoc_clickhouse: crate::config::ByocClickHouseConfig {
                 egress_cidrs: Vec::new(),
@@ -1880,6 +2023,17 @@ mod tests {
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Build a `Store` whose control plane is the given Postgres handle, with
+    /// the rest of the dependencies stubbed. Used by the Postgres-backed
+    /// chokepoint tests.
+    fn store_with_control_db(control_db: ControlDb) -> Store {
+        test_store("instantml_pg_chokepoint_test", Some(control_db))
+    }
+
+    fn store_without_control_db() -> Store {
+        test_store("instantml_run_control_test", None)
     }
 
     #[sqlx::test]
@@ -2071,6 +2225,22 @@ mod tests {
         }
     }
 
+    fn replay_org(org_id: Uuid, plan: &str) -> OrganizationRow {
+        OrganizationRow {
+            id: org_id,
+            slug: format!("org-{org_id}"),
+            name: "Replay Org".to_string(),
+            plan_tier: plan.to_string(),
+            account_type: "business".to_string(),
+            seat_limit: plan_tier(plan).included_seats,
+            created_by_user_id: None,
+            created_at: epoch(),
+            tenant_routing_tier: "dedicated".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        }
+    }
+
     fn replay_run(org_id: Uuid, run_id: Uuid, status: &str) -> RunRow {
         RunRow {
             id: run_id,
@@ -2089,6 +2259,680 @@ mod tests {
             forked_from_step: None,
             forked_from_artifact_id: None,
         }
+    }
+
+    fn replay_run_control(org_id: Uuid, run_id: Uuid, state: &str) -> RunControlRow {
+        RunControlRow {
+            org_id,
+            run_id,
+            stop_request_id: Some(Uuid::from_u128(9_999)),
+            stop_state: state.to_string(),
+            reason: Some("bad sweep".to_string()),
+            completion_message: None,
+            actor: Some("user:reviewer".to_string()),
+            requested_at: Some(epoch()),
+            acknowledged_at: (state == "acknowledged" || state == "completed").then_some(epoch()),
+            completed_at: (state == "completed").then_some(epoch()),
+            updated_at: epoch(),
+        }
+    }
+
+    #[test]
+    fn run_control_replay_drives_display_status_without_status_change() {
+        let org_id = Uuid::from_u128(1);
+        let running_id = Uuid::from_u128(10);
+        let failed_id = Uuid::from_u128(11);
+        let mut data = StoreData::default();
+        data.apply_operational_records(
+            vec![
+                replay_row(
+                    "run",
+                    org_id,
+                    running_id.to_string(),
+                    &replay_run(org_id, running_id, "running"),
+                    1,
+                ),
+                replay_row(
+                    "run_control",
+                    org_id,
+                    running_id.to_string(),
+                    &replay_run_control(org_id, running_id, "acknowledged"),
+                    2,
+                ),
+                replay_row(
+                    "run",
+                    org_id,
+                    failed_id.to_string(),
+                    &replay_run(org_id, failed_id, "failed"),
+                    3,
+                ),
+                replay_row(
+                    "run_control",
+                    org_id,
+                    failed_id.to_string(),
+                    &replay_run_control(org_id, failed_id, "completed"),
+                    4,
+                ),
+            ],
+            ReplayScope::All,
+        )
+        .unwrap();
+
+        let running = data.runs.get(&running_id).unwrap();
+        assert_eq!(
+            run_control_display_status(running, run_control_for(&data, running)),
+            "stopping"
+        );
+        let failed = data.runs.get(&failed_id).unwrap();
+        assert_eq!(failed.status, "failed");
+        assert_eq!(
+            run_control_display_status(failed, run_control_for(&data, failed)),
+            "stopped"
+        );
+    }
+
+    #[test]
+    fn display_status_filter_matches_derived_control_state() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let query = HashMap::from([("display_status".to_string(), "stopping".to_string())]);
+        let mut data = StoreData::default();
+        data.insert_run(replay_run(org_id, run_id, "running"));
+        let run = data.runs.get(&run_id).unwrap().clone();
+        data.insert_run_control(replay_run_control(org_id, run_id, "requested"));
+
+        assert!(run_matches_display_status(&data, &query, &run));
+    }
+
+    #[tokio::test]
+    async fn display_status_search_and_sort_use_run_control_state() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let running_id = Uuid::from_u128(10);
+        let stopping_id = Uuid::from_u128(11);
+        let stopped_id = Uuid::from_u128(12);
+        {
+            let mut data = store.data.lock().await;
+            let mut running = replay_run(org_id, running_id, "running");
+            running.name = "running".to_string();
+            let mut stopping = replay_run(org_id, stopping_id, "running");
+            stopping.name = "stopping".to_string();
+            let mut stopped = replay_run(org_id, stopped_id, "failed");
+            stopped.name = "stopped".to_string();
+            data.insert_run(running);
+            data.insert_run(stopping);
+            data.insert_run(stopped);
+            data.insert_run_control(replay_run_control(org_id, stopping_id, "requested"));
+            data.insert_run_control(replay_run_control(org_id, stopped_id, "completed"));
+        }
+
+        let matches = filtered_runs(
+            &store,
+            &ctx,
+            &HashMap::from([("q".to_string(), "status:stopping".to_string())]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            matches.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![stopping_id]
+        );
+
+        let sorted = filtered_runs(
+            &store,
+            &ctx,
+            &HashMap::from([("sort_by".to_string(), "status".to_string())]),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            sorted.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![running_id, stopped_id, stopping_id]
+        );
+    }
+
+    #[test]
+    fn completed_control_does_not_expose_stopped_for_running_replay() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let run = replay_run(org_id, run_id, "running");
+        let control = replay_run_control(org_id, run_id, "completed");
+
+        assert_eq!(run_control_display_status(&run, Some(&control)), "running");
+    }
+
+    #[test]
+    fn run_control_summary_redacts_actor_identifiers() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let run = replay_run(org_id, run_id, "running");
+        let mut control = replay_run_control(org_id, run_id, "requested");
+
+        control.actor = Some("user:2c8b6f5c-0f8d-4ce0-8f3c-34bdc2c7f72d".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
+            json!("user")
+        );
+
+        control.actor = Some("api_key:7f9d7c64-4663-49db-b268-b9da6464da52".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
+            json!("api_key")
+        );
+
+        control.actor = Some("local".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
+            json!("local")
+        );
+
+        control.actor = Some("unexpected".to_string());
+        assert_eq!(
+            run_control_summary(&run, Some(&control), RunControlPrivacy::Public)["actor"],
+            json!("unknown")
+        );
+    }
+
+    #[test]
+    fn run_control_summary_keeps_reason_private_by_default() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(10);
+        let run = replay_run(org_id, run_id, "running");
+        let mut control = replay_run_control(org_id, run_id, "requested");
+        control.completion_message = Some("checkpoint saved".to_string());
+
+        let public = run_control_summary(&run, Some(&control), RunControlPrivacy::Public);
+        assert!(public.get("reason").is_none());
+        assert!(public.get("completion_message").is_none());
+
+        let private = run_control_summary(&run, Some(&control), RunControlPrivacy::Private);
+        assert_eq!(private["reason"], json!("bad sweep"));
+        assert_eq!(private["completion_message"], json!("checkpoint saved"));
+    }
+
+    #[tokio::test]
+    async fn completed_stop_ack_is_idempotent_and_preserves_request_audit() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(42);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        let requested = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            json!({"reason": "bad sweep"}),
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(requested["run_control"]["actor"], json!("local"));
+        let stop_request_id = Uuid::parse_str(
+            requested["run_control"]["stop_request_id"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+
+        let completed = acknowledge_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopAckRequest {
+                stop_request_id,
+                state: "completed".to_string(),
+                message: Some("sdk cleanup".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(completed["run_control"]["display_status"], json!("stopped"));
+        assert_eq!(completed["run_control"]["reason"], json!("bad sweep"));
+
+        let first_control = {
+            let data = store.data.lock().await;
+            let run = data.runs.get(&run_id).unwrap();
+            assert_eq!(run.status, "failed");
+            data.run_controls.get(&run_id).cloned().unwrap()
+        };
+
+        let retried = acknowledge_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopAckRequest {
+                stop_request_id,
+                state: "completed".to_string(),
+                message: Some("do not overwrite".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(retried["run_control"]["display_status"], json!("stopped"));
+        assert_eq!(retried["run_control"]["reason"], json!("bad sweep"));
+
+        let retry_control = store
+            .data
+            .lock()
+            .await
+            .run_controls
+            .get(&run_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(retry_control.completed_at, first_control.completed_at);
+        assert_eq!(retry_control.updated_at, first_control.updated_at);
+        assert_eq!(retry_control.reason.as_deref(), Some("bad sweep"));
+        assert_eq!(
+            retry_control.completion_message.as_deref(),
+            Some("sdk cleanup")
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_request_idempotency_replays_and_rejects_different_body() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(45);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        let raw = json!({"reason": "bad sweep"});
+        let first = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            raw.clone(),
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            Some("stop-key".to_string()),
+        )
+        .await
+        .unwrap();
+        let retried = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            raw,
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            Some("stop-key".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            first["run_control"]["stop_request_id"],
+            retried["run_control"]["stop_request_id"]
+        );
+
+        let err = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            json!({"reason": "different"}),
+            StopRunRequest {
+                reason: Some("different".to_string()),
+            },
+            Some("stop-key".to_string()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn stop_request_idempotency_waits_for_inflight_replay() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(47);
+        let key = "stop-inflight".to_string();
+        let raw = json!({"reason": "bad sweep"});
+        let request_hash = hash_idempotency(run_id, &raw).unwrap();
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+        store.reserve_idempotency_key(org_id, &key).await.unwrap();
+
+        let writer = store.clone();
+        let writer_key = key.clone();
+        let writer_hash = request_hash.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(StdDuration::from_millis(50)).await;
+            writer.data.lock().await.idempotency.insert(
+                (org_id, writer_key.clone()),
+                IdempotencyRecord {
+                    org_id,
+                    key: writer_key.clone(),
+                    request_hash: writer_hash,
+                    response_json: json!({
+                        "run_id": run_id,
+                        "ok": true,
+                        "run_control": {"stop_request_id": "inflight-stop"},
+                    }),
+                    expires_at: Utc::now() + ChronoDuration::days(7),
+                },
+            );
+            writer.release_idempotency_key(org_id, &writer_key).await;
+        });
+
+        let replayed = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            raw,
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            Some(key),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            replayed["run_control"]["stop_request_id"],
+            json!("inflight-stop")
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_idempotency_replay_rechecks_project_scope() {
+        let store = store_without_control_db();
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(47);
+        let allowed_project_id = Uuid::from_u128(100);
+        let blocked_project_id = Uuid::from_u128(101);
+        let mut run = replay_run(org_id, run_id, "running");
+        run.project_id = allowed_project_id;
+        let blocked_ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::from_u128(200),
+                service_account_id: Uuid::from_u128(201),
+                project_id: Some(blocked_project_id),
+                scopes: vec!["runs:control".to_string()],
+            }),
+            session: None,
+        };
+        {
+            store.data.lock().await.insert_run(run);
+        }
+
+        let single_key = "stop-single-project-scope".to_string();
+        let single_raw = json!({"reason": "bad sweep"});
+        let single_hash = hash_idempotency(run_id, &single_raw).unwrap();
+        store.data.lock().await.idempotency.insert(
+            (org_id, single_key.clone()),
+            IdempotencyRecord {
+                org_id,
+                key: single_key.clone(),
+                request_hash: single_hash,
+                response_json: json!({
+                    "run_id": run_id,
+                    "ok": true,
+                    "run_control": {"stop_request_id": "cached-single-stop"},
+                }),
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            },
+        );
+        let single_error = request_run_stop(
+            &store,
+            &blocked_ctx,
+            run_id,
+            single_raw,
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            Some(single_key),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(single_error.status(), axum::http::StatusCode::FORBIDDEN);
+
+        let bulk_key = "stop-bulk-project-scope".to_string();
+        let bulk_raw = json!({"reason": "bad sweep", "run_ids": [run_id]});
+        let bulk_hash = hash_idempotency(Uuid::nil(), &bulk_raw).unwrap();
+        store.data.lock().await.idempotency.insert(
+            (org_id, bulk_key.clone()),
+            IdempotencyRecord {
+                org_id,
+                key: bulk_key.clone(),
+                request_hash: bulk_hash,
+                response_json: json!({
+                    "results": [{
+                        "run_id": run_id,
+                        "ok": true,
+                        "run_control": {"stop_request_id": "cached-bulk-stop"},
+                    }],
+                    "limit": MAX_BULK_STOP_RUNS,
+                }),
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            },
+        );
+        let bulk_error = request_bulk_run_stop(
+            &store,
+            &blocked_ctx,
+            bulk_raw,
+            StopRunsRequest {
+                run_ids: vec![run_id],
+                reason: Some("bad sweep".to_string()),
+            },
+            Some(bulk_key),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(bulk_error.status(), axum::http::StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn stop_request_bypasses_billing_write_gate() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(46);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_billing_account(BillingAccountProjection {
+                schema_version: 1,
+                org_id,
+                access_state: BILLING_CHECKOUT_PENDING.to_string(),
+                plan_tier: "pro".to_string(),
+                effective_plan_tier: "free".to_string(),
+                requested_plan_tier: Some("pro".to_string()),
+                paid_extra_seats: 0,
+                stripe_customer_id: None,
+                stripe_subscription_id: None,
+                subscription_status: None,
+                current_period_start: None,
+                current_period_end: None,
+                cancel_at_period_end: false,
+                grace_until: None,
+                pending_intent_id: None,
+                message: Some("checkout pending".to_string()),
+                updated_at: Utc::now(),
+            });
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        let response = request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            json!({"reason": "stop spend"}),
+            StopRunRequest {
+                reason: Some("stop spend".to_string()),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response["ok"], json!(true));
+        assert_eq!(response["run_control"]["display_status"], json!("stopping"));
+    }
+
+    #[tokio::test]
+    async fn stop_signal_poll_interval_uses_plan_tier() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(48);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_org(replay_org(org_id, "premium"));
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            json!({"reason": "bad sweep"}),
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+        let premium = run_stop_signal(&store, &ctx, run_id).await.unwrap();
+        assert_eq!(premium["poll_after_seconds"], json!(10));
+
+        store
+            .data
+            .lock()
+            .await
+            .insert_org(replay_org(org_id, "pro"));
+        let pro = run_stop_signal(&store, &ctx, run_id).await.unwrap();
+        assert_eq!(pro["poll_after_seconds"], json!(15));
+
+        store
+            .data
+            .lock()
+            .await
+            .insert_org(replay_org(org_id, "free"));
+        let free = run_stop_signal(&store, &ctx, run_id).await.unwrap();
+        assert_eq!(free["poll_after_seconds"], json!(30));
+    }
+
+    #[tokio::test]
+    async fn terminal_patch_marks_active_stop_without_completion() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(43);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        request_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            json!({"reason": "bad sweep"}),
+            StopRunRequest {
+                reason: Some("bad sweep".to_string()),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        update_run(
+            &store,
+            &ctx,
+            run_id,
+            UpdateRunRequest {
+                status: Some("finished".to_string()),
+                tags: None,
+                notes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let signal = run_stop_signal(&store, &ctx, run_id).await.unwrap();
+        assert_eq!(signal["stop_requested"], json!(false));
+        let control = store
+            .data
+            .lock()
+            .await
+            .run_controls
+            .get(&run_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(control.stop_state, "terminal_without_completion");
+
+        let repaired = acknowledge_run_stop(
+            &store,
+            &ctx,
+            run_id,
+            StopAckRequest {
+                stop_request_id: control.stop_request_id.unwrap(),
+                state: "completed".to_string(),
+                message: Some("late cleanup".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(repaired["run_control"]["display_status"], json!("stopped"));
+        assert_eq!(
+            store.data.lock().await.runs.get(&run_id).unwrap().status,
+            "finished"
+        );
+    }
+
+    #[tokio::test]
+    async fn bulk_stop_dedupes_duplicate_run_ids() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(44);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+
+        let result = request_bulk_run_stop(
+            &store,
+            &ctx,
+            json!({"run_ids": [run_id], "reason": "bad sweep"}),
+            StopRunsRequest {
+                run_ids: vec![run_id, run_id],
+                reason: Some("bad sweep".to_string()),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["results"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            store
+                .data
+                .lock()
+                .await
+                .run_controls
+                .get(&run_id)
+                .unwrap()
+                .stop_state,
+            "requested"
+        );
     }
 
     #[test]

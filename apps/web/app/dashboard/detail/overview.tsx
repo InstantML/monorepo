@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { isAbortError, queryString } from "../../../src/api.js";
 import { buildCheckpointResumeCode, checkpointStep } from "../../../src/checkpoints.js";
-import { formatNumber, uploadHealthForRun } from "../../../src/state.js";
+import { displayStatusForRun, formatNumber, uploadHealthForRun } from "../../../src/state.js";
 import { artifactHasStoredBytes, buildAlertRows, compactValue, formatBytes, lastMetricStep } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
@@ -525,6 +525,7 @@ export function OverviewTab({
   timelineRows: RunTimelineRow[];
 }) {
   const uploadHealth = uploadHealthForRun(run);
+  const displayStatus = displayStatusForRun(run);
   const gridCharts = charts.filter((spec) => !spec.fullWidth);
   const wideCharts = charts.filter((spec) => spec.fullWidth);
   return (
@@ -536,7 +537,7 @@ export function OverviewTab({
             <span>{uploadHealth.detail}</span>
           </div>
         ) : null}
-        {run.status === "failed" ? (
+        {displayStatus === "failed" ? (
           <section className="failure-card">
             <strong>Failed run triage</strong>
             <div><span>Last metric step</span><b>{lastMetricStep(run)}</b></div>

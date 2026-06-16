@@ -12,9 +12,37 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
         let data = store.data.lock().await;
         artifact_counts_for_runs(&data, &run_ids)
     };
+    let controls = {
+        let data = store.data.lock().await;
+        runs.iter()
+            .map(|run| (run.id, run_control_for(&data, run).cloned()))
+            .collect::<HashMap<_, _>>()
+    };
     runs.into_iter()
-        .map(|run| summarize_run(run, &series, &counts))
+        .map(|run| {
+            let control = controls.get(&run.id).and_then(Option::as_ref);
+            summarize_run(run, control, RunControlPrivacy::Public, &series, &counts)
+        })
         .collect::<AppResult<Vec<_>>>()
+}
+
+pub(super) async fn run_summary_value(
+    store: &Store,
+    run: RunRow,
+    privacy: RunControlPrivacy,
+) -> AppResult<Value> {
+    let run_ids = vec![run.id];
+    let metric_store = store.metric_store_for_org(run.org_id).await?;
+    let series = metric_series_for_runs(&metric_store, run.org_id, &run_ids).await?;
+    let counts = {
+        let data = store.data.lock().await;
+        artifact_counts_for_runs(&data, &run_ids)
+    };
+    let control = {
+        let data = store.data.lock().await;
+        run_control_for(&data, &run).cloned()
+    };
+    summarize_run(run, control.as_ref(), privacy, &series, &counts)
 }
 
 pub(super) async fn summarize_runs_for_metric_keys(
@@ -33,24 +61,25 @@ pub(super) async fn summarize_runs_for_metric_keys(
         let data = store.data.lock().await;
         artifact_counts_for_runs(&data, &run_ids)
     };
+    let controls = {
+        let data = store.data.lock().await;
+        runs.iter()
+            .map(|run| (run.id, run_control_for(&data, run).cloned()))
+            .collect::<HashMap<_, _>>()
+    };
     runs.into_iter()
-        .map(|run| summarize_run(run, &series, &counts))
+        .map(|run| {
+            let control = controls.get(&run.id).and_then(Option::as_ref);
+            summarize_run(run, control, RunControlPrivacy::Public, &series, &counts)
+        })
         .collect::<AppResult<Vec<_>>>()
 }
 
-pub(super) async fn run_summary_value(store: &Store, run: RunRow) -> AppResult<Value> {
-    let run_ids = vec![run.id];
-    let metric_store = store.metric_store_for_org(run.org_id).await?;
-    let series = metric_series_for_runs(&metric_store, run.org_id, &run_ids).await?;
-    let counts = {
-        let data = store.data.lock().await;
-        artifact_counts_for_runs(&data, &run_ids)
-    };
-    summarize_run(run, &series, &counts)
-}
-
-pub(super) fn selection_run_value(run: RunRow) -> AppResult<Value> {
-    let mut value = serde_json::to_value(run)
+pub(super) fn selection_run_value(
+    run: RunRow,
+    control: Option<&RunControlRow>,
+) -> AppResult<Value> {
+    let mut value = serde_json::to_value(&run)
         .map_err(|_| AppError::internal("run selection serialization failed"))?;
     if let Value::Object(map) = &mut value {
         map.insert("latest_metrics".to_string(), Value::Object(Map::new()));
@@ -64,12 +93,18 @@ pub(super) fn selection_run_value(run: RunRow) -> AppResult<Value> {
                 "file": 0
             }),
         );
+        map.insert(
+            "run_control".to_string(),
+            run_control_summary(&run, control, RunControlPrivacy::Public),
+        );
     }
     Ok(value)
 }
 
 pub(super) fn summarize_run(
     run: RunRow,
+    control: Option<&RunControlRow>,
+    privacy: RunControlPrivacy,
     series: &[MetricSeriesRow],
     artifact_counts: &HashMap<Uuid, BTreeMap<String, i64>>,
 ) -> AppResult<Value> {
@@ -100,9 +135,13 @@ pub(super) fn summarize_run(
             ("file".to_string(), 0),
         ])
     });
-    let mut value = serde_json::to_value(run)
+    let mut value = serde_json::to_value(&run)
         .map_err(|_| AppError::internal("run summary serialization failed"))?;
     if let Value::Object(map) = &mut value {
+        map.insert(
+            "run_control".to_string(),
+            run_control_summary(&run, control, privacy),
+        );
         map.insert("latest_metrics".to_string(), Value::Object(latest));
         map.insert("metric_aggregates".to_string(), Value::Object(aggregates));
         map.insert("metric_keys".to_string(), json!(keys));

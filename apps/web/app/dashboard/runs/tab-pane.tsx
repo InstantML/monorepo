@@ -29,6 +29,7 @@ type Props = {
   addPanelSectionId: string;
   allMetricOptions: string[];
   availableWorkspaceMetrics: string[];
+  canControlRuns: boolean;
   columnMetricFilter: string;
   columnMetricFilterValid: boolean;
   columnMetricOptionsForControls: string[];
@@ -72,6 +73,7 @@ type Props = {
   onPreviousPage: () => void;
   onRefresh: () => void;
   onRemovePanel: (sectionId: string, panelId: string) => void;
+  onRequestStop: (runIds: string[]) => void;
   onResetWorkspace: () => void;
   onResizePanel: (sectionId: string, panelId: string, layout: WorkspacePanelLayout) => void;
   onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
@@ -116,6 +118,8 @@ type Props = {
   selectedRunIds: string[];
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
+  selectedStopCandidateCount: number;
+  selectedStopDisabledReason: string;
   sortedRuns: RunSummary[];
   status: string;
   summaryTotal: number;
@@ -132,6 +136,7 @@ export function RunsTabPane({
   addPanelSectionId,
   allMetricOptions,
   availableWorkspaceMetrics,
+  canControlRuns,
   columnMetricFilter,
   columnMetricFilterValid,
   columnMetricOptionsForControls,
@@ -175,6 +180,7 @@ export function RunsTabPane({
   onPreviousPage,
   onRefresh,
   onRemovePanel,
+  onRequestStop,
   onResetWorkspace,
   onResizePanel,
   onPanelSmoothing,
@@ -208,6 +214,8 @@ export function RunsTabPane({
   selectedRunIds,
   selectedRunExportDisabled,
   selectedRunExportTitle,
+  selectedStopCandidateCount,
+  selectedStopDisabledReason,
   sortedRuns,
   status,
   summaryTotal,
@@ -342,13 +350,17 @@ export function RunsTabPane({
           selectedRunCount={selectedRunIds.length}
           selectedRunExportDisabled={selectedRunExportDisabled}
           selectedRunExportTitle={selectedRunExportTitle}
+          selectedStopCandidateCount={selectedStopCandidateCount}
+          selectedStopDisabledReason={selectedStopDisabledReason}
           tableColumns={tableColumns}
+          onRequestSelectedStop={() => onRequestStop(selectedRunIds)}
           viewMode={runsView}
         />
       </div>
       {runsView === "table" ? (
         <div className="runs-table-view">
           <RunsTable
+            canControlRuns={canControlRuns}
             columns={tableColumns}
             hasNextPage={hasNextPage}
             hasPreviousPage={hasPreviousPage}
@@ -359,6 +371,7 @@ export function RunsTabPane({
             onNextPage={onNextPage}
             onOpenRun={onOpenRun}
             onPreviousPage={onPreviousPage}
+            onRequestStop={onRequestStop}
             onSelectAllVisible={onSelectAllVisible}
             onToggleRun={(runId) => onToggleRun(runId)}
             pageSize={pageSize}
@@ -378,6 +391,7 @@ export function RunsTabPane({
       <RunsWorkspace
         addPanelSectionId={addPanelSectionId}
         availableMetricKeys={availableWorkspaceMetrics}
+        canControlRuns={canControlRuns}
         onAddPanel={onAddPanel}
         onAddSection={onAddSection}
         onClearFilters={onClearFilters}
@@ -392,6 +406,7 @@ export function RunsTabPane({
         onPanelSearch={onPanelSearch}
         onRefresh={onRefresh}
         onRemovePanel={onRemovePanel}
+        onRequestStop={onRequestStop}
         onResetWorkspace={onResetWorkspace}
         onResizePanel={onResizePanel}
         onPanelSmoothing={onPanelSmoothing}

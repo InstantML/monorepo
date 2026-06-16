@@ -22,7 +22,7 @@ import { isAbortError, queryString, retryTransientRequest } from "../../../src/a
 import { buildCheckpointResumeCode } from "../../../src/checkpoints.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../../../src/evidence.js";
 import { ansiTokens, terminalWindow } from "../../../src/terminal.js";
-import { formatNumber, statusTone } from "../../../src/state.js";
+import { displayStatusForRun, formatNumber, statusTone } from "../../../src/state.js";
 import { ArtifactBrowser } from "../artifacts/artifact-browser";
 import { MetricCard } from "../ui/metric-card";
 import { MetricChart } from "../metrics/metric-chart";
@@ -135,6 +135,7 @@ export function RunWorkspace({
       </div>
     );
   }
+  const displayStatus = displayStatusForRun(run);
   return (
     <div className="run-workspace" id={elementId}>
       <header className="run-workspace-header">
@@ -143,7 +144,7 @@ export function RunWorkspace({
           <h2 className="run-workspace-name" title={run.name}>{run.name}</h2>
           <span className="run-workspace-sub">{durationContext(run)} · {sourceContext(run)}</span>
           <div className="run-workspace-spacer" />
-          <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
+          <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
           <div className="run-workspace-meta">
             {run.tags.slice(0, 2).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
             {run.tags.length > 2 ? <span className="chip">+{run.tags.length - 2}</span> : null}
@@ -629,7 +630,7 @@ export function RunGraphPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
                   {children.map((child) => (
                     <tr key={child.id}>
                       <td><strong title={child.name}>{child.name}</strong></td>
-                      <td><span className={`pill ${statusTone(child.status)}`}>{child.status}</span></td>
+                      <td><span className={`pill ${statusTone(displayStatusForRun(child))}`}>{displayStatusForRun(child)}</span></td>
                       <td>{child.forked_from_step ?? "unknown"}</td>
                       <td>{formatTimestamp(child.created_at)}</td>
                     </tr>
@@ -654,7 +655,7 @@ function LineageNode({ empty, label, run }: { empty?: string; label: string; run
       {run ? (
         <>
           <strong title={run.name}>{run.name}</strong>
-          <small>{run.project} · {run.status}</small>
+          <small>{run.project} · {displayStatusForRun(run)}</small>
         </>
       ) : <strong>{empty ?? "Not available"}</strong>}
     </div>

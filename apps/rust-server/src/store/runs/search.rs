@@ -128,10 +128,27 @@ pub(super) fn run_matches_search(
         return true;
     }
     if let Some(doc) = data.run_search_documents.get(&run.id) {
-        return search.matches(doc.as_ref());
+        let mut doc = doc.as_ref().clone();
+        apply_display_status_to_search_document(data, run, &mut doc);
+        return search.matches(&doc);
     }
-    let doc = run_search_document(run);
+    let mut doc = run_search_document(run);
+    apply_display_status_to_search_document(data, run, &mut doc);
     search.matches(&doc)
+}
+
+fn apply_display_status_to_search_document(
+    data: &StoreData,
+    run: &RunRow,
+    doc: &mut RunSearchDocument,
+) {
+    let display_status = run_control_display_status(run, run_control_for(data, run));
+    if doc.status == display_status {
+        return;
+    }
+    doc.status = display_status.to_string();
+    doc.summary.push(' ');
+    doc.summary.push_str(display_status);
 }
 
 fn compile_tokens(raw: &str, tokens: Vec<SearchToken>) -> AppResult<CompiledRunSearch> {
@@ -378,11 +395,11 @@ fn field_predicate(
     if field == SearchField::Status
         && !matches!(
             value.to_ascii_lowercase().as_str(),
-            "running" | "finished" | "failed"
+            "running" | "stopping" | "stopped" | "finished" | "failed"
         )
     {
         return Err(invalid(
-            "status must be running, finished, or failed",
+            "status must be running, stopping, stopped, finished, or failed",
             column,
         ));
     }

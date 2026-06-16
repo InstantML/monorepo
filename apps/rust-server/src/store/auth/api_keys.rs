@@ -349,6 +349,7 @@ mod tests {
                 "sdk:ingest".to_string(),
                 "artifacts:write".to_string(),
                 "api_keys:write".to_string(),
+                "runs:control".to_string(),
                 "export:read".to_string(),
             ],
         );
@@ -358,6 +359,7 @@ mod tests {
             demo_api_key_scopes()
         );
         assert!(!effective_api_key_scopes(&data, &record).contains(&"api_keys:write".to_string()));
+        assert!(!effective_api_key_scopes(&data, &record).contains(&"runs:control".to_string()));
         assert!(!effective_api_key_scopes(&data, &record).contains(&"sdk:ingest".to_string()));
     }
 

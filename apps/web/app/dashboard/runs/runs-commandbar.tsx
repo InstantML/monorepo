@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Columns3, Download, LayoutGrid, RefreshCw, Search, SlidersHorizontal, Table2 } from "lucide-react";
+import { ChevronDown, Columns3, Download, LayoutGrid, RefreshCw, Search, SlidersHorizontal, Square, Table2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -32,6 +32,7 @@ export function RunsCommandbar({
   onPinnedMetricFilter,
   onPinnedMetric,
   onRefresh,
+  onRequestSelectedStop,
   onTableColumns,
   onViewMode,
   pinnedMetricFilter,
@@ -41,6 +42,8 @@ export function RunsCommandbar({
   selectedRunCount,
   selectedRunExportDisabled,
   selectedRunExportTitle,
+  selectedStopCandidateCount = 0,
+  selectedStopDisabledReason = "",
   tableColumns,
   viewMode,
 }: {
@@ -54,6 +57,7 @@ export function RunsCommandbar({
   onPinnedMetricFilter: (value: string) => void;
   onPinnedMetric: (metric: string) => void;
   onRefresh: () => void;
+  onRequestSelectedStop?: () => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   onViewMode: (view: RunsViewMode) => void;
   pinnedMetricFilter: string;
@@ -63,6 +67,8 @@ export function RunsCommandbar({
   selectedRunCount: number;
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
+  selectedStopCandidateCount?: number;
+  selectedStopDisabledReason?: string;
   tableColumns: TableColumns;
   viewMode: RunsViewMode;
 }) {
@@ -72,6 +78,7 @@ export function RunsCommandbar({
   const columnsMenuRef = useRef<HTMLDivElement>(null);
   const columnsTriggerRef = useRef<HTMLButtonElement>(null);
   const exportHelpId = "selected-runs-export-help";
+  const stopHelpId = "selected-runs-stop-help";
 
   useEffect(() => {
     if (!actionsOpen) return undefined;
@@ -217,11 +224,31 @@ export function RunsCommandbar({
               <Download size={15} /> {exportSelectedBusy ? "Exporting" : "Export CSV"}
             </button>
             {selectedRunExportDisabled ? <span className="export-selected-runs-help">{selectedRunExportTitle}</span> : null}
+            {onRequestSelectedStop ? (
+              <>
+                <button
+                  aria-describedby={!selectedStopCandidateCount && selectedStopDisabledReason ? stopHelpId : undefined}
+                  aria-label={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason || "No selected running runs can be stopped"}
+                  className="secondary compact-button stop-selected-runs-button"
+                  disabled={!selectedStopCandidateCount}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onRequestSelectedStop();
+                  }}
+                  title={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason || "Select running runs that are not already stopping."}
+                  type="button"
+                >
+                  <Square size={15} /> Review stop{selectedStopCandidateCount === 1 ? " request" : " requests"}{selectedStopCandidateCount ? ` ${selectedStopCandidateCount}` : ""}
+                </button>
+                {!selectedStopCandidateCount && selectedStopDisabledReason ? <span className="stop-selected-runs-help">{selectedStopDisabledReason}</span> : null}
+              </>
+            ) : null}
             <button className="secondary compact-button" type="button" aria-label="Refresh runs" onClick={() => { setActionsOpen(false); onRefresh(); }}><RefreshCw size={15} /> Refresh runs</button>
           </div>
         ) : null}
       </div>
       <span className="visually-hidden" id={exportHelpId}>{selectedRunExportTitle}</span>
+      {selectedStopDisabledReason ? <span className="visually-hidden" id={stopHelpId}>{selectedStopDisabledReason}</span> : null}
     </div>
   );
 }

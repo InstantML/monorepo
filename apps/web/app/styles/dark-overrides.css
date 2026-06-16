@@ -476,6 +476,13 @@
   background: rgba(43, 224, 130, 0.14);
 }
 
+:root[data-theme="dark"] .pill.warning,
+:root[data-theme="dark"] .pill.cmp-status.warning {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.14);
+  color: #f6c66f;
+}
+
 :root[data-theme="dark"] .axis,
 :root[data-theme="dark"] .grid-line {
   stroke: var(--chart-grid);

@@ -1,12 +1,12 @@
 "use client";
 
-import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, X } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels.js";
-import { BULK_SELECT_MATCHING_LIMIT, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, canRequestStop, displayStatusForRun, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
 import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runNoteText, runRailTooltip, shortMetricName, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
@@ -59,6 +59,7 @@ function runStatusClass(status: string) {
   const normalized = status.trim().toLowerCase();
   if (normalized === "running") return "running";
   if (normalized === "failed" || normalized === "error") return "failed";
+  if (normalized === "stopping" || normalized === "stopped" || normalized === "killed") return "warn";
   if (normalized === "finished" || normalized === "completed" || normalized === "succeeded") return "finished";
   return "neutral";
 }
@@ -103,6 +104,7 @@ function panelMatchesSearch(section: { name: string }, panel: { title: string; m
 export function RunsWorkspace({
   addPanelSectionId,
   availableMetricKeys,
+  canControlRuns,
   onAddPanel,
   onAddSection,
   onClearFilters,
@@ -117,6 +119,7 @@ export function RunsWorkspace({
   onPanelSearch,
   onRefresh,
   onRemovePanel,
+  onRequestStop,
   onResetWorkspace,
   onResizePanel,
   onPanelSmoothing,
@@ -157,6 +160,7 @@ export function RunsWorkspace({
 }: {
   addPanelSectionId: string;
   availableMetricKeys: string[];
+  canControlRuns: boolean;
   onAddPanel: (sectionId: string, metricKey: string, type: WorkspacePanelType) => void;
   onAddSection: () => void;
   onClearFilters: () => void;
@@ -171,6 +175,7 @@ export function RunsWorkspace({
   onPanelSearch: (value: string) => void;
   onRefresh: () => void;
   onRemovePanel: (sectionId: string, panelId: string) => void;
+  onRequestStop: (runIds: string[]) => void;
   onResetWorkspace: () => void;
   onResizePanel: (sectionId: string, panelId: string, layout: import("../../dashboard-types").WorkspacePanelLayout) => void;
   onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
@@ -428,7 +433,8 @@ export function RunsWorkspace({
             const uploadHealth = uploadHealthForRun(run);
             const configSummary = runConfigSummary(run);
             const compactConfigSummary = compactRailConfigSummary(run);
-            const statusLabel = run.status || "unknown";
+            const statusLabel = displayStatusForRun(run) || run.status || "unknown";
+            const canStop = canRequestStop(run, canControlRuns);
             const latestMetricValue = metricKey ? run.latest_metrics?.[metricKey] : undefined;
             const hasLatestMetricValue = typeof latestMetricValue === "number" && Number.isFinite(latestMetricValue);
             const runColor = chartColor(stableChartIndex(run.id || run.name, index));
@@ -484,6 +490,20 @@ export function RunsWorkspace({
                   </span>
                   <span className="workspace-run-open-hint" aria-hidden="true">Open <ChevronRight size={12} /></span>
                 </button>
+                {canStop ? (
+                  <button
+                    aria-label={`Review stop request for ${run.name}`}
+                    className="workspace-run-stop"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRequestStop([run.id]);
+                    }}
+                    title="Review stop request"
+                    type="button"
+                  >
+                    <Square size={12} />
+                  </button>
+                ) : null}
               </div>
             );
           }) : (

@@ -53,7 +53,25 @@
 .pd-btn--primary:hover { border-color: var(--accent); color: var(--accent-strong); }
 .pd-btn--ghost { border-color: transparent; color: var(--muted); }
 .pd-btn--ghost:hover { border-color: var(--line-strong); }
-.pd-btn--stop { border-color: rgba(242, 85, 85, 0.4); color: var(--danger); }
+.pd-btn--stop {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+  color: var(--danger);
+}
+.pd-btn--stop:hover {
+  border-color: color-mix(in srgb, var(--danger) 58%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.stop-dialog-submit {
+  border-color: color-mix(in srgb, var(--danger) 65%, var(--line));
+  background: var(--danger);
+  color: #fff;
+}
+.stop-dialog-submit:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 86%, #000);
+  color: #fff;
+}
 .pd-btn--sm { height: 22px; padding: 0 8px; }
 
 /* ── KPI strip ── */
@@ -235,6 +253,7 @@
 .pd-chip--live { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .pd-chip--done { background: transparent; color: var(--muted); }
 .pd-chip--crit { background: var(--danger-soft); border-color: rgba(242, 85, 85, 0.35); color: var(--danger); }
+.pd-chip--warn { background: color-mix(in srgb, var(--amber) 12%, transparent); border-color: color-mix(in srgb, var(--amber) 36%, var(--line)); color: var(--amber); }
 .pd-chip--sm { height: 18px; }
 .pd-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .pd-dot--ok { background: var(--accent); }

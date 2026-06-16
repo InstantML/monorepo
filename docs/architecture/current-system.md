@@ -63,6 +63,15 @@ startup, and worker cleanup. Logs deliberately avoid request bodies, query
 strings, user emails, tokens, session IDs, object-storage keys, project/run
 names, metric values, console messages, and artifact filenames.
 
+Run stop control is intentionally cooperative in the current architecture. The
+dashboard or a `runs:control` API key records stop intent in Rust run-control
+operational records, the Python SDK polls a bounded `stop-signal` endpoint when
+user code calls the stop helpers, and the SDK acknowledges/completes the stop
+before normal cleanup. InstantML does not hard-kill unmanaged external compute
+in this slice; new clients render `stopping`/`stopped` from derived
+`display_status` while legacy clients continue to see the original
+`running`/`finished`/`failed` run status contract.
+
 ## Runtime Topology
 
 Default frontend development:

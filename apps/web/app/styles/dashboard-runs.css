@@ -97,22 +97,38 @@
   box-shadow: none;
 }
 
-.export-selected-runs-button {
+.export-selected-runs-button,
+.stop-selected-runs-button {
   white-space: nowrap;
 }
 
-.runs-actions-popover .export-selected-runs-help {
+.stop-selected-runs-button {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--line));
+  color: var(--danger);
+}
+
+.stop-selected-runs-button:not(:disabled):hover,
+.stop-selected-runs-button:not(:disabled):focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.runs-actions-popover .export-selected-runs-help,
+.runs-actions-popover .stop-selected-runs-help {
   display: block;
   color: var(--muted);
   font: 600 12px/1.35 var(--font-sans);
 }
 
-.export-selected-runs-button[aria-disabled="true"] {
+.export-selected-runs-button[aria-disabled="true"],
+.stop-selected-runs-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-.export-selected-runs-help {
+.export-selected-runs-help,
+.stop-selected-runs-help {
   display: none;
   color: var(--muted);
   font-size: 12px;
@@ -589,7 +605,7 @@
 
 .workspace-run-row {
   display: grid;
-  grid-template-columns: 25px minmax(0, 1fr);
+  grid-template-columns: 25px minmax(0, 1fr) auto;
   align-items: start;
   justify-content: stretch;
   gap: 8px;
@@ -702,6 +718,12 @@
   color: var(--danger);
 }
 
+.workspace-run-status.warn {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--line));
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  color: var(--amber);
+}
+
 .workspace-run-status.finished {
   color: var(--muted);
 }
@@ -750,6 +772,27 @@
 
 .workspace-run-row.selected .workspace-eye span {
   background: radial-gradient(circle at center, var(--blue) 0 34%, #fff 38% 55%, var(--blue) 59% 100%);
+}
+
+.workspace-run-stop {
+  display: inline-grid;
+  align-self: start;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-top: 6px;
+  border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.workspace-run-stop:hover,
+.workspace-run-stop:focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .workspace-run-main {

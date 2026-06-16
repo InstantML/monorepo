@@ -1,13 +1,13 @@
 "use client";
 
 import { Copy, Database, GitBranch, GitFork, Square } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { isAbortError } from "../../../src/api.js";
 import { defaultForkRunName } from "../../../src/checkpoints.js";
 import { smoothSeries } from "../../../src/charts.js";
-import { formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, preferredMetricKey } from "../../../src/state.js";
+import { canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, preferredMetricKey } from "../../../src/state.js";
 import { compactValue, formatRunTime } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { RunEvidenceExplorer, RunGraphPanel, RunLogsPanel, RunSystemPanel } from "../components/run-workspace";
@@ -20,12 +20,12 @@ import type { Artifact, HoverPoint, LoggedObject, LoggedObjectRow, MetricPoint, 
 type ChartZoomRange = { min: number; max: number } | null;
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;
-  patch?(path: string, body?: any, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<any>;
   post(path: string, body?: any, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<any>;
 };
 
 type Props = {
   api: ApiLike;
+  canControlRuns: boolean;
   dataControls: ReactNode;
   hover: HoverPoint;
   loggedObjects: LoggedObject[];
@@ -34,6 +34,7 @@ type Props = {
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onForkCheckpoint?: (artifact: Artifact, options: ForkCheckpointOptions) => Promise<void>;
+  onRequestStop?: (runIds: string[]) => void;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
   primarySeries: MetricSeries[];
@@ -296,6 +297,7 @@ function StatusChip({ status }: { status: string }) {
     return <span className="pd-chip pd-chip--live"><span className="pd-pulse" />Live</span>;
   }
   if (status === "failed") return <span className="pd-chip pd-chip--crit">Failed</span>;
+  if (status === "stopping" || status === "stopped") return <span className="pd-chip pd-chip--warn">{status}</span>;
   return <span className="pd-chip pd-chip--done">{status === "finished" ? "Finished" : status}</span>;
 }
 
@@ -329,6 +331,7 @@ function ConfigTab({ metricRows, parent, run }: { metricRows: RunMetricRow[]; pa
     { label: "Python", value: compactValue(pythonValue ?? "-"), copy: copyable(pythonValue) },
     { label: "Platform", value: compactValue(platformValue ?? "-"), copy: copyable(platformValue) },
   ];
+  const stopRows = stopControlRows(run);
   return (
     <div className="pd-grid">
       <div className="pd-col-main">
@@ -362,6 +365,19 @@ function ConfigTab({ metricRows, parent, run }: { metricRows: RunMetricRow[]; pa
             ))}
           </div>
         </div>
+        {stopRows.length ? (
+          <div className="pd-panel">
+            <div className="pd-panel-head"><span className="pd-mlabel"><Square size={13} /> Stop Request</span></div>
+            <div className="pd-panel-body pd-source-rows">
+              {stopRows.map(([label, value]) => (
+                <div className="detail-row" key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </aside>
     </div>
   );
@@ -391,8 +407,23 @@ function artifactCountForRun(run: RunSummary, loadedCount: number) {
   return counted || loadedCount;
 }
 
+function stopControlRows(run: RunSummary) {
+  const control = run.run_control;
+  if (!control?.stop_requested) return [];
+  return [
+    ["State", compactValue(control.display_status ?? control.stop_state ?? "-")],
+    ["Reason", compactValue(control.reason ?? "-")],
+    ["Completion note", compactValue(control.completion_message ?? "-")],
+    ["Actor", compactValue(control.actor ?? "-")],
+    ["Requested", control.stop_requested_at ? formatRunTime(control.stop_requested_at) : "-"],
+    ["Acknowledged", control.stop_acknowledged_at ? formatRunTime(control.stop_acknowledged_at) : "-"],
+    ["Completed", control.stop_completed_at ? formatRunTime(control.stop_completed_at) : "-"],
+  ];
+}
+
 export function DetailTabPane({
   api,
+  canControlRuns,
   dataControls,
   hover,
   loggedObjects,
@@ -401,6 +432,7 @@ export function DetailTabPane({
   onChartPointHover,
   onChartZoomRangeChange,
   onForkCheckpoint,
+  onRequestStop,
   onRunMetadataSave,
   onWorkspaceTabChange,
   primarySeries,
@@ -417,12 +449,7 @@ export function DetailTabPane({
   const [seriesMap, setSeriesMap] = useState<Record<string, MetricSeries[]>>({});
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [liveTick, setLiveTick] = useState(0);
-  const [statusOverride, setStatusOverride] = useState("");
-  const [stopArmed, setStopArmed] = useState(false);
-  const [stopBusy, setStopBusy] = useState(false);
-  const [stopError, setStopError] = useState("");
   const [forkArtifact, setForkArtifact] = useState<Artifact | null>(null);
-  const stopDisarmTimer = useRef<number | null>(null);
 
   const runId = run?.id ?? "";
   const userRows = useMemo(() => runMetricRows.filter((row) => !isInternalInstantMlMetric(row.key)), [runMetricRows]);
@@ -435,14 +462,12 @@ export function DetailTabPane({
   const chartKeySignature = chartKeys.join("|");
   const parentRun = run?.parent_run_id && lineage?.run?.id === runId ? lineage.parent ?? null : null;
   const parentRunId = parentRun?.id ?? "";
-  const status = statusOverride || run?.status || "";
+  const status = run ? displayStatusForRun(run) : "";
+  const liveRun = run?.status === "running";
   const running = status === "running";
 
   // Reset per-run UI state when the inspected run changes.
   useEffect(() => {
-    setStatusOverride("");
-    setStopArmed(false);
-    setStopError("");
     setForkArtifact(null);
   }, [runId]);
 
@@ -518,14 +543,10 @@ export function DetailTabPane({
 
   // Keep the overview fresh while the run is live.
   useEffect(() => {
-    if (!running) return;
+    if (!liveRun) return;
     const timer = window.setInterval(() => setLiveTick((current) => current + 1), LIVE_SERIES_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [running]);
-
-  useEffect(() => () => {
-    if (stopDisarmTimer.current !== null) window.clearTimeout(stopDisarmTimer.current);
-  }, []);
+  }, [liveRun]);
 
   const kpiCells = useMemo(() => (
     run ? buildKpiCells({ run, running, seriesMap, userRows }) : []
@@ -589,33 +610,16 @@ export function DetailTabPane({
   }
 
   const artifactCount = artifactCountForRun(run, visibleArtifacts.length);
-  const canWrite = Boolean(onForkCheckpoint || onRunMetadataSave);
+  const canStop = Boolean(run && onRequestStop && canRequestStop(run, canControlRuns));
   const owner = runOwner(run);
   const started = startedUtcLabel(run.started_at ?? run.created_at);
   const seed = run.config?.seed;
   const headerForkTarget = onForkCheckpoint ? newestCheckpoint(visibleArtifacts) : null;
   const parentLabel = parentRun?.name ?? (run.parent_run_id ? `${String(run.parent_run_id).slice(0, 8)}…` : "");
 
-  function armStop() {
-    setStopArmed(true);
-    setStopError("");
-    if (stopDisarmTimer.current !== null) window.clearTimeout(stopDisarmTimer.current);
-    stopDisarmTimer.current = window.setTimeout(() => setStopArmed(false), 6_000);
-  }
-
-  async function confirmStop() {
-    if (!run || stopBusy || !api.patch) return;
-    setStopBusy(true);
-    setStopError("");
-    try {
-      await api.patch(`/runs/${run.id}`, { status: "finished" });
-      setStatusOverride("finished");
-      setStopArmed(false);
-    } catch (caught) {
-      setStopError(caught instanceof Error ? caught.message : "Unable to stop run.");
-    } finally {
-      setStopBusy(false);
-    }
+  function confirmStop() {
+    if (!run || !onRequestStop) return;
+    onRequestStop([run.id]);
   }
 
   function openCompare() {
@@ -653,23 +657,16 @@ export function DetailTabPane({
           </div>
         </div>
         <div className="pd-actions">
-          {stopError ? <span className="pd-stop-error" role="alert">{stopError}</span> : null}
           {headerForkTarget ? (
             <button className="pd-btn pd-btn--ghost" onClick={() => setForkArtifact(headerForkTarget)} type="button">
               <GitFork size={13} /> Fork
             </button>
           ) : null}
           <button className="pd-btn pd-btn--primary" onClick={openCompare} type="button">Compare</button>
-          {running && canWrite && api.patch ? (
-            stopArmed ? (
-              <button className="pd-btn pd-btn--stop is-armed" disabled={stopBusy} onClick={() => void confirmStop()} type="button">
-                <Square size={12} /> {stopBusy ? "Stopping..." : "Confirm stop"}
-              </button>
-            ) : (
-              <button className="pd-btn pd-btn--stop" onClick={armStop} type="button">
-                <Square size={12} /> Stop
-              </button>
-            )
+          {canStop ? (
+            <button className="pd-btn pd-btn--stop" onClick={confirmStop} type="button">
+              <Square size={12} /> Request stop
+            </button>
           ) : null}
         </div>
       </header>

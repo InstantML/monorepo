@@ -63,7 +63,8 @@ pub(super) use runs::{
     create_attributes, create_object, create_project, create_run, fork_run, get_metrics, get_run,
     get_run_lineage, list_attributes, list_console_logs, list_object_rows, list_objects,
     list_projects, list_runs, log_console_logs, log_metrics, log_rank_metrics, overview,
-    rank_metrics_summary, runs_summary, side_by_side, update_run,
+    rank_metrics_summary, runs_summary, side_by_side, stop_ack, stop_run, stop_runs, stop_signal,
+    update_run,
 };
 pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
@@ -94,6 +95,7 @@ mod tests {
             "artifacts:write",
             "imports:write",
             "usage:read",
+            "runs:control",
             "api_keys:write",
         ] {
             assert!(require_session_scope(&demo, scope).is_err());
@@ -103,8 +105,10 @@ mod tests {
     #[test]
     fn non_demo_session_roles_keep_expected_write_permissions() {
         assert!(require_session_scope(&session("member", false), "sdk:ingest").is_ok());
+        assert!(require_session_scope(&session("member", false), "runs:control").is_ok());
         assert!(require_session_scope(&session("viewer", false), "export:read").is_ok());
         assert!(require_session_scope(&session("viewer", false), "sdk:ingest").is_err());
+        assert!(require_session_scope(&session("viewer", false), "runs:control").is_err());
         assert!(require_session_scope(&session("member", false), "api_keys:write").is_err());
         assert!(require_session_scope(&session("owner", false), "api_keys:write").is_ok());
     }
@@ -257,6 +261,10 @@ mod tests {
             "/api/runs/{run_id}/forks",
             "/api/runs/{run_id}/lineage",
             "/api/runs/{run_id}/logs",
+            "/api/runs/stop",
+            "/api/runs/{run_id}/stop",
+            "/api/runs/{run_id}/stop-signal",
+            "/api/runs/{run_id}/stop-ack",
             "/api/metrics/series",
             // dashboard analytics
             "/api/overview",
@@ -329,6 +337,8 @@ mod tests {
             "ClickHouseConnectionValidationEnvelope",
             "AdminOverviewResponse",
             "ProjectEnvelope",
+            "RunSummaryEnvelope",
+            "RunSummariesEnvelope",
             "RunsEnvelope",
             "InsertedEnvelope",
             "LogRankMetricsRequest",

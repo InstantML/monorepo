@@ -6,7 +6,7 @@ import type { CSSProperties } from "react";
 
 import { formatMetricValue } from "../../../src/charts.js";
 import { identityColor } from "../../../src/chart-colors.js";
-import { formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
+import { displayStatusForRun, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import {
   artifactHasStoredBytes,
   artifactTotalForRun,
@@ -57,7 +57,7 @@ function compareSearchTokens(search: string) {
 function compareRunSearchText(run: RunSummary, artifactsByRun: Record<string, Artifact[]>) {
   return [
     run.name,
-    run.status,
+    displayStatusForRun(run),
     run.project,
     run.tags?.join(" "),
     runNoteText(run),
@@ -362,11 +362,12 @@ function CompareArtifactStrip({ artifactsByRun, runs }: { artifactsByRun: Record
 }
 
 function CompareRunHead({ referenceRunId, run, color }: { referenceRunId: string; run: RunSummary; color: string }) {
+  const displayStatus = displayStatusForRun(run);
   return (
     <div className={`compare-run-head ${run.id === referenceRunId ? "reference" : ""}`}>
       <span className="cmp-swatch" style={{ background: color }} aria-hidden />
       <strong title={run.name}>{run.name}</strong>
-      <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
+      <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
       {run.id === referenceRunId ? <small className="compare-reference-badge">Reference</small> : null}
     </div>
   );
@@ -509,6 +510,7 @@ function CompareRunTable({
         {runs.map((run) => {
           const isReference = run.id === referenceRunId;
           const color = colorByRunId.get(run.id) ?? "var(--dim)";
+          const displayStatus = displayStatusForRun(run);
           return (
             <div className={`cmp-row ${isReference ? "reference" : ""}`} key={run.id} role="row">
               <div className="cmp-cell cmp-identity sticky" role="cell">
@@ -516,7 +518,7 @@ function CompareRunTable({
                 <span className="cmp-identity-meta">
                   <span className="cmp-run-name" title={run.name}>{run.name}</span>
                   <span className="cmp-identity-sub">
-                    <span className={`pill cmp-status ${statusTone(run.status)}`}>{run.status}</span>
+                    <span className={`pill cmp-status ${statusTone(displayStatus)}`}>{displayStatus}</span>
                     {isReference ? <span className="cmp-ref-tag">Reference</span> : <span className="cmp-proj">{run.project}</span>}
                   </span>
                 </span>
@@ -567,7 +569,7 @@ function CompareRunTable({
                 if (column.kind === "status") {
                   return (
                     <div className="cmp-cell" key={column.key} role="cell">
-                      <span className={`pill cmp-status ${statusTone(run.status)}`}>{run.status}</span>
+                      <span className={`pill cmp-status ${statusTone(displayStatus)}`}>{displayStatus}</span>
                     </div>
                   );
                 }
@@ -775,7 +777,7 @@ function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: s
     } else if (sort.col.startsWith("config:")) {
       const key = sort.col.slice("config:".length);
       result = compareConfigValues(left.config?.[key], right.config?.[key]) * dir;
-    } else if (sort.col === "status") result = left.status.localeCompare(right.status) * dir;
+    } else if (sort.col === "status") result = displayStatusForRun(left).localeCompare(displayStatusForRun(right)) * dir;
     else if (sort.col === "duration") result = numericNullsLast(runDurationMs(left), runDurationMs(right), dir);
     else if (sort.col === "artifacts") result = numericNullsLast(artifactTotalForRun(left), artifactTotalForRun(right), dir);
     return result || tie(left, right);

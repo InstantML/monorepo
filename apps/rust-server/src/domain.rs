@@ -1234,6 +1234,40 @@ pub struct UpdateRunRequest {
     pub notes: Option<String>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct StopRunRequest {
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct StopRunsRequest {
+    pub run_ids: Vec<Uuid>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct StopAckRequest {
+    pub stop_request_id: Uuid,
+    pub state: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct RunControlRow {
+    pub org_id: Uuid,
+    pub run_id: Uuid,
+    pub stop_request_id: Option<Uuid>,
+    pub stop_state: String,
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub completion_message: Option<String>,
+    pub actor: Option<String>,
+    pub requested_at: Option<DateTime<Utc>>,
+    pub acknowledged_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct RunRow {
     pub id: Uuid,

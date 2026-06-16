@@ -360,12 +360,22 @@ impl MetricStore {
     }
 
     pub async fn insert_operational_record(&self, row: &OperationalRecordRow) -> AppResult<()> {
+        self.insert_operational_records(std::slice::from_ref(row))
+            .await
+    }
+
+    pub async fn insert_operational_records(&self, rows: &[OperationalRecordRow]) -> AppResult<()> {
+        if rows.is_empty() {
+            return Ok(());
+        }
         let mut inserter = self.client.insert("operational_records").map_err(|err| {
             clickhouse_storage_error("clickhouse operational insert init failed", err)
         })?;
-        inserter.write(row).await.map_err(|err| {
-            clickhouse_storage_error("clickhouse operational insert write failed", err)
-        })?;
+        for row in rows {
+            inserter.write(row).await.map_err(|err| {
+                clickhouse_storage_error("clickhouse operational insert write failed", err)
+            })?;
+        }
         inserter.end().await.map_err(|err| {
             clickhouse_storage_error("clickhouse operational insert flush failed", err)
         })?;

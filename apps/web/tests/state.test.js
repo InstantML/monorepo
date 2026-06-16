@@ -10,8 +10,11 @@ import {
   BULK_SELECT_MATCHING_LIMIT,
   bestMetric,
   capSelectionToMatching,
+  canRequestStop,
+  dashboardStatusQueryParams,
   defaultRunSelection,
   deselectVisible,
+  displayStatusForRun,
   durationLabel,
   filterMetricKeys,
   formatNumber,
@@ -615,7 +618,33 @@ test("summary helpers format stable UI values", () => {
   assert.equal(statusTone("finished"), "good");
   assert.equal(statusTone("failed"), "bad");
   assert.equal(statusTone("running"), "live");
+  assert.equal(statusTone("stopping"), "warn");
+  assert.equal(statusTone("stopped"), "warn");
   assert.equal(durationLabel({ started_at: "2026-01-01T00:00:00.000Z", finished_at: "2026-01-01T00:00:02.000Z" }), "2s");
+});
+
+test("run stop helpers derive display status and eligibility", () => {
+  const running = { id: "run-1", status: "running" };
+  const stopping = { id: "run-2", status: "running", run_control: { display_status: "stopping", stop_state: "requested" } };
+  const acknowledged = { id: "run-3", status: "running", run_control: { display_status: "stopping", stop_state: "acknowledged" } };
+  const stopped = { id: "run-4", status: "failed", run_control: { display_status: "stopped", stop_state: "completed" } };
+  assert.equal(displayStatusForRun(running), "running");
+  assert.equal(displayStatusForRun(stopping), "stopping");
+  assert.equal(displayStatusForRun(stopped), "stopped");
+  assert.equal(canRequestStop(running), true);
+  assert.equal(canRequestStop(running, false), false);
+  assert.equal(canRequestStop(stopping), false);
+  assert.equal(canRequestStop(acknowledged), false);
+  assert.equal(canRequestStop(stopped), false);
+});
+
+test("dashboard status query params preserve legacy fallback while matching display counts", () => {
+  assert.deepEqual(dashboardStatusQueryParams("running"), { status: "running", display_status: "running" });
+  assert.deepEqual(dashboardStatusQueryParams("failed"), { status: "failed", display_status: "failed" });
+  assert.deepEqual(dashboardStatusQueryParams("finished"), { status: "finished", display_status: "finished" });
+  assert.deepEqual(dashboardStatusQueryParams("stopping"), { status: "", display_status: "stopping" });
+  assert.deepEqual(dashboardStatusQueryParams("stopped"), { status: "", display_status: "stopped" });
+  assert.deepEqual(dashboardStatusQueryParams("", "finished"), { status: "finished", display_status: "" });
 });
 
 test("upload health derives compact state from SDK heartbeat metrics", () => {
@@ -951,6 +980,14 @@ test("comparison helpers sort, aggregate, group, smooth, and average runs", () =
   assert.deepEqual(sortRuns(runs, "metric-best", "train/loss").map((run) => run.id), ["a", "b"]);
   assert.deepEqual(sortRuns(runs, "duration").map((run) => run.id), ["a", "b"]);
   assert.deepEqual(sortRuns(runs, "created").map((run) => run.id), ["b", "a"]);
+  assert.deepEqual(
+    sortRuns([
+      { id: "stopping", name: "b", status: "running", run_control: { display_status: "stopping" } },
+      { id: "running", name: "a", status: "running" },
+      { id: "stopped", name: "c", status: "failed", run_control: { display_status: "stopped" } },
+    ], "status").map((run) => run.id),
+    ["running", "stopped", "stopping"],
+  );
   assert.equal(groupKeyForRun(runs[0], "seed"), "1");
   assert.equal(groupKeyForRun(runs[0], "tag"), "candidate");
   assert.equal(groupKeyForRun(runs[0], "config:algo"), "ppo");

@@ -13,6 +13,8 @@ const UPLOAD_HEALTH_FAILED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}failed_even
 const UPLOAD_HEALTH_DROPPED_KEY = `${INTERNAL_INSTANTML_METRIC_PREFIX}dropped_events`;
 const UPLOAD_HEALTH_STALE_SECONDS = 30;
 const UPLOAD_HEALTH_LAG_SECONDS = 5;
+const DISPLAY_STATUS_VALUES = new Set(["running", "stopping", "stopped", "finished", "failed"]);
+const LEGACY_STATUS_VALUES = new Set(["running", "finished", "failed"]);
 
 // The URL carries at most this many explicit run ids (Compare's own cap).
 // Larger selections stay client-side; the first 50 remain shareable.
@@ -229,7 +231,7 @@ export function metricGoalValue(run, key) {
 export function sortRuns(runs, sortBy, metricKey) {
   const copy = [...runs];
   if (sortBy === "name") return copy.sort((a, b) => a.name.localeCompare(b.name));
-  if (sortBy === "status") return copy.sort((a, b) => a.status.localeCompare(b.status) || a.name.localeCompare(b.name));
+  if (sortBy === "status") return copy.sort((a, b) => displayStatusForRun(a).localeCompare(displayStatusForRun(b)) || a.name.localeCompare(b.name));
   if (sortBy === "metric-latest") return copy.sort((a, b) => numericDesc(metricAggregate(a, metricKey, "latest"), metricAggregate(b, metricKey, "latest")));
   if (sortBy === "metric-best") return metricGoal(metricKey) === "minimize"
     ? copy.sort((a, b) => numericAsc(metricGoalValue(a, metricKey), metricGoalValue(b, metricKey)))
@@ -304,8 +306,39 @@ export function durationLabel(run) {
   return `${Math.max(1, Math.round(ms / 1000))}s`;
 }
 
+export function displayStatusForRun(run) {
+  return run?.run_control?.display_status || run?.status || "";
+}
+
+export function dashboardStatusQueryParams(displayStatus, legacyStatus = "") {
+  const display = String(displayStatus || "").trim().toLowerCase();
+  const legacy = String(legacyStatus || "").trim().toLowerCase();
+  const normalizedDisplay = DISPLAY_STATUS_VALUES.has(display) ? display : "";
+  if (!normalizedDisplay) {
+    return { status: LEGACY_STATUS_VALUES.has(legacy) ? legacy : "", display_status: "" };
+  }
+  if (normalizedDisplay === "stopping" || normalizedDisplay === "stopped") {
+    return { status: "", display_status: normalizedDisplay };
+  }
+  if (LEGACY_STATUS_VALUES.has(normalizedDisplay)) {
+    return { status: normalizedDisplay, display_status: normalizedDisplay };
+  }
+  return {
+    status: "",
+    display_status: normalizedDisplay,
+  };
+}
+
+export function canRequestStop(run, canControl = true) {
+  if (!canControl || !run || run.status !== "running") return false;
+  const state = run.run_control?.stop_state || "none";
+  return state !== "requested" && state !== "acknowledged";
+}
+
 export function statusTone(status) {
   if (status === "finished") return "good";
   if (status === "failed") return "bad";
+  if (status === "stopped") return "warn";
+  if (status === "stopping") return "warn";
   return "live";
 }
