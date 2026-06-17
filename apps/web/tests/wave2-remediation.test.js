@@ -151,10 +151,12 @@ test("runs workspace header no longer duplicates the run health cards", () => {
   assert.match(alertsSrc, /overview\.active_runs/);
 });
 
-// A2 — landing demo entry routes to the spotlighted shared-demo action.
-test("landing exposes a live-demo entry that spotlights the shared demo", () => {
+// A2 — the shared-demo spotlight still lights up when /signin?intent=demo is
+// reached directly. The landing no longer advertises a live-demo CTA, so the
+// entry point lives in the auth flow only.
+test("auth flow spotlights the shared demo for intent=demo", () => {
   const landing = read("components/landing/LandingPage.tsx");
-  assert.match(landing, /\/signin\?intent=demo/);
+  assert.ok(!landing.includes("intent=demo"));
   const auth = read("app/auth-flow.tsx");
   assert.match(auth, /get\("intent"\) === "demo"/);
   assert.match(auth, /iml-btn--demo-spotlight/);

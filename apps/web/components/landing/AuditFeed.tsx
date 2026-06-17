@@ -17,11 +17,11 @@ const ENTRIES = [
 
 const KIND_COLOR: Record<string, string> = {
   init:       "var(--accent)",
-  metric:     "#94A3B8",
-  artifact:   "#E0B07A",
-  checkpoint: "#7DA1E8",
-  flush:      "#60A5FA",
-  finish:     "#4ADE80",
+  metric:     "var(--dim)",
+  artifact:   "var(--warm)",
+  checkpoint: "var(--blue)",
+  flush:      "var(--info)",
+  finish:     "var(--green)",
 };
 
 function timestamp(i: number) {

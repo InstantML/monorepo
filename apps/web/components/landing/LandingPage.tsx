@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { LogoMark } from "./LogoMark";
 import { NavLogo } from "./NavLogo";
 import { MaskingDemo } from "./MaskingDemo";
@@ -120,50 +120,79 @@ function IconCheck() {
   );
 }
 
-function ArchitectureDiagram() {
+const FLOW_STEPS: {
+  num: string;
+  title: string;
+  body: ReactNode;
+  tags: string[];
+  accent?: boolean;
+}[] = [
+  {
+    num: "01",
+    title: "Log from your loop",
+    body: (
+      <>
+        The Python SDK buffers <code className="landing-code-inline">init</code>,{" "}
+        <code className="landing-code-inline">log</code>, and{" "}
+        <code className="landing-code-inline">finish</code> straight from the
+        trainer, and spools offline when the network drops.
+      </>
+    ),
+    tags: ["PyTorch", "JAX", "TRL"],
+  },
+  {
+    num: "02",
+    title: "Rust + ClickHouse hot path",
+    body: (
+      <>
+        Metrics land as typed summaries with indexed search, so run lists and
+        best-metric sorting stay sub-second on large projects.
+      </>
+    ),
+    tags: ["typed summaries", "indexed search"],
+    accent: true,
+  },
+  {
+    num: "03",
+    title: "Read, compare, export",
+    body: (
+      <>
+        Open charts, compare runs side by side, and pull everything back out.
+        Artifacts and checkpoints live in your own S3 / R2.
+      </>
+    ),
+    tags: ["charts", "compare", "S3 / R2"],
+  },
+];
+
+function FlowArrow() {
   return (
-    <div className="landing-arch-wrap">
-      <svg
-        viewBox="0 0 920 260"
-        className="landing-arch-svg"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <rect x="20" y="30" width="320" height="200" rx="10" stroke="#2A2E3D" strokeWidth="1" strokeDasharray="4 4" fill="none" />
-        <rect x="32" y="20" width="170" height="20" rx="4" fill="#08080A" />
-        <text x="40" y="34" fontFamily="var(--font-mono)" fontSize="12" fill="#1FB877" letterSpacing="0.1em">YOUR TRAINING JOB</text>
-        <rect x="60" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="120" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">Trainer</text>
-        <text x="120" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">PyTorch · JAX · TRL</text>
-        <line x1="180" y1="130" x2="240" y2="130" stroke="#2A2E3D" strokeWidth="1" />
-        <rect x="220" y="92" width="100" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="270" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">SDK</text>
-        <text x="270" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">buffered</text>
-        <text x="270" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">offline spool</text>
-        <line x1="340" y1="130" x2="410" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
-        <polygon points="408,125 420,130 408,135" fill="#1FB877" />
-        <rect x="420" y="76" width="180" height="108" rx="10" fill="#0D0F15" stroke="#1FB877" strokeWidth="1.4" className="pulse-node" />
-        <text x="510" y="106" textAnchor="middle" fontFamily="var(--font-display)" fontSize="14" fontWeight="600" fill="#F8FAFC">InstantML API</text>
-        <line x1="440" y1="118" x2="580" y2="118" stroke="#1F1F26" strokeWidth="1" />
-        <text x="510" y="138" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#94A3B8">Rust · ClickHouse</text>
-        <text x="510" y="156" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">typed summaries</text>
-        <text x="510" y="172" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">indexed search</text>
-        <line x1="600" y1="130" x2="670" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
-        <polygon points="668,125 680,130 668,135" fill="#1FB877" />
-        <rect x="680" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="740" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">Dashboard</text>
-        <text x="740" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">runs · compare</text>
-        <text x="740" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">charts · artifacts</text>
-        <line x1="800" y1="130" x2="855" y2="130" stroke="#2A2E3D" strokeWidth="1" />
-        <rect x="820" y="92" width="80" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" strokeDasharray="3 3" />
-        <text x="860" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="12" fontWeight="500" fill="#F8FAFC">Artifacts</text>
-        <text x="860" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">S3 / R2</text>
-        <text x="120" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">GPU NODES</text>
-        <text x="270" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">PYTHON SDK</text>
-        <text x="510" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#1FB877" letterSpacing="0.06em">HOT PATH</text>
-        <text x="740" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">NEXT/REACT</text>
-        <text x="860" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">OBJECT STORE</text>
+    <div className="landing-flow-arrow" aria-hidden>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 12h14M13 5l7 7-7 7" />
       </svg>
+    </div>
+  );
+}
+
+function PipelineFlow() {
+  return (
+    <div className="landing-flow">
+      {FLOW_STEPS.map((step, i) => (
+        <Fragment key={step.num}>
+          {i > 0 && <FlowArrow />}
+          <div className={`landing-flow-step ${step.accent ? "landing-flow-step--accent" : ""}`}>
+            <span className="landing-flow-step__num">{step.num}</span>
+            <h3 className="landing-flow-step__title">{step.title}</h3>
+            <p className="landing-flow-step__body">{step.body}</p>
+            <div className="landing-pill-row">
+              {step.tags.map((t) => (
+                <span key={t} className="pill">{t}</span>
+              ))}
+            </div>
+          </div>
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -454,9 +483,6 @@ export function LandingPage() {
                 Start free
                 <IconArrow />
               </Link>
-              {/* A2: demo story entry — routes to sign-in with the shared
-                  read-only demo action spotlighted. */}
-              <Link href="/signin?intent=demo" className="landing-cta-ghost">Try the live demo</Link>
               <Link href="/docs" className="landing-cta-ghost">Read docs</Link>
             </div>
 
@@ -517,23 +543,7 @@ export function LandingPage() {
           </p>
         </div>
 
-        <div className="landing-arch-card">
-          <ArchitectureDiagram />
-          <div className="landing-arch-legend">
-            <div className="landing-arch-legend-item">
-              <div className="landing-arch-legend-dot landing-arch-legend-dot--accent" />
-              <span className="landing-arch-legend-label">InstantML hot path</span>
-            </div>
-            <div className="landing-arch-legend-item">
-              <div className="landing-arch-legend-dot landing-arch-legend-dot--border" />
-              <span className="landing-arch-legend-label">Your trainer</span>
-            </div>
-            <div className="landing-arch-legend-item">
-              <div className="landing-arch-legend-dash" />
-              <span className="landing-arch-legend-label">Object storage</span>
-            </div>
-          </div>
-        </div>
+        <PipelineFlow />
       </Section>
 
       {/* Capabilities */}
