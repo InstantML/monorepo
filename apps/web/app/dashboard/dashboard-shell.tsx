@@ -49,7 +49,6 @@ import {
   buildRunMetricRows,
   buildRunTimelineRows,
   buildAutomaticWorkspace,
-  buildManualWorkspace,
   COMPARE_ARTIFACT_LIMIT,
   COMPARE_RUN_LIMIT,
   DEFAULT_METRIC_KEY,
@@ -3117,9 +3116,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     });
   }
 
-  function commitWorkspace(mutator: (current: WorkspaceView) => WorkspaceView, nextMessage = "Workspace autosaved. Undo available.") {
+  function commitWorkspace(
+    mutator: (current: WorkspaceView) => WorkspaceView,
+    nextMessage = "Workspace autosaved. Undo available.",
+    options: { markCustomized?: boolean } = {},
+  ) {
     const previous = workspaceViewRef.current ?? workspaceView;
-    const next = { ...mutator(previous), updatedAt: new Date().toISOString() };
+    const mutated = mutator(previous);
+    const next = {
+      ...mutated,
+      mode: options.markCustomized === false ? mutated.mode : "manual",
+      updatedAt: new Date().toISOString(),
+    };
     workspaceViewRef.current = next;
     setWorkspaceUndoStack((current) => [...current, previous].slice(-WORKSPACE_HISTORY_LIMIT));
     setWorkspaceRedoStack([]);
@@ -3412,23 +3420,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     }));
   }
 
-  function setWorkspaceMode(mode: "automatic" | "manual") {
-    commitWorkspace(
-      (current) => {
-        if (mode === "automatic") return buildAutomaticWorkspace(allMetricOptions, project);
-        // Manual mode seeds from whatever is on the board right now — switching
-        // modes must never present an empty board (reads as data loss).
-        const seeded = buildManualWorkspace(project);
-        const hasPanels = current.sections?.some((section) => section.panels.length);
-        return hasPanels ? { ...seeded, sections: current.sections } : seeded;
-      },
-      `Workspace switched to ${mode} mode. Undo available.`,
-    );
-    setAddPanelSectionId("");
-  }
-
   function resetWorkspaceLayout() {
-    commitWorkspace(() => buildAutomaticWorkspace(allMetricOptions, project), "Workspace layout reset. Undo available.");
+    commitWorkspace(
+      () => buildAutomaticWorkspace(allMetricOptions, project),
+      "Workspace rebuilt from logged metrics. Undo available.",
+      { markCustomized: false },
+    );
     setPanelSearch("");
   }
 
@@ -3758,7 +3755,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
               onFullscreenPanelClose={() => setFullscreenPanelRef(null)}
               onFullscreenPanelMove={moveFullscreenPanel}
               onInspectRun={setPrimaryRunId}
-              onMode={setWorkspaceMode}
               onMovePanel={moveWorkspacePanel}
               onGoToPage={goToRunPage}
               onNextPage={goToNextRunPage}

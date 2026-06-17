@@ -177,28 +177,6 @@ export function buildAutomaticWorkspace(metricKeys: string[], project: string): 
   };
 }
 
-export function buildManualWorkspace(project: string): WorkspaceView {
-  return {
-    schemaVersion: WORKSPACE_SCHEMA_VERSION,
-    id: `workspace-manual-${stableId(project || "all")}`,
-    name: project ? `${project} manual workspace` : "Manual workspace",
-    mode: "manual",
-    project: project || null,
-    settings: {
-      ...defaultWorkspacePanelSettings,
-      hideEmptySections: false,
-      sectionOrganization: "manual",
-    },
-    sections: [{
-      id: "section-manual",
-      name: "Charts",
-      collapsed: false,
-      panels: [],
-    }],
-    updatedAt: new Date().toISOString(),
-  };
-}
-
 export const WORKSPACE_PANEL_TYPES: WorkspacePanelType[] = ["line", "bar", "histogram", "dot", "scatter", "distribution", "histogram_timeline"];
 const workspacePanelTypes = new Set<WorkspacePanelType>(WORKSPACE_PANEL_TYPES);
 

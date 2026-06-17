@@ -1224,10 +1224,6 @@ button.compare-row-head.active {
     flex-basis: 100%;
   }
 
-  .workspace-mode-select .select-trigger {
-    width: 150px;
-  }
-
   .runs-workspace.drawer-open .panel-drawer,
   .runs-workspace .panel-drawer {
     position: static;

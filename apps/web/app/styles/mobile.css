@@ -572,8 +572,7 @@
   .workspace-panel-toolbar .compact-button,
   .workspace-panel-toolbar button,
   .workspace-panel-toolbar .select-trigger,
-  .workspace-panel-toolbar .workspace-panel-search,
-  .workspace-panel-toolbar .workspace-mode-select {
+  .workspace-panel-toolbar .workspace-panel-search {
     width: 100%;
   }
   .workspace-panel-search { flex-basis: 100%; }

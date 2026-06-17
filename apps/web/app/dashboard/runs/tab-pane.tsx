@@ -61,7 +61,6 @@ type Props = {
   onFullscreenPanelMove: (direction: -1 | 1) => void;
   onInspectRun: (runId: string) => void;
   primaryRunId: string;
-  onMode: (mode: "automatic" | "manual") => void;
   onMovePanel: (sourceSectionId: string, panelId: string, targetSectionId: string, targetIndex: number) => void;
   onGoToPage: (page: number) => void;
   onNextPage: () => void;
@@ -164,7 +163,6 @@ export function RunsTabPane({
   onFullscreenPanelMove,
   onInspectRun,
   primaryRunId,
-  onMode,
   onMovePanel,
   onGoToPage,
   onNextPage,
@@ -387,7 +385,6 @@ export function RunsTabPane({
         onFullscreenPanel={onFullscreenPanel}
         onInspectRun={onInspectRun}
         onOpenRun={onOpenRun}
-        onMode={onMode}
         onMovePanel={onMovePanel}
         onPanelSearch={onPanelSearch}
         onRefresh={onRefresh}
