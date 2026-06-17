@@ -345,7 +345,6 @@ export function RunDetail({
       {!workspaceSummary ? (
         <header className="run-detail-hero">
           <div className="run-detail-title">
-            <span className="analysis-eyebrow eyebrow--accent">Selected run</span>
             <h2 title={run.name}>{run.name}</h2>
             <p>{run.project} · {durationLabel(run)} · {selectedCount ? `${selectedCount} runs selected for charts` : "not in comparison set"}</p>
           </div>

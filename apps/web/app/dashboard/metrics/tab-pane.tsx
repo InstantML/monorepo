@@ -127,7 +127,6 @@ export function MetricsTabPane({
   return (
     <div className="analysis-page metrics-analysis metrics-parity">
       <PageHead
-        eyebrow="Workspace"
         title="Metrics"
         lede={activeMetricCatalogRow
           ? `${chartSummaries.length} runs plotted · ${formatNumber(activeMetricCatalogRow.pointCount, 0)} points`

@@ -153,7 +153,7 @@ export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Pro
 
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Run health" />
+      <PageHead title="Run health" />
 
       <div className="hp-grid">
         <section className="hp-panel hp-col-3">
