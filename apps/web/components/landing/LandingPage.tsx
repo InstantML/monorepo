@@ -129,40 +129,40 @@ function ArchitectureDiagram() {
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
-        <rect x="20" y="30" width="320" height="200" rx="10" stroke="#2A2E3D" strokeWidth="1" strokeDasharray="4 4" fill="none" />
-        <rect x="32" y="20" width="170" height="20" rx="4" fill="#08080A" />
-        <text x="40" y="34" fontFamily="var(--font-mono)" fontSize="12" fill="#1FB877" letterSpacing="0.1em">YOUR TRAINING JOB</text>
-        <rect x="60" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="120" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">Trainer</text>
-        <text x="120" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">PyTorch · JAX · TRL</text>
-        <line x1="180" y1="130" x2="240" y2="130" stroke="#2A2E3D" strokeWidth="1" />
-        <rect x="220" y="92" width="100" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="270" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">SDK</text>
-        <text x="270" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">buffered</text>
-        <text x="270" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">offline spool</text>
-        <line x1="340" y1="130" x2="410" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
-        <polygon points="408,125 420,130 408,135" fill="#1FB877" />
-        <rect x="420" y="76" width="180" height="108" rx="10" fill="#0D0F15" stroke="#1FB877" strokeWidth="1.4" className="pulse-node" />
-        <text x="510" y="106" textAnchor="middle" fontFamily="var(--font-display)" fontSize="14" fontWeight="600" fill="#F8FAFC">InstantML API</text>
-        <line x1="440" y1="118" x2="580" y2="118" stroke="#1F1F26" strokeWidth="1" />
-        <text x="510" y="138" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#94A3B8">Rust · ClickHouse</text>
-        <text x="510" y="156" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">typed summaries</text>
-        <text x="510" y="172" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">indexed search</text>
-        <line x1="600" y1="130" x2="670" y2="130" className="data-flow-line" stroke="#1FB877" strokeWidth="1.5" />
-        <polygon points="668,125 680,130 668,135" fill="#1FB877" />
-        <rect x="680" y="92" width="120" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" />
-        <text x="740" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="#F8FAFC">Dashboard</text>
-        <text x="740" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">runs · compare</text>
-        <text x="740" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">charts · artifacts</text>
-        <line x1="800" y1="130" x2="855" y2="130" stroke="#2A2E3D" strokeWidth="1" />
-        <rect x="820" y="92" width="80" height="76" rx="8" fill="#0D0F15" stroke="#2A2E3D" strokeWidth="1" strokeDasharray="3 3" />
-        <text x="860" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="12" fontWeight="500" fill="#F8FAFC">Artifacts</text>
-        <text x="860" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#64748B">S3 / R2</text>
-        <text x="120" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">GPU NODES</text>
-        <text x="270" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">PYTHON SDK</text>
-        <text x="510" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#1FB877" letterSpacing="0.06em">HOT PATH</text>
-        <text x="740" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">NEXT/REACT</text>
-        <text x="860" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="#475569" letterSpacing="0.06em">OBJECT STORE</text>
+        <rect x="20" y="30" width="320" height="200" rx="10" stroke="var(--line)" strokeWidth="1" strokeDasharray="4 4" fill="none" />
+        <rect x="32" y="20" width="170" height="20" rx="4" fill="var(--surface-2)" />
+        <text x="40" y="34" fontFamily="var(--font-mono)" fontSize="12" fill="var(--accent)" letterSpacing="0.1em">YOUR TRAINING JOB</text>
+        <rect x="60" y="92" width="120" height="76" rx="8" fill="var(--surface-soft)" stroke="var(--line-strong)" strokeWidth="1" />
+        <text x="120" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="var(--text)">Trainer</text>
+        <text x="120" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">PyTorch · JAX · TRL</text>
+        <line x1="180" y1="130" x2="240" y2="130" stroke="var(--line-strong)" strokeWidth="1" />
+        <rect x="220" y="92" width="100" height="76" rx="8" fill="var(--surface-soft)" stroke="var(--line-strong)" strokeWidth="1" />
+        <text x="270" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="var(--text)">SDK</text>
+        <text x="270" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">buffered</text>
+        <text x="270" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">offline spool</text>
+        <line x1="340" y1="130" x2="410" y2="130" className="data-flow-line" stroke="var(--accent)" strokeWidth="1.5" />
+        <polygon points="408,125 420,130 408,135" fill="var(--accent)" />
+        <rect x="420" y="76" width="180" height="108" rx="10" fill="var(--surface-soft)" stroke="var(--accent)" strokeWidth="1.4" className="pulse-node" />
+        <text x="510" y="106" textAnchor="middle" fontFamily="var(--font-display)" fontSize="14" fontWeight="600" fill="var(--text)">InstantML API</text>
+        <line x1="440" y1="118" x2="580" y2="118" stroke="var(--line)" strokeWidth="1" />
+        <text x="510" y="138" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--muted)">Rust · ClickHouse</text>
+        <text x="510" y="156" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">typed summaries</text>
+        <text x="510" y="172" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">indexed search</text>
+        <line x1="600" y1="130" x2="670" y2="130" className="data-flow-line" stroke="var(--accent)" strokeWidth="1.5" />
+        <polygon points="668,125 680,130 668,135" fill="var(--accent)" />
+        <rect x="680" y="92" width="120" height="76" rx="8" fill="var(--surface-soft)" stroke="var(--line-strong)" strokeWidth="1" />
+        <text x="740" y="121" textAnchor="middle" fontFamily="var(--font-display)" fontSize="13" fontWeight="500" fill="var(--text)">Dashboard</text>
+        <text x="740" y="140" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">runs · compare</text>
+        <text x="740" y="154" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">charts · artifacts</text>
+        <line x1="800" y1="130" x2="855" y2="130" stroke="var(--line-strong)" strokeWidth="1" />
+        <rect x="820" y="92" width="80" height="76" rx="8" fill="var(--surface-soft)" stroke="var(--line-strong)" strokeWidth="1" strokeDasharray="3 3" />
+        <text x="860" y="125" textAnchor="middle" fontFamily="var(--font-display)" fontSize="12" fontWeight="500" fill="var(--text)">Artifacts</text>
+        <text x="860" y="146" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--faint)">S3 / R2</text>
+        <text x="120" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--dim)" letterSpacing="0.06em">GPU NODES</text>
+        <text x="270" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--dim)" letterSpacing="0.06em">PYTHON SDK</text>
+        <text x="510" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--accent)" letterSpacing="0.06em">HOT PATH</text>
+        <text x="740" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--dim)" letterSpacing="0.06em">NEXT/REACT</text>
+        <text x="860" y="208" textAnchor="middle" fontFamily="var(--font-mono)" fontSize="12" fill="var(--dim)" letterSpacing="0.06em">OBJECT STORE</text>
       </svg>
     </div>
   );

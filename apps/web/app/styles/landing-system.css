@@ -819,7 +819,7 @@
   height: 2px;
 }
 .landing-masking-demo__legend-line--train { background: var(--accent); }
-.landing-masking-demo__legend-line--eval  { background: #8b9280; opacity: 0.7; }
+.landing-masking-demo__legend-line--eval  { background: var(--dim); opacity: 0.85; }
 .landing-masking-demo__footer {
   display: flex;
   align-items: center;
@@ -840,7 +840,7 @@
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: #0a0c09;
+  background: var(--surface);
 }
 .landing-audit-feed__header {
   display: flex;
@@ -848,6 +848,7 @@
   justify-content: space-between;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
 }
 .landing-audit-feed__label {
   font-size: 12px;
@@ -910,7 +911,7 @@
   inset-inline: 0;
   top: 0;
   height: 32px;
-  background: linear-gradient(to bottom, #0a0c09, transparent);
+  background: linear-gradient(to bottom, var(--surface), transparent);
 }
 .landing-audit-feed__fade-bottom {
   pointer-events: none;
@@ -918,7 +919,7 @@
   inset-inline: 0;
   bottom: 0;
   height: 32px;
-  background: linear-gradient(to top, #0a0c09, transparent);
+  background: linear-gradient(to top, var(--surface), transparent);
 }
 
 /* ─── TtlRing component ─── */

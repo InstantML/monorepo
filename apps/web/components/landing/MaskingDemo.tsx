@@ -72,8 +72,8 @@ export function MaskingDemo() {
           <polyline
             points={polyline(EVAL, w, h, max)}
             fill="none"
-            stroke="#94A3B8"
-            strokeOpacity="0.55"
+            stroke="var(--dim)"
+            strokeOpacity="0.85"
             strokeWidth="1.6"
             strokeLinejoin="round"
             strokeLinecap="round"
