@@ -225,7 +225,6 @@ export type TabId =
   | "compare"
   | "alerts"
   | "datasets"
-  | "imports"
   | "insights"
   | "artifacts"
   | "reports"
