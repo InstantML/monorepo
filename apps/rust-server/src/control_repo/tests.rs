@@ -2,8 +2,17 @@
 //! a fresh isolated database per test and applies `./migrations` first.
 
 use super::*;
-use chrono::Utc;
+use crate::{domain::DataCellRow, store::TenantRouteRecord};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use sqlx::PgPool;
+
+fn db_time_now() -> DateTime<Utc> {
+    postgres_timestamp(Utc::now())
+}
+
+fn postgres_timestamp(value: DateTime<Utc>) -> DateTime<Utc> {
+    value - ChronoDuration::nanoseconds(i64::from(value.timestamp_subsec_nanos() % 1_000))
+}
 
 fn user(email: &str) -> UserRow {
     UserRow {
@@ -11,7 +20,7 @@ fn user(email: &str) -> UserRow {
         primary_email: email.to_string(),
         display_name: None,
         avatar_url: None,
-        created_at: Utc::now(),
+        created_at: db_time_now(),
         last_seen_at: None,
     }
 }
@@ -32,7 +41,7 @@ fn org(slug: &str, owner: Option<Uuid>) -> OrganizationRow {
         account_type: "business".to_string(),
         seat_limit: 5,
         created_by_user_id: owner,
-        created_at: Utc::now(),
+        created_at: db_time_now(),
         tenant_routing_tier: "dedicated".to_string(),
         storage_choice: "hosted".to_string(),
         storage_state: "ready".to_string(),
@@ -46,7 +55,76 @@ fn membership(org_id: Uuid, user_id: Uuid) -> MembershipRow {
         user_id,
         role: "owner".to_string(),
         status: "active".to_string(),
-        created_at: Utc::now(),
+        created_at: db_time_now(),
+    }
+}
+
+fn data_cell(cell_id: &str, max_orgs: Option<i32>) -> DataCellRow {
+    let now = db_time_now();
+    DataCellRow {
+        cell_id: cell_id.to_string(),
+        environment: "test".to_string(),
+        region: "us-central1".to_string(),
+        tier: "free".to_string(),
+        status: "open".to_string(),
+        service_name: format!("instantml-data-{cell_id}"),
+        public_api_base: Some(format!("https://{cell_id}.api.example.test")),
+        internal_api_base: Some(format!("https://{cell_id}.internal.example.test")),
+        clickhouse_endpoint_secret_ref: Some(format!("{cell_id}-endpoint")),
+        clickhouse_username_secret_ref: Some(format!("{cell_id}-username")),
+        clickhouse_password_secret_ref: Some(format!("{cell_id}-password")),
+        clickhouse_database_mode: Some("shared-database".to_string()),
+        max_orgs,
+        max_metric_points_monthly: Some(10_000_000),
+        max_api_requests_monthly: Some(1_000_000),
+        max_retained_bytes: Some(1024 * 1024 * 1024),
+        max_disk_usage_pct: Some(70),
+        reserved_headroom_pct: Some(20),
+        last_health_at: Some(now),
+        last_backup_at: Some(now),
+        notes: Some("operator note".to_string()),
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+fn route(org_id: Uuid, status: &str, endpoint: &str) -> TenantRouteRecord {
+    let now = db_time_now();
+    TenantRouteRecord {
+        org_id,
+        status: status.to_string(),
+        provisioner: "database".to_string(),
+        cell_id: None,
+        route_version: 1,
+        placement_reason: None,
+        assigned_at: None,
+        plan_tier: Some("free".to_string()),
+        warehouse_kind: Some("shared".to_string()),
+        requested_min_replica_memory_gb: Some(8),
+        requested_max_replica_memory_gb: Some(8),
+        requested_num_replicas: Some(1),
+        applied_min_replica_memory_gb: Some(8),
+        applied_max_replica_memory_gb: Some(8),
+        applied_num_replicas: Some(1),
+        endpoint: endpoint.to_string(),
+        database: "instantml_shared".to_string(),
+        username: "tenant".to_string(),
+        password_secret_ref: Some("secret://tenant".to_string()),
+        password_ciphertext: None,
+        schema_version: Some(crate::metric_store::METRIC_SCHEMA_VERSION),
+        service_id: None,
+        created_at: now,
+        updated_at: now,
+        error: None,
+    }
+}
+
+fn placement(cell_id: &str) -> TenantRoutePlacement {
+    TenantRoutePlacement {
+        environment: "test".to_string(),
+        cell_id: cell_id.to_string(),
+        actor: "test-operator".to_string(),
+        reason: "current_data_cell".to_string(),
     }
 }
 
@@ -153,7 +231,7 @@ async fn upsert_user_round_trips_through_load(pool: PgPool) {
     db.upsert_identity("test", "subj", u.id).await.unwrap();
 
     // Updating last_seen_at via upsert is in-place.
-    u.last_seen_at = Some(Utc::now());
+    u.last_seen_at = Some(db_time_now());
     db.upsert_user(&u).await.unwrap();
 
     let loaded = db.list_users().await.unwrap();
@@ -182,4 +260,355 @@ async fn org_insert_rolls_back_when_membership_violates_constraint(pool: PgPool)
     let result = db.create_org_with_owner(&o, Some(&bad)).await;
     assert!(result.is_err());
     assert!(db.get_org(o.id).await.unwrap().is_none());
+}
+
+#[sqlx::test]
+async fn data_cells_round_trip_with_capacity_and_secret_refs(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut cell = data_cell("free-us-central1-a", Some(10));
+    db.upsert_data_cell(&cell).await.unwrap();
+
+    let loaded = db.load_data_cells().await.unwrap();
+    assert_eq!(loaded, vec![cell.clone()]);
+
+    cell.status = "draining".to_string();
+    cell.max_orgs = Some(8);
+    cell.updated_at = db_time_now();
+    db.upsert_data_cell(&cell).await.unwrap();
+
+    let loaded = db.load_data_cells().await.unwrap();
+    assert_eq!(loaded, vec![cell]);
+}
+
+#[sqlx::test]
+async fn data_cell_heartbeat_registers_missing_cell_and_preserves_operator_fields(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut heartbeat = data_cell("free-us-central1-a", None);
+    heartbeat.service_name = "auto-seeded".to_string();
+    heartbeat.notes = Some("heartbeat".to_string());
+    heartbeat.last_backup_at = Some(db_time_now());
+    let registered = db.heartbeat_data_cell(&heartbeat).await.unwrap();
+    assert_eq!(registered.cell_id, heartbeat.cell_id);
+    assert_eq!(registered.service_name, "auto-seeded");
+    assert_eq!(registered.last_backup_at, None);
+
+    let mut operator_row = registered.clone();
+    operator_row.status = "draining".to_string();
+    operator_row.service_name = "operator-owned".to_string();
+    operator_row.max_orgs = Some(5);
+    operator_row.notes = Some("operator metadata".to_string());
+    operator_row.last_backup_at = Some(db_time_now());
+    db.upsert_data_cell(&operator_row).await.unwrap();
+
+    heartbeat.updated_at = db_time_now() + ChronoDuration::seconds(1);
+    heartbeat.last_health_at = Some(heartbeat.updated_at);
+    heartbeat.last_backup_at = Some(heartbeat.updated_at);
+    let refreshed = db.heartbeat_data_cell(&heartbeat).await.unwrap();
+    assert_eq!(refreshed.status, "draining");
+    assert_eq!(refreshed.service_name, "operator-owned");
+    assert_eq!(refreshed.max_orgs, Some(5));
+    assert_eq!(refreshed.notes.as_deref(), Some("operator metadata"));
+    assert_eq!(refreshed.last_health_at, heartbeat.last_health_at);
+    assert_eq!(refreshed.last_backup_at, operator_row.last_backup_at);
+}
+
+#[sqlx::test]
+async fn tenant_route_without_placement_remains_backwards_compatible(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let o = org("legacy-route", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let stored = db
+        .upsert_tenant_route(&route(o.id, "ready", "https://legacy.example.test"))
+        .await
+        .unwrap();
+    assert_eq!(stored.cell_id, None);
+    assert_eq!(stored.route_version, 1);
+    assert_eq!(stored.placement_reason, None);
+    assert_eq!(stored.assigned_at, None);
+
+    let loaded = db.load_tenant_routes().await.unwrap();
+    assert_eq!(loaded, vec![stored]);
+
+    let events = db.load_tenant_route_events().await.unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].new_cell_id, None);
+    assert_eq!(events[0].reason, "tenant_route_upsert");
+}
+
+#[sqlx::test]
+async fn tenant_route_rejects_explicit_cell_assignment_without_placement(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(2)))
+        .await
+        .unwrap();
+    let o = org("explicit-cell", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let mut explicit = route(o.id, "ready", "https://free-us-central1-a.example.test");
+    explicit.cell_id = Some("free-us-central1-a".to_string());
+    let err = db.upsert_tenant_route(&explicit).await.unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::BAD_REQUEST);
+    assert!(db.load_tenant_routes().await.unwrap().is_empty());
+    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn tenant_route_placement_is_versioned_and_audited(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(2)))
+        .await
+        .unwrap();
+    let o = org("placed-route", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let placed = db
+        .upsert_tenant_route_with_placement(
+            &route(
+                o.id,
+                "provisioning",
+                "https://free-us-central1-a.example.test",
+            ),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap();
+    assert_eq!(placed.cell_id.as_deref(), Some("free-us-central1-a"));
+    assert_eq!(placed.route_version, 1);
+    assert_eq!(
+        placed.placement_reason.as_deref(),
+        Some("current_data_cell")
+    );
+    assert!(placed.assigned_at.is_some());
+
+    let mut ready = placed.clone();
+    ready.status = "ready".to_string();
+    ready.updated_at = db_time_now();
+    let ready = db
+        .upsert_tenant_route_with_placement(&ready, Some(&placement("free-us-central1-a")))
+        .await
+        .unwrap();
+    assert_eq!(ready.cell_id.as_deref(), Some("free-us-central1-a"));
+    assert_eq!(ready.route_version, 2);
+    assert_eq!(ready.assigned_at, placed.assigned_at);
+
+    let events = db.load_tenant_route_events().await.unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].old_cell_id, None);
+    assert_eq!(events[0].new_cell_id.as_deref(), Some("free-us-central1-a"));
+    assert_eq!(events[0].route_version, 1);
+    assert_eq!(events[0].actor, "test-operator");
+    assert_eq!(events[0].reason, "current_data_cell");
+    assert_eq!(events[1].old_status.as_deref(), Some("provisioning"));
+    assert_eq!(events[1].new_status, "ready");
+    assert_eq!(events[1].route_version, 2);
+}
+
+#[sqlx::test]
+async fn concurrent_initial_tenant_route_upserts_are_serialized(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(2)))
+        .await
+        .unwrap();
+    let o = org("concurrent-route", None);
+    db.upsert_org(&o).await.unwrap();
+    let org_id = o.id;
+
+    let first_db = db.clone();
+    let second_db = db.clone();
+    let (first, second) = tokio::join!(
+        async move {
+            first_db
+                .upsert_tenant_route_with_placement(
+                    &route(org_id, "provisioning", "https://first.example.test"),
+                    Some(&placement("free-us-central1-a")),
+                )
+                .await
+        },
+        async move {
+            second_db
+                .upsert_tenant_route_with_placement(
+                    &route(org_id, "ready", "https://second.example.test"),
+                    Some(&placement("free-us-central1-a")),
+                )
+                .await
+        }
+    );
+    first.unwrap();
+    second.unwrap();
+
+    let routes = db.load_tenant_routes().await.unwrap();
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].route_version, 2);
+    assert_eq!(routes[0].cell_id.as_deref(), Some("free-us-central1-a"));
+    let events = db.load_tenant_route_events().await.unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.route_version)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+}
+
+#[sqlx::test]
+async fn tenant_route_capacity_rejection_rolls_back_route_and_event(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", Some(1)))
+        .await
+        .unwrap();
+    let first = org("first-org", None);
+    let second = org("second-org", None);
+    db.upsert_org(&first).await.unwrap();
+    db.upsert_org(&second).await.unwrap();
+
+    db.upsert_tenant_route_with_placement(
+        &route(first.id, "ready", "https://free-us-central1-a.example.test"),
+        Some(&placement("free-us-central1-a")),
+    )
+    .await
+    .unwrap();
+
+    let err = db
+        .upsert_tenant_route_with_placement(
+            &route(
+                second.id,
+                "provisioning",
+                "https://free-us-central1-a.example.test",
+            ),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+
+    let routes = db.load_tenant_routes().await.unwrap();
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].org_id, first.id);
+    let events = db.load_tenant_route_events().await.unwrap();
+    assert_eq!(events.len(), 1);
+}
+
+#[sqlx::test]
+async fn tenant_route_placement_requires_registered_cell(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let o = org("missing-cell", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let err = db
+        .upsert_tenant_route_with_placement(
+            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert!(db.load_tenant_routes().await.unwrap().is_empty());
+    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn customer_clickhouse_routes_are_not_assigned_to_managed_cells(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let o = org("customer-clickhouse", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let mut customer_route = route(o.id, "ready", "https://customer-clickhouse.example.test");
+    customer_route.provisioner = "customer-clickhouse".to_string();
+    customer_route.warehouse_kind = Some("customer-owned".to_string());
+    let stored = db
+        .upsert_tenant_route_with_placement(&customer_route, Some(&placement("free-us-central1-a")))
+        .await
+        .unwrap();
+    assert_eq!(stored.cell_id, None);
+    assert_eq!(stored.placement_reason, None);
+}
+
+#[sqlx::test]
+async fn stale_cell_health_blocks_placement(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut cell = data_cell("free-us-central1-a", Some(1));
+    cell.last_health_at =
+        Some(db_time_now() - ChronoDuration::seconds(DATA_CELL_HEALTH_MAX_AGE_SECS + 1));
+    db.upsert_data_cell(&cell).await.unwrap();
+    let o = org("stale-cell", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let err = db
+        .upsert_tenant_route_with_placement(
+            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert!(db.load_tenant_routes().await.unwrap().is_empty());
+    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn missing_cell_backup_blocks_placement(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut cell = data_cell("free-us-central1-a", Some(1));
+    cell.last_backup_at = None;
+    db.upsert_data_cell(&cell).await.unwrap();
+    let o = org("missing-backup-cell", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let err = db
+        .upsert_tenant_route_with_placement(
+            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert!(db.load_tenant_routes().await.unwrap().is_empty());
+    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn stale_cell_backup_blocks_placement(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut cell = data_cell("free-us-central1-a", Some(1));
+    cell.last_backup_at =
+        Some(db_time_now() - ChronoDuration::seconds(DATA_CELL_BACKUP_MAX_AGE_SECS + 1));
+    db.upsert_data_cell(&cell).await.unwrap();
+    let o = org("stale-backup-cell", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let err = db
+        .upsert_tenant_route_with_placement(
+            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert!(db.load_tenant_routes().await.unwrap().is_empty());
+    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
+}
+
+#[sqlx::test]
+async fn future_cell_backup_blocks_placement(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut cell = data_cell("free-us-central1-a", Some(1));
+    cell.last_backup_at = Some(
+        db_time_now() + ChronoDuration::seconds(DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS + 1),
+    );
+    db.upsert_data_cell(&cell).await.unwrap();
+    let o = org("future-backup-cell", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let err = db
+        .upsert_tenant_route_with_placement(
+            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert!(db.load_tenant_routes().await.unwrap().is_empty());
+    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
 }

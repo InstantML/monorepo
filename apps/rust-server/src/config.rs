@@ -38,6 +38,7 @@ pub struct AppConfig {
     pub slow_request_threshold: Duration,
     pub log_format: LogFormat,
     pub hosted_clickhouse: Option<HostedClickHouseConfig>,
+    pub cell_routing: CellRoutingConfig,
     /// Postgres connection URL for the control plane (users/orgs/sessions/
     /// keys/billing/tenant routes). `None` keeps the legacy ClickHouse control
     /// path during the migration and in single-binary local mode.
@@ -206,6 +207,13 @@ pub struct HostedClickHouseConfig {
     /// When `Some`, personal/free signups route here instead of provisioning
     /// a new Cloud service. Format: `http://user:pass@host:port/database`.
     pub shared_cell_url: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CellRoutingConfig {
+    pub environment: String,
+    pub placement_data_cell_id: Option<String>,
+    pub heartbeat_data_cell_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -398,6 +406,7 @@ impl AppConfig {
             )?),
             log_format,
             hosted_clickhouse,
+            cell_routing: cell_routing_config()?,
             control_database_url: env::var("DATABASE_URL")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),
@@ -406,6 +415,42 @@ impl AppConfig {
             email,
         })
     }
+}
+
+fn cell_routing_config() -> AppResult<CellRoutingConfig> {
+    let environment = env::var("INSTANTML_DEPLOY_ENV")
+        .or_else(|_| env::var("INSTANTML_ENVIRONMENT"))
+        .unwrap_or_else(|_| "local".to_string());
+    let environment = normalize_cell_label("INSTANTML_DEPLOY_ENV", &environment)?;
+    let heartbeat_data_cell_id = env::var("INSTANTML_CELL_ID")
+        .ok()
+        .map(|value| normalize_cell_label("INSTANTML_CELL_ID", &value))
+        .transpose()?;
+    let default_data_cell_id = env::var("INSTANTML_DEFAULT_DATA_CELL_ID")
+        .ok()
+        .map(|value| normalize_cell_label("INSTANTML_DEFAULT_DATA_CELL_ID", &value))
+        .transpose()?;
+    let placement_data_cell_id = heartbeat_data_cell_id.clone().or(default_data_cell_id);
+    Ok(CellRoutingConfig {
+        environment,
+        placement_data_cell_id,
+        heartbeat_data_cell_id,
+    })
+}
+
+fn normalize_cell_label(key: &'static str, raw: &str) -> AppResult<String> {
+    let trimmed = raw.trim().to_ascii_lowercase();
+    if trimmed.is_empty()
+        || trimmed.len() > 128
+        || !trimmed
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err(AppError::config(format!(
+            "{key} must be a non-empty lowercase label using letters, numbers, or hyphen"
+        )));
+    }
+    Ok(trimmed)
 }
 
 fn service_plane_role() -> AppResult<ServicePlaneRole> {
@@ -980,5 +1025,45 @@ mod tests {
             ServicePlaneRole::Data
         );
         assert!(parse_service_plane_role("proxy").is_err());
+    }
+
+    #[test]
+    fn cell_labels_are_normalized_to_safe_route_labels() {
+        assert_eq!(
+            normalize_cell_label("INSTANTML_DEFAULT_DATA_CELL_ID", " Us-Central1-A ").unwrap(),
+            "us-central1-a"
+        );
+        assert!(normalize_cell_label("INSTANTML_DEFAULT_DATA_CELL_ID", "").is_err());
+        assert!(normalize_cell_label("INSTANTML_DEFAULT_DATA_CELL_ID", "us_central1").is_err());
+        assert!(normalize_cell_label("INSTANTML_DEFAULT_DATA_CELL_ID", "us.central1").is_err());
+    }
+
+    #[test]
+    fn cell_routing_prefers_per_service_cell_id_over_default() {
+        std::env::set_var("INSTANTML_DEPLOY_ENV", "Prod");
+        std::env::set_var("INSTANTML_DEFAULT_DATA_CELL_ID", "us-central1-a");
+        std::env::set_var("INSTANTML_CELL_ID", "us-central1-b");
+
+        let config = cell_routing_config().unwrap();
+        assert_eq!(config.environment, "prod");
+        assert_eq!(
+            config.placement_data_cell_id.as_deref(),
+            Some("us-central1-b")
+        );
+        assert_eq!(
+            config.heartbeat_data_cell_id.as_deref(),
+            Some("us-central1-b")
+        );
+
+        std::env::remove_var("INSTANTML_CELL_ID");
+        let config = cell_routing_config().unwrap();
+        assert_eq!(
+            config.placement_data_cell_id.as_deref(),
+            Some("us-central1-a")
+        );
+        assert_eq!(config.heartbeat_data_cell_id.as_deref(), None);
+
+        std::env::remove_var("INSTANTML_DEPLOY_ENV");
+        std::env::remove_var("INSTANTML_DEFAULT_DATA_CELL_ID");
     }
 }

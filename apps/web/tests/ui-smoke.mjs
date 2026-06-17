@@ -745,16 +745,14 @@ try {
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
-  const automaticPanelCount = await page.locator(".workspace-panel-card").count();
-  assert.ok(automaticPanelCount >= 3, `expected automatic metric panels, got ${automaticPanelCount}`);
+  const generatedPanelCount = await page.locator(".workspace-panel-card").count();
+  assert.ok(generatedPanelCount >= 3, `expected generated metric panels, got ${generatedPanelCount}`);
   await page.fill("#panel-search", "loss");
   await page.waitForFunction(() => {
     const panels = [...document.querySelectorAll(".workspace-panel-card h3")];
     return panels.length > 0 && panels.every((node) => /loss/i.test(node.textContent ?? ""));
   });
   await page.fill("#panel-search", "");
-  await chooseSelect(page, "#workspace-mode", "manual");
-  await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length === 0);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
   await page.waitForSelector(".panel-drawer");
@@ -765,17 +763,18 @@ try {
   await page.getByRole("button", { name: "Scatter" }).click();
   await page.waitForFunction(() => document.querySelector(".chart-type-segment button.active")?.textContent?.includes("Scatter"));
   await page.locator(".drawer-metric-row").first().click();
-  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 10000 });
-  assert.match(await page.locator(".workspace-panel-card").first().innerText(), /Scatter|Summary values|plotted/);
+  const scatterCard = page.locator(".workspace-panel-card").filter({ has: page.locator(".scatter-panel-chart") }).first();
+  await scatterCard.waitFor({ state: "visible", timeout: 10000 });
+  assert.match(await scatterCard.innerText(), /Scatter|Summary values|plotted/);
   await page.waitForFunction(() => !document.querySelector(".panel-drawer") && document.querySelector("#status-message")?.textContent?.includes("Undo"));
   await page.keyboard.press(`${commandKey}+Z`);
-  await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length === 0);
+  await page.waitForFunction((count) => document.querySelectorAll(".workspace-panel-card").length === count, generatedPanelCount);
   await page.keyboard.press(`${commandKey}+Shift+Z`);
-  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 10000 });
-  await page.locator(".workspace-panel-card").first().hover();
-  const actionOpacity = await page.locator(".workspace-panel-card .panel-card-actions").first().evaluate((node) => getComputedStyle(node).opacity);
+  await scatterCard.waitFor({ state: "visible", timeout: 10000 });
+  await scatterCard.hover();
+  const actionOpacity = await scatterCard.locator(".panel-card-actions").evaluate((node) => getComputedStyle(node).opacity);
   assert.ok(Number(actionOpacity) > 0.5, `panel actions should stay visible enough to avoid invisible destructive targets, got ${actionOpacity}`);
-  await page.locator('.workspace-panel-card button[aria-label^="Edit"]').first().click();
+  await scatterCard.locator('button[aria-label^="Edit"]').click();
   await page.waitForSelector(".edit-drawer");
   assert.equal(await page.locator("#edit-panel-x-field").count(), 1);
   assert.equal(await page.locator("#edit-panel-y-field").count(), 1);
@@ -794,19 +793,19 @@ try {
   assert.equal(await page.locator(".workspace-panel-card").count(), panelCountBeforeEditTab);
   const scatterPanelTitle = docsScreenshotMode ? "Learning-rate sweep" : "Smoke panel";
   await page.fill('.edit-drawer label:has-text("Title") input', scatterPanelTitle);
-  await page.waitForFunction((title) => document.querySelector(".workspace-panel-card h3")?.textContent?.includes(title), scatterPanelTitle);
+  await page.waitForFunction((title) => [...document.querySelectorAll(".workspace-panel-card h3")].some((node) => node.textContent?.includes(title)), scatterPanelTitle);
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
-  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 10000 });
-  await page.locator(".workspace-panel-card").first().hover();
-  await page.locator('.workspace-panel-card button[aria-label^="Fullscreen"]').first().click();
+  await scatterCard.waitFor({ state: "visible", timeout: 10000 });
+  await scatterCard.hover();
+  await scatterCard.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".fullscreen-panel-card .scatter-panel-chart", { timeout: 10000 });
   await page.locator(".fullscreen-modal").getByRole("button", { name: "Close fullscreen panel" }).click();
   await page.waitForFunction(() => !document.querySelector(".fullscreen-modal"));
   await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(250);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".workspace-panel-card .scatter-panel-chart", { timeout: 15000 });
-  assert.match(await page.locator(".workspace-panel-card").first().innerText(), new RegExp(`${escapeRegExp(scatterPanelTitle)}|Scatter|Summary values`));
+  await scatterCard.waitFor({ state: "visible", timeout: 15000 });
+  assert.match(await scatterCard.innerText(), new RegExp(`${escapeRegExp(scatterPanelTitle)}|Scatter|Summary values`));
   await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
   await page.waitForSelector(".panel-drawer");
   await page.locator(".chart-type-segment").getByRole("button", { name: "Distribution", exact: true }).click();
@@ -915,7 +914,7 @@ try {
   await page.locator(".workspace-section .section-title-button").first().click();
   await page.waitForSelector(".workspace-panel-card", { timeout: 10000 });
   await page.evaluate(() => window.scrollTo(0, 0));
-  await page.getByRole("button", { name: "Reset layout" }).click();
+  await page.getByRole("button", { name: "Rebuild layout" }).click();
   await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length >= 3);
   assert.equal(await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).count(), 1);
   assert.equal(await page.locator(".workspace-section-head").getByRole("button", { name: /Add panels/ }).count(), 0);
@@ -947,8 +946,8 @@ try {
     const targetSection = document.querySelectorAll(".workspace-section")[1];
     return targetSection?.textContent?.includes(title);
   }, movedPanelTitle);
-  await page.getByRole("button", { name: "Reset layout" }).click();
-  await page.waitForFunction(() => document.querySelector("#workspace-mode")?.value === "automatic" && document.querySelectorAll(".workspace-panel-card").length >= 3);
+  await page.getByRole("button", { name: "Rebuild layout" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length >= 3);
   await page.evaluate(() => window.scrollTo(0, 0));
 
   const firstWorkspacePanel = page.locator(".workspace-panel-card").first();
@@ -1024,21 +1023,19 @@ try {
       expectedPanelHeight: rowSpan * rowHeight + (rowSpan - 1) * rowGap,
       frame: rect(frame),
       handle: rect(handle),
-      mode: document.querySelector("#workspace-mode")?.value,
       panel: rect(card),
       rowSpan,
       widthSpan: Number(card.dataset.panelWidth),
     };
   });
-  assert.equal(resizedGeometry.mode, "manual");
   assert.ok(
     resizedGeometry.rowSpan > startingLayout.h || resizedGeometry.widthSpan > startingLayout.w,
     `resize should increase width or height from ${JSON.stringify(startingLayout)} to ${JSON.stringify({ h: resizedGeometry.rowSpan, w: resizedGeometry.widthSpan })}`,
   );
   assert.ok(Math.abs(resizedGeometry.panel.height - resizedGeometry.expectedPanelHeight) <= 4, `resized panel height ${resizedGeometry.panel.height} should follow grid span ${resizedGeometry.expectedPanelHeight}`);
   assert.ok(resizedGeometry.frame.height > startingGeometry.frame.height, "chart frame should grow when the panel is resized taller");
-  await page.getByRole("button", { name: "Reset layout" }).click();
-  await page.waitForFunction(() => document.querySelector("#workspace-mode")?.value === "automatic" && document.querySelectorAll(".workspace-panel-card").length >= 3);
+  await page.getByRole("button", { name: "Rebuild layout" }).click();
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length >= 3);
 
   const visibleRunChecks = page.locator(".workspace-run-row");
   const visibleRunCheckCount = await visibleRunChecks.count();
@@ -1364,7 +1361,6 @@ try {
     rows: document.querySelectorAll(".workspace-run-row").length,
     panels: document.querySelectorAll(".workspace-panel-card").length,
     sections: document.querySelectorAll(".workspace-section").length,
-    mode: document.querySelector("#workspace-mode")?.value,
     sort: document.querySelector("#sort-select")?.value,
     notePreviews: [...document.querySelectorAll(".workspace-run-note")].map((node) => node.textContent ?? ""),
     tagPreviews: [...document.querySelectorAll(".workspace-run-tags")].map((node) => node.textContent ?? ""),
@@ -1433,7 +1429,6 @@ try {
     rows: document.querySelectorAll(".workspace-run-row").length,
     panels: document.querySelectorAll(".workspace-panel-card").length,
     sections: document.querySelectorAll(".workspace-section").length,
-    mode: document.querySelector("#workspace-mode")?.value,
     sort: document.querySelector("#sort-select")?.value,
     notePreviews: [...document.querySelectorAll(".workspace-run-note")].map((node) => node.textContent ?? ""),
     tagPreviews: [...document.querySelectorAll(".workspace-run-tags")].map((node) => node.textContent ?? ""),
@@ -1490,7 +1485,6 @@ try {
   assert.ok(data.axisLabels.some((label) => label?.includes("Loss")));
   assert.ok(data.panels >= 3);
   assert.ok(data.sections >= 1);
-  assert.equal(data.mode, "automatic");
   assert.ok(data.notePreviews.some((note) => /Synthetic|note/i.test(note)), "workspace rows should expose note previews");
   assert.ok(data.tagPreviews.some((tags) => /demo|qa-smoke|compare-smoke/i.test(tags)), "workspace rows should expose tag previews");
   assert.ok(data.metricCatalogRows >= 3);

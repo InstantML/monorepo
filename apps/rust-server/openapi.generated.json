@@ -9,6 +9,41 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/admin/data-cells": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_data_cells",
+        "responses": {
+          "200": {
+            "description": "Operator data-cell registry summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDataCellsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
     "/api/admin/overview": {
       "get": {
         "tags": [
@@ -8194,6 +8229,184 @@
           }
         }
       },
+      "AdminDataCellRouteCounts": {
+        "type": "object",
+        "required": [
+          "total",
+          "ready",
+          "provisioning",
+          "failed",
+          "other"
+        ],
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "other": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "provisioning": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ready": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "AdminDataCellSummary": {
+        "type": "object",
+        "required": [
+          "cell_id",
+          "environment",
+          "region",
+          "tier",
+          "status",
+          "service_name",
+          "created_at",
+          "updated_at",
+          "assigned_orgs",
+          "route_counts",
+          "admission_status"
+        ],
+        "properties": {
+          "admission_status": {
+            "type": "string"
+          },
+          "assigned_orgs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cell_id": {
+            "type": "string"
+          },
+          "clickhouse_database_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "last_backup_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_health_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "max_api_requests_monthly": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "max_disk_usage_pct": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "max_metric_points_monthly": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "max_orgs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "max_retained_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "public_api_base": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "type": "string"
+          },
+          "reserved_headroom_pct": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "route_counts": {
+            "$ref": "#/components/schemas/AdminDataCellRouteCounts"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AdminDataCellsResponse": {
+        "type": "object",
+        "required": [
+          "schema_version",
+          "generated_at",
+          "data_cells"
+        ],
+        "properties": {
+          "data_cells": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDataCellSummary"
+            }
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "AdminOrgCounts": {
         "type": "object",
         "required": [
@@ -8587,6 +8800,19 @@
             "format": "int32",
             "minimum": 0
           },
+          "assigned_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "cell_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "database": {
             "type": [
               "string",
@@ -8600,6 +8826,12 @@
             ]
           },
           "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "placement_reason": {
             "type": [
               "string",
               "null"
@@ -8646,6 +8878,13 @@
               "string",
               "null"
             ]
+          },
+          "route_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "schema_version": {
             "type": [

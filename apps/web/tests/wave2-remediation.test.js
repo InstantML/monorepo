@@ -60,7 +60,7 @@ test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", ()
   assert.match(configSrc, /id: "system"/);
   assert.doesNotMatch(configSrc, /id: "overview"/);
   assert.match(configSrc, /id: "alerts", label: "Run Health"/);
-  for (const id of ["runs", "metrics", "distributed", "insights", "artifacts", "reports", "alerts", "datasets", "imports", "settings", "api"]) {
+  for (const id of ["runs", "metrics", "distributed", "insights", "artifacts", "reports", "alerts", "datasets", "settings", "api"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
   // CK2: the Checkpoints tab merged into Run Detail; its nav slot is gone but

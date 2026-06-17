@@ -207,11 +207,11 @@ test("deploy helper keeps public routing HTTPS-only", () => {
   assert.doesNotMatch(source, /--ports", "80/);
 });
 
-test("deploy helper routes admin overview through the public control backend", () => {
+test("deploy helper keeps admin routes off the public router", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
-  assert.match(source, /- \/api\/admin\n\s+- \/api\/admin\/\*/);
-  assert.match(source, /path: \/api\/admin\/overview\n\s+service: \$\{controlBackend\}/);
+  assert.doesNotMatch(source, /- \/api\/admin\n\s+- \/api\/admin\/\*/);
+  assert.doesNotMatch(source, /path: \/api\/admin\/overview\n\s+service: \$\{controlBackend\}/);
 });
 
 test("deploy helper scopes provider secrets to the service planes that need them", () => {
@@ -263,6 +263,39 @@ test("deploy helper defaults hosted ClickHouse provisioning to database mode", (
   assert.doesNotMatch(source, /INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service"/);
 });
 
+test("deploy helper passes placement and heartbeat cell env into the runtime", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(source, /const dataCellId = value\("INSTANTML_CLOUD_RUN_DATA_CELL"\)/);
+  assert.match(source, /INSTANTML_DEPLOY_ENV: deploymentEnv/);
+  assert.match(source, /INSTANTML_DEFAULT_DATA_CELL_ID: dataCellId/);
+  assert.match(source, /envVars\.INSTANTML_CELL_ID = target\.cellId/);
+});
+
+test("deploy helper mounts the self-hosted ClickHouse tenant connection the data plane reads", () => {
+  // Regression guard: PR #172 renamed the runtime env vars from
+  // CLICKHOUSE_INSTANTML_USER_DATA_* to CLICKHOUSE_INSTANTML_TENANT_* but
+  // dropped the secret mounts, leaving the data plane on the localhost default
+  // so its /readyz startup probe failed and every deploy broke. The Secret
+  // Manager secrets keep their historical user-data names.
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(
+    source,
+    /\["CLICKHOUSE_INSTANTML_TENANT_ENDPOINT", "instantml-clickhouse-user-data-endpoint", true\]/,
+  );
+  assert.match(
+    source,
+    /\["CLICKHOUSE_INSTANTML_TENANT_USERNAME", "instantml-clickhouse-user-data-username", true\]/,
+  );
+  assert.match(
+    source,
+    /\["CLICKHOUSE_INSTANTML_TENANT_PASSWORD", "instantml-clickhouse-user-data-password", true\]/,
+  );
+  // The renamed runtime vars must not regress back to the pruned USER_DATA names.
+  assert.doesNotMatch(source, /CLICKHOUSE_INSTANTML_USER_DATA_/);
+});
+
 test("deploy helper does not configure a hosted signup allowlist", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
   const workflow = fs.readFileSync(path.join(repo, ".github", "workflows", "deploy-cloud-run.yml"), "utf8");
@@ -298,11 +331,17 @@ test("deploy helper keeps public router split paths and backend timeout complete
   ]) {
     assert.match(source, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }
+  const urlMapPathBlock = source.match(/pathRules:\n  - paths:\n(?<paths>(?:    - .+\n)+)    service: \$\{controlBackend\}/)?.groups?.paths ?? "";
+  assert.ok(urlMapPathBlock, "public router control path rules should be inspectable");
+  const urlMapPaths = [...urlMapPathBlock.matchAll(/    - (.+)/g)].map((match) => match[1]);
+  assert.deepEqual(urlMapPaths, [...new Set(urlMapPaths)], "public router control path rules should be unique");
   assert.doesNotMatch(
     source,
     /- \/api\/reports\s+- \/api\/reports\/\*\s+service: \$\{controlBackend\}/,
     "reports should not be pinned to the control backend",
   );
+  assert.doesNotMatch(source, /- \/api\/admin(?:\n|$)/, "admin routes should not be exposed through the public router");
+  assert.doesNotMatch(source, /path: \/api\/admin\//, "public router smoke should not exercise admin routes");
   assert.match(source, /Report routes use data plane/, "URL map tests should route reports through the data backend");
   assert.match(source, /label: "data reports route"/, "public router smoke should verify the reports collection route");
   assert.match(source, /label: "data reports panels route"/, "public router smoke should verify report subroutes");

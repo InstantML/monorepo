@@ -34,15 +34,15 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::{
-    AbortArtifactUploadRequest, AdminApiKeySummary, AdminBillingSummary, AdminOrgCounts,
-    AdminOrganizationSummary, AdminOverviewQuerySummary, AdminOverviewResponse,
-    AdminOverviewTotals, AdminRiskItem, AdminStorageSummary, AdminUsageGauge, AdminUserIdentity,
-    AdminUserOrgMembership, AdminUserSummary, ArtifactAliasRow, ArtifactCollectionInput,
-    ArtifactCollectionRow, ArtifactEdgeRow, ArtifactManifestEntriesRecord,
-    ArtifactManifestEntryRow, ArtifactUploadFile, ArtifactUploadSessionRow, ArtifactVersionRow,
-    AttributeInput, AttributeRow, AuthSessionPayload, BillingAccountProjection,
-    BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo, BillingCheckoutIntent,
-    BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
+    AbortArtifactUploadRequest, AdminApiKeySummary, AdminBillingSummary, AdminDataCellRouteCounts,
+    AdminDataCellSummary, AdminDataCellsResponse, AdminOrgCounts, AdminOrganizationSummary,
+    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem,
+    AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
+    AdminUserSummary, ArtifactAliasRow, ArtifactCollectionInput, ArtifactCollectionRow,
+    ArtifactEdgeRow, ArtifactManifestEntriesRecord, ArtifactManifestEntryRow, ArtifactUploadFile,
+    ArtifactUploadSessionRow, ArtifactVersionRow, AttributeInput, AttributeRow, AuthSessionPayload,
+    BillingAccountProjection, BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo,
+    BillingCheckoutIntent, BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
     BillingPlanChangeRequest, BillingPortalRequest, BillingSeatChangeRequest,
     BillingSubscriptionRecord, BillingUsageReportRecord, ClerkAuthRequest,
     ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
@@ -860,6 +860,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::reports::list_org_panels,
         // admin
         crate::http::handlers::admin::admin_overview,
+        crate::http::handlers::admin::admin_data_cells,
         // orgs / users
         crate::http::handlers::orgs::create_user,
         crate::http::handlers::orgs::list_users,
@@ -1050,6 +1051,9 @@ impl Modify for SecurityAddon {
         AdminOrgCounts,
         AdminUsageGauge,
         AdminStorageSummary,
+        AdminDataCellsResponse,
+        AdminDataCellSummary,
+        AdminDataCellRouteCounts,
         AdminBillingSummary,
         // domain
         PublicArtifactRow,

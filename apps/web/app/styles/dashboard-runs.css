@@ -235,9 +235,9 @@
   overflow: visible;
 }
 
-.runs-workspace.drawer-open {
-  grid-template-columns: 270px minmax(0, 1fr) 340px;
-}
+/* The add-panels drawer floats over the content as a fixed overlay (see
+ * .panel-drawer in panels.css), so the workspace grid keeps its two columns
+ * and the panel content is no longer pushed to the left when it opens. */
 
 .workspace-run-rail {
   position: sticky;
@@ -476,10 +476,6 @@
 
 .runs-workspace.run-rail-collapsed {
   grid-template-columns: 54px minmax(0, 1fr);
-}
-
-.runs-workspace.run-rail-collapsed.drawer-open {
-  grid-template-columns: 54px minmax(0, 1fr) 340px;
 }
 
 .runs-workspace.run-rail-collapsed .workspace-run-rail {
@@ -1099,10 +1095,6 @@
 .workspace-panel-toolbar .custom-select-control {
   align-self: center;
   display: block;
-}
-
-.workspace-mode-select .select-trigger {
-  width: 128px;
 }
 
 /* All-projects overview (audit 3.1): explicit project cards when no project

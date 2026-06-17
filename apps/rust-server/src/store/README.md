@@ -4,9 +4,14 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
 
 ## Module Map
 
-- `mod.rs`: shared `Store`/`StoreData` types, deterministic control/tenant operational replay, data-plane control-record refresh, tenant replay validation, local org bootstrap, durable append helper, readiness checks, and public re-exports.
+- `mod.rs`: shared `Store`/`StoreData` types, deterministic control/tenant
+  operational replay, data-plane control-record refresh, current-cell data-cell
+  heartbeat, tenant replay validation, local org bootstrap, durable append
+  helper, readiness checks, and public re-exports. Route movement events stay
+  in Postgres audit tables and are not loaded on every projection refresh.
 - `admin.rs`: read-only operator overview projection for users, orgs, storage
-  posture, billing state, public API-key metadata, and risk queues.
+  posture, billing state, public API-key metadata, data-cell registry summaries,
+  and risk queues.
 - `auth.rs`: users, organizations-as-workspaces, memberships, sessions, browser-session workspace creation/switching, service accounts, API keys, and admin checks.
 - `billing.rs`: Stripe billing projections, Checkout intent fulfillment, Customer Portal responses, webhook event idempotency, and payment-state write gates.
 - `console_logs.rs`: bounded stdout/stderr validation, idempotent log writes, cursor encoding, and log read response shaping.
@@ -27,7 +32,9 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
 - `demo.rs`: synthetic demo project reset data.
 - `access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
 - `summaries.rs`: run summaries, artifact counts, metric-series conversion, and export metric reads.
-- `tenants.rs`: hosted tenant route payloads, database/cloud-service provisioning, lazy tenant loading, and per-org MetricStore resolution.
+- `tenants.rs`: hosted tenant route payloads, current-cell placement metadata,
+  database/cloud-service provisioning, lazy tenant loading, and per-org
+  MetricStore resolution.
 - `device_code.rs`: RFC 8628 device-code grant state machine — pending/authorized/denied/expired lifecycle, rate-limit enforcement, user-code generation, and API key issuance on confirm.
 - `validation.rs`: shared validation, JSON value shaping, slugging, and focused unit tests.
 

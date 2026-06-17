@@ -9,7 +9,6 @@ import {
   Package,
   Settings,
   Telescope,
-  UploadCloud,
 } from "lucide-react";
 
 import { tabFromPath, tabToPath } from "../src/routes.js";
@@ -37,7 +36,6 @@ export const navGroups = [
     items: [
       { id: "datasets", label: "Datasets", icon: Database },
       { id: "artifacts", label: "Artifacts", icon: Package },
-      { id: "imports", label: "Imports", icon: UploadCloud },
       { id: "insights", label: "Insights", icon: Telescope },
     ],
   },

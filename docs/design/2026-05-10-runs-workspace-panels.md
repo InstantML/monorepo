@@ -30,8 +30,7 @@ Sources reviewed:
 
 Important W&B workspace behaviors to adapt:
 
-- Workspaces can be automatic or manual.
-- Automatic workspaces generate panels from logged keys; manual workspaces show only intentionally added panels.
+- Workspaces auto-generate a useful first board from logged keys, then preserve user curation without exposing an automatic/manual mode choice.
 - Panels live inside sections; sections can be collapsed, added, renamed, deleted, and configured.
 - Panels can be added globally or directly to a section.
 - Quick add creates panels from available metric keys.
@@ -167,14 +166,15 @@ type PanelSettings = {
 
 First-slice generation rules:
 
-- Automatic mode generates a capped high-signal line-panel subset from available metric keys, grouped by first prefix (`train`, `eval`, `system`, `custom`). The full metric key set remains available through the metric catalog and add-panel drawer. Rendering remains bounded by visible-section and panel caps.
-- Manual mode starts as a blank slate when selected explicitly. The local default for existing users may seed one starter panel, but the mode label must be clear.
+- The first board generates a capped high-signal line-panel subset from available metric keys, grouped by first prefix (`train`, `eval`, `system`, `custom`). The full metric key set remains available through the metric catalog and add-panel drawer. Rendering remains bounded by visible-section and panel caps.
+- Any user layout edit, including adding, removing, moving, resizing, or editing a panel, marks the stored workspace as customized internally so later metric discovery does not overwrite the curated board. The visible UI does not expose automatic/manual modes.
+- `Rebuild layout` regenerates the auto-created board from logged metric keys and remains undoable.
 - Quick add can add any available metric key that is not already represented by a visible panel.
 - Workspace panel runsets draw from explicitly selected runs first, up to the global `MAX_SELECTED_RUNS` browser/network safety cap. If no runs are selected, panels fall back to the current filtered run page/top N and use each panel's `maxRuns` setting as the automatic preview cap.
 - Unit-bounded metrics such as accuracy, F1, precision, recall, and AUC use a `0..1` y-axis when logged values are within that range. Unbounded metrics such as loss, reward, and return keep auto-fit y domains.
 - Chart range brushing is a local view interaction for metric charts and fullscreen workspace panels. Dragging a range chooses an inspected segment; the main chart fits to the visible points inside that segment and recomputes the y-domain from those points, so zooming into a flat or volatile segment uses the chart area instead of preserving the full-run y-scale.
 - Panel settings are resolved by precedence: workspace defaults < section overrides < panel overrides.
-- Manual panel placement is resolved directly from `panel.layout`. Panels without a valid layout use `{ w: 6, h: 4 }`.
+- Custom panel placement is resolved directly from `panel.layout`. Panels without a valid layout use `{ w: 6, h: 4 }`.
 - Moving a panel preserves its `id`, `settings`, and `layout`.
 - Dropping a panel outside named sections creates or reuses a local `section-unsectioned` section named `Unsectioned`. This is the frontend-local approximation of Grafana's top-level dashboard placement while the current data model keeps panels section-owned.
 - Resize is intentionally coarse in the MVP. It snaps to grid columns/rows rather than storing pixel sizes, which keeps layouts portable across desktop widths and future API persistence.
@@ -273,7 +273,7 @@ Panel rendering flow:
 
 ```mermaid
 flowchart TD
-  A["Metric keys from run summary"] --> B["Build automatic/default sections"]
+  A["Metric keys from run summary"] --> B["Build generated/default sections"]
   B --> C["WorkspaceView local state"]
   C --> D["Visible section panels"]
   D --> E["Unique metric keys needed by visible panels"]
@@ -303,7 +303,7 @@ Files:
 
 ## Performance Considerations
 
-- Automatic mode generates a capped high-signal panel subset for responsiveness on rich projects; users can add any remaining logged metric key from the drawer.
+- The generated starting board uses a capped high-signal panel subset for responsiveness on rich projects; users can add any remaining logged metric key from the drawer.
 - Each panel fetches only selected runs up to `MAX_SELECTED_RUNS`, or the top visible runs up to `maxRuns` when nothing is selected, with metric points capped at 1000.
 - Deduplicate metric requests across panels by metric key.
 - Use active-tab rendering already in place so other tabs do not rerender.
@@ -316,7 +316,7 @@ Files:
 - No runs: show empty workspace with reset-demo and add-panel disabled until metrics exist.
 - No metric keys: show an empty `Charts` section and route users to SDK logging/imports.
 - Failed metric fetch: panel card shows a scoped error without breaking the workspace.
-- Invalid saved layout: reset to generated automatic layout and show a client-safe message.
+- Invalid saved layout: reset to the generated layout and show a client-safe message.
 - Mobile drawer overflow: drawer becomes a full-width sheet below the filter area.
 
 ## Testing Plan
@@ -352,8 +352,8 @@ Movable/resizable panel layout amendment review:
 
 Senior product/design review:
 
-- Finding: Automatic/manual modes were semantically wrong if automatic only generated a preferred subset and manual started pre-populated.
-- Decision: Automatic now means “generate a bounded useful starting set from logged keys,” grouped by prefix, while preserving full-key add/search. Manual is defined as blank when selected explicitly; local default seeding must be labeled clearly.
+- Finding: Automatic/manual modes were semantically wrong if automatic only generated a preferred subset and manual either started blank or preserved current panels.
+- Decision: Remove the user-facing mode switch. The workspace now auto-generates a bounded useful starting set from logged keys, then silently becomes customized after user edits while preserving full-key add/search.
 - Finding: Settings hierarchy was promised but not modeled.
 - Decision: Add `WorkspaceSettings`, section overrides, panel overrides, and explicit precedence.
 - Finding: First slice was over-scoped with line/bar/scatter/parallel.
@@ -381,8 +381,8 @@ Veteran ML researcher review:
 - Decision: First UI surface should make room for tag/config/metric filters, but only implement existing search/status/project controls plus a clear future extension point.
 - Finding: Scatter/parallel require a typed field catalog.
 - Decision: Defer non-line panels until `FieldRef` semantics and field catalog endpoints are designed.
-- Finding: Automatic sections should use metric prefixes.
-- Decision: Automatic sections group by first prefix.
+- Finding: Generated sections should use metric prefixes.
+- Decision: Generated sections group by first prefix.
 
 ## Decision
 
@@ -390,9 +390,9 @@ Accepted for a frontend-local first slice implementing W&B-style Runs workspace 
 
 ## Implementation Notes
 
-- Implemented the frontend-local first slice in `apps/web` with automatic prefix sections, line panels, panel search, add/edit/fullscreen/remove/duplicate controls, and local-storage layout sanitization.
+- Implemented the frontend-local first slice in `apps/web` with generated prefix sections, line panels, panel search, add/edit/fullscreen/remove/duplicate controls, and local-storage layout sanitization.
 - Amended the first slice with a single global add-panel entry point, drag-to-move panels between sections/unsectioned placement, lower-right panel resizing, and persisted `w`/`h` layout units.
-- Added UI smoke coverage for workspace pagination, automatic/manual panels, add/edit/collapse/fullscreen flows, desktop mid-width behavior, and mobile horizontal-overflow checks.
-- Added UI smoke coverage for panel resize handles, moving panels between sections, and preserving the customized placement through reload before resetting back to automatic mode.
+- Added UI smoke coverage for workspace pagination, generated/customized panels, add/edit/collapse/fullscreen flows, desktop mid-width behavior, and mobile horizontal-overflow checks.
+- Added UI smoke coverage for panel resize handles, moving panels between sections, and preserving the customized placement through reload before rebuilding the generated layout.
 - Added chart-range zoom behavior and fullscreen panel polish: the modal owns the visible title/metric context, hides the duplicate inner card header, keeps the plot bounded to the viewport, and exposes the range brush for zooming inspected sections.
 - Rust/ClickHouse workspace persistence remains deferred until human user identity and org membership roles are present in the Rust request context.

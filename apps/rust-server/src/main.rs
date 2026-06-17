@@ -130,6 +130,7 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         control_db,
         config.hosted_clickhouse.clone(),
         config.byoc_clickhouse.clone(),
+        config.cell_routing.clone(),
     )
     .await?;
     if config.control_database_url.is_some() {
@@ -187,6 +188,7 @@ async fn connect_store_with_retry(
     control_db: Option<ControlDb>,
     hosted_clickhouse: Option<instantml_rust_server::config::HostedClickHouseConfig>,
     byoc_clickhouse: instantml_rust_server::config::ByocClickHouseConfig,
+    cell_routing: instantml_rust_server::config::CellRoutingConfig,
 ) -> instantml_rust_server::AppResult<store::Store> {
     let retry_delays = [
         Duration::from_secs(1),
@@ -200,6 +202,7 @@ async fn connect_store_with_retry(
             control_db.clone(),
             hosted_clickhouse.clone(),
             byoc_clickhouse.clone(),
+            cell_routing.clone(),
         )
         .await
         {
@@ -286,6 +289,7 @@ async fn seed_demo(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         control_db,
         config.hosted_clickhouse.clone(),
         config.byoc_clickhouse.clone(),
+        config.cell_routing.clone(),
     )
     .await?;
     let session = store::create_dev_google_session(
@@ -336,6 +340,7 @@ async fn worker(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         control_db,
         config.hosted_clickhouse.clone(),
         config.byoc_clickhouse.clone(),
+        config.cell_routing.clone(),
     )
     .await?;
     let deleted = store::delete_expired_idempotency(&store).await?;

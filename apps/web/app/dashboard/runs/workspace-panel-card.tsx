@@ -1182,20 +1182,20 @@ export function WorkspaceSectionView({
   workspacePanelRuns: RunSummary[];
   workspaceSeries: Record<string, MetricSeries[]>;
 }) {
-  // In automatic mode, line panels whose metric has loaded but matches no run
+  // In a generated workspace, line panels whose metric has loaded but matches no run
   // in the current scope are hidden behind a disclosure instead of rendering
   // tall "no data for metric" charts (panel search always shows everything).
   const [showEmptyPanels, setShowEmptyPanels] = useState(false);
   const panelRunIdSet = useMemo(() => new Set(workspacePanelRuns.map((run) => run.id)), [workspacePanelRuns]);
-  const isEmptyAutoPanel = (panel: WorkspacePanel) =>
+  const isEmptyGeneratedPanel = (panel: WorkspacePanel) =>
     view.mode === "automatic"
     && panel.type === "line"
     && workspacePanelRuns.length > 0
     && Object.prototype.hasOwnProperty.call(workspaceSeries, panel.metricKey)
     && !(workspaceSeries[panel.metricKey] ?? []).some((item) => panelRunIdSet.has(item.id) && (item.points?.length ?? 0) > 0);
   const hideEmpties = !panelSearchActive && !showEmptyPanels;
-  const emptyPanelCount = panelSearchActive ? 0 : visiblePanels.filter(isEmptyAutoPanel).length;
-  const shownPanels = hideEmpties ? visiblePanels.filter((panel) => !isEmptyAutoPanel(panel)) : visiblePanels;
+  const emptyPanelCount = panelSearchActive ? 0 : visiblePanels.filter(isEmptyGeneratedPanel).length;
+  const shownPanels = hideEmpties ? visiblePanels.filter((panel) => !isEmptyGeneratedPanel(panel)) : visiblePanels;
   return (
     <section className={`workspace-section ${section.collapsed ? "collapsed" : ""}`} data-section-id={section.id}>
       <div className="workspace-section-head">

@@ -161,6 +161,19 @@ const softwareApplicationJsonLd = {
   },
 };
 
+const clerkAppearance = {
+  variables: {
+    colorBackground: "#ffffff",
+    colorText: "#172016",
+    colorTextSecondary: "#64715b",
+    colorPrimary: "#0f8a54",
+    colorDanger: "#b42318",
+    colorInputBackground: "#ffffff",
+    colorInputText: "#172016",
+    borderRadius: "6px",
+  },
+};
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
@@ -177,7 +190,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body>
-        <ClerkProvider>{children}</ClerkProvider>
+        <ClerkProvider appearance={clerkAppearance}>{children}</ClerkProvider>
       </body>
     </html>
   );
