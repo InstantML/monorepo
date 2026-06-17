@@ -1299,6 +1299,27 @@ small {
   font-style: italic;
 }
 
+/* The overflow chip is a real button (it expands/collapses the hidden runs);
+   strip the native button chrome so it sits flush with the static chips. */
+button.legend-chip {
+  appearance: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.legend-chip.legend-overflow:hover {
+  color: var(--text);
+  background: var(--chart-grid);
+}
+
+/* Revealing every run can make the legend tall; only cap (and scroll) once the
+   list is long enough to crowd out the chart below — modest expansions stay
+   fully visible. */
+.chart-legend-expanded {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
 .legend-dot,
 .legend-line {
   width: 8px;
