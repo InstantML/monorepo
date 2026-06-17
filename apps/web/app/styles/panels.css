@@ -625,16 +625,22 @@
   padding: 16px 18px 28px;
 }
 
+/* Floats over the workspace content from the right instead of taking a grid
+ * column, so opening it no longer pushes the panels to the left. */
 .panel-drawer {
-  position: sticky;
-  top: var(--topbar-height);
+  position: fixed;
+  top: calc(var(--topbar-height) + 14px);
+  right: 18px;
+  bottom: 18px;
   z-index: calc(var(--z-pop, 100) - 1);
   display: grid;
   align-content: start;
   gap: 14px;
-  height: calc(100vh - var(--topbar-height));
+  width: min(380px, calc(100vw - 36px));
   overflow: auto;
-  border-left: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 22px 60px rgba(24, 34, 45, 0.18);
   background: var(--surface);
   padding: 14px;
 }
