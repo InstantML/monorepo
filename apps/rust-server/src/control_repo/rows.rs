@@ -9,9 +9,9 @@ use uuid::Uuid;
 
 use crate::domain::{
     BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
-    BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, EmailDeliveryRow,
-    MembershipRow, OrgInvitationRow, OrganizationRow, PublicApiKeyRow, ServiceAccountRow, UserRow,
-    UserSessionRow, WorkspaceViewRow,
+    BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
+    EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow, PublicApiKeyRow,
+    ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow, WorkspaceViewRow,
 };
 use crate::store::TenantRouteRecord;
 
@@ -336,6 +336,10 @@ pub(super) struct TenantRouteRowDb {
     org_id: Uuid,
     status: String,
     provisioner: String,
+    cell_id: Option<String>,
+    route_version: i64,
+    placement_reason: Option<String>,
+    assigned_at: Option<DateTime<Utc>>,
     plan_tier: Option<String>,
     warehouse_kind: Option<String>,
     requested_min_replica_memory_gb: Option<i32>,
@@ -362,6 +366,10 @@ impl From<TenantRouteRowDb> for TenantRouteRecord {
             org_id: row.org_id,
             status: row.status,
             provisioner: row.provisioner,
+            cell_id: row.cell_id,
+            route_version: row.route_version,
+            placement_reason: row.placement_reason,
+            assigned_at: row.assigned_at,
             plan_tier: row.plan_tier,
             warehouse_kind: row.warehouse_kind,
             requested_min_replica_memory_gb: opt_i32_to_u32(row.requested_min_replica_memory_gb),
@@ -380,6 +388,94 @@ impl From<TenantRouteRowDb> for TenantRouteRecord {
             created_at: row.created_at,
             updated_at: row.updated_at,
             error: row.error,
+        }
+    }
+}
+
+#[derive(FromRow)]
+pub(super) struct DataCellRowDb {
+    cell_id: String,
+    environment: String,
+    region: String,
+    tier: String,
+    status: String,
+    service_name: String,
+    public_api_base: Option<String>,
+    internal_api_base: Option<String>,
+    clickhouse_endpoint_secret_ref: Option<String>,
+    clickhouse_username_secret_ref: Option<String>,
+    clickhouse_password_secret_ref: Option<String>,
+    clickhouse_database_mode: Option<String>,
+    max_orgs: Option<i32>,
+    max_metric_points_monthly: Option<i64>,
+    max_api_requests_monthly: Option<i64>,
+    max_retained_bytes: Option<i64>,
+    max_disk_usage_pct: Option<i32>,
+    reserved_headroom_pct: Option<i32>,
+    last_health_at: Option<DateTime<Utc>>,
+    last_backup_at: Option<DateTime<Utc>>,
+    notes: Option<String>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<DataCellRowDb> for DataCellRow {
+    fn from(row: DataCellRowDb) -> Self {
+        DataCellRow {
+            cell_id: row.cell_id,
+            environment: row.environment,
+            region: row.region,
+            tier: row.tier,
+            status: row.status,
+            service_name: row.service_name,
+            public_api_base: row.public_api_base,
+            internal_api_base: row.internal_api_base,
+            clickhouse_endpoint_secret_ref: row.clickhouse_endpoint_secret_ref,
+            clickhouse_username_secret_ref: row.clickhouse_username_secret_ref,
+            clickhouse_password_secret_ref: row.clickhouse_password_secret_ref,
+            clickhouse_database_mode: row.clickhouse_database_mode,
+            max_orgs: row.max_orgs,
+            max_metric_points_monthly: row.max_metric_points_monthly,
+            max_api_requests_monthly: row.max_api_requests_monthly,
+            max_retained_bytes: row.max_retained_bytes,
+            max_disk_usage_pct: row.max_disk_usage_pct,
+            reserved_headroom_pct: row.reserved_headroom_pct,
+            last_health_at: row.last_health_at,
+            last_backup_at: row.last_backup_at,
+            notes: row.notes,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+#[derive(FromRow)]
+pub(super) struct TenantRouteEventRowDb {
+    id: Uuid,
+    org_id: Uuid,
+    old_cell_id: Option<String>,
+    new_cell_id: Option<String>,
+    old_status: Option<String>,
+    new_status: String,
+    route_version: i64,
+    actor: String,
+    reason: String,
+    created_at: DateTime<Utc>,
+}
+
+impl From<TenantRouteEventRowDb> for TenantRouteEventRow {
+    fn from(row: TenantRouteEventRowDb) -> Self {
+        TenantRouteEventRow {
+            id: row.id,
+            org_id: row.org_id,
+            old_cell_id: row.old_cell_id,
+            new_cell_id: row.new_cell_id,
+            old_status: row.old_status,
+            new_status: row.new_status,
+            route_version: row.route_version,
+            actor: row.actor,
+            reason: row.reason,
+            created_at: row.created_at,
         }
     }
 }

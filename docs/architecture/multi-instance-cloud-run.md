@@ -243,6 +243,8 @@ verify the public URL and write it into local frontend env.
 | `INSTANTML_CLOUD_RUN_CONTROL_SERVICE` | Override control service name |
 | `INSTANTML_CLOUD_RUN_DATA_SERVICE` | Override data service name |
 | `INSTANTML_CLOUD_RUN_DATA_CELL` | Operator label for the data cell |
+| `INSTANTML_DEFAULT_DATA_CELL_ID` | Runtime default data-cell placement target; the deploy helper sets this from `INSTANTML_CLOUD_RUN_DATA_CELL` |
+| `INSTANTML_CELL_ID` | Per-service data-cell identity. Data services receive it from the deploy helper, it takes precedence over the default for local placement, and it is the only env var that enables automatic `data_cells` heartbeats. |
 | `INSTANTML_CLOUD_RUN_CONTROL_SCALING` | `auto` or `manual`; default `manual` in prod and `auto` in staging |
 | `INSTANTML_CLOUD_RUN_DATA_SCALING` | `auto` or `manual`; default `manual` in prod and `auto` in staging |
 | `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES` | Manual control instances; default `1` |

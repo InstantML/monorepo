@@ -190,7 +190,7 @@ INSTANTML_API_ALLOWED_ORIGINS=http://127.0.0.1:8000 \
 npm run web:start
 ```
 
-Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create the copy-once SDK key, and enter the dashboard. Choose a Free/Pro/Premium plan, choose hosted storage or Premium BYOC ClickHouse, and optionally invite included seats. BYOC signups must first validate the customer-owned GCP ClickHouse endpoint from onboarding; any unready storage state keeps the browser on onboarding and the API key/dashboard paths stay blocked until the Rust data-plane route is ready.
+Then open `http://127.0.0.1:3000`, sign up with the labeled local dev Google-style flow, create the copy-once SDK key, and enter the dashboard. With explicit loopback API bases, a loopback web host, and no Clerk runtime env, `proxy.ts` bypasses Clerk middleware so `/signup` and `/signin` can use dev auth; when Clerk env is present or any explicit API base is non-local, the managed Clerk middleware still runs. Choose a Free/Pro/Premium plan, choose hosted storage or Premium BYOC ClickHouse, and optionally invite included seats. BYOC signups must first validate the customer-owned GCP ClickHouse endpoint from onboarding; any unready storage state keeps the browser on onboarding and the API key/dashboard paths stay blocked until the Rust data-plane route is ready.
 
 For paid signup and Settings billing controls, configure the Rust API with
 `STRIPE_SECRET_KEY` and optionally `STRIPE_WEBHOOK_SECRET` plus

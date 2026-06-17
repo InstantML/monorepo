@@ -1,12 +1,15 @@
 use super::*;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use url::Url;
 
+use crate::control_repo::{
+    data_cell_timestamp_is_not_fresh, DATA_CELL_BACKUP_MAX_AGE_SECS, DATA_CELL_HEALTH_MAX_AGE_SECS,
+};
 use crate::domain::{
-    AdminApiKeySummary, AdminBillingSummary, AdminOrgCounts, AdminOrganizationSummary,
-    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem,
-    AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
-    AdminUserSummary,
+    AdminApiKeySummary, AdminBillingSummary, AdminDataCellRouteCounts, AdminDataCellSummary,
+    AdminDataCellsResponse, AdminOrgCounts, AdminOrganizationSummary, AdminOverviewQuerySummary,
+    AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem, AdminStorageSummary,
+    AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership, AdminUserSummary, DataCellRow,
 };
 
 pub const ADMIN_OVERVIEW_DEFAULT_LIMIT: usize = 100;
@@ -24,6 +27,101 @@ pub async fn admin_overview(
 ) -> AppResult<AdminOverviewResponse> {
     let data = store.data.lock().await;
     Ok(build_admin_overview(&data, options, Utc::now()))
+}
+
+pub async fn admin_data_cells(store: &Store) -> AppResult<AdminDataCellsResponse> {
+    let data = store.data.lock().await;
+    Ok(build_admin_data_cells(&data, Utc::now()))
+}
+
+fn build_admin_data_cells(data: &StoreData, now: DateTime<Utc>) -> AdminDataCellsResponse {
+    let counts_by_cell = route_counts_by_cell(data);
+    let mut data_cells = data
+        .data_cells
+        .values()
+        .map(|cell| {
+            let counts = counts_by_cell
+                .get(&cell.cell_id)
+                .cloned()
+                .unwrap_or_default();
+            let assigned_orgs = counts.ready + counts.provisioning;
+            AdminDataCellSummary {
+                cell_id: cell.cell_id.clone(),
+                environment: cell.environment.clone(),
+                region: cell.region.clone(),
+                tier: cell.tier.clone(),
+                status: cell.status.clone(),
+                service_name: cell.service_name.clone(),
+                public_api_base: cell.public_api_base.clone(),
+                clickhouse_database_mode: cell.clickhouse_database_mode.clone(),
+                max_orgs: cell.max_orgs,
+                max_metric_points_monthly: cell.max_metric_points_monthly,
+                max_api_requests_monthly: cell.max_api_requests_monthly,
+                max_retained_bytes: cell.max_retained_bytes,
+                max_disk_usage_pct: cell.max_disk_usage_pct,
+                reserved_headroom_pct: cell.reserved_headroom_pct,
+                last_health_at: cell.last_health_at,
+                last_backup_at: cell.last_backup_at,
+                created_at: cell.created_at,
+                updated_at: cell.updated_at,
+                assigned_orgs,
+                route_counts: counts,
+                admission_status: data_cell_admission_status(cell, assigned_orgs, now),
+            }
+        })
+        .collect::<Vec<_>>();
+    data_cells.sort_by(|left, right| {
+        left.environment
+            .cmp(&right.environment)
+            .then_with(|| left.tier.cmp(&right.tier))
+            .then_with(|| left.cell_id.cmp(&right.cell_id))
+    });
+    AdminDataCellsResponse {
+        schema_version: 1,
+        generated_at: now,
+        data_cells,
+    }
+}
+
+fn route_counts_by_cell(data: &StoreData) -> BTreeMap<String, AdminDataCellRouteCounts> {
+    let mut counts_by_cell = BTreeMap::<String, AdminDataCellRouteCounts>::new();
+    for route in data.tenant_routes.values() {
+        let Some(cell_id) = route.cell_id.as_ref() else {
+            continue;
+        };
+        let counts = counts_by_cell.entry(cell_id.clone()).or_default();
+        counts.total += 1;
+        match route.status.as_str() {
+            "ready" => counts.ready += 1,
+            "provisioning" => counts.provisioning += 1,
+            "failed" => counts.failed += 1,
+            _ => counts.other += 1,
+        }
+    }
+    counts_by_cell
+}
+
+fn data_cell_admission_status(
+    cell: &DataCellRow,
+    assigned_orgs: usize,
+    now: DateTime<Utc>,
+) -> String {
+    if cell.status != "open" {
+        return "closed".to_string();
+    }
+    if data_cell_timestamp_is_not_fresh(now, cell.last_health_at, DATA_CELL_HEALTH_MAX_AGE_SECS) {
+        return "stale_health".to_string();
+    }
+    if data_cell_timestamp_is_not_fresh(now, cell.last_backup_at, DATA_CELL_BACKUP_MAX_AGE_SECS) {
+        return "stale_backup".to_string();
+    }
+    if cell
+        .max_orgs
+        .is_some_and(|max_orgs| assigned_orgs >= max_orgs.max(0) as usize)
+    {
+        return "full".to_string();
+    }
+    "open".to_string()
 }
 
 fn build_admin_overview(
@@ -397,6 +495,10 @@ fn storage_summary(
         storage_choice: org.storage_choice.clone(),
         storage_state: org.storage_state.clone(),
         tenant_routing_tier: org.tenant_routing_tier.clone(),
+        cell_id: route.and_then(|route| route.cell_id.clone()),
+        route_version: route.map(|route| route.route_version),
+        placement_reason: route.and_then(|route| route.placement_reason.clone()),
+        assigned_at: route.and_then(|route| route.assigned_at),
         route_status: route.map(|route| route.status.clone()),
         route_provisioner: route.map(|route| route.provisioner.clone()),
         route_plan_tier: route.and_then(|route| route.plan_tier.clone()),
@@ -824,6 +926,7 @@ fn key_status_rank(status: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::control_repo::DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS;
     use chrono::TimeZone;
 
     fn ts(day: u32) -> DateTime<Utc> {
@@ -878,6 +981,10 @@ mod tests {
             org_id: org.id,
             status: "failed".to_string(),
             provisioner: "cloud-service".to_string(),
+            cell_id: Some("standard-us-central1-a".to_string()),
+            route_version: 3,
+            placement_reason: Some("test-placement".to_string()),
+            assigned_at: Some(now),
             plan_tier: Some("pro".to_string()),
             warehouse_kind: Some("standard".to_string()),
             requested_min_replica_memory_gb: Some(12),
@@ -938,6 +1045,125 @@ mod tests {
         assert!(!serialized.contains("ciphertext"));
         assert!(!serialized.contains("provider leaked"));
         assert!(!serialized.contains("key_hash"));
+    }
+
+    #[test]
+    fn admin_data_cells_reports_capacity_without_internal_secrets() {
+        let now = ts(24);
+        let mut data = base_data();
+        data.insert_data_cell(DataCellRow {
+            cell_id: "standard-us-central1-a".to_string(),
+            environment: "prod".to_string(),
+            region: "us-central1".to_string(),
+            tier: "standard".to_string(),
+            status: "open".to_string(),
+            service_name: "instantml-data-standard-us-central1-a".to_string(),
+            public_api_base: Some("https://api.example.test".to_string()),
+            internal_api_base: Some("https://internal.example.test".to_string()),
+            clickhouse_endpoint_secret_ref: Some("secret/endpoint".to_string()),
+            clickhouse_username_secret_ref: Some("secret/username".to_string()),
+            clickhouse_password_secret_ref: Some("secret/password".to_string()),
+            clickhouse_database_mode: Some("per-org-database".to_string()),
+            max_orgs: Some(2),
+            max_metric_points_monthly: Some(1_000_000),
+            max_api_requests_monthly: Some(100_000),
+            max_retained_bytes: Some(10 * GIB_BYTES),
+            max_disk_usage_pct: Some(70),
+            reserved_headroom_pct: Some(20),
+            last_health_at: Some(now),
+            last_backup_at: Some(now),
+            notes: Some("operator note".to_string()),
+            created_at: now,
+            updated_at: now,
+        });
+        let mut ready_route = data.tenant_routes.values().next().unwrap().clone();
+        ready_route.org_id = Uuid::new_v4();
+        ready_route.status = "ready".to_string();
+        data.insert_tenant_route(ready_route);
+
+        let response = build_admin_data_cells(&data, now);
+        assert_eq!(response.data_cells.len(), 1);
+        let cell = &response.data_cells[0];
+        assert_eq!(cell.cell_id, "standard-us-central1-a");
+        assert_eq!(cell.assigned_orgs, 1);
+        assert_eq!(cell.route_counts.total, 2);
+        assert_eq!(cell.route_counts.ready, 1);
+        assert_eq!(cell.route_counts.failed, 1);
+        assert_eq!(cell.admission_status, "open");
+
+        let serialized = serde_json::to_string(&response).unwrap();
+        assert!(serialized.contains("https://api.example.test"));
+        assert!(!serialized.contains("internal.example.test"));
+        assert!(!serialized.contains("secret/endpoint"));
+        assert!(!serialized.contains("operator note"));
+    }
+
+    #[test]
+    fn admin_data_cells_marks_stale_health_and_backup_as_not_open() {
+        let now = ts(24);
+        let mut data = base_data();
+        let base_cell = DataCellRow {
+            cell_id: "standard-us-central1-a".to_string(),
+            environment: "prod".to_string(),
+            region: "us-central1".to_string(),
+            tier: "standard".to_string(),
+            status: "open".to_string(),
+            service_name: "instantml-data-standard-us-central1-a".to_string(),
+            public_api_base: None,
+            internal_api_base: None,
+            clickhouse_endpoint_secret_ref: None,
+            clickhouse_username_secret_ref: None,
+            clickhouse_password_secret_ref: None,
+            clickhouse_database_mode: Some("per-org-database".to_string()),
+            max_orgs: None,
+            max_metric_points_monthly: None,
+            max_api_requests_monthly: None,
+            max_retained_bytes: None,
+            max_disk_usage_pct: None,
+            reserved_headroom_pct: None,
+            last_health_at: Some(now),
+            last_backup_at: Some(now),
+            notes: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let mut stale_health = base_cell.clone();
+        stale_health.cell_id = "standard-us-central1-b".to_string();
+        stale_health.last_health_at =
+            Some(now - ChronoDuration::seconds(DATA_CELL_HEALTH_MAX_AGE_SECS + 1));
+        data.insert_data_cell(stale_health);
+
+        let mut stale_backup = base_cell.clone();
+        stale_backup.cell_id = "standard-us-central1-c".to_string();
+        stale_backup.last_backup_at =
+            Some(now - ChronoDuration::seconds(DATA_CELL_BACKUP_MAX_AGE_SECS + 1));
+        data.insert_data_cell(stale_backup);
+
+        let mut future_backup = base_cell;
+        future_backup.cell_id = "standard-us-central1-d".to_string();
+        future_backup.last_backup_at =
+            Some(now + ChronoDuration::seconds(DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS + 1));
+        data.insert_data_cell(future_backup);
+
+        let response = build_admin_data_cells(&data, now);
+        let statuses = response
+            .data_cells
+            .into_iter()
+            .map(|cell| (cell.cell_id, cell.admission_status))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            statuses.get("standard-us-central1-b").map(String::as_str),
+            Some("stale_health")
+        );
+        assert_eq!(
+            statuses.get("standard-us-central1-c").map(String::as_str),
+            Some("stale_backup")
+        );
+        assert_eq!(
+            statuses.get("standard-us-central1-d").map(String::as_str),
+            Some("stale_backup")
+        );
     }
 
     #[test]

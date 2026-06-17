@@ -55,3 +55,21 @@ pub async fn admin_overview(
         .await?,
     ))
 }
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/data-cells",
+    tag = "admin",
+    security(("bootstrapToken" = [])),
+    responses(
+        (status = 200, description = "Operator data-cell registry summary", body = crate::domain::AdminDataCellsResponse),
+        (status = 401, description = "Bootstrap token required", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn admin_data_cells(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> AppResult<Json<crate::domain::AdminDataCellsResponse>> {
+    require_strict_bootstrap(&state, &headers)?;
+    Ok(Json(store::admin_data_cells(&state.store).await?))
+}
