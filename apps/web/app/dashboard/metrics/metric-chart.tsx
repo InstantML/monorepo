@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, ImageDown, LineChart, MoreVertical, RefreshCw, Table2 } from "lucide-react";
+import { Check, FileText, ImageDown, LineChart, MoreVertical, RefreshCw, Table2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
@@ -592,10 +592,14 @@ export function MetricChart({
   const showInlineControls = chartView === "chart" && showExportActions;
   const showSmoothing = showInlineControls && typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
-  // What lands in the three-dot menu: y-axis scale/range, smoothing, exports.
+  // What lands in the three-dot menu: chart/table view, y-axis scale/range,
+  // smoothing, exports. The view switch is always present so the menu mirrors
+  // the inline toggle (and stays reachable in summary view, where the inline
+  // controls below are hidden).
+  const menuHasViewToggle = showViewToggle;
   const menuHasYAxis = showInlineControls && showYAxisControls;
   const menuHasExport = showInlineControls && Boolean(exportFilenameBase);
-  const hasMenu = menuHasYAxis || showSmoothing || menuHasExport;
+  const hasMenu = menuHasViewToggle || menuHasYAxis || showSmoothing || menuHasExport;
   const showActions = showViewToggle || hasMenu;
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -776,6 +780,35 @@ export function MetricChart({
             <MoreVertical size={16} aria-hidden="true" />
           </summary>
           <div className="chart-menu-pop" aria-label={`${metricKey} chart options`}>
+            {menuHasViewToggle ? (
+              <>
+                <div className="chart-menu-radiogroup" role="group" aria-label={`${metricKey} view`}>
+                  <button
+                    aria-controls={chartPanelId}
+                    aria-pressed={chartView === "chart"}
+                    className={`chart-menu-item chart-menu-radio${chartView === "chart" ? " selected" : ""}`}
+                    onClick={() => setChartView("chart")}
+                    type="button"
+                  >
+                    <LineChart size={14} aria-hidden="true" />
+                    <span className="chart-menu-radio-label">Chart</span>
+                    {chartView === "chart" ? <Check size={14} className="chart-menu-check" aria-hidden="true" /> : null}
+                  </button>
+                  <button
+                    aria-controls={chartPanelId}
+                    aria-pressed={chartView === "summary"}
+                    className={`chart-menu-item chart-menu-radio${chartView === "summary" ? " selected" : ""}`}
+                    onClick={() => setChartView("summary")}
+                    type="button"
+                  >
+                    <Table2 size={14} aria-hidden="true" />
+                    <span className="chart-menu-radio-label">Summary table</span>
+                    {chartView === "summary" ? <Check size={14} className="chart-menu-check" aria-hidden="true" /> : null}
+                  </button>
+                </div>
+                {menuHasYAxis || showSmoothing || menuHasExport ? <div className="chart-menu-divider" role="separator" /> : null}
+              </>
+            ) : null}
             {menuHasYAxis ? (
               <>
                 <button

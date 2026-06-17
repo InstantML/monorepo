@@ -1136,6 +1136,26 @@ small {
   opacity: 0.45;
 }
 
+/* Chart/table view picker: a radio-style group sharing the menu-item look,
+   with the active option accented and check-marked. */
+.chart-menu-radiogroup {
+  display: grid;
+  gap: 2px;
+}
+
+.chart-menu-radio-label {
+  flex: 1;
+}
+
+.chart-menu-radio.selected {
+  color: var(--accent);
+}
+
+.chart-menu-radio.selected svg,
+.chart-menu-check {
+  color: var(--accent);
+}
+
 .chart-y-range-pop {
   display: grid;
   gap: 8px;
