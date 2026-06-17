@@ -95,8 +95,10 @@ can stay on the same in-process lookup path.
 
 `data_cells` is the operator/heartbeat-maintained registry for hosted
 data-plane cells. A Rust data service with `INSTANTML_CELL_ID` can
-auto-register a conservative row and then refresh health/backup timestamps,
-while operator edits retain status, capacity, service, and secret metadata.
+auto-register a conservative row and then refresh its health timestamp, while
+operator edits retain status, capacity, service, backup freshness, and secret
+metadata. Managed placement requires operator-owned backup freshness and treats
+timestamps more than five minutes in the future as invalid.
 `tenant_routes` now carries nullable `cell_id`, monotonic `route_version`,
 `placement_reason`, and `assigned_at` fields. Route creation/update goes
 through the control repository transaction that takes a per-org advisory lock,

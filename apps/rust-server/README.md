@@ -372,10 +372,12 @@ Root helper-only environment variables:
 When `INSTANTML_CELL_ID` is set and Postgres control storage is configured, the
 Rust data service auto-registers and heartbeats a conservative `data_cells` row
 before placement. Operators can overwrite the row with richer metadata or
-close/drain it; the heartbeat only refreshes health/backup timestamps on
-existing rows. Placement still fails closed when the matching row is closed,
-stale, or full. Customer-owned ClickHouse routes are not assigned to managed
-data cells.
+close/drain it; the heartbeat only refreshes the health timestamp on existing
+rows and never marks backups fresh. Placement still fails closed when the
+matching row is closed, has stale health or backup evidence, or is full.
+Backup evidence is operator-owned; a timestamp more than five minutes in the
+future is treated as invalid so skewed manual writes cannot hold a cell open.
+Customer-owned ClickHouse routes are not assigned to managed data cells.
 - `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Prod defaults to `manual`; staging defaults to `auto`.
 - `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual split instance counts. Values above `1` are blocked unless the matching unsafe control/data test flag is set.
 - `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for split services. Defaults are min `0`, max `1`.

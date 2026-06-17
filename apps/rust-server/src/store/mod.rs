@@ -514,7 +514,7 @@ impl Store {
             max_disk_usage_pct: None,
             reserved_headroom_pct: None,
             last_health_at: Some(now),
-            last_backup_at: Some(now),
+            last_backup_at: None,
             notes: Some("auto-registered current data cell".to_string()),
             created_at: now,
             updated_at: now,
@@ -2243,7 +2243,7 @@ mod tests {
         assert_eq!(stored.region, "us-central1");
         assert_eq!(stored.status, "open");
         assert!(stored.last_health_at.is_some());
-        assert!(stored.last_backup_at.is_some());
+        assert_eq!(stored.last_backup_at, None);
 
         assert!(store
             .data

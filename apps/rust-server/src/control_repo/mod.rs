@@ -30,8 +30,9 @@ use crate::{
 
 /// Postgres SQLSTATE for a unique-constraint violation.
 const PG_UNIQUE_VIOLATION: &str = "23505";
-const DATA_CELL_HEALTH_MAX_AGE_SECS: i64 = 10 * 60;
-const DATA_CELL_BACKUP_MAX_AGE_SECS: i64 = 36 * 60 * 60;
+pub(crate) const DATA_CELL_HEALTH_MAX_AGE_SECS: i64 = 10 * 60;
+pub(crate) const DATA_CELL_BACKUP_MAX_AGE_SECS: i64 = 36 * 60 * 60;
+pub(crate) const DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS: i64 = 5 * 60;
 const CUSTOMER_CLICKHOUSE_PROVISIONER: &str = "customer-clickhouse";
 
 fn is_unique_violation(err: &sqlx::Error) -> bool {
@@ -43,6 +44,18 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 
 fn internal(context: &str, err: sqlx::Error) -> AppError {
     AppError::internal(format!("control-plane query failed ({context}): {err}"))
+}
+
+pub(crate) fn data_cell_timestamp_is_not_fresh(
+    now: DateTime<Utc>,
+    observed_at: Option<DateTime<Utc>>,
+    max_age_secs: i64,
+) -> bool {
+    observed_at.is_none_or(|observed_at| {
+        let age = now.signed_duration_since(observed_at);
+        age < ChronoDuration::seconds(-DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS)
+            || age > ChronoDuration::seconds(max_age_secs)
+    })
 }
 
 /// Identity (provider + subject) and the user it created, written together so a
@@ -1026,10 +1039,9 @@ impl ControlDb {
               clickhouse_database_mode, max_orgs, max_metric_points_monthly, max_api_requests_monthly, \
               max_retained_bytes, max_disk_usage_pct, reserved_headroom_pct, last_health_at, last_backup_at, \
               notes, created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NULL, $20, $21, $22) \
              ON CONFLICT (cell_id) DO UPDATE SET \
                last_health_at = EXCLUDED.last_health_at, \
-               last_backup_at = EXCLUDED.last_backup_at, \
                updated_at = EXCLUDED.updated_at \
              RETURNING cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
                clickhouse_endpoint_secret_ref, clickhouse_username_secret_ref, clickhouse_password_secret_ref, \
@@ -1056,7 +1068,6 @@ impl ControlDb {
         .bind(cell.max_disk_usage_pct)
         .bind(cell.reserved_headroom_pct)
         .bind(cell.last_health_at)
-        .bind(cell.last_backup_at)
         .bind(&cell.notes)
         .bind(cell.created_at)
         .bind(cell.updated_at)
@@ -1275,19 +1286,13 @@ async fn ensure_eligible_cell(
         )));
     }
     let now = Utc::now();
-    if cell.last_health_at.is_none_or(|last_health| {
-        now.signed_duration_since(last_health)
-            > ChronoDuration::seconds(DATA_CELL_HEALTH_MAX_AGE_SECS)
-    }) {
+    if data_cell_timestamp_is_not_fresh(now, cell.last_health_at, DATA_CELL_HEALTH_MAX_AGE_SECS) {
         return Err(AppError::service_unavailable(format!(
             "data cell {} has no recent health check",
             cell.cell_id
         )));
     }
-    if cell.last_backup_at.is_none_or(|last_backup| {
-        now.signed_duration_since(last_backup)
-            > ChronoDuration::seconds(DATA_CELL_BACKUP_MAX_AGE_SECS)
-    }) {
+    if data_cell_timestamp_is_not_fresh(now, cell.last_backup_at, DATA_CELL_BACKUP_MAX_AGE_SECS) {
         return Err(AppError::service_unavailable(format!(
             "data cell {} has no recent backup",
             cell.cell_id
