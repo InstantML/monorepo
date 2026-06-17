@@ -45,6 +45,8 @@ type Props = {
   hasPreviousPage: boolean;
   initialLoadDone: boolean;
   filterBar?: ReactNode;
+  compareSlot?: ReactNode;
+  onRunsViewChange?: (view: RunsViewMode) => void;
   metricKey: string;
   metricOptionsForControls: string[];
   onAddPanel: (sectionId: string, panelMetric: string, type?: WorkspacePanelType) => void;
@@ -152,6 +154,8 @@ export function RunsTabPane({
   hasPreviousPage,
   initialLoadDone,
   filterBar,
+  compareSlot,
+  onRunsViewChange,
   metricKey,
   metricOptionsForControls,
   onAddPanel,
@@ -233,6 +237,13 @@ export function RunsTabPane({
   useEffect(() => {
     if (localStorage.getItem("instantml:next:runs-view") === "table") setRunsView("table");
   }, []);
+  // Mirror the current view up to the shell so the comparison surface (embedded
+  // in the table view) only loads its data while it is on screen.
+  const onRunsViewChangeRef = useRef(onRunsViewChange);
+  onRunsViewChangeRef.current = onRunsViewChange;
+  useEffect(() => {
+    onRunsViewChangeRef.current?.(runsView);
+  }, [runsView]);
   function changeRunsView(view: RunsViewMode) {
     setRunsView(view);
     localStorage.setItem("instantml:next:runs-view", view);
@@ -359,6 +370,7 @@ export function RunsTabPane({
       </div>
       {runsView === "table" ? (
         <div className="runs-table-view">
+          {compareSlot}
           <RunsTable
             canControlRuns={canControlRuns}
             columns={tableColumns}

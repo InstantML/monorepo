@@ -1571,6 +1571,60 @@ button.compare-row-head.active {
   }
 }
 
+/* ── Embedded comparison panel (Runs → Table view, 2026-06) ─────────────────
+ * The standalone Compare page collapsed into the runs table view: this panel
+ * sits above the run picker table and renders the side-by-side of the selected
+ * runs. Deliberately compact — only the controls that matter for a comparison. */
+.compare-embed {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.compare-embed-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+}
+.compare-embed-title { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.compare-embed-title h3 { margin: 0; font-size: 15px; font-weight: 720; color: var(--text); }
+.compare-embed-title p { margin: 0; font-size: 12px; color: var(--muted); }
+.compare-embed-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.compare-embed-actions .control { margin: 0; }
+.compare-embed-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.compare-embed-controls .control { margin: 0; }
+.compare-metric-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.compare-embed-diff { margin-left: auto; white-space: nowrap; }
+
+/* Quiet prompt shown while fewer than two runs are selected, so the picker
+ * table below stays the focus instead of an empty comparison. */
+.compare-embed-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 11px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+.compare-embed-prompt svg { color: var(--accent); flex: none; }
+
 /* ── Compare redesign (2026-05) — sortable run table ────────────────────────
  * Scoped cmp-* classes; intentionally independent of the legacy .compare-*
  * rules above (which still drive the transposed "columns" matrix view). */

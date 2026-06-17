@@ -5,7 +5,6 @@ import {
   Code2,
   Database,
   FileBarChart,
-  GitCompare,
   Network,
   Package,
   Settings,
@@ -30,7 +29,6 @@ export const navGroups = [
     items: [
       { id: "runs", label: "Runs", icon: Activity },
       { id: "metrics", label: "Metrics", icon: BarChart3 },
-      { id: "compare", label: "Compare", icon: GitCompare },
       { id: "distributed", label: "Distributed", icon: Network },
     ],
   },

@@ -408,7 +408,7 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /runWithConcurrency\(tasks, 6\)/, "off-page selected run hydration should cap API fanout");
   assert.match(shell, /compareArtifactCacheRef/, "compare artifacts should reuse already-fetched run artifacts");
   assert.match(shell, /compareArtifactInflightRef/, "compare artifacts should dedupe concurrent per-run requests");
-  assert.match(shell, /\}, \[activeTab, api, compareRunKey, runMetadataVersion\]\);/, "compare artifact cache invalidation should restart the compare artifact load");
+  assert.match(shell, /\}, \[compareSurfaceActive, api, compareRunKey, runMetadataVersion\]\);/, "compare artifact cache invalidation should restart the compare artifact load");
   assert.match(shell, /inFlight\.signal === controller\.signal && !inFlight\.signal\.aborted/, "compare artifact in-flight reuse should not reuse aborted requests from old selections");
   assert.match(shell, /compareArtifactInflightRef\.current\.get\(runId\) === entry/, "settled older artifact requests must not delete newer in-flight promises");
   assert.match(shell, /if \(queryInput !== query\) \{[\s\S]*setQuery\(queryInput\);[\s\S]*Select matching runs again[\s\S]*return;/, "select-all matching should not run against a stale debounced search query");

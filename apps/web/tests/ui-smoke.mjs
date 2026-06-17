@@ -1270,51 +1270,28 @@ try {
     await page.waitForFunction((minimum) => document.querySelectorAll(".workspace-run-row.selected").length >= minimum, selectedForCompare + 1);
   }
   const objectRequestsBeforeCompare = objectUrls.length;
-  await page.getByRole("link", { name: /Compare/ }).click();
+  // Comparison now lives in the Runs → Table view: switching to it renders the
+  // selected runs side by side inline (no separate Compare page or toast).
+  await page.locator(".runs-view-switch").getByRole("button", { name: /Table/ }).click();
   await page.waitForFunction(() => document.querySelectorAll("#reference-run option").length >= 2);
+  await page.waitForSelector(".cmp-table");
   assert.equal(objectUrls.length, objectRequestsBeforeCompare, "Compare should not fan out rich-object requests");
   const referenceOptions = await page.locator("#reference-run option").count();
   assert.ok(referenceOptions >= 2);
-  await page.locator(".compare-annotation-details summary").click();
-  const compareMetadataEditor = page.locator(".compare-metadata-editor .run-metadata-editor").first();
-  await compareMetadataEditor.waitFor({ state: "visible", timeout: 10000 });
-  assert.match(await compareMetadataEditor.innerText(), /Tags and notes/);
-  await compareMetadataEditor.getByRole("button", { name: /Edit/ }).click();
-  await compareMetadataEditor.locator(".tag-textarea").first().fill("compare-smoke, needs-review");
-  await page.waitForFunction(() => document.querySelector(".compare-metadata-editor .metadata-tag-preview")?.textContent?.includes("compare-smoke"));
-  await compareMetadataEditor.locator(".notes-control textarea").first().fill("compare-note-smoke edited from compare");
-  await compareMetadataEditor.getByRole("button", { name: /Save/ }).click();
-  await page.waitForFunction(() => document.querySelector(".compare-metadata-editor")?.textContent?.includes("compare-note-smoke edited from compare"));
-  await chooseSelect(page, "#compare-layout", "columns");
-  await page.waitForFunction(() => document.querySelector("#compare-layout")?.value === "columns");
-  await page.waitForSelector(".compare-matrix").catch(async (error) => {
-    const state = await page.evaluate(() => ({
-      empty: document.querySelector("#side-by-side .empty")?.textContent ?? "",
-      layout: document.querySelector("#compare-layout")?.value ?? "",
-      rowsLayoutCount: document.querySelectorAll(".compare-run-layout").length,
-      sideBySideSnippet: document.querySelector("#side-by-side")?.textContent?.slice(0, 800) ?? "",
-    }));
-    throw new Error(`compare columns layout did not render matrix; state=${JSON.stringify(state)}: ${error.message}`);
-  });
-  const firstReferenceLabel = await page.locator("#reference-run option").nth(0).innerText();
-  await chooseSelect(page, "#reference-run", { index: 0 });
-  await page.waitForFunction(
-    (label) => document.querySelector(".compare-run-head.reference")?.textContent?.includes(label),
-    firstReferenceLabel,
-  );
-  await chooseSelect(page, "#reference-run", { index: 1 });
+
+  // Diff-config-only keeps the comparison tight; the best-run banner and rows
+  // table stay populated for the selected set.
   await page.check("#diff-only");
-  await page.waitForFunction(() => /Loss|train\/loss/i.test(document.querySelector(".cmp-best-banner")?.textContent ?? ""));
-  await page.waitForFunction(() => /seed|page-run/.test(document.querySelector("#side-by-side")?.textContent ?? ""));
-  assert.match(await page.locator(".compare-run-head.reference").innerText(), /reference/i);
-  const compareLabels = await page.locator(".compare-attribute strong").allTextContents();
-  assert.ok(compareLabels.length > 0);
-  assert.ok(compareLabels.some((label) => /(?:Eval|Train|System|Agent|Data|Gpu|Rollout)\s*\//.test(label)), `compare labels should expose metric context: ${compareLabels.slice(0, 8).join(", ")}`);
-  assert.ok(compareLabels.every((label) => !["latest", "max", "mean"].includes(label.trim().toLowerCase())), `compare labels should not be reducer-only: ${compareLabels.slice(0, 8).join(", ")}`);
-  await chooseSelect(page, "#compare-row-sort", "spread");
-  await chooseSelect(page, "#compare-layout", "rows");
-  await page.fill("#compare-search", "seed");
-  await page.waitForSelector(".cmp-table");
+  await page.waitForFunction(() => /seed|page-run|run-/.test(document.querySelector("#side-by-side")?.textContent ?? ""));
+  await page.locator(".cmp-best-banner").waitFor({ state: "visible", timeout: 10000 });
+
+  // Picking a reference pins and tags that run's row.
+  await chooseSelect(page, "#reference-run", { index: 1 });
+  await page.locator(".cmp-row.reference .cmp-ref-tag").first().waitFor({ state: "visible", timeout: 10000 });
+  assert.match(await page.locator(".cmp-row.reference .cmp-ref-tag").first().innerText(), /reference/i);
+  assert.ok((await page.locator("#side-by-side .cmp-status").count()) > 0, "rows table should expose each run's status pill");
+
+  // Add a second metric column and sort by it.
   const compareMetricToAdd = await page.locator("#compare-add-metric option").nth(1).evaluate((option) => option.value);
   assert.ok(compareMetricToAdd, "compare add-metric select should expose at least one additional metric");
   const compareMetricLabel = compareMetricToAdd.split("/").pop() || compareMetricToAdd;
@@ -1328,20 +1305,17 @@ try {
   await addedMetricSort.click();
   await page.waitForFunction((metric) => document.querySelector("button.cmp-th.sorted")?.getAttribute("title") === metric, compareMetricToAdd);
   const compareRowText = await page.locator("#side-by-side").innerText();
-  assert.match(compareRowText, /Status/i);
   assert.match(compareRowText, /Duration/i);
   assert.match(compareRowText, new RegExp(escapeRegExp(compareMetricDisplay), "i"));
   if ((await page.locator(".compare-artifact-strip").count()) > 0) {
     assert.match(await page.locator(".compare-artifact-strip").innerText(), /artifact|checkpoint|file/i);
   }
-  await chooseSelect(page, "#compare-config-key", "seed");
-  await page.waitForFunction(() => [...document.querySelectorAll("button.cmp-th")]
-    .some((node) => /seed/i.test(node.textContent ?? "")));
-  await chooseSelect(page, "#compare-layout", "columns");
-  await page.fill("#compare-search", "");
-  await page.waitForSelector(".compare-matrix");
   await page.fill("#view-name", "demo-loss-review");
   await page.click("#save-view");
+
+  // Restore the panels view (run rail) for the run-detail navigation below.
+  await page.locator(".runs-view-switch").getByRole("button", { name: /Panels/ }).click();
+  await page.waitForSelector(".workspace-run-list");
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.fill("#search", 'name:"rl-ppo-seed-44"');
@@ -1471,24 +1445,26 @@ try {
     await page.locator(".workspace-run-row:not(.selected) .workspace-run-select").first().click();
     await page.waitForFunction((minimum) => document.querySelectorAll(".workspace-run-row.selected").length >= minimum, selectedForCompare + 1);
   }
-  await page.getByRole("link", { name: /^Compare$/ }).click();
-  await page.waitForSelector(".compare-matrix", { timeout: 10000 }).catch(async (error) => {
+  // Comparison lives in the Runs → Table view: switching to it renders the
+  // restored multi-run selection side by side.
+  await page.locator(".runs-view-switch").getByRole("button", { name: /Table/ }).click();
+  await page.waitForSelector(".cmp-table", { timeout: 10000 }).catch(async (error) => {
     const state = await page.evaluate(() => ({
-      activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
-      compareLayout: document.querySelector("#compare-layout")?.value ?? "",
-      selectedRows: document.querySelectorAll(".workspace-run-row.selected").length,
+      selectedRows: document.querySelectorAll(".workspace-run-row.selected, .runs-dtable tbody tr.selected").length,
+      referenceOptions: document.querySelectorAll("#reference-run option").length,
       sideBySide: document.querySelector("#side-by-side")?.textContent?.slice(0, 800) ?? "",
       status: document.querySelector("#status-message")?.textContent ?? "",
     }));
-    throw new Error(`compare matrix did not render after restoring multi-run selection; state=${JSON.stringify(state)}: ${error.message}`);
+    throw new Error(`compare table did not render after restoring multi-run selection; state=${JSON.stringify(state)}: ${error.message}`);
   });
   const compareData = await page.evaluate(() => ({
     sideBySide: document.querySelector("#side-by-side")?.textContent ?? "",
-    compareMatrix: Boolean(document.querySelector(".compare-matrix")),
+    compareTable: Boolean(document.querySelector(".cmp-table")),
     diff: document.querySelector("#diff-only")?.checked,
-    layout: document.querySelector("#compare-layout")?.value,
-    configSort: document.querySelector("#compare-config-key")?.value,
   }));
+  // Restore the panels view (run rail) for the responsive checks below.
+  await page.locator(".runs-view-switch").getByRole("button", { name: /Panels/ }).click();
+  await page.waitForSelector(".workspace-run-list");
   const data = await page.evaluate(() => ({
     title: document.title,
     brandLabel: document.querySelector(".brand, .brand-cell")?.getAttribute("aria-label"),
@@ -1506,7 +1482,7 @@ try {
   assert.ok(Number.parseFloat(data.chartStrokeWidth) <= 1.5, `chart lines should stay thin for overlap, got ${data.chartStrokeWidth}`);
   assert.ok(Number.parseFloat(data.chartPointRadius) <= 2.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
   assert.equal(data.visibleBrandTitle, null);
-  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Compare", "Alerts", "Insights", "Datasets", "Imports", "Artifacts", "Checkpoints", "Reports", "Settings", "API"]);
+  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Datasets", "Artifacts", "Imports", "Insights", "Run Health", "Reports", "Settings", "API"]);
   assert.ok(data.rows >= 6);
   assert.equal(data.chart, true);
   assert.ok(data.points > 0);
@@ -1525,12 +1501,11 @@ try {
   assert.match(data.detail, /Metric Summary/);
   assert.match(data.detail, /tags and notes/i);
   assert.match(data.sideBySide, /seed/i);
-  assert.match(data.sideBySide, /compare-note-smoke|qa-note-smoke|Synthetic/i);
-  assert.equal(data.compareMatrix, true);
+  assert.equal(data.compareTable, true);
   assert.ok(data.savedViews.some((view) => view?.includes("demo-loss-review")));
   assert.deepEqual(
-    { sort: data.sort, group: data.controls.group, x: data.controls.x, smooth: data.controls.smooth, average: data.controls.average, diff: data.diff, layout: data.layout, configSort: data.configSort },
-    { sort: "metric-best", group: "seed", x: "time", smooth: "20", average: true, diff: true, layout: "columns", configSort: "seed" },
+    { sort: data.sort, group: data.controls.group, x: data.controls.x, smooth: data.controls.smooth, average: data.controls.average, diff: data.diff },
+    { sort: "metric-best", group: "seed", x: "time", smooth: "20", average: true, diff: true },
   );
   assert.equal(data.tallRows, 0);
 
