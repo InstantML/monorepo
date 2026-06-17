@@ -56,6 +56,9 @@ pub async fn data_plane_writer_lease(
     let response = next.run(request);
     tokio::pin!(response);
 
+    // Phase 1A is a write-admission fence. Renewing while the handler runs
+    // keeps a stale writer from continuing, but it cannot roll back ClickHouse
+    // side effects that were already committed before a later renewal failure.
     loop {
         tokio::select! {
             response = &mut response => return response,
@@ -95,67 +98,28 @@ pub async fn data_plane_writer_lease(
 
 pub(crate) fn requires_data_plane_write_guard(method: &Method, path: &str) -> bool {
     match *method {
-        Method::POST => is_post_data_mutation(path),
-        Method::PUT => is_artifact_alias_path(path),
-        Method::PATCH => is_patch_data_mutation(path),
-        Method::DELETE => is_delete_data_mutation(path),
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE => {
+            !is_data_plane_write_guard_exempt(method, path)
+        }
         _ => false,
     }
 }
 
-fn is_post_data_mutation(path: &str) -> bool {
+fn is_data_plane_write_guard_exempt(method: &Method, path: &str) -> bool {
+    if *method != Method::POST {
+        return false;
+    }
     matches!(
         path,
-        "/projects"
-            | "/runs"
-            | "/api/runs/stop"
-            | "/api/demo/reset"
-            | "/api/reports"
-            | "/api/imports/jobs"
-            | "/api/imports/neptune"
-            | "/api/imports/wandb"
-            | "/api/imports/mlflow"
-    ) || (path.starts_with("/api/runs/")
-        && (path.ends_with("/stop")
-            || path.ends_with("/stop-ack")
-            || path.ends_with("/forks")
-            || path.ends_with("/logs")
-            || path.ends_with("/attributes")
-            || path.ends_with("/objects")
-            || path.ends_with("/artifacts")
-            || path.ends_with("/artifacts/upload")
-            || path.ends_with("/artifact-uploads")
-            || path.ends_with("/artifact-inputs")))
-        || (path.starts_with("/runs/")
-            && (path.ends_with("/metrics") || path.ends_with("/rank-metrics")))
-        || (path.starts_with("/api/artifact-uploads/")
-            && (path.ends_with("/renew")
-                || path.ends_with("/complete")
-                || path.ends_with("/abort")))
-        || (path.starts_with("/api/reports/") && path.ends_with("/share"))
-        || path.starts_with("/api/imports/jobs/")
-}
-
-fn is_patch_data_mutation(path: &str) -> bool {
-    (path.starts_with("/runs/") && single_suffix_segment(path, "/runs/"))
-        || (path.starts_with("/api/reports/") && single_suffix_segment(path, "/api/reports/"))
-        || (path.starts_with("/api/artifact-versions/") && path.ends_with("/retention"))
-}
-
-fn is_delete_data_mutation(path: &str) -> bool {
-    is_artifact_alias_path(path)
-        || (path.starts_with("/api/artifact-versions/")
-            && single_suffix_segment(path, "/api/artifact-versions/"))
-        || (path.starts_with("/api/reports/") && single_suffix_segment(path, "/api/reports/"))
-}
-
-fn is_artifact_alias_path(path: &str) -> bool {
-    path.starts_with("/api/artifact-collections/") && path.contains("/aliases/")
-}
-
-fn single_suffix_segment(path: &str, prefix: &str) -> bool {
-    path.strip_prefix(prefix)
-        .is_some_and(|suffix| !suffix.is_empty() && !suffix.contains('/'))
+        // Read-style POST endpoints that accept large/filter payloads.
+        "/api/metrics/series"
+            | "/api/workspace-view-data"
+            // BYOC setup writes customer-owned storage configuration and is
+            // intentionally outside the managed-cell writer lease.
+            | "/api/storage/clickhouse-connections/validate"
+            | "/api/storage/clickhouse-connections"
+            | "/api/storage/clickhouse-connections/rotate-credentials"
+    )
 }
 
 #[cfg(test)]
@@ -180,6 +144,26 @@ mod tests {
         assert!(requires_data_plane_write_guard(
             &Method::DELETE,
             "/api/reports/00000000-0000-0000-0000-000000000001"
+        ));
+    }
+
+    #[test]
+    fn write_guard_fails_safe_for_new_mutating_data_routes() {
+        assert!(requires_data_plane_write_guard(
+            &Method::POST,
+            "/api/future-data-mutation"
+        ));
+        assert!(requires_data_plane_write_guard(
+            &Method::PUT,
+            "/api/future-data-mutation"
+        ));
+        assert!(requires_data_plane_write_guard(
+            &Method::PATCH,
+            "/api/future-data-mutation"
+        ));
+        assert!(requires_data_plane_write_guard(
+            &Method::DELETE,
+            "/api/future-data-mutation"
         ));
     }
 

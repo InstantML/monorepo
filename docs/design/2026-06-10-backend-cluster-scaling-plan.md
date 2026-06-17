@@ -342,20 +342,25 @@ Rules:
   the token.
 - `/readyz` continues to report whole-service read readiness. Data services add
   side-effect-free `write_ready` and `writer_lease` fields that do not acquire
-  or renew a lease and do not expose holder, token, or expiry details. Deploy
-  smokes can require write readiness with a dedicated post-handoff write check,
-  but no-traffic revisions must not deadlock startup while the old revision
-  still owns the writer lease.
+  or renew a lease and do not expose holder, token, or expiry details. A
+  no-traffic replacement revision normally reports `write_ready=false` while
+  the old revision still owns the writer lease, so deploy startup and traffic
+  flips must not be gated on that field unless an operator first performs an
+  explicit lease handoff. Deploy smokes can require write readiness only through
+  a dedicated post-handoff write check.
 - Route-classified mutating tenant-data requests must pass one centralized
-  route/store guard before handler side effects. The guard verifies the process
-  holds the current cell writer lease and rejects authenticated writes whose
-  authoritative Postgres tenant route records a different `cell_id`; legacy
-  routes without `cell_id` remain allowed for backwards compatibility. BYOC
-  storage setup routes configure customer-owned storage and remain outside this
-  current-cell writer lease. Guard failures, including Postgres outages, return
-  retryable `503` with `code: "cell_writer_unavailable"`. Reads and read-style
-  POST endpoints remain available if the operational store is otherwise
-  healthy.
+  route/store guard before handler side effects. Data-plane `POST`, `PUT`,
+  `PATCH`, and `DELETE` routes should be guarded by default; read-style POSTs
+  and BYOC storage setup routes must be explicit exemptions so future mutation
+  routes fail safe instead of silently bypassing the lease. The guard verifies
+  the process holds the current cell writer lease and rejects authenticated
+  writes whose authoritative Postgres tenant route records a different
+  `cell_id`; legacy routes without `cell_id` remain allowed for backwards
+  compatibility. BYOC storage setup routes configure customer-owned storage and
+  remain outside this current-cell writer lease. Guard failures, including
+  Postgres outages, return retryable `503` with `code:
+  "cell_writer_unavailable"`. Reads and read-style POST endpoints remain
+  available if the operational store is otherwise healthy.
 - Phase 1A is a write-admission fence, not full downstream multi-writer
   ClickHouse fencing. Long-running mutation paths must either keep the lease TTL
   comfortably above the first implementation's request timeout or re-check at
@@ -366,9 +371,13 @@ Rules:
   Negative availability should not be cached beyond normal retry/backoff.
 - Losing the lease immediately disables writes and returns a retryable `503`
   with `code: "cell_writer_unavailable"` until another writer is ready.
-- Deploys should use no-traffic revision deploy, read-readiness verify,
-  deliberate writer handoff or expiry window, traffic flip, old revision drain,
-  conditional old lease release/expiry, then post-flip write smoke.
+- Deploys should use no-traffic revision deploy, read-readiness verify, traffic
+  flip, old revision drain, conditional old lease release/expiry, and then a
+  post-flip write smoke. If an incident or release needs a zero-503 cutover,
+  operators should deliberately release the old lease or wait for its TTL before
+  routing mutations to the replacement; otherwise the first post-flip writes may
+  see retryable `cell_writer_unavailable` responses until release/expiry and the
+  short negative cache have cleared.
 - Add tests for concurrent acquire, expired takeover increments, unexpired
   takeover fails, stale holder renew fails, disabled/missing cells reject
   acquisition, local/backwards-compatible bypasses, and a two-process guard path

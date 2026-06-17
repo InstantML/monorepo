@@ -84,8 +84,10 @@ plane forces one User Data refresh and retries auth when a key/session misses
 the warmed projection.
 Hosted split data services also include side-effect-free `write_ready` and
 `writer_lease` fields. These fields observe the current writer lease without
-acquiring or renewing it; use a dedicated post-handoff write smoke when a deploy
-must prove write admission.
+acquiring or renewing it. A no-traffic replacement revision normally reports
+`write_ready=false` while another revision owns the lease; use `/readyz` for
+readiness and a dedicated post-handoff write smoke when a deploy must prove
+write admission.
 
 ## Observability
 
@@ -381,7 +383,9 @@ customer/provider endpoints.
    - router `https://<api-domain>/api/workspace-views` returns `401`, not `404`
    - router `https://<api-domain>/api/reports` routes to data and returns `401`, not `404`
    - router `https://<api-domain>/openapi.json` reports `data`
-   - both `/readyz` endpoints are healthy
+   - both `/readyz` endpoints are healthy; do not require `write_ready=true`
+     before traffic is routed unless an explicit lease handoff has already
+     happened
    - hosted login creates/reuses the expected org and tenant route
    - SDK ingestion lands in the routed tenant ClickHouse database
 

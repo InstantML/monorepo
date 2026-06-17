@@ -333,6 +333,9 @@ enum DataCellWriterLeaseRequirement {
 }
 
 fn writer_lease_cache_ttl(lease: &DataCellWriterLeaseRow) -> StdDuration {
+    // `expires_at` is stamped by Postgres `clock_timestamp()` while this cache
+    // uses the app clock; the 100ms margin assumes normal app/Postgres clock
+    // skew stays below that bound.
     let remaining = lease
         .expires_at
         .signed_duration_since(Utc::now())

@@ -229,7 +229,7 @@ Environment variables:
 - `INSTANTML_BIND_ADDR`: API bind address. Default: `127.0.0.1:8001`.
 - `INSTANTML_SERVICE_PLANE`: `combined`, `control`, or `data`. Default: `combined`. `control` and `data` require `INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true`.
 - `INSTANTML_CELL_ID`: optional operator label for this data-plane cell. The deploy helper sets it only for split data services; when present, the service can register and heartbeat its `data_cells` row. Hosted split data services require it before mutating data-plane routes can write.
-- `INSTANTML_CELL_WRITER_LEASE_TTL_SECONDS`: Postgres data-cell writer lease TTL. Default: `30`. Data services renew during long-running route-classified tenant-data mutations; deploy handoff should release or wait for this TTL before a replacement writer takes traffic.
+- `INSTANTML_CELL_WRITER_LEASE_TTL_SECONDS`: Postgres data-cell writer lease TTL. Default: `30`. Data services renew during long-running route-classified tenant-data mutations. No-traffic replacement revisions do not acquire the lease from `/readyz`; zero-503 deploy handoff should release the old lease or wait for this TTL before routing mutations to a replacement writer.
 - `INSTANTML_INSTANCE_ID`: optional writer-lease holder id. Defaults to a fresh process-start UUID. `K_SERVICE`/`K_REVISION` or `INSTANTML_SERVICE_NAME`/`INSTANTML_REVISION` are recorded as lease diagnostics when present.
 - `CONTROL_DB_MAX_CONNECTIONS`: Postgres control-plane sqlx pool size per
   Rust process. Default: `10`. Invalid or zero values fail startup so runtime
@@ -388,10 +388,11 @@ The lease uses a process-start holder id and monotonic `fence_token`; renew and
 release require the exact `(cell_id, holder_instance_id, fence_token)` tuple.
 Acquisition and renewal are allowed only while the cell status is `open`,
 `full`, or `draining`; `disabled` and `failed` cells reject writes. The
-data-route middleware skips read-style POST endpoints, checks hosted write
-admission against the authoritative Postgres tenant route, rejects
-authenticated writes whose route records another `cell_id`, renews the lease
-while mutating requests are running, and returns a
+data-route middleware guards mutating `POST`, `PUT`, `PATCH`, and `DELETE`
+routes by default while explicitly skipping read-style POST and BYOC storage
+setup endpoints. It checks hosted write admission against the authoritative
+Postgres tenant route, rejects authenticated writes whose route records another
+`cell_id`, renews the lease while mutating requests are running, and returns a
 retryable `503` with `code: "cell_writer_unavailable"` when the lease is
 missing, held by another process, expired, or cannot be verified. Combined,
 local, and no-Postgres development modes keep their previous write behavior.
@@ -416,7 +417,7 @@ Implemented health and platform endpoints:
 
 - `GET /health`
 - `GET /healthz`
-- `GET /readyz`: returns `status`, `control_projection_loaded`, `control_refresh_degraded`, `write_ready`, and `writer_lease` (`required`, `ready`, `code`); fails with 503 until ClickHouse is reachable and the local projection has loaded. Data-plane writer lease ownership is observed without acquiring or renewing the lease, so read readiness does not become a deploy-time ownership handoff.
+- `GET /readyz`: returns `status`, `control_projection_loaded`, `control_refresh_degraded`, `write_ready`, and `writer_lease` (`required`, `ready`, `code`); fails with 503 until ClickHouse is reachable and the local projection has loaded. Data-plane writer lease ownership is observed without acquiring or renewing the lease, so no-traffic replacement revisions should be expected to report `write_ready=false` while another writer owns the lease.
 - `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 
