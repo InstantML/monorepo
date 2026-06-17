@@ -3,8 +3,16 @@
 
 use super::*;
 use crate::{domain::DataCellRow, store::TenantRouteRecord};
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use sqlx::PgPool;
+
+fn db_time_now() -> DateTime<Utc> {
+    postgres_timestamp(Utc::now())
+}
+
+fn postgres_timestamp(value: DateTime<Utc>) -> DateTime<Utc> {
+    value - ChronoDuration::nanoseconds(i64::from(value.timestamp_subsec_nanos() % 1_000))
+}
 
 fn user(email: &str) -> UserRow {
     UserRow {
@@ -12,7 +20,7 @@ fn user(email: &str) -> UserRow {
         primary_email: email.to_string(),
         display_name: None,
         avatar_url: None,
-        created_at: Utc::now(),
+        created_at: db_time_now(),
         last_seen_at: None,
     }
 }
@@ -33,7 +41,7 @@ fn org(slug: &str, owner: Option<Uuid>) -> OrganizationRow {
         account_type: "business".to_string(),
         seat_limit: 5,
         created_by_user_id: owner,
-        created_at: Utc::now(),
+        created_at: db_time_now(),
         tenant_routing_tier: "dedicated".to_string(),
         storage_choice: "hosted".to_string(),
         storage_state: "ready".to_string(),
@@ -47,12 +55,12 @@ fn membership(org_id: Uuid, user_id: Uuid) -> MembershipRow {
         user_id,
         role: "owner".to_string(),
         status: "active".to_string(),
-        created_at: Utc::now(),
+        created_at: db_time_now(),
     }
 }
 
 fn data_cell(cell_id: &str, max_orgs: Option<i32>) -> DataCellRow {
-    let now = Utc::now();
+    let now = db_time_now();
     DataCellRow {
         cell_id: cell_id.to_string(),
         environment: "test".to_string(),
@@ -81,7 +89,7 @@ fn data_cell(cell_id: &str, max_orgs: Option<i32>) -> DataCellRow {
 }
 
 fn route(org_id: Uuid, status: &str, endpoint: &str) -> TenantRouteRecord {
-    let now = Utc::now();
+    let now = db_time_now();
     TenantRouteRecord {
         org_id,
         status: status.to_string(),
@@ -223,7 +231,7 @@ async fn upsert_user_round_trips_through_load(pool: PgPool) {
     db.upsert_identity("test", "subj", u.id).await.unwrap();
 
     // Updating last_seen_at via upsert is in-place.
-    u.last_seen_at = Some(Utc::now());
+    u.last_seen_at = Some(db_time_now());
     db.upsert_user(&u).await.unwrap();
 
     let loaded = db.list_users().await.unwrap();
@@ -265,7 +273,7 @@ async fn data_cells_round_trip_with_capacity_and_secret_refs(pool: PgPool) {
 
     cell.status = "draining".to_string();
     cell.max_orgs = Some(8);
-    cell.updated_at = Utc::now();
+    cell.updated_at = db_time_now();
     db.upsert_data_cell(&cell).await.unwrap();
 
     let loaded = db.load_data_cells().await.unwrap();
@@ -289,7 +297,7 @@ async fn data_cell_heartbeat_registers_missing_cell_and_preserves_operator_field
     operator_row.notes = Some("operator metadata".to_string());
     db.upsert_data_cell(&operator_row).await.unwrap();
 
-    heartbeat.updated_at = Utc::now() + ChronoDuration::seconds(1);
+    heartbeat.updated_at = db_time_now() + ChronoDuration::seconds(1);
     heartbeat.last_health_at = Some(heartbeat.updated_at);
     heartbeat.last_backup_at = Some(heartbeat.updated_at);
     let refreshed = db.heartbeat_data_cell(&heartbeat).await.unwrap();
@@ -372,7 +380,7 @@ async fn tenant_route_placement_is_versioned_and_audited(pool: PgPool) {
 
     let mut ready = placed.clone();
     ready.status = "ready".to_string();
-    ready.updated_at = Utc::now();
+    ready.updated_at = db_time_now();
     let ready = db
         .upsert_tenant_route_with_placement(&ready, Some(&placement("free-us-central1-a")))
         .await
@@ -518,7 +526,7 @@ async fn customer_clickhouse_routes_are_not_assigned_to_managed_cells(pool: PgPo
 async fn stale_cell_health_or_backup_blocks_placement(pool: PgPool) {
     let db = ControlDb::from_pool(pool);
     let mut cell = data_cell("free-us-central1-a", Some(1));
-    cell.last_health_at = Some(Utc::now() - ChronoDuration::minutes(11));
+    cell.last_health_at = Some(db_time_now() - ChronoDuration::minutes(11));
     db.upsert_data_cell(&cell).await.unwrap();
     let o = org("stale-cell", None);
     db.upsert_org(&o).await.unwrap();
