@@ -782,6 +782,16 @@ function ensureStaticEgress() {
 
 function deploySecretSpecs() {
   return [
+    // Self-hosted ClickHouse VM connection for the data plane (database
+    // provisioner). The binary reads CLICKHOUSE_INSTANTML_TENANT_* (see
+    // config.rs hosted_clickhouse_config); without them it falls back to the
+    // localhost default and the data-plane container fails its /readyz startup
+    // probe with "clickhouse create database failed: ... (Connect)". The
+    // Secret Manager secrets keep their historical `user-data` names; only the
+    // env var the runtime expects was renamed (PR #172).
+    ["CLICKHOUSE_INSTANTML_TENANT_ENDPOINT", "instantml-clickhouse-user-data-endpoint", true],
+    ["CLICKHOUSE_INSTANTML_TENANT_USERNAME", "instantml-clickhouse-user-data-username", true],
+    ["CLICKHOUSE_INSTANTML_TENANT_PASSWORD", "instantml-clickhouse-user-data-password", true],
     ["CLICKHOUSE_INSTANTML_GENERAL_KEY_ID", "instantml-clickhouse-cloud-key-id", true],
     ["CLICKHOUSE_INSTANTML_GENERAL_KEY_SECRET", "instantml-clickhouse-cloud-key-secret", true],
     ["CLERK_SECRET_KEY", "instantml-clerk-secret-key", false],

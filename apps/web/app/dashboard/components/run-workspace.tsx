@@ -140,7 +140,6 @@ export function RunWorkspace({
     <div className="run-workspace" id={elementId}>
       <header className="run-workspace-header">
         <div className="run-workspace-topline">
-          <span className="run-workspace-eyebrow eyebrow--accent">Run</span>
           <h2 className="run-workspace-name" title={run.name}>{run.name}</h2>
           <span className="run-workspace-sub">{durationContext(run)} · {sourceContext(run)}</span>
           <div className="run-workspace-spacer" />

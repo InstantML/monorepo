@@ -226,7 +226,7 @@ use database-mode routing:
 ```text
 INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true
 INSTANTML_CLICKHOUSE_PROVISIONER=database
-CLICKHOUSE_INSTANTML_USER_DATA_ENDPOINT=<self-hosted GCP ClickHouse endpoint>
+CLICKHOUSE_INSTANTML_TENANT_ENDPOINT=<self-hosted GCP ClickHouse endpoint>
 INSTANTML_TENANT_CLICKHOUSE_URL=<self-hosted GCP ClickHouse endpoint/base URL>
 ```
 

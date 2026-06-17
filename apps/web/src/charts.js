@@ -533,18 +533,40 @@ function valueDomain(points, metricKey = "", yScale = "linear", yRange = null) {
   return padDomain(minY, maxY);
 }
 
-// Ensure the y window is usable. For a real range we keep the exact data
-// extremes (the genuine fix for the "squished to the floor" bug was dropping
-// the Math.max(1, span) clamp in normalizeSeries, which is what forced tiny
-// magnitudes flat). For a degenerate single value we open a magnitude-relative
-// window so the lone point sits mid-chart instead of dividing by a zero span.
+// Ensure the y window is usable. For a spread of values we round the bounds out
+// to "nice" tick boundaries (d3.nice-style) so the curve sits *inside* the
+// gridlines — with a labeled tick at or below the minimum — instead of the
+// lowest point landing flush on the x-axis (which reads as clipped). The step
+// scales with the data span (the same 1-2-5 family axisTicks uses), so this
+// keeps the "squished to the floor" fix intact: tiny-magnitude metrics still
+// fill most of the plot height rather than collapsing under a Math.max(1, span)
+// clamp. For a degenerate single value we open a magnitude-relative window so
+// the lone point sits mid-chart instead of dividing by a zero span.
 function padDomain(minY, maxY) {
   if (minY === maxY) {
     const magnitude = Math.abs(minY);
     const pad = magnitude > 0 ? magnitude * 0.5 : 1;
     return { minY: minY - pad, maxY: maxY + pad };
   }
-  return { minY, maxY };
+  return niceDomain(minY, maxY);
+}
+
+// Round [min, max] outward to the nearest multiple of a "nice" 1-2-5 step sized
+// for ~`count` gridlines, so the domain bounds align with axis ticks and the
+// data keeps a little breathing room from the top and bottom axes. Data already
+// on nice boundaries (e.g. a metric that bottoms out at 0) is left untouched.
+function niceDomain(min, max, count = 5) {
+  const rawStep = (max - min) / Math.max(1, count - 1);
+  if (!(rawStep > 0)) return { minY: min, maxY: max };
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const normalized = rawStep / magnitude;
+  const niceUnit = normalized < 1.5 ? 1 : normalized < 3 ? 2 : normalized < 7 ? 5 : 10;
+  const step = niceUnit * magnitude;
+  // Snap float drift (e.g. 0.30000000000000004) back to the clean multiple.
+  return {
+    minY: Number((Math.floor(min / step) * step).toFixed(10)),
+    maxY: Number((Math.ceil(max / step) * step).toFixed(10)),
+  };
 }
 
 // Keep the x window strictly positive so single-point / zoomed series don't

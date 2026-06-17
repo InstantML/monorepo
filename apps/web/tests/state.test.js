@@ -722,7 +722,7 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 560, height: 360 }, 290, 200, 560, 640), { x: 280, y: 320 });
   assert.deepEqual(svgPointFromClient({ left: 10, top: 20, width: 1120, height: 360 }, 570, 200, 560, 360, { preserveAspectRatio: "none" }), { x: 280, y: 180 });
   assert.deepEqual(chartDomain([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/accuracy"), { minX: 0, maxX: 1, minY: 0, maxY: 1, yScale: "linear" });
-  assert.deepEqual(chartDomain([{ id: "loss", name: "loss", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/loss"), { minX: 0, maxX: 1, minY: 0.52, maxY: 1, yScale: "linear" });
+  assert.deepEqual(chartDomain([{ id: "loss", name: "loss", points: [{ step: 0, value: 0.52 }, { step: 1, value: 1 }] }], "step", "train/loss"), { minX: 0, maxX: 1, minY: 0.5, maxY: 1, yScale: "linear" });
   assert.match(normalizeSeries([{ id: "acc", name: "accuracy", points: [{ step: 0, value: 0.5 }, { step: 1, value: 1 }] }], 100, 80, 28, "step", "train/accuracy")[0].path, /40\.00/);
   assert.match(normalizeSeries(series, 100, 80, 28, "time")[0].path, /28\.00/);
   assert.deepEqual(chartSummary(series), [{ id: "a", name: "run-a", last: 3 }]);
@@ -730,20 +730,24 @@ test("chart helpers normalize series and summarize last values", () => {
 });
 
 test("tiny-magnitude metrics fill the plot height instead of squishing to the floor", () => {
-  // Three runs, three points, all values < 0.01. The fix removes the
-  // Math.max(1, span) clamp that previously pinned these to the bottom.
+  // Three points, all values < 0.01. The window uses a span proportional to the
+  // data (the dropped Math.max(1, span) clamp once pinned these to the bottom)
+  // and rounds out to nice bounds so the lowest point isn't flush on the x-axis.
   const series = [
     { id: "a", name: "a", points: [{ step: 0, value: 0.001 }, { step: 1, value: 0.005 }, { step: 2, value: 0.009 }] },
   ];
   const height = 80;
   const padding = 28;
+  const innerHeight = height - padding * 2;
   const normalized = normalizeSeries(series, 100, height, padding, "step", "train/loss");
   const ys = normalized[0].normalizedPoints.map((point) => point.y);
-  // Min value maps to the bottom plot edge, max value to the top edge.
-  assert.ok(Math.abs(ys[0] - (height - padding)) < 0.001, `min should sit on the floor, got ${ys[0]}`);
-  assert.ok(Math.abs(ys[2] - padding) < 0.001, `max should reach the ceiling, got ${ys[2]}`);
-  // The window uses the real (tiny) data range, not a clamped span of 1.
-  assert.deepEqual(chartDomain(series, "step", "train/loss"), { minX: 0, maxX: 2, minY: 0.001, maxY: 0.009, yScale: "linear" });
+  // The data still fills most of the plot height (no squish), but with breathing
+  // room: the min sits above the floor and the max below the ceiling.
+  assert.ok(ys[0] < height - padding, `min should sit above the floor, got ${ys[0]}`);
+  assert.ok(ys[2] > padding, `max should sit below the ceiling, got ${ys[2]}`);
+  assert.ok((ys[0] - ys[2]) > innerHeight * 0.7, `data should fill most of the height, got ${ys[0] - ys[2]} of ${innerHeight}`);
+  // The window is a nice, proportional span ([0, 0.01]), not a clamped span of 1.
+  assert.deepEqual(chartDomain(series, "step", "train/loss"), { minX: 0, maxX: 2, minY: 0, maxY: 0.01, yScale: "linear" });
 });
 
 test("a single / flat value opens a magnitude-relative window so the line is centered", () => {

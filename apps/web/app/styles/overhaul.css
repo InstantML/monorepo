@@ -14,7 +14,6 @@
 /* ── Typography primitives ─────────────────────────────────────────────── */
 .eyebrow,
 .analysis-eyebrow,
-.run-workspace-eyebrow,
 .analysis-stat span,
 .shortcut-group h3,
 .compare-metric-strip > span {
@@ -1389,15 +1388,6 @@ button.secondary.danger-action:hover:not(:disabled),
   gap: 14px;
   padding: 14px 20px;
   flex-wrap: wrap;
-}
-.run-workspace-eyebrow {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-  color: var(--accent);
-  flex: 0 0 auto;
 }
 .run-workspace-name {
   font: 600 19px/1 var(--font-mono);

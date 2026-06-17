@@ -114,7 +114,6 @@ export function RunsWorkspace({
   onFullscreenPanel,
   onInspectRun,
   onOpenRun,
-  onMode,
   onMovePanel,
   onPanelSearch,
   onRefresh,
@@ -170,7 +169,6 @@ export function RunsWorkspace({
   onFullscreenPanel: (sectionId: string, panelId: string) => void;
   onInspectRun: (runId: string) => void;
   onOpenRun: (runId: string) => void;
-  onMode: (mode: "automatic" | "manual") => void;
   onMovePanel: (sourceSectionId: string, panelId: string, targetSectionId: string, targetIndex: number) => void;
   onPanelSearch: (value: string) => void;
   onRefresh: () => void;
@@ -548,16 +546,7 @@ export function RunsWorkspace({
             <span><Search size={14} /> Search panels</span>
             <input aria-label="Search panels" id="panel-search" type="search" value={panelSearch} onChange={(event) => onPanelSearch(event.target.value)} placeholder="Search panels" />
           </label>
-          <CustomSelect
-            className="workspace-mode-select"
-            id="workspace-mode"
-            label="Mode"
-            labelClassName="visually-hidden"
-            onChange={(value) => onMode(value === "manual" ? "manual" : "automatic")}
-            options={[{ value: "automatic", label: "Automatic" }, { value: "manual", label: "Manual" }]}
-            value={view.mode}
-          />
-          <button className="secondary compact-button" type="button" onClick={onResetWorkspace}><RefreshCw size={15} /> Reset layout</button>
+          <button className="secondary compact-button" type="button" onClick={onResetWorkspace}><RefreshCw size={15} /> Rebuild layout</button>
           {!showAddPanelDrawer ? <button className="primary-button" data-add-panel-trigger="true" type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
         </div>
 
