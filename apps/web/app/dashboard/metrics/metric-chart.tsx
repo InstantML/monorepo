@@ -453,6 +453,9 @@ export function MetricChart({
   // every series in unrelated panels, and a stale id (series swapped out by a
   // live poll) would stick.
   const [legendHoverId, setLegendHoverId] = useState<string | null>(null);
+  // Expanding the legend reveals the runs hidden behind the "+N more" chip so
+  // they can be hover-highlighted like the always-visible ones.
+  const [legendExpanded, setLegendExpanded] = useState(false);
   const requestedRunId = hover?.runId ?? legendHoverId ?? highlightRunId ?? null;
   const hoverIndex = requestedRunId ? normalizedSeries.findIndex((item) => item.id === requestedRunId) : -1;
   const activeRunId = hoverIndex >= 0 ? requestedRunId : null;
@@ -888,8 +891,13 @@ export function MetricChart({
   const xPos = (value: number) => pad + ((value - domain.minX) / xSpan) * (width - pad * 2);
   const yPos = yMapper(domain, frameHeight, pad);
   const legendLimit = normalizedSeries.length <= 12 ? normalizedSeries.length : 8;
-  const legendSeries = normalizedSeries.slice(0, legendLimit);
-  const hiddenLegendSeries = normalizedSeries.slice(legendSeries.length);
+  const collapsedLegendSeries = normalizedSeries.slice(0, legendLimit);
+  const hiddenLegendSeries = normalizedSeries.slice(collapsedLegendSeries.length);
+  const legendExpandable = hiddenLegendSeries.length > 0;
+  const legendShowingAll = legendExpanded && legendExpandable;
+  // When expanded, every run gets its own chip so the whole set is hoverable;
+  // collapsed, we fall back to the first slice plus the "+N more" toggle.
+  const legendSeries = legendShowingAll ? normalizedSeries : collapsedLegendSeries;
   const hiddenLegendSample = hiddenLegendSeries.slice(0, 6).map((item) => item.identifier ?? item.name);
   const hiddenLegendTitle = hiddenLegendSeries.length
     ? `${hiddenLegendSeries.length} additional plotted series${hiddenLegendSample.length ? `: ${hiddenLegendSample.join(", ")}${hiddenLegendSeries.length > hiddenLegendSample.length ? ", ..." : ""}` : ""}`
@@ -910,7 +918,7 @@ export function MetricChart({
       ) : (
         <>
       {showLegend ? (
-      <div className={`chart-legend${activeRunId ? " has-active" : ""}`}>
+      <div className={`chart-legend${activeRunId ? " has-active" : ""}${legendShowingAll ? " chart-legend-expanded" : ""}`}>
         {legendSeries.map((item, index) => {
           const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
           return (
@@ -926,13 +934,16 @@ export function MetricChart({
             ><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> {item.identifier ?? item.name}</span>
           );
         })}
-        {hiddenLegendSeries.length ? (
-          <span
+        {legendExpandable ? (
+          <button
+            type="button"
             className="legend-chip legend-overflow"
-            title={hiddenLegendTitle}
+            aria-expanded={legendShowingAll}
+            title={legendShowingAll ? "Hide the additional plotted runs" : hiddenLegendTitle}
+            onClick={() => setLegendExpanded((open) => !open)}
           >
-            +{hiddenLegendSeries.length} more plotted
-          </span>
+            {legendShowingAll ? "Show fewer" : `+${hiddenLegendSeries.length} more plotted`}
+          </button>
         ) : null}
         {yScale === "log" && hiddenLogPoints > 0 ? (
           <span className="legend-chip legend-overflow" title="Log scale plots positive values only; switch back to linear to see these points.">
