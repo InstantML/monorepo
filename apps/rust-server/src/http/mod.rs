@@ -27,6 +27,7 @@ pub(crate) mod handlers;
 pub(crate) mod observability;
 pub mod openapi;
 pub(crate) mod rate_limit;
+pub(crate) mod writer_lease;
 
 use handlers::{
     abort_artifact_upload, accept_invitation, admin_data_cells, admin_overview,
@@ -95,10 +96,15 @@ pub fn router(state: AppState) -> Router {
     }
     if service_plane.includes_data() {
         app = app.merge(
-            data_routes(max_upload).route_layer(middleware::from_fn_with_state(
-                shared.clone(),
-                rate_limit::data_plane_rate_limit,
-            )),
+            data_routes(max_upload)
+                .route_layer(middleware::from_fn_with_state(
+                    shared.clone(),
+                    writer_lease::data_plane_writer_lease,
+                ))
+                .route_layer(middleware::from_fn_with_state(
+                    shared.clone(),
+                    rate_limit::data_plane_rate_limit,
+                )),
         );
     }
 

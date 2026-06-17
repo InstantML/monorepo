@@ -3394,6 +3394,13 @@ export interface components {
             weighted_mean: number;
             world_size_mismatch: boolean;
         };
+        ReadyzResponse: {
+            control_projection_loaded: boolean;
+            control_refresh_degraded: boolean;
+            status: string;
+            write_ready: boolean;
+            writer_lease: components["schemas"]["WriterLeaseReadinessResponse"];
+        };
         RenewArtifactUploadRequest: {
             /** Format: uuid */
             entry_id: string;
@@ -3927,6 +3934,11 @@ export interface components {
             project?: string | null;
             /** Format: date-time */
             updated_at: string;
+        };
+        WriterLeaseReadinessResponse: {
+            code?: string | null;
+            ready: boolean;
+            required: boolean;
         };
     };
     responses: never;
@@ -9015,7 +9027,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthResponse"];
+                    "application/json": components["schemas"]["ReadyzResponse"];
                 };
             };
             /** @description Not ready */

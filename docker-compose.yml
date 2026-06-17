@@ -100,6 +100,7 @@ services:
       INSTANTML_BIND_ADDR: 0.0.0.0:8000
       INSTANTML_AUTH_MODE: local
       INSTANTML_SERVICE_PLANE: data
+      INSTANTML_CELL_ID: local-us-central1-a
       INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true"
       INSTANTML_CLICKHOUSE_PROVISIONER: database
       INSTANTML_ALLOWED_FRONTEND_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:8001,http://localhost:8002

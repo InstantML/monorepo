@@ -91,6 +91,22 @@ pub struct HealthResponse {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct WriterLeaseReadinessResponse {
+    pub required: bool,
+    pub ready: bool,
+    pub code: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ReadyzResponse {
+    pub status: String,
+    pub control_projection_loaded: bool,
+    pub control_refresh_degraded: bool,
+    pub write_ready: bool,
+    pub writer_lease: WriterLeaseReadinessResponse,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct AuthConfigResponse {
     pub dev_auth_enabled: bool,
     pub managed_clerk_enabled: bool,
@@ -956,6 +972,8 @@ impl Modify for SecurityAddon {
     components(schemas(
         // envelopes
         HealthResponse,
+        ReadyzResponse,
+        WriterLeaseReadinessResponse,
         AuthConfigResponse,
         AuthSessionUnauthenticated,
         AuthSessionWithOnboardingKey,

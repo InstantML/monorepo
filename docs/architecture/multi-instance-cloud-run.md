@@ -82,6 +82,10 @@ the `instantml_control_refresh_degraded` gauge in `/metrics`. Fresh API keys
 and browser sessions do not have to wait for the next background tick: the data
 plane forces one User Data refresh and retries auth when a key/session misses
 the warmed projection.
+Hosted split data services also include side-effect-free `write_ready` and
+`writer_lease` fields. These fields observe the current writer lease without
+acquiring or renewing it; use a dedicated post-handoff write smoke when a deploy
+must prove write admission.
 
 ## Observability
 
@@ -244,7 +248,9 @@ verify the public URL and write it into local frontend env.
 | `INSTANTML_CLOUD_RUN_DATA_SERVICE` | Override data service name |
 | `INSTANTML_CLOUD_RUN_DATA_CELL` | Operator label for the data cell |
 | `INSTANTML_DEFAULT_DATA_CELL_ID` | Runtime default data-cell placement target; the deploy helper sets this from `INSTANTML_CLOUD_RUN_DATA_CELL` |
-| `INSTANTML_CELL_ID` | Per-service data-cell identity. Data services receive it from the deploy helper, it takes precedence over the default for local placement, and it is the only env var that enables automatic `data_cells` heartbeats. |
+| `INSTANTML_CELL_ID` | Per-service data-cell identity. Data services receive it from the deploy helper, it takes precedence over the default for local placement, and it is the only env var that enables automatic `data_cells` heartbeats and hosted data writer-lease acquisition. |
+| `INSTANTML_CELL_WRITER_LEASE_TTL_SECONDS` | Data-cell writer lease TTL; default `30`. Route-classified tenant-data mutations renew while running and fail closed with `cell_writer_unavailable` if the lease cannot be verified. |
+| `INSTANTML_INSTANCE_ID` | Optional writer-lease holder id. Defaults to a fresh process UUID; Cloud Run service/revision labels are recorded separately as diagnostics. |
 | `INSTANTML_CLOUD_RUN_CONTROL_SCALING` | `auto` or `manual`; default `manual` in prod and `auto` in staging |
 | `INSTANTML_CLOUD_RUN_DATA_SCALING` | `auto` or `manual`; default `manual` in prod and `auto` in staging |
 | `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES` | Manual control instances; default `1` |

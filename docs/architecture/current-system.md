@@ -125,8 +125,16 @@ The control-plane Postgres schema now includes an operator-seeded `data_cells`
 registry, tenant-route placement metadata, route versions, and route audit
 events. New hosted routes can be annotated with the configured current cell
 when that registry row is open, healthy, recently backed up, and under
-capacity. Public SDK/browser route discovery and shared-cell multi-writer
-admission remain future gates.
+capacity. The Postgres `data_cell_writer_leases` table and data-route
+middleware now enforce one write-admitted hosted split data writer per cell;
+`/readyz` reports this through side-effect-free `write_ready`/`writer_lease`
+fields without acquiring or renewing lease ownership. The request guard is
+route-aware, so analytics POST reads stay available while tenant-data mutations
+must hold the current cell's lease and match the authoritative Postgres route
+`cell_id`. BYOC storage setup routes configure customer-owned storage and are
+not current-cell tenant-data mutations.
+Public SDK/browser route discovery and true shared-cell multi-writer ClickHouse
+correctness remain future gates.
 
 Internal hosted first slice:
 

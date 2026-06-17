@@ -228,7 +228,9 @@ Environment variables:
 - `CLICKHOUSE_URL`: ClickHouse HTTP connection string of the form `http://user:pass@host:port/database`. Default: `http://default:@127.0.0.1:8123/instantml`. The named database is created if missing on startup.
 - `INSTANTML_BIND_ADDR`: API bind address. Default: `127.0.0.1:8001`.
 - `INSTANTML_SERVICE_PLANE`: `combined`, `control`, or `data`. Default: `combined`. `control` and `data` require `INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true`.
-- `INSTANTML_CELL_ID`: optional operator label for this data-plane cell. The deploy helper sets it only for split data services; when present, the service can register and heartbeat its `data_cells` row.
+- `INSTANTML_CELL_ID`: optional operator label for this data-plane cell. The deploy helper sets it only for split data services; when present, the service can register and heartbeat its `data_cells` row. Hosted split data services require it before mutating data-plane routes can write.
+- `INSTANTML_CELL_WRITER_LEASE_TTL_SECONDS`: Postgres data-cell writer lease TTL. Default: `30`. Data services renew during long-running route-classified tenant-data mutations; deploy handoff should release or wait for this TTL before a replacement writer takes traffic.
+- `INSTANTML_INSTANCE_ID`: optional writer-lease holder id. Defaults to a fresh process-start UUID. `K_SERVICE`/`K_REVISION` or `INSTANTML_SERVICE_NAME`/`INSTANTML_REVISION` are recorded as lease diagnostics when present.
 - `CONTROL_DB_MAX_CONNECTIONS`: Postgres control-plane sqlx pool size per
   Rust process. Default: `10`. Invalid or zero values fail startup so runtime
   behavior matches the Phase 0 capacity preflight. Include this value before
@@ -246,7 +248,7 @@ Environment variables:
 - `INSTANTML_ARTIFACT_ROOT`: local artifact byte root when `INSTANTML_ARTIFACT_BACKEND=local`. Default: `.instantml/rust-artifacts`.
 - `INSTANTML_MAX_BODY_BYTES`: general JSON body cap. Default: `1000000`.
 - `INSTANTML_MAX_UPLOAD_BODY_BYTES`: upload JSON body cap. Default: `50000000`.
-- `INSTANTML_REQUEST_TIMEOUT_SECONDS`: HTTP timeout. Default: `30`.
+- `INSTANTML_REQUEST_TIMEOUT_SECONDS`: HTTP timeout. Default: `900`.
 - `INSTANTML_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
 - `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warning logs. Default: `1000`.
 - `INSTANTML_SHARE_TOKEN_TTL_DAYS`: report share-link lifetime in days from the moment the token is rotated/minted; expired tokens 404 like unknown tokens. `0` disables expiry. Tokens persisted before issuance tracking stay valid until rotated. Default: `30`.
@@ -367,7 +369,7 @@ Root helper-only environment variables:
 - `INSTANTML_CLOUD_RUN_SCALING`, `INSTANTML_CLOUD_RUN_INSTANCES`: combined-service scaling mode and manual instance count. The legacy single deploy defaults to manual `1` in prod and auto min `0` max `1` in staging.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
 - `INSTANTML_DEFAULT_DATA_CELL_ID`: default placement target used when stamping new hosted tenant routes. The Cloud Run helper sets this from `INSTANTML_CLOUD_RUN_DATA_CELL` so control/combined services can place new hosted orgs without claiming data-cell liveness.
-- `INSTANTML_CELL_ID`: per-process data-cell identity. Data services receive it from the deploy helper, it takes precedence over `INSTANTML_DEFAULT_DATA_CELL_ID` for local placement, and it is the only env var that enables automatic `data_cells` registration and heartbeats.
+- `INSTANTML_CELL_ID`: per-process data-cell identity. Data services receive it from the deploy helper, it takes precedence over `INSTANTML_DEFAULT_DATA_CELL_ID` for local placement, and it is the only env var that enables automatic `data_cells` registration, heartbeats, and hosted split writer-lease acquisition.
 
 When `INSTANTML_CELL_ID` is set and Postgres control storage is configured, the
 Rust data service auto-registers and heartbeats a conservative `data_cells` row
@@ -378,6 +380,23 @@ matching row is closed, has stale health or backup evidence, or is full.
 Backup evidence is operator-owned; a timestamp more than five minutes in the
 future is treated as invalid so skewed manual writes cannot hold a cell open.
 Customer-owned ClickHouse routes are not assigned to managed data cells.
+
+Hosted split data services also acquire a Postgres-backed
+`data_cell_writer_leases` row before accepting route-classified tenant-data
+mutations.
+The lease uses a process-start holder id and monotonic `fence_token`; renew and
+release require the exact `(cell_id, holder_instance_id, fence_token)` tuple.
+Acquisition and renewal are allowed only while the cell status is `open`,
+`full`, or `draining`; `disabled` and `failed` cells reject writes. The
+data-route middleware skips read-style POST endpoints, checks hosted write
+admission against the authoritative Postgres tenant route, rejects
+authenticated writes whose route records another `cell_id`, renews the lease
+while mutating requests are running, and returns a
+retryable `503` with `code: "cell_writer_unavailable"` when the lease is
+missing, held by another process, expired, or cannot be verified. Combined,
+local, and no-Postgres development modes keep their previous write behavior.
+BYOC storage setup routes configure customer-owned storage and are intentionally
+outside the current-cell writer lease.
 - `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Prod defaults to `manual`; staging defaults to `auto`.
 - `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual split instance counts. Values above `1` are blocked unless the matching unsafe control/data test flag is set.
 - `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for split services. Defaults are min `0`, max `1`.
@@ -397,7 +416,7 @@ Implemented health and platform endpoints:
 
 - `GET /health`
 - `GET /healthz`
-- `GET /readyz`: returns `status`, `control_projection_loaded`, and `control_refresh_degraded`; fails with 503 until ClickHouse is reachable and the local projection has loaded.
+- `GET /readyz`: returns `status`, `control_projection_loaded`, `control_refresh_degraded`, `write_ready`, and `writer_lease` (`required`, `ready`, `code`); fails with 503 until ClickHouse is reachable and the local projection has loaded. Data-plane writer lease ownership is observed without acquiring or renewing the lease, so read readiness does not become a deploy-time ownership handoff.
 - `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 

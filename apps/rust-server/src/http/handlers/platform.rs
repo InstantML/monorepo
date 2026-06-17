@@ -35,7 +35,7 @@ pub async fn health() -> Json<Value> {
     tag = "platform",
     security(),
     responses(
-        (status = 200, description = "Operational and metric stores ready", body = crate::http::openapi::HealthResponse),
+        (status = 200, description = "Operational and metric stores ready", body = crate::http::openapi::ReadyzResponse),
         (status = 503, description = "Not ready", body = crate::http::openapi::ErrorResponse),
     ),
 )]
@@ -61,10 +61,16 @@ pub async fn readyz(State(state): State<Arc<AppState>>) -> AppResult<Json<Value>
         return Err(error);
     }
     let projection = state.store.control_projection_health().await;
+    let writer_lease = state
+        .store
+        .data_cell_writer_lease_readiness(state.config.service_plane)
+        .await;
     Ok(Json(json!({
         "status": "ok",
         "control_projection_loaded": projection.loaded,
         "control_refresh_degraded": projection.refresh_degraded,
+        "write_ready": writer_lease.ready,
+        "writer_lease": writer_lease,
     })))
 }
 
