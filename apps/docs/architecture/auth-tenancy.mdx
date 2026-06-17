@@ -25,7 +25,7 @@ organization before product data is read or written.
 | 2 | Browser | Sign in or sign up with the configured identity provider. |
 | 3 | Browser | Submit the provider token to `POST /api/auth/clerk` or `POST /api/auth/dev/google`. |
 | 4 | Rust API | Verify the token and email. |
-| 5 | Rust API | Upsert user, organization, membership, and session records in User Data ClickHouse. |
+| 5 | Rust API | Upsert user, organization, membership, and session records in the control-plane Postgres database. |
 | 6 | Rust API | Provision or load the tenant route. |
 | 7 | Rust API | Return the auth payload and set the browser session cookie. |
 

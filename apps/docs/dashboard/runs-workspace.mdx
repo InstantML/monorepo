@@ -54,8 +54,9 @@ reason instead of silently exporting a partial subset.
 
 ## Panels
 
-Automatic mode creates a capped high-signal set of line panels from logged
-metric keys. Manual mode starts blank so you can add only the charts you need.
+The workspace builds a capped high-signal set of line panels from logged metric
+keys. Use **Add panels** to add only the charts you need, **Rebuild layout** to
+regenerate the default set, and remove panels you don't want.
 
 Current visualization panel types:
 
@@ -145,10 +146,10 @@ status, or first tag. Scatter and distribution panels are summary-only and do
 not make metric series or rich-object reads. These summary panels do not include
 lasso selection, density overlays, or project-wide all-matching queries.
 
-The fullscreen view below shows a selected-run histogram timeline with shared
-bin edges across frames.
+The panel below shows a selected-run histogram timeline with shared bin edges
+across frames. Open it fullscreen to scrub frame-by-frame.
 
-![Fullscreen logged histogram timeline](/images/product/dashboard-logged-histogram.png)
+![Logged histogram timeline panel](/images/product/dashboard-logged-histogram.png)
 
 Parallel coordinates remain in **Insights** as an exploratory HPO/sweep view
 over loaded summaries rather than a saved Runs workspace panel.
@@ -173,4 +174,5 @@ layouts are saved through the control-plane workspace-view API.
 | `Cmd+Shift+Z` / `Ctrl+Y` | Redo workspace change |
 | `Cmd/Ctrl+.` | Collapse or restore run selector |
 | `Cmd/Ctrl+J` | Move focus between Runs selector and canvas |
+| `1`–`9` | Jump to tab in rail order (1 = Runs) |
 | Left/Right Arrow | Traverse fullscreen panels |

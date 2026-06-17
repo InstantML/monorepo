@@ -31,7 +31,7 @@ operators can verify which role is serving a request.
 | --- | --- | --- |
 | Browser / Next frontend | Public HTTPS API URL | Control service for auth, billing, seats, API keys, tenant routes, dashboard preferences, and reports. |
 | Python SDK / uploader | Public HTTPS API URL | Data service for projects, runs, metrics, logs, artifacts, objects, imports, export, and usage. |
-| Control service | User Data ClickHouse | Account, session, billing, API-key, and tenant-route records. |
+| Control service | Control-plane Postgres (Cloud SQL) | Account, session, billing, API-key, and tenant-route records. |
 | Data service | Tenant databases on Google Cloud ClickHouse | Tenant product records and metric tables. |
 
 Path-based routing is enough for a single data cell. Many cells require a

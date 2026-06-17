@@ -1,6 +1,6 @@
 ---
 title: "Run Detail"
-description: "Inspect one run's metrics, config, source context, logs, files, and rich objects."
+description: "Inspect one run's metrics, config, source context, logs, artifacts, and rich objects."
 ---
 
 # Run Detail
@@ -21,29 +21,29 @@ The top of the page shows run identity and status:
 - Artifact count.
 - Latest and best metric summaries when available.
 
-## Local run sections
+## Run Detail tabs
 
-Run Detail has local sections. These are not global dashboard tabs.
+Run Detail has its own tabs, separate from the global dashboard navigation:
 
-| Section | Use |
+| Tab | Use |
 | --- | --- |
-| Summary | Main status, tags, notes, and metric summaries |
-| Data | Config and structured run data |
+| Overview | Main status, tags, notes, metric summaries, and stored checkpoints |
+| Metrics | Metric curve chart and the metric summary table |
+| Artifacts | Artifact, checkpoint, media, table, histogram, and evaluation evidence |
 | Logs | Stdout/stderr style logs for the selected run |
-| Files | Artifact, checkpoint, media, table, histogram, and evaluation evidence |
-| System | Source/system metadata captured by the SDK |
-| Graph | Conditional relationship/evidence graph surfaces when graph data exists |
+| Config | Config plus source/system metadata captured by the SDK |
+| Lineage | Conditional relationship/evidence graph surfaces when graph data exists |
 
-Logs and object manifests load only when the relevant local section is opened.
+Logs and object manifests load only when the relevant tab is opened.
 
 ## Tags and notes
 
 Use the small editor to update tags and notes without leaving the run. These
 fields are searchable and appear in Compare.
 
-## Files and artifacts
+## Artifacts
 
-The Files section previews checkpoints, uploaded files, media objects, tables,
+The Artifacts tab previews checkpoints, uploaded files, media objects, tables,
 histograms, and binary classification evaluation bundles through existing
 artifact and object routes. Classification eval previews render PR/ROC curves,
 a confusion matrix, per-class metrics, and optional prediction rows from typed

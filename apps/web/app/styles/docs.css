@@ -594,14 +594,15 @@ body:has(.docs-route) {
   overflow: hidden;
   border: 1px solid rgba(21, 32, 26, 0.12);
   border-radius: 8px;
-  background: #111b16;
-  box-shadow: 0 18px 50px rgba(21, 32, 26, 0.1);
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(21, 32, 26, 0.06);
   width: 100%;
 }
 
 .docs-route-code-toolbar {
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: #f4f6f2;
+  border-bottom: 1px solid rgba(23, 33, 27, 0.08);
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -609,7 +610,7 @@ body:has(.docs-route) {
 }
 
 .docs-route-code-label {
-  color: #9ab7aa;
+  color: #5f7669;
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
@@ -617,10 +618,10 @@ body:has(.docs-route) {
 
 .docs-route-code-copy {
   align-items: center;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(21, 32, 26, 0.04);
+  border: 1px solid rgba(21, 32, 26, 0.12);
   border-radius: 7px;
-  color: rgba(231, 234, 223, 0.88);
+  color: #3a4a40;
   cursor: pointer;
   display: inline-flex;
   font: inherit;
@@ -632,7 +633,7 @@ body:has(.docs-route) {
 }
 
 .docs-route-code-copy:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(21, 32, 26, 0.09);
 }
 
 .docs-route-code pre {
@@ -644,7 +645,7 @@ body:has(.docs-route) {
 .docs-route-code code {
   border: 0;
   background: transparent;
-  color: #e6f4ee;
+  color: #1f2d25;
   font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
   font-size: 13px;
   line-height: 1.65;

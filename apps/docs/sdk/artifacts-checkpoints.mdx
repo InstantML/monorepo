@@ -46,11 +46,11 @@ Use `VersionedArtifact` when a dataset, model, or checkpoint package needs a
 stable manifest, `latest`/`best` aliases, and lineage.
 
 ```python
-import instantml as im
+import instantml as ro
 
-run = im.init(project="cartpole")
+run = ro.init(project="cartpole")
 
-artifact = im.VersionedArtifact(
+artifact = ro.VersionedArtifact(
     "policy-checkpoints",
     type="model",
     metadata={"framework": "torch"},
@@ -74,10 +74,10 @@ raw-artifact call working.
 Resolve and consume a version from another run:
 
 ```python
-api = im.Api()
+api = ro.Api()
 dataset = api.artifact("training-data:latest", type="dataset", project="cartpole")
 
-run = im.init(project="cartpole")
+run = ro.init(project="cartpole")
 run.use_artifact(dataset)
 dataset.download("inputs/training-data")
 run.finish()

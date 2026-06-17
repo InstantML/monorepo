@@ -5,18 +5,19 @@ description: "Inspect checkpoint lineage and run context for the selected run."
 
 # Checkpoints
 
-The Checkpoints tab focuses on checkpoint artifacts and their run context.
+Checkpoints live inside Run Detail. The standalone Checkpoints tab has been
+merged into Run Detail, so checkpoint rows, fork actions, and lineage all
+appear there for the selected run. Older `/dashboard/checkpoints` links still
+resolve to Run Detail.
 
 ![Checkpoint rows](/images/product/dashboard-checkpoints.png)
 
 ## What appears
 
-- The Checkpoints tab shows checkpoint rows and model context for the
-  selected run.
-- Run Detail Summary shows stored checkpoint artifacts with Download, Resume
-  Code, and Fork actions.
-- Run Detail Graph shows parent, selected run, checkpoint, and direct child
-  context.
+- Run Detail's Overview tab shows stored checkpoint artifacts with Download,
+  Resume Code, and Fork actions, plus model context for the selected run.
+- Run Detail's Lineage tab shows parent, selected run, checkpoint, and direct
+  child context.
 
 ## Fork a checkpoint
 
@@ -41,7 +42,7 @@ such as tags, notes, metadata, and config overrides, but the current dashboard
 modal exposes only name, reason, and config inheritance.
 
 After creation, the dashboard selects the forked child run and opens Run Detail
-Graph.
+Lineage.
 
 ![Run lineage graph](/images/product/dashboard-lineage-graph.png)
 
@@ -53,9 +54,9 @@ selected child yet.
 ## Log checkpoint bytes
 
 ```python
-import instantml as im
+import instantml as ro
 
-policy = im.CheckpointPolicy(every_steps=1000)
+policy = ro.CheckpointPolicy(every_steps=1000)
 
 if policy.should_save(step):
     run.log_checkpoint_file(
@@ -84,9 +85,9 @@ The dashboard's Resume Code button shows a restore snippet. For automation, use
 the Python API helper to create a fork and then attach logging to the child run:
 
 ```python
-import instantml as im
+import instantml as ro
 
-api = im.Api()
+api = ro.Api()
 child = api.fork_run(
     "source-run-id",
     checkpoint_artifact_id="artifact-id",
@@ -95,7 +96,7 @@ child = api.fork_run(
     tags=["retry", "checkpoint"],
 )
 
-run = im.attach_run(child["id"])
+run = ro.attach_run(child["id"])
 run.log({"train/loss": 0.1}, step=1001)
 run.finish()
 ```

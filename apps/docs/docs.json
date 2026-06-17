@@ -117,17 +117,6 @@
         ]
       },
       {
-        "tab": "Benchmarks",
-        "groups": [
-          {
-            "group": "Performance evidence",
-            "pages": [
-              "benchmarks"
-            ]
-          }
-        ]
-      },
-      {
         "tab": "API",
         "groups": [
           {
@@ -144,22 +133,6 @@
               "api/import-export-usage",
               "api/dashboard-control-state",
               "troubleshooting"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Architecture",
-        "groups": [
-          {
-            "group": "System",
-            "pages": [
-              "architecture/system-overview",
-              "architecture/storage-model",
-              "architecture/google-clickhouse",
-              "architecture/auth-tenancy",
-              "architecture/service-planes",
-              "architecture/schema-reference"
             ]
           }
         ]

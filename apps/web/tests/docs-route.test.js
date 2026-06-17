@@ -281,7 +281,7 @@ test("dashboard workflow docs expose product screenshots through the route parse
   assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-evidence.png"));
   assert.ok(artifactImages.includes("/images/product/dashboard-artifacts-browser.png"));
   assert.ok(artifactImages.includes("/images/product/dashboard-checkpoint-fork.png"));
-  assert.ok(artifactImages.includes("/images/product/dashboard-checkpoints.png"));
+  assert.ok(artifactImages.includes("/images/product/dashboard-lineage-graph.png"));
 
   const tour = await loadDocsPage(["dashboard", "tour"]);
   const tourImages = tour.blocks.filter((block) => block.type === "image").map((block) => block.src);
