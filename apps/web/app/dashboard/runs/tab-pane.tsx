@@ -291,7 +291,7 @@ export function RunsTabPane({
 
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Runs" />
+      <PageHead title="Runs" />
       <>
       {/* The run filter row (status / search / sort / saved views) lives in the
           Runs tab, between the page head and the metric/Runs-actions row. */}

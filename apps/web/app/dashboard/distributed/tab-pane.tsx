@@ -141,7 +141,6 @@ export function DistributedTabPane({ api, availableRuns = [], embedded = false, 
       ) : (
         <header className="analysis-header">
           <div className="analysis-title-block">
-            <span className="analysis-eyebrow eyebrow--accent">Distributed</span>
             <h2>Rank reducers</h2>
             <p>{primaryRun ? `${primaryRun.name} · selected run` : "No run selected"}</p>
           </div>

@@ -12,7 +12,7 @@ type Props = {
 export function DatasetsTabPane({ datasetRows, metricKey }: Props) {
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Datasets" />
+      <PageHead title="Datasets" />
       <div className="tab-grid">
         <section className="panel">
           <div className="panel-head"><h2><Database size={15} /> Config-derived Datasets <span>({datasetRows.length})</span></h2></div>

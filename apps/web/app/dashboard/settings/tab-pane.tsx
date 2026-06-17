@@ -236,7 +236,7 @@ export function SettingsTabPane({
         : "Cancel the active paid subscription at period end";
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Workspace"} title="Workspace settings" />
+      <PageHead title="Workspace settings" />
       {/* Two independent column stacks instead of a row-paired grid: Plan Usage
           is much taller than Billing, so a row grid left a large void under the
           short Billing card before Workspace. Stacking each column lets the right

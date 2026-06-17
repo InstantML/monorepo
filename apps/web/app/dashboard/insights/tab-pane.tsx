@@ -66,7 +66,6 @@ export function InsightsTabPane({ embedded = false, metricKey, onSelectRun = () 
       ) : (
         <header className="analysis-header">
           <div className="analysis-title-block">
-            <span className="analysis-eyebrow eyebrow--accent">Insights</span>
             <h2>Loaded run analysis</h2>
             <p>{scope}</p>
           </div>

@@ -499,7 +499,7 @@ export function ReportsTabPane({ canEditReports = true }: { canEditReports?: boo
 
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Reports" />
+      <PageHead title="Reports" />
       {error ? <div className="report-error" role="alert">{error}</div> : null}
       {/* The unsupported state is conveyed by the empty-state card below (which
           is unsupported-aware) — no separate banner, to avoid duplicate copy. */}
