@@ -114,7 +114,9 @@ metadata.
 Distributed-rank and sweep-analysis seed data for Distributed and Insights.
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 examples/rank-insights/train.py
+PYTHONPATH=packages/python-sdk \
+  python3 examples/rank-insights/train.py \
+  --server https://api.instantml.ai
 ```
 
 Open the dashboard, select the generated rank-insights project, and inspect

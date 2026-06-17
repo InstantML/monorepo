@@ -63,7 +63,8 @@ dashboard.
 }
 ```
 
-Values and steps must be finite nonnegative numbers. A batch can include up to
+Metric values must be finite numbers (negative values such as losses or rewards
+are allowed); steps must be finite and nonnegative. A batch can include up to
 1,000 metrics for one run and step.
 
 ## Rank metric point

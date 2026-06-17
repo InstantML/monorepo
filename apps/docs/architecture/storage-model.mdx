@@ -22,11 +22,12 @@ Data plane:
   console logs, scalar metrics, rank metrics, and rich object rows.
 ```
 
-Local mode may keep both planes in one ClickHouse database. Hosted mode stores
-global account/control records in User Data ClickHouse and tenant product rows
-in the org's routed ClickHouse database. InstantML-hosted production and
-staging currently use an InstantML-owned self-hosted ClickHouse deployment on
-Google Cloud for both planes.
+Local single-binary mode may keep both planes in one ClickHouse database.
+Hosted mode stores global account/control records in a control-plane Postgres
+database (Cloud SQL) and tenant product rows in the org's routed ClickHouse
+database. InstantML-hosted production and staging keep control records in
+Cloud SQL Postgres and tenant run data in an InstantML-owned self-hosted
+ClickHouse deployment on Google Cloud.
 
 ## Append-only operational records
 
@@ -47,7 +48,7 @@ Operational records include:
 - Table preview rows.
 - Local-mode user/org/session/API-key records.
 
-Hosted User Data records include:
+Hosted control-plane records (stored in Cloud SQL Postgres) include:
 
 - Users and identities.
 - Organizations and memberships.

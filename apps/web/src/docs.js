@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 const HTTP_METHODS = ["get", "post", "put", "patch", "delete"];
 const srcDir = path.dirname(fileURLToPath(import.meta.url));
 const PAGE_TITLE_OVERRIDES = {
+  // The Alerts page routes at /dashboard/alerts but the rail label is "Run Health".
+  "dashboard/alerts": "Run Health",
   "guides/instantml-vs-mlflow": "InstantML vs MLflow",
   "guides/wandb-alternative": "W&B alternative",
   "guides/wandb-import-guide": "W&B import guide",

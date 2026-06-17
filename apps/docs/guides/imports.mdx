@@ -25,8 +25,8 @@ instantml import wandb --project cartpole --entity my-team --source-project old-
 # Real Neptune Exporter Parquet directories.
 instantml import neptune --project cartpole --input ./neptune-export --dry-run
 
-# TensorBoard scalar event files.
-instantml import tensorboard --project cartpole --logdir ./runs --dry-run
+# TensorBoard scalar event files (TensorBoard lives under `sync`, not `import`).
+instantml sync tensorboard ./runs --project cartpole --dry-run
 
 # Transformed MLflow JSON.
 instantml import mlflow --project cartpole --input ./mlflow-export.json --dry-run

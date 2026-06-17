@@ -327,6 +327,17 @@ try {
   logUrls.length = 0;
   objectNotFoundUrls.length = 0;
 
+  if (docsScreenshotMode) {
+    await captureDocScreenshots(page, webBaseUrl);
+    if (browser) await browser.close().catch(() => {});
+    if (nextServer) {
+      nextServer.kill();
+      await new Promise((resolve) => nextServer.once("close", resolve)).catch(() => {});
+    }
+    console.log("[doc-shot] capture routine complete");
+    process.exit(0);
+  }
+
   let delayedInitialSummary = true;
   await page.route("**/api/runs/summary**", async (route) => {
     if (delayedInitialSummary) {
@@ -1626,6 +1637,263 @@ try {
   if (apiServer) {
     await new Promise((resolve) => apiServer.close(resolve));
     apiServer.store.close();
+  }
+}
+
+async function captureDocScreenshots(page, webBaseUrl) {
+  const cap = async (name, settleMs = 700) => {
+    await page.waitForTimeout(settleMs);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: path.join(docsProductDir, name) });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+  };
+  const shot = async (name, fn) => {
+    try {
+      await fn();
+      await cap(name);
+      console.log(`[doc-shot] OK   ${name}`);
+    } catch (err) {
+      console.log(`[doc-shot] FAIL ${name}: ${String(err.message ?? err).split("\n")[0]}`);
+    }
+  };
+  const gotoTab = async (tab, sel, timeout = 15000) => {
+    await page.goto(`${webBaseUrl}/dashboard/${tab}`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(sel, { timeout }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+  };
+
+  // Resolve a representative demo run id for detail-centric shots.
+  let seedRunId = null;
+  try {
+    const summary = await pageApiGet(page, "/api/runs/summary?project=demo&limit=50");
+    const runs = summary?.runs ?? summary?.data?.runs ?? [];
+    const seed = runs.find((r) => (r.name || "").includes("seed-44")) || runs[0];
+    seedRunId = seed?.id || seed?.run_id || null;
+  } catch (err) {
+    console.log(`[doc-shot] could not resolve seed run id: ${err.message}`);
+  }
+
+  // Best-effort extra seeding for data-heavy views.
+  if (seedRunId) {
+    try {
+      for (const rank of [0, 1, 2, 3]) {
+        await pageApiRequest(page, "POST", `/runs/${seedRunId}/rank-metrics`, {
+          step: 0, rank, world_size: 4,
+          metrics: { "train/loss": 0.4 - rank * 0.02, "train/grad_norm": 1.2 + rank * 0.1, "system/gpu_util": 80 + rank },
+        });
+        await pageApiRequest(page, "POST", `/runs/${seedRunId}/rank-metrics`, {
+          step: 1, rank, world_size: 4,
+          metrics: { "train/loss": 0.34 - rank * 0.02, "train/grad_norm": 1.05 + rank * 0.1, "system/gpu_util": 82 + rank },
+        });
+      }
+      console.log("[doc-shot] seeded rank metrics");
+    } catch (err) { console.log(`[doc-shot] rank-metrics seed skipped: ${err.message}`); }
+  }
+  const openRunsDemo = async () => {
+    await page.goto(`${webBaseUrl}/dashboard/runs`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
+    await chooseSelect(page, "#project-filter", "demo").catch(() => {});
+    await page.waitForTimeout(400);
+  };
+  // Open the rich seed-44 run inline; this sets the primary/inspected run so
+  // run-scoped tabs (detail, distributed, artifacts) follow it via in-app nav.
+  const openSeed44 = async () => {
+    await page.fill("#search", 'name:"rl-ppo-seed-44"').catch(() => {});
+    await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
+    await page.locator(".workspace-run-open").first().click({ timeout: 8000 });
+    await page.waitForFunction(() => (document.querySelector("#run-detail, .run-workspace")?.textContent ?? "").includes("rl-ppo-seed-44"), null, { timeout: 12000 });
+    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+    // Wait for the Overview metric series to finish loading (avoid empty charts).
+    await page.waitForFunction(() => !/No points logged yet/i.test(document.querySelector(".tab-pane.active, #run-detail, .run-workspace")?.textContent ?? ""), null, { timeout: 8000 }).catch(() => {});
+  };
+  // Standalone Run Detail tabs: Overview / Metrics / Artifacts / Logs / Config / Lineage.
+  // Some tabs carry a count badge ("Artifacts 2"), so match on a prefix, not exact.
+  const detailTab = async (name) => {
+    await page.locator(".run-workspace-tabs").getByRole("button", { name: new RegExp(`^${name}\\b`) }).first().click({ timeout: 8000 });
+    await page.waitForTimeout(700);
+  };
+  const navTo = async (label, sel) => {
+    await page.getByRole("link", { name: new RegExp(`^${label}$`) }).click({ timeout: 8000 });
+    if (sel) await page.waitForSelector(sel, { timeout: 12000 }).catch(() => {});
+    await page.waitForTimeout(600);
+  };
+
+  // ---- Phase A: workspace-level views (independent navigations) ----
+
+  // 1. Runs workspace (panels view, demo project).
+  await shot("dashboard-runs.png", async () => {
+    await openRunsDemo();
+    await page.waitForSelector(".workspace-panel-card", { timeout: 15000 }).catch(() => {});
+  });
+
+  // 2. Metrics tab.
+  await shot("dashboard-metrics.png", async () => {
+    await openRunsDemo();
+    await navTo("Metrics", ".tab-pane.active canvas, .metric-chart, .tab-pane.active svg");
+  });
+
+  // 3. Compare (select all demo runs first).
+  await shot("dashboard-compare.png", async () => {
+    await openRunsDemo();
+    const master = page.locator(".workspace-run-rail input[type=checkbox]").first();
+    if (await master.count()) await master.check().catch(() => {});
+    await page.waitForTimeout(300);
+    await navTo("Compare", ".compare-table, .side-by-side, .tab-pane.active table");
+  });
+
+  // 4. Insights (loaded run analysis over the demo set).
+  await shot("dashboard-insights.png", async () => {
+    await openRunsDemo();
+    const master = page.locator(".workspace-run-rail input[type=checkbox]").first();
+    if (await master.count()) await master.check().catch(() => {});
+    await page.waitForTimeout(300);
+    await navTo("Insights", ".tab-pane.active");
+  });
+
+  // 5. Reports editor (create a report via the empty-state action).
+  await shot("dashboard-reports-editor.png", async () => {
+    await page.goto(`${webBaseUrl}/dashboard/reports`, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector(".tab-pane.active", { timeout: 15000 });
+    await page.waitForTimeout(600);
+    const tmpl = page.getByRole("button", { name: /Start from template/i }).first();
+    const create = page.getByRole("button", { name: /Create report|New report/i }).first();
+    if (await tmpl.count()) await tmpl.click({ timeout: 6000 }).catch(() => {});
+    else if (await create.count()) await create.click({ timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+  });
+
+  // 6. API keys (API tab).
+  await shot("dashboard-api-keys.png", async () => {
+    await gotoTab("api", ".tab-pane.active");
+  });
+
+  // 7. Org / workspaces menu.
+  await shot("dashboard-org-workspaces.png", async () => {
+    await openRunsDemo();
+    const trigger = page.locator(".account-workspace-trigger, [data-account-menu-trigger], .account-workspace-current").first();
+    await trigger.click({ timeout: 8000 });
+    await page.waitForSelector(".account-workspace-menu, [role=menu]", { timeout: 8000 }).catch(() => {});
+  });
+
+  // 8. W&B import flow.
+  await shot("import-flow-wandb.png", async () => {
+    await gotoTab("imports", ".tab-pane.active");
+    const wandb = page.getByRole("button", { name: /W&B|Weights ?& ?Biases|wandb/i }).first();
+    if (await wandb.count()) await wandb.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+  });
+
+  // 9. Neptune import flow.
+  await shot("import-flow-neptune.png", async () => {
+    await gotoTab("imports", ".tab-pane.active");
+    const neptune = page.getByRole("button", { name: /Neptune/i }).first();
+    if (await neptune.count()) await neptune.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+  });
+
+  // 10. Logged-histogram timeline panel (workspace view keeps it content-rich).
+  await shot("dashboard-logged-histogram.png", async () => {
+    await openRunsDemo();
+    await openSeed44();
+    await navTo("Runs", ".workspace-run-row");
+    await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click({ timeout: 8000 });
+    await page.waitForSelector(".panel-drawer", { timeout: 8000 });
+    await page.locator(".chart-type-segment").getByRole("button", { name: "Logged histogram timeline", exact: true }).click({ timeout: 8000 });
+    await page.getByLabel("Histogram object key to add").fill("eval/score_distribution");
+    await page.locator(".quick-add-card").click({ timeout: 8000 });
+    const card = page.locator(".workspace-panel-card").filter({ has: page.locator(".histogram-timeline-panel-chart") }).first();
+    await card.waitFor({ state: "visible", timeout: 10000 });
+    await page.waitForFunction(() => {
+      const c = [...document.querySelectorAll(".workspace-panel-card")].find((n) => n.querySelector(".histogram-timeline-panel-chart"));
+      return (c?.textContent ?? "").includes("frames");
+    }, null, { timeout: 8000 }).catch(() => {});
+  });
+
+  // ---- Phase B: seed-44-centric run-scoped views (stateful, in-app nav) ----
+  // Open seed-44 once so primaryRunId follows it through detail/distributed/artifacts.
+  try {
+    await openRunsDemo();
+    await openSeed44();
+
+    // Prime every metric series so the Overview charts are fully populated
+    // (visiting Metrics fetches all series; the Overview then renders both charts).
+    await detailTab("Metrics").catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    // 11. Run Detail (Overview of the rich run, with both metric charts loaded).
+    await shot("dashboard-run-detail.png", async () => {
+      await detailTab("Overview").catch(() => {});
+      await page.waitForFunction(() => {
+        const empty = [...document.querySelectorAll(".tab-pane.active *")].filter((n) => /No points logged yet/i.test(n.textContent ?? "") && n.children.length === 0).length;
+        return empty === 0;
+      }, null, { timeout: 8000 }).catch(() => {});
+    });
+
+    // 12. Checkpoints (Overview's Resume Code action makes this checkpoint-centric
+    // and visually distinct from the Run Detail shot).
+    await shot("dashboard-checkpoints.png", async () => {
+      await detailTab("Overview").catch(() => {});
+      await page.waitForFunction(() => /Checkpoint/i.test(document.querySelector(".tab-pane.active, #run-detail, .run-workspace")?.textContent ?? ""), null, { timeout: 8000 }).catch(() => {});
+      const resume = page.getByRole("button", { name: /Resume Code/i }).first();
+      if (await resume.count()) {
+        await resume.click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    });
+
+    // 13. Artifacts evidence (Artifacts tab previews objects + eval bundles).
+    await shot("dashboard-artifacts-evidence.png", async () => {
+      await detailTab("Artifacts").catch(() => {});
+      await page.waitForSelector(".evidence-panel, .rich-object-card", { timeout: 10000 }).catch(() => {});
+      const evalRow = page.locator(".evidence-row", { hasText: "eval/classification" }).first();
+      if (await evalRow.count()) {
+        await evalRow.click({ timeout: 5000 }).catch(() => {});
+        await page.waitForSelector(".rich-object-card.kind-classification_eval", { timeout: 8000 }).catch(() => {});
+      }
+    });
+
+    // 14. Distributed (rank metrics for the inspected run).
+    await shot("dashboard-distributed.png", async () => {
+      await navTo("Distributed", ".tab-pane.active");
+      await page.waitForFunction(() => !/No rank metrics/i.test(document.querySelector(".tab-pane.active")?.textContent ?? ""), null, { timeout: 6000 }).catch(() => {});
+    });
+
+    // 15. Artifacts browser (inspected-run artifact collections).
+    await shot("dashboard-artifacts-browser.png", async () => {
+      await navTo("Artifacts", ".tab-pane.active");
+    });
+
+    // 16. Checkpoint fork modal.
+    await navTo("Runs", ".workspace-run-row");
+    await openSeed44();
+    await detailTab("Overview").catch(() => {});
+    await shot("dashboard-checkpoint-fork.png", async () => {
+      await page.getByRole("button", { name: /^Fork qa-checkpoint|^Fork$/ }).first().click({ timeout: 8000 });
+      await page.waitForSelector(".checkpoint-fork-modal", { timeout: 10000 });
+    });
+    // Create the fork (keep the modal's clean default name), then capture lineage
+    // from the PARENT so its tree shows the new child rather than an empty leaf.
+    if (await page.locator(".checkpoint-fork-modal").count()) {
+      await Promise.all([
+        page.waitForResponse((r) => r.request().method() === "POST" && r.url().endsWith("/forks") && r.status() === 200, { timeout: 12000 }).catch(() => {}),
+        page.locator(".checkpoint-fork-modal").getByRole("button", { name: /Create Fork/ }).click({ timeout: 8000 }),
+      ]);
+      await page.waitForTimeout(800);
+    }
+    // 17. Lineage graph — re-open the parent (seed-44); its Lineage tab now lists the child.
+    await navTo("Runs", ".workspace-run-row");
+    await openSeed44();
+    await shot("dashboard-lineage-graph.png", async () => {
+      await page.locator(".run-workspace-tabs").getByRole("button", { name: /^Lineage$|^Graph$/ }).click({ timeout: 8000 }).catch(() => {});
+      await page.waitForSelector(".graph-panel, .lineage-graph", { timeout: 10000 }).catch(() => {});
+      await page.waitForFunction(() => !/Loading lineage/i.test(document.querySelector(".graph-panel, .lineage-graph")?.textContent ?? ""), null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(900);
+    });
+  } catch (err) {
+    console.log(`[doc-shot] phase B aborted: ${String(err.message ?? err).split("\n")[0]}`);
   }
 }
 
