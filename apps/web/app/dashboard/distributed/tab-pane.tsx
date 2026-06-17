@@ -7,6 +7,7 @@ import { formatNumber } from "../../../src/state.js";
 import { metricTitle } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
 import { AnalysisCard } from "../ui/analysis-card";
+import { PageHead } from "../ui/page-head";
 import { CustomSelect } from "../ui/select";
 
 type RankReducerPoint = {
@@ -117,6 +118,14 @@ export function DistributedTabPane({ api, availableRuns = [], embedded = false, 
   const latestReducer = summary?.reducers.at(-1) ?? null;
   const activeKey = rankKey || summary?.key || "";
   const hasData = Boolean(summary && summary.keys.length);
+  const runOptions = availableRuns.map((run) => ({
+    value: run.id,
+    label: run.name,
+    description: [run.project, run.status].filter(Boolean).join(" / "),
+  }));
+  const selectedRunMeta = primaryRun
+    ? [primaryRun.project, primaryRun.status].filter(Boolean).join(" / ")
+    : "No run selected";
 
   const keySelect = (
     <CustomSelect
@@ -139,24 +148,32 @@ export function DistributedTabPane({ api, availableRuns = [], embedded = false, 
           )}
         </div>
       ) : (
-        <header className="analysis-header">
-          <div className="analysis-title-block">
-            <h2>Rank reducers</h2>
-            <p>{primaryRun ? `${primaryRun.name} · selected run` : "No run selected"}</p>
-          </div>
-          <div className="analysis-controls">
-            {onSelectRun && availableRuns.length ? (
-              <CustomSelect
-                id="distributed-run"
-                label="Run"
-                onChange={(value) => { if (value) onSelectRun(value); }}
-                options={availableRuns.map((run) => ({ value: run.id, label: run.name }))}
-                value={primaryRun?.id ?? ""}
-              />
-            ) : null}
-            {keySelect}
-          </div>
-        </header>
+        <>
+          <PageHead
+            title="Rank reducers"
+            lede={primaryRun ? primaryRun.name : "Select a run"}
+          />
+          <section className="distributed-control-band" aria-label="Distributed analysis controls">
+            <div className="distributed-run-summary">
+              <span>Selected run</span>
+              <strong>{primaryRun?.name ?? "Choose a run"}</strong>
+              <small>{selectedRunMeta}</small>
+            </div>
+            <div className="distributed-toolbar">
+              {onSelectRun && availableRuns.length ? (
+                <CustomSelect
+                  className="distributed-run-select"
+                  id="distributed-run"
+                  label="Run"
+                  onChange={(value) => { if (value) onSelectRun(value); }}
+                  options={runOptions}
+                  value={primaryRun?.id ?? ""}
+                />
+              ) : null}
+              {keySelect}
+            </div>
+          </section>
+        </>
       )}
 
       {error ? <div className="banner error">{error}</div> : null}

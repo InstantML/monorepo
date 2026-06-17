@@ -138,6 +138,21 @@ test("distributed visuals avoid red/green-only and signed z coloring", () => {
   assert.match(css, /var\(--blue\), var\(--surface-2\), var\(--amber\)/);
 });
 
+test("distributed standalone page uses a full-width selector band", () => {
+  const src = read("app/dashboard/distributed/tab-pane.tsx");
+  assert.match(src, /<PageHead[\s\S]*title="Rank reducers"/);
+  assert.match(src, /className="distributed-control-band"/);
+  assert.match(src, /className="distributed-run-summary"/);
+  assert.match(src, /description: \[run\.project, run\.status\]/);
+  const css = read("app/styles/research.css");
+  assert.match(css, /\.distributed-control-band \{[\s\S]*grid-template-columns: minmax\(220px, 0\.9fr\) minmax\(0, 1\.8fr\)/);
+  assert.match(css, /\.distributed-toolbar \.distributed-run-select \{[\s\S]*flex-basis: 320px/);
+  const helpTriggerRule = css.match(/\.chart-help-trigger \{[^}]+\}/)?.[0] ?? "";
+  assert.match(helpTriggerRule, /background: transparent/);
+  assert.match(helpTriggerRule, /border: 0/);
+  assert.doesNotMatch(helpTriggerRule, /border: 1px solid var\(--line\)/);
+});
+
 // AL2 (reverted 2026-06): the health cards were removed from the Runs header —
 // they duplicated the Run health tab and pushed the run list below the fold.
 // The cards (and their stats) remain on the Run health tab.
