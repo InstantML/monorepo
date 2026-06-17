@@ -63,19 +63,6 @@ function compareRunSearchText(run: RunSummary, artifactsByRun: Record<string, Ar
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
-function compareNumbersDesc(left: unknown, right: unknown) {
-  const leftNumber = typeof left === "number" && Number.isFinite(left) ? left : null;
-  const rightNumber = typeof right === "number" && Number.isFinite(right) ? right : null;
-  if (leftNumber === null && rightNumber === null) return 0;
-  if (leftNumber === null) return 1;
-  if (rightNumber === null) return -1;
-  return rightNumber - leftNumber;
-}
-
-function compareNumbersAsc(left: unknown, right: unknown) {
-  return -compareNumbersDesc(left, right);
-}
-
 // Numeric column sort that always pushes missing values (null/NaN) to the bottom,
 // regardless of ascending/descending direction — a run with no value for the sorted
 // metric should never jump to the top of an ascending sort.
@@ -170,15 +157,6 @@ function buildMetricLookup(rawRows: any[], runs: RunSummary[]): MetricLookup {
       return typeof latest === "number" && Number.isFinite(latest) ? latest : null;
     },
   };
-}
-
-function bestRunByMetric(runs: RunSummary[], metricKey: string, lookup: MetricLookup) {
-  const goal = metricGoal(metricKey);
-  return [...runs].sort((left, right) => {
-    const lv = lookup.best(left.id, metricKey);
-    const rv = lookup.best(right.id, metricKey);
-    return goal === "minimize" ? compareNumbersAsc(lv, rv) : compareNumbersDesc(lv, rv);
-  })[0] ?? null;
 }
 
 function uniqueMetricKeys(keys: string[]) {
@@ -535,29 +513,6 @@ function CompareRunTable({
   );
 }
 
-function CompareSummary({ metricKey, referenceRunId, runs, color, lookup }: { metricKey: string; referenceRunId: string; runs: RunSummary[]; color: string; lookup: MetricLookup }) {
-  const bestRun = bestRunByMetric(runs, metricKey, lookup);
-  const bestValue = bestRun ? lookup.best(bestRun.id, metricKey) : null;
-  const referenceValue = lookup.best(referenceRunId, metricKey);
-  const delta = bestRun && bestRun.id !== referenceRunId ? metricDelta(bestValue, referenceValue, metricGoal(metricKey)) : null;
-  if (!bestRun) return null;
-  return (
-    <div className="cmp-best-banner">
-      <span className="cmp-swatch lg" style={{ background: color }} aria-hidden />
-      <div className="cmp-best-meta">
-        <span className="analysis-eyebrow">{metricGoalLabel(metricKey)} run · {metricTitle(metricKey)}</span>
-        <strong title={bestRun.name}>{bestRun.name}</strong>
-      </div>
-      <span className="cmp-best-val">{bestValue === null ? "—" : formatMetricValue(bestValue)}</span>
-      {bestRun.id === referenceRunId ? (
-        <span className="cmp-best-delta">reference</span>
-      ) : delta ? (
-        <span className={`cmp-best-delta cmp-delta ${delta.tone}`} title={delta.title}>{delta.text} vs reference</span>
-      ) : null}
-    </div>
-  );
-}
-
 export function SideBySide({
   artifactsByRun = {},
   configSortKey = "",
@@ -661,7 +616,6 @@ export function SideBySide({
       })()
     : [];
 
-  const referenceColor = colorByRunId.get(bestRunByMetric(visibleRuns, metricKey, lookup)?.id ?? "") ?? "var(--accent)";
   const hasRuns = visibleRuns.length > 0;
 
   return (
@@ -673,7 +627,6 @@ export function SideBySide({
       ) : null}
       {hasRuns ? (
         <>
-          <CompareSummary metricKey={metricKey} referenceRunId={referenceRunId} runs={visibleRuns} color={referenceColor} lookup={lookup} />
           {resolvedLayout === "rows" ? (
             <CompareRunTable
               columns={columns}

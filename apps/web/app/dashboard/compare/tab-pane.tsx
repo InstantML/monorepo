@@ -14,14 +14,12 @@ type Props = {
   compareOverflowCount: number;
   compareRuns: RunSummary[];
   compareTableMetricKeys: string[];
-  diffOnly: boolean;
   exportSelectedBusy: boolean;
   MAX_COMPARE_TABLE_METRICS: number;
   metricKey: string;
   metricOptionsForControls: string[];
   onChangeMetricKeyAndSortKey: (value: string) => void;
   onClearSelection: () => void;
-  onDiffOnly: (checked: boolean) => void;
   onExportSelectedRuns: () => void;
   onOpenRunArtifacts: (runId: string) => void;
   onReferenceRunId: (id: string) => void;
@@ -44,14 +42,12 @@ export function CompareView({
   compareOverflowCount,
   compareRuns,
   compareTableMetricKeys,
-  diffOnly,
   exportSelectedBusy,
   MAX_COMPARE_TABLE_METRICS,
   metricKey,
   metricOptionsForControls,
   onChangeMetricKeyAndSortKey,
   onClearSelection,
-  onDiffOnly,
   onExportSelectedRuns,
   onOpenRunArtifacts,
   onReferenceRunId,
@@ -155,14 +151,9 @@ export function CompareView({
             <button className="compare-metric-action" onClick={onResetCompareTableMetrics} title="Reset to the primary metric column" type="button">Reset</button>
           ) : null}
         </div>
-        <label className="control checkbox-control compare-embed-diff">
-          Diff config only
-          <input aria-label="Show differing config only" id="diff-only" type="checkbox" checked={diffOnly} onChange={(event) => onDiffOnly(event.target.checked)} />
-        </label>
       </div>
       <SideBySide
         artifactsByRun={compareArtifactsByRun}
-        diffOnly={diffOnly}
         layout="rows"
         metricKey={metricKey}
         onOpenRunArtifacts={onOpenRunArtifacts}

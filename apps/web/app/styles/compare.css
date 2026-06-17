@@ -1606,7 +1606,6 @@ button.compare-row-head.active {
 .compare-embed-actions .control,
 .compare-embed-controls .control { display: flex; align-items: center; gap: 7px; margin: 0; }
 .compare-metric-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.compare-embed-diff { margin-left: auto; white-space: nowrap; }
 
 /* Quiet prompt shown while fewer than two runs are selected, so the picker
  * table below stays the focus instead of an empty comparison. */

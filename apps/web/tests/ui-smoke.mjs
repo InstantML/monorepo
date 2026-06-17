@@ -1276,11 +1276,8 @@ try {
   const referenceOptions = await page.locator("#reference-run option").count();
   assert.ok(referenceOptions >= 2);
 
-  // Diff-config-only keeps the comparison tight; the best-run banner and rows
-  // table stay populated for the selected set.
-  await page.check("#diff-only");
+  // The rows table is populated for the selected set.
   await page.waitForFunction(() => /seed|page-run|run-/.test(document.querySelector("#side-by-side")?.textContent ?? ""));
-  await page.locator(".cmp-best-banner").waitFor({ state: "visible", timeout: 10000 });
 
   // Picking a reference pins and tags that run's row.
   await chooseSelect(page, "#reference-run", { index: 1 });
@@ -1452,7 +1449,6 @@ try {
   const compareData = await page.evaluate(() => ({
     sideBySide: document.querySelector("#side-by-side")?.textContent ?? "",
     compareTable: Boolean(document.querySelector(".cmp-table")),
-    diff: document.querySelector("#diff-only")?.checked,
   }));
   // Restore the panels view (run rail) for the responsive checks below.
   await page.locator(".runs-view-switch").getByRole("button", { name: /Panels/ }).click();
@@ -1495,8 +1491,8 @@ try {
   assert.equal(data.compareTable, true);
   assert.ok(data.savedViews.some((view) => view?.includes("demo-loss-review")));
   assert.deepEqual(
-    { sort: data.sort, group: data.controls.group, x: data.controls.x, smooth: data.controls.smooth, average: data.controls.average, diff: data.diff },
-    { sort: "metric-best", group: "seed", x: "time", smooth: "20", average: true, diff: true },
+    { sort: data.sort, group: data.controls.group, x: data.controls.x, smooth: data.controls.smooth, average: data.controls.average },
+    { sort: "metric-best", group: "seed", x: "time", smooth: "20", average: true },
   );
   assert.equal(data.tallRows, 0);
 

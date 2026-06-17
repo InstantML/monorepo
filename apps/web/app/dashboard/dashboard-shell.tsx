@@ -4347,7 +4347,6 @@ function dismissTopOverlay() {
                   compareOverflowCount={compareOverflowCount}
                   compareRuns={compareRuns}
                   compareTableMetricKeys={compareTableMetricKeys}
-                  diffOnly={diffOnly}
                   exportSelectedBusy={exportSelectedBusy}
                   MAX_COMPARE_TABLE_METRICS={MAX_COMPARE_TABLE_METRICS}
                   metricKey={metricKey}
@@ -4359,7 +4358,6 @@ function dismissTopOverlay() {
                     selectionAnchorRunIdRef.current = "";
                     setSelectedRunIds([]);
                   }}
-                  onDiffOnly={setDiffOnly}
                   onExportSelectedRuns={exportSelectedRunsCsv}
                   onOpenRunArtifacts={(runId) => { setPrimaryRunId(runId); selectTab("artifacts"); }}
                   onReferenceRunId={setReferenceRunId}
