@@ -34,7 +34,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -43,7 +43,7 @@
 .compare-artifact-item small,
 .artifact-media-fallback {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
 }
 
@@ -106,7 +106,7 @@
   gap: 2px;
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 780;
   line-height: 1.25;
   text-transform: uppercase;
@@ -132,7 +132,7 @@ button.compare-row-head.active {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 720;
   opacity: 0.76;
   text-overflow: ellipsis;
@@ -165,13 +165,13 @@ button.compare-row-head.active {
 .compare-run-identity small,
 .compare-note {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
 }
 
 .compare-run-cell {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .compare-run-meta-line {
@@ -196,7 +196,7 @@ button.compare-row-head.active {
 
 .compare-signal-cell strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -209,7 +209,7 @@ button.compare-row-head.active {
 .compare-evidence-note {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -271,7 +271,7 @@ button.compare-row-head.active {
 .setting-row span,
 .api-row small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .metric-card strong {
@@ -321,7 +321,7 @@ button.compare-row-head.active {
   min-width: 0;
   overflow: hidden;
   color: #141712;
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -380,7 +380,7 @@ button.compare-row-head.active {
   align-items: center;
   border-bottom: 1px solid var(--line-soft);
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .compact-row:last-child {
@@ -390,7 +390,7 @@ button.compare-row-head.active {
 .compact-head {
   background: #fdfdfb;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 750;
 }
 
@@ -431,7 +431,7 @@ button.compare-row-head.active {
   background: transparent;
   color: var(--muted);
   padding: 1px 8px;
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 700;
   text-transform: uppercase;
   cursor: help;
@@ -447,7 +447,7 @@ button.compare-row-head.active {
   background: var(--surface-soft);
   color: var(--muted);
   padding: 1px 8px;
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 700;
 }
 
@@ -480,7 +480,7 @@ button.compare-row-head.active {
 .browser-row > span,
 .timeline-row > span:not(.timeline-dot) {
   color: #3a3f33;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-variant-numeric: tabular-nums;
 }
 
@@ -513,7 +513,7 @@ button.compare-row-head.active {
 .billing-confirm p {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 /* Actionable Compare empty state: teaches both selection paths instead of
@@ -553,7 +553,7 @@ button.compare-row-head.active {
   background: var(--accent-soft);
   color: var(--accent-strong);
   padding: 3px 6px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 750;
 }
 
@@ -561,7 +561,7 @@ button.compare-row-head.active {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -583,7 +583,7 @@ button.compare-row-head.active {
   background: #fff;
   color: #3a3f33;
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 700;
   text-decoration: none;
 }
@@ -659,7 +659,7 @@ button.compare-row-head.active {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .artifact-catalog-controls {
@@ -782,7 +782,7 @@ button.compare-row-head.active {
   background: #fff;
   color: var(--muted);
   padding: 2px 7px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -826,7 +826,7 @@ button.compare-row-head.active {
   border-radius: var(--control-radius);
   background: var(--surface-soft);
   padding: 9px 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .artifact-manifest-row span {
@@ -862,7 +862,7 @@ button.compare-row-head.active {
 
 .artifact-lineage-node span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -881,7 +881,7 @@ button.compare-row-head.active {
   grid-template-columns: minmax(0, 1fr) 18px auto minmax(0, 1fr);
   align-items: center;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .artifact-lineage-edge span {
@@ -1581,9 +1581,9 @@ button.compare-row-head.active {
 .cmp-swatch{width:9px;height:9px;border-radius:2px;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,0.18) inset}
 .cmp-swatch.lg{width:11px;height:11px;border-radius:3px}
 .cmp-best-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
-.cmp-best-meta strong{font-family:var(--font-mono);font-weight:600;font-size:14px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-best-meta strong{font-family:var(--font-mono);font-weight:600;font-size: var(--fs-ui);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmp-best-val{font-family:var(--font-serif);font-style:italic;font-size:21px;line-height:1;color:var(--accent-strong);margin-left:auto}
-.cmp-best-delta{font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.cmp-best-delta{font-family:var(--font-mono);font-size: var(--fs-data);color:var(--muted)}
 
 /* table shell — its own bounded scroll region so the column-header row stays
  * sticky on vertical scroll and wheel scrolling stays on the table. */
@@ -1624,8 +1624,8 @@ button.compare-row-head.active {
 .cmp-th.num{align-items:flex-end;text-align:right}
 .cmp-th-cell.sticky .cmp-th{box-shadow:1px 0 0 var(--line)}
 .cmp-th:hover{background:var(--surface-hover)}
-.cmp-th-label{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--text);white-space:nowrap}
-.cmp-th-meta{font-size: 12px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
+.cmp-th-label{display:inline-flex;align-items:center;gap:5px;font-size: var(--fs-data);font-weight:600;color:var(--text);white-space:nowrap}
+.cmp-th-meta{font-size: var(--fs-data);letter-spacing:.05em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
 .cmp-th-chev{color:var(--dim);flex:none}
 .cmp-th:hover .cmp-th-chev{color:var(--muted)}
 .cmp-th.sorted .cmp-th-chev{color:var(--accent)}
@@ -1636,7 +1636,7 @@ button.compare-row-head.active {
 .cmp-cell{
   display:flex;flex-direction:column;justify-content:center;gap:3px;
   padding:10px 14px;min-width:0;
-  font-family:var(--font-mono);font-size:13px;color:var(--text-2);white-space:nowrap;
+  font-family:var(--font-mono);font-size: var(--fs-body);color:var(--text-2);white-space:nowrap;
 }
 .cmp-cell.num{align-items:flex-end;text-align:right;font-variant-numeric:tabular-nums}
 .cmp-row:hover .cmp-cell{background:var(--surface-hover)}
@@ -1651,11 +1651,11 @@ button.compare-row-head.active {
 .cmp-row:hover .cmp-identity{background:var(--surface-hover)}
 .cmp-row.reference .cmp-identity{background:var(--surface-selected);box-shadow:inset 2px 0 0 var(--accent),1px 0 0 var(--line)}
 .cmp-identity-meta{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
-.cmp-run-name{font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-run-name{font-family:var(--font-mono);font-weight:600;font-size: var(--fs-body);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmp-identity-sub{display:flex;align-items:center;gap:7px;min-width:0}
-.cmp-proj{font-family:var(--font-sans);font-size: 12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cmp-ref-tag{font-family:var(--font-sans);font-size: 12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-strong);border:1px solid var(--accent-line);border-radius:var(--tight-radius);padding:1px 5px;flex:none}
-.cmp-anchor{flex:none;background:transparent;border:0;cursor:pointer;color:var(--dim);font-size:14px;line-height:1;padding:3px 5px;border-radius:var(--control-radius)}
+.cmp-proj{font-family:var(--font-sans);font-size: var(--fs-data);color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-ref-tag{font-family:var(--font-sans);font-size: var(--fs-data);font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-strong);border:1px solid var(--accent-line);border-radius:var(--tight-radius);padding:1px 5px;flex:none}
+.cmp-anchor{flex:none;background:transparent;border:0;cursor:pointer;color:var(--dim);font-size: var(--fs-ui);line-height:1;padding:3px 5px;border-radius:var(--control-radius)}
 .cmp-anchor:hover{color:var(--accent);background:var(--surface-hover)}
 .cmp-anchor.on{color:var(--accent)}
 
@@ -1672,7 +1672,7 @@ button.compare-row-head.active {
  * "good" even on rows that are worse than the reference. Direction is carried by
  * the delta chip below. */
 .cmp-metric.primary .cmp-metric-val{color:var(--text);font-weight:720}
-.cmp-metric-sub{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size: 12px;color:var(--faint)}
+.cmp-metric-sub{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size: var(--fs-data);color:var(--faint)}
 .cmp-delta{font-family:var(--font-mono);font-weight:600}
 .cmp-delta.up{color:var(--green)}
 .cmp-delta.down{color:var(--coral)}
@@ -1686,7 +1686,7 @@ button.compare-row-head.active {
 .cmp-cell.diff::after{content:"";position:absolute;top:50%;right:auto;left:5px;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:var(--amber)}
 .cmp-cell.num.diff{padding-left:18px}
 
-.cmp-artifact-link{font-family:var(--font-mono);font-size:13px;color:var(--text);background:transparent;border:0;border-bottom:1px dotted var(--line-strong);cursor:pointer;padding:0 0 1px}
+.cmp-artifact-link{font-family:var(--font-mono);font-size: var(--fs-body);color:var(--text);background:transparent;border:0;border-bottom:1px dotted var(--line-strong);cursor:pointer;padding:0 0 1px}
 .cmp-artifact-link:hover{color:var(--accent);border-color:var(--accent)}
 
 /* Matrix (transposed) diff highlight means "differs from reference", not "better".
@@ -1731,7 +1731,7 @@ button.compare-row-head.active {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--chart-card-bg, var(--surface));
-  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-mono);
   font-size: 11.5px;
   line-height: 1.5;
   white-space: pre;

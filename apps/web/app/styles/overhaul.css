@@ -18,7 +18,7 @@
 .shortcut-group h3,
 .compare-metric-strip > span {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -87,7 +87,7 @@
 .action-cluster .control.compact .select-trigger {
   height: 32px;
   min-height: 32px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   border-radius: var(--radius);
 }
 .topbar-main .toolbar.topbar-controls { align-items: center; gap: 8px; flex: 0 0 auto; }
@@ -191,6 +191,18 @@
   align-items: baseline;
   gap: 14px;
   padding: 2px 2px 12px;
+}
+.page-head .ph-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.page-head .ph-eyebrow {
+  font: 650 var(--fs-label)/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .page-head .ph-title {
   font: 700 20px/1 var(--font-sans);
@@ -442,7 +454,7 @@ textarea:focus {
  * the run-detail mock and the other analysis page headers). */
 .run-workspace-title > span:first-child {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -1333,7 +1345,7 @@ button.secondary.danger-action:hover:not(:disabled),
 .workbar .select-trigger {
   height: 32px;
   min-height: 32px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   border-radius: var(--radius);
 }
 .workbar .control.compact { flex: 0 1 132px; min-width: 104px; }
@@ -1497,7 +1509,7 @@ button.secondary.danger-action:hover:not(:disabled),
 .analysis-title-block .analysis-eyebrow {
   align-self: center;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -1538,7 +1550,7 @@ button.secondary.danger-action:hover:not(:disabled),
 .analysis-stat-strip .analysis-stat:last-child { border-inline-end: 0; }
 .analysis-stat-strip .analysis-stat span {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -1634,7 +1646,7 @@ button.secondary.danger-action:hover:not(:disabled),
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line-soft);
 }
 .workbar-search-popover strong {
-  font-size: 12px;
+  font-size: var(--fs-data);
   line-height: 1;
 }
 .workbar-search-popover code {
@@ -1655,7 +1667,7 @@ button.secondary.danger-action:hover:not(:disabled),
 }
 .workbar-search-popover span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   line-height: 1.35;
 }
 .workbar-search-error {
@@ -3002,7 +3014,7 @@ button.compare-row-head.active {
 .analysis-stat-strip .analysis-stat span,
 .metric-card span,
 .setting-row span,
-.api-row small { font-size: 12px; }
+.api-row small { font-size: var(--fs-data); }
 
 /* Page-head vertical rhythm: one 16px head→content gap everywhere */
 .page-head { padding: 4px 2px 16px; }
@@ -3012,9 +3024,9 @@ button.compare-row-head.active {
 /* Headline scale matches the mocks: page titles 20/700, segmented stat
    values 16/700; metric tiles keep their larger 20px figure. */
 .page-head .ph-title,
-.analysis-title-block h2 { font-size: 20px; }
-.analysis-stat-strip .analysis-stat strong { font-size: 16px; }
-.metric-card strong { font-size: 20px; }
+.analysis-title-block h2 { font-size: var(--fs-page); }
+.analysis-stat-strip .analysis-stat strong { font-size: var(--fs-lead); }
+.metric-card strong { font-size: var(--fs-page); }
 
 /* Run-select target ≥ 24px regardless of sibling height (WCAG 2.5.8) */
 .workspace-run-select { min-height: 34px; }
@@ -3129,7 +3141,7 @@ button.compare-row-head.active {
 
 .selection-tray-count {
   color: var(--accent);
-  font-size: 13px;
+  font-size: var(--fs-body);
   white-space: nowrap;
 }
 
@@ -3137,7 +3149,7 @@ button.compare-row-head.active {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3180,13 +3192,13 @@ button.compare-row-head.active {
 }
 .workspace-run-body small,
 .workspace-run-note {
-  font-size: 12px;
+  font-size: var(--fs-data);
   line-height: 1.35;
   color: var(--text-2);
 }
 .workspace-run-tags b,
 .workspace-run-tags em {
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 /* dashboard-runs.css owns the base collapsed summary. This later layer mirrors
  * it so the current overhaul rail keeps the same visible collapsed context. */
