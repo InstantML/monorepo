@@ -2,7 +2,7 @@
 
 import { FileText, ImageDown, LineChart, MoreVertical, RefreshCw, Table2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import { axisTicks, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
 import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
@@ -10,6 +10,7 @@ import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadT
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
 import { chartHeight, chartPadding, chartWidth, metricTitle } from "../../dashboard-models";
+import { useDetailsDismiss } from "../ui/use-details-dismiss";
 import { useMeasuredSize } from "../ui/use-measured-size";
 import type { HoverPoint } from "../../dashboard-types";
 
@@ -331,6 +332,7 @@ export function MetricChart({
   onZoomRangeChange,
   onSmoothingChange,
   padding = chartPadding,
+  panelMenuItems,
   series,
   showExportActions = true,
   showLegend = true,
@@ -355,6 +357,10 @@ export function MetricChart({
   onZoomRangeChange?: (range: ChartZoomRange) => void;
   onSmoothingChange?: (smoothing: number) => void;
   padding?: number;
+  /** Owner-supplied actions pinned to the top of the options (three-dot) menu —
+   *  e.g. a workspace panel folds its edit/duplicate/remove actions in here so
+   *  the chart carries a single menu instead of a separate toolbar. */
+  panelMenuItems?: ReactNode;
   /** Display series — smoothing already applied by the owner. */
   series: any[];
   /** Hide the in-chart actions row when the owner renders its own controls. */
@@ -393,27 +399,7 @@ export function MetricChart({
 
   // The options menu dismisses like every other dropdown in the app:
   // click-away closes it, Escape closes it and returns focus to its trigger.
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      const details = menuDetailsRef.current;
-      if (!details?.open) return;
-      if (event.target instanceof Node && details.contains(event.target)) return;
-      details.open = false;
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      const details = menuDetailsRef.current;
-      if (event.key !== "Escape" || !details?.open) return;
-      details.open = false;
-      const summary = details.querySelector("summary");
-      if (summary instanceof HTMLElement) summary.focus();
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
+  useDetailsDismiss(menuDetailsRef);
 
   const normalizedSeries: any[] = useMemo(
     () => normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, zoomRange, yAxisOptions),
@@ -595,7 +581,10 @@ export function MetricChart({
   // What lands in the three-dot menu: y-axis scale/range, smoothing, exports.
   const menuHasYAxis = showInlineControls && showYAxisControls;
   const menuHasExport = showInlineControls && Boolean(exportFilenameBase);
-  const hasMenu = menuHasYAxis || showSmoothing || menuHasExport;
+  // Panel actions stay reachable in either view (chart or summary table), so they
+  // keep the menu alive even when the chart-only options below are hidden.
+  const menuHasChartOptions = menuHasYAxis || showSmoothing || menuHasExport;
+  const hasMenu = menuHasChartOptions || Boolean(panelMenuItems);
   const showActions = showViewToggle || hasMenu;
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -776,6 +765,12 @@ export function MetricChart({
             <MoreVertical size={16} aria-hidden="true" />
           </summary>
           <div className="chart-menu-pop" aria-label={`${metricKey} chart options`}>
+            {panelMenuItems ? (
+              <>
+                {panelMenuItems}
+                {menuHasChartOptions ? <div className="chart-menu-divider" role="separator" /> : null}
+              </>
+            ) : null}
             {menuHasYAxis ? (
               <>
                 <button

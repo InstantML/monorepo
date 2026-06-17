@@ -57,7 +57,7 @@ function chartMarkup({ legendCount = 10, rowSpan = 6 } = {}) {
           <div><h3>Return Mean</h3></div>
         </div>
         <div class="workspace-panel-meta">
-          <span>Step</span><span>Ungrouped</span><span>Full fidelity</span><span>${legendCount} current page</span>
+          <span>${legendCount}/${legendCount} current page</span>
         </div>
         <div class="chart-area chart-area-exportable">
           <div class="chart-export-actions">
@@ -74,7 +74,11 @@ function chartMarkup({ legendCount = 10, rowSpan = 6 } = {}) {
           </div>
           <div class="chart-tooltip-slot"></div>
         </div>
-        <button aria-label="Resize Return Mean" class="panel-resize-handle" type="button"></button>
+        <button aria-label="Resize Return Mean" class="panel-resize-handle" type="button">
+          <svg class="panel-resize-grip" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
+            <path d="M14.5 5.5 5.5 14.5M14.5 9.5 9.5 14.5M14.5 13.5 13.5 14.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
+          </svg>
+        </button>
       </article>
     </div>
   `;
@@ -107,6 +111,7 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
       const frame = card?.querySelector(".metric-chart-frame");
       const legend = card?.querySelector(".chart-legend");
       const handle = card?.querySelector(".panel-resize-handle");
+      const metaText = card?.querySelector(".workspace-panel-meta")?.textContent ?? "";
       const rect = (node) => {
         const box = node.getBoundingClientRect();
         return { bottom: box.bottom, height: box.height, left: box.left, right: box.right, top: box.top, width: box.width };
@@ -129,6 +134,7 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
         legendColumns: getComputedStyle(legend).gridTemplateColumns.split(" ").filter(Boolean).length,
         legendScrollHeight: legend.scrollHeight,
         lowerDeadSpace: rect(chartArea).bottom - Math.max(rect(frame).bottom, rect(legend).bottom),
+        metaText,
       };
     });
 
@@ -137,6 +143,7 @@ test("workspace chart panels keep row-span sizing authoritative", { timeout: 60_
     assert.equal(layout.frameAspect, "auto");
     assert.match(layout.hitClass, /panel-resize-handle/);
     assert.equal(layout.handleZIndex, "12");
+    assert.doesNotMatch(layout.metaText, /Step|Ungrouped|Full fidelity/);
     assert.ok(layout.legendColumns >= 4, `wide workspace legends should compact into more than two columns, got ${layout.legendColumns}`);
     assert.ok(layout.legend.height <= 56, `workspace legend should not starve the chart, got ${layout.legend.height}`);
     assert.ok(layout.legendScrollHeight <= 56, `wide 10-run legends should fit without hidden overflow, got ${layout.legendScrollHeight}`);

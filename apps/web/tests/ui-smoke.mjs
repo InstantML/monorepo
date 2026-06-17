@@ -785,6 +785,7 @@ try {
   await scatterCard.hover();
   const actionOpacity = await scatterCard.locator(".panel-card-actions").evaluate((node) => getComputedStyle(node).opacity);
   assert.ok(Number(actionOpacity) > 0.5, `panel actions should stay visible enough to avoid invisible destructive targets, got ${actionOpacity}`);
+  await openPanelMenu(scatterCard);
   await scatterCard.locator('button[aria-label^="Edit"]').click();
   await page.waitForSelector(".edit-drawer");
   assert.equal(await page.locator("#edit-panel-x-field").count(), 1);
@@ -808,6 +809,7 @@ try {
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
   await scatterCard.waitFor({ state: "visible", timeout: 10000 });
   await scatterCard.hover();
+  await openPanelMenu(scatterCard);
   await scatterCard.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".fullscreen-panel-card .scatter-panel-chart", { timeout: 10000 });
   await page.locator(".fullscreen-modal").getByRole("button", { name: "Close fullscreen panel" }).click();
@@ -849,6 +851,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 1100 });
   }
   await distributionCard.hover();
+  await openPanelMenu(distributionCard);
   await distributionCard.locator('button[aria-label^="Edit"]').click();
   await page.waitForSelector(".edit-drawer");
   assert.equal(await page.locator("#edit-panel-value-field").count(), 1);
@@ -858,6 +861,7 @@ try {
   assert.ok(distributionGroupOptionCount >= 2, `expected editable distribution grouping fields, got ${distributionGroupOptionCount}`);
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
   await distributionCard.hover();
+  await openPanelMenu(distributionCard);
   await distributionCard.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".fullscreen-panel-card .distribution-panel-chart", { timeout: 10000 });
   const fullscreenDistributionText = await page.locator(".fullscreen-panel-card").innerText();
@@ -899,11 +903,13 @@ try {
   assert.equal(scoreDistributionRequests[0].searchParams.get("kind"), "histogram");
   assert.equal(scoreDistributionRequests[0].searchParams.get("limit"), "100");
   await histogramTimelineCard.hover();
+  await openPanelMenu(histogramTimelineCard);
   await histogramTimelineCard.locator('button[aria-label^="Edit"]').click();
   await page.waitForSelector(".edit-drawer");
   assert.equal(await page.getByLabel("Histogram object key").inputValue(), "eval/score_distribution");
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
   await histogramTimelineCard.hover();
+  await openPanelMenu(histogramTimelineCard);
   await histogramTimelineCard.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".fullscreen-panel-card .histogram-timeline-panel-chart", { timeout: 10000 });
   assert.match(await page.locator(".fullscreen-panel-card").innerText(), /3 frames|Compatible bins/);
@@ -1119,6 +1125,7 @@ try {
   assert.match(workspaceTooltipText, /(llm|rl)-.+-seed-|page-run-\d+/);
   assert.match(workspaceTooltipText, /\d/);
   await selectedRunPanel.hover();
+  await openPanelMenu(selectedRunPanel);
   await selectedRunPanel.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".workspace-modal");
   const fullscreenLayout = await page.locator(".fullscreen-modal-card").evaluate((modal) => {
@@ -1908,6 +1915,15 @@ async function chooseSelect(page, selector, valueOrOptions) {
     element.dispatchEvent(new Event("input", { bubbles: true }));
     element.dispatchEvent(new Event("change", { bubbles: true }));
   }, valueOrOptions);
+}
+
+// Panel actions (edit/duplicate/fullscreen/remove) now live inside a single
+// three-dot menu — the chart's options menu for line panels, a head kebab for
+// the rest. Force it open before driving an action so the click is actionable.
+async function openPanelMenu(card) {
+  await card.locator("details.chart-menu").first().evaluate((details) => {
+    details.open = true;
+  });
 }
 
 async function selectVisibleRunForMetrics(page) {
