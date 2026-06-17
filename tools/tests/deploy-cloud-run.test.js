@@ -263,6 +263,30 @@ test("deploy helper defaults hosted ClickHouse provisioning to database mode", (
   assert.doesNotMatch(source, /INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service"/);
 });
 
+test("deploy helper mounts the self-hosted ClickHouse tenant connection the data plane reads", () => {
+  // Regression guard: PR #172 renamed the runtime env vars from
+  // CLICKHOUSE_INSTANTML_USER_DATA_* to CLICKHOUSE_INSTANTML_TENANT_* but
+  // dropped the secret mounts, leaving the data plane on the localhost default
+  // so its /readyz startup probe failed and every deploy broke. The Secret
+  // Manager secrets keep their historical user-data names.
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.match(
+    source,
+    /\["CLICKHOUSE_INSTANTML_TENANT_ENDPOINT", "instantml-clickhouse-user-data-endpoint", true\]/,
+  );
+  assert.match(
+    source,
+    /\["CLICKHOUSE_INSTANTML_TENANT_USERNAME", "instantml-clickhouse-user-data-username", true\]/,
+  );
+  assert.match(
+    source,
+    /\["CLICKHOUSE_INSTANTML_TENANT_PASSWORD", "instantml-clickhouse-user-data-password", true\]/,
+  );
+  // The renamed runtime vars must not regress back to the pruned USER_DATA names.
+  assert.doesNotMatch(source, /CLICKHOUSE_INSTANTML_USER_DATA_/);
+});
+
 test("deploy helper does not configure a hosted signup allowlist", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
   const workflow = fs.readFileSync(path.join(repo, ".github", "workflows", "deploy-cloud-run.yml"), "utf8");
