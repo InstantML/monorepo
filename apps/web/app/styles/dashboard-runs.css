@@ -1097,10 +1097,6 @@
   display: block;
 }
 
-.workspace-mode-select .select-trigger {
-  width: 128px;
-}
-
 /* All-projects overview (audit 3.1): explicit project cards when no project
    scope is active, replacing the mixed cross-project workspace. */
 .projects-overview {
