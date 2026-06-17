@@ -442,6 +442,7 @@ body:has(.docs-route) {
   max-width: 1280px;
   margin-inline: auto;
   padding-top: 56px;
+  padding-inline: clamp(24px, 4vw, 64px);
 }
 
 .docs-route-article-header {
@@ -876,6 +877,7 @@ body:has(.docs-route) {
 
   .docs-route-article {
     padding-top: 24px;
+    padding-inline: 0;
     width: 100%;
     max-width: none;
   }
