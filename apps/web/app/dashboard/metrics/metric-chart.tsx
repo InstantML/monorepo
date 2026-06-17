@@ -190,7 +190,7 @@ function MiniRange({
   xMode: string;
   zoomRange?: ChartZoomRange;
 }) {
-  const [dragAnchor, setDragAnchor] = useState<number | null>(null);
+  const dragAnchorRef = useRef<number | null>(null);
   const [draftRange, setDraftRange] = useState<ChartZoomRange>(null);
   const miniWidth = width;
   const miniHeight = 46;
@@ -222,7 +222,7 @@ function MiniRange({
     if (!onZoomRangeChange) return;
     event.preventDefault();
     const value = valueFromPointer(event);
-    setDragAnchor(value);
+    dragAnchorRef.current = value;
     setDraftRange({ min: value, max: value });
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -232,14 +232,16 @@ function MiniRange({
   }
 
   function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (dragAnchor === null) return;
     setDraftRange({ min: dragAnchor, max: valueFromPointer(event) });
   }
 
   function finishPointerRange(event: ReactPointerEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (!onZoomRangeChange || dragAnchor === null) return;
     const next = sanitizeRange({ min: dragAnchor, max: valueFromPointer(event) }, domain);
-    setDragAnchor(null);
+    dragAnchorRef.current = null;
     setDraftRange(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (!next || (next.max - next.min) < Math.max(Number.EPSILON, (domain.maxX - domain.minX) * 0.03)) {
@@ -253,19 +255,21 @@ function MiniRange({
     if (!onZoomRangeChange) return;
     event.preventDefault();
     const value = valueFromClient(event.currentTarget, event.clientX, event.clientY);
-    setDragAnchor(value);
+    dragAnchorRef.current = value;
     setDraftRange({ min: value, max: value });
   }
 
   function handleMouseMove(event: MouseEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (dragAnchor === null) return;
     setDraftRange({ min: dragAnchor, max: valueFromClient(event.currentTarget, event.clientX, event.clientY) });
   }
 
   function finishMouseRange(event: MouseEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (!onZoomRangeChange || dragAnchor === null) return;
     const next = sanitizeRange({ min: dragAnchor, max: valueFromClient(event.currentTarget, event.clientX, event.clientY) }, domain);
-    setDragAnchor(null);
+    dragAnchorRef.current = null;
     setDraftRange(null);
     if (!next || (next.max - next.min) < Math.max(Number.EPSILON, (domain.maxX - domain.minX) * 0.03)) {
       onZoomRangeChange(null);

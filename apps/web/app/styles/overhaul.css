@@ -3144,6 +3144,13 @@ button.compare-row-head.active {
   background: var(--surface);
   box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
   padding: 9px 14px;
+  pointer-events: none;
+}
+
+.selection-tray button,
+.selection-tray a,
+.selection-tray-names {
+  pointer-events: auto;
 }
 
 .selection-tray-count {

@@ -98,7 +98,6 @@ export function DashboardNav({
                   key={tab.id}
                   onClick={(event) => handleTabSelect(event, tab.id)}
                   tabIndex={compactTabIndex}
-                  title={tab.label}
                 >
                   <Icon size={15} /> <span className="tab-label">{tab.label}</span>
                 </a>
@@ -114,7 +113,6 @@ export function DashboardNav({
           className="tab-button nav-theme-button"
           onClick={onThemeToggle}
           tabIndex={compactTabIndex}
-          title={themeLabel}
           type="button"
         >
           {dark ? <Sun size={15} /> : <Moon size={15} />}

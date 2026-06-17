@@ -261,7 +261,7 @@ Environment variables:
 - `INSTANTML_CLERK_SESSION_MAX_AGE_SECONDS`: maximum accepted age for a Clerk session token exchanged into an InstantML session. Default: `600`.
 - `INSTANTML_FRONTEND_BASE_URL`: base URL of the web frontend used to build device-code verification URIs and organization invitation accept links (for example, `https://app.instantml.ai`). Resend-backed email requires a non-localhost value; local/log mode can fall back to `INSTANTML_ALLOWED_FRONTEND_ORIGINS`, then `http://localhost:3000`.
 - `INSTANTML_ALLOWED_FRONTEND_ORIGINS`: comma-separated extra origins allowed to perform cookie-authenticated mutating requests.
-- `INSTANTML_EMAIL_PROVIDER`: `disabled`, `log`, or `resend`. Defaults to `resend` when `RESEND_API_KEY` is present, `log` in local auth mode, and `disabled` in hosted API-key mode without Resend.
+- `INSTANTML_EMAIL_PROVIDER`: `disabled`, `log`, or `resend`. Defaults to `resend` when `RESEND_API_KEY` is present, `log` in local auth mode, and `disabled` in hosted API-key mode without Resend. Production Cloud Run deploys require Resend-backed invitation email so the hosted Seats -> Invite flow cannot silently ship disabled.
 - `RESEND_API_KEY` or `INSTANTML_RESEND_API_KEY`: Resend API key for send-only organization invitation emails. Required when `INSTANTML_EMAIL_PROVIDER=resend`.
 - `INSTANTML_EMAIL_FROM`: invitation sender address. Required with Resend and must use a verified sending domain, such as `InstantML <invites@mail.instantml.ai>`. Log/local email defaults to `InstantML <invites@instantml.ai>` when unset.
 - `INSTANTML_EMAIL_REPLY_TO`: optional invitation reply-to address.
