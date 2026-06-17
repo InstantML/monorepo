@@ -19,7 +19,6 @@ test("artifact UI gates downloads on stored-byte backends", () => {
   for (const relPath of [
     "app/dashboard/artifacts/artifact-browser.tsx",
     "app/dashboard/detail/artifact-panel.tsx",
-    "app/dashboard/compare/side-by-side.tsx",
   ]) {
     const src = read(relPath);
     assert.match(src, /artifactHasStoredBytes/);

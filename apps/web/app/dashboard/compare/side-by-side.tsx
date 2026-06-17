@@ -8,17 +8,14 @@ import { formatMetricValue } from "../../../src/charts.js";
 import { identityColor } from "../../../src/chart-colors.js";
 import { displayStatusForRun, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import {
-  artifactHasStoredBytes,
   artifactTotalForRun,
   compactValue,
   compareCategory,
   comparePathLabel,
   compareRowRank,
-  formatBytes,
   metricNamespace,
   metricTitle,
   runNoteText,
-  safeArtifactMediaKind,
   shortValue,
 } from "../../dashboard-models";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, RunSummary } from "../../dashboard-types";
@@ -291,23 +288,6 @@ function buildCompareRows(rawRows: any[], runs: RunSummary[]): CompareRowView[] 
     });
 }
 
-function artifactDownloadUrl(artifact: Artifact) {
-  return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
-}
-
-function ArtifactMediaPreview({ artifact, compact = false, fallback = false }: { artifact: Artifact; compact?: boolean; fallback?: boolean }) {
-  const kind = safeArtifactMediaKind(artifact);
-  if (!kind) return fallback ? <small className="artifact-media-fallback">Preview unavailable.</small> : null;
-  if (!artifactHasStoredBytes(artifact)) return <small className="artifact-media-fallback">{compact ? "Preview unavailable" : "Media preview unavailable; download or copy ID."}</small>;
-  const src = artifactDownloadUrl(artifact);
-  if (kind === "image") return <img alt={artifact.name} className="artifact-media artifact-image" loading="lazy" src={src} />;
-  return kind === "audio" ? (
-    <audio aria-label={`Audio preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
-  ) : (
-    <video aria-label={`Video preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
-  );
-}
-
 function TagList({ tags }: { tags: string[] }) {
   if (!tags?.length) return <span className="compare-empty">No tags</span>;
   return (
@@ -315,49 +295,6 @@ function TagList({ tags }: { tags: string[] }) {
       {tags.slice(0, 4).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
       {tags.length > 4 ? <span className="chip">+{tags.length - 4}</span> : null}
     </div>
-  );
-}
-
-// Duplicate filenames are versions of the same artifact: show the latest once
-// with a version-count chip instead of listing identical names side by side.
-export function groupCompareArtifacts(artifacts: Artifact[]) {
-  const byName = new Map<string, Artifact[]>();
-  for (const artifact of artifacts) {
-    const list = byName.get(artifact.name) ?? [];
-    list.push(artifact);
-    byName.set(artifact.name, list);
-  }
-  return [...byName.values()].map((versions) => {
-    const sorted = [...versions].sort((a, b) => (b.step ?? -1) - (a.step ?? -1));
-    return { latest: sorted[0], versionCount: sorted.length };
-  });
-}
-
-function CompareArtifactStrip({ artifactsByRun, runs }: { artifactsByRun: Record<string, Artifact[]>; runs: RunSummary[] }) {
-  const runArtifacts = runs.map((run) => ({
-    run,
-    groups: groupCompareArtifacts(artifactsByRun[run.id] ?? []).slice(0, 3),
-    expected: Boolean(artifactsByRun[run.id]),
-  }));
-  if (!runArtifacts.some((item) => item.groups.length || !item.expected)) return null;
-  return (
-    <section className="compare-artifact-strip">
-      {runArtifacts.map(({ run, groups, expected }) => (
-        <article className="compare-artifact-run" key={run.id}>
-          <strong title={run.name}>{run.name}</strong>
-          {groups.length ? groups.map(({ latest, versionCount }) => (
-            <div className="compare-artifact-card" key={latest.id}>
-              <strong>{latest.name}</strong>
-              <small>
-                {latest.step === null ? "no step" : `step ${latest.step}`} · {formatBytes(latest.size_bytes)}
-                {versionCount > 1 ? ` · ${versionCount} versions` : ""}
-              </small>
-              <ArtifactMediaPreview artifact={latest} compact />
-            </div>
-          )) : <small>{expected ? "Loading metadata..." : "No artifacts"}</small>}
-        </article>
-      ))}
-    </section>
   );
 }
 
@@ -753,7 +690,6 @@ export function SideBySide({
           ) : (
             <CompareMatrix referenceRunId={referenceRunId} rows={matrixRows} runs={visibleRuns} colorByRunId={colorByRunId} />
           )}
-          <CompareArtifactStrip artifactsByRun={artifactsByRun} runs={visibleRuns} />
         </>
       ) : (
         <div className="empty">No compared runs match the current search.</div>

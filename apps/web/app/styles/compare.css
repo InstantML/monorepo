@@ -1592,7 +1592,6 @@ button.compare-row-head.active {
 .compare-embed-title h3 { margin: 0; font-size: 15px; font-weight: 720; color: var(--text); }
 .compare-embed-title p { margin: 0; font-size: 12px; color: var(--muted); }
 .compare-embed-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.compare-embed-actions .control { margin: 0; }
 .compare-embed-controls {
   display: flex;
   align-items: center;
@@ -1601,7 +1600,11 @@ button.compare-row-head.active {
   padding-top: 12px;
   border-top: 1px solid var(--line-soft);
 }
-.compare-embed-controls .control { margin: 0; }
+/* Inline the select labels ("Reference", "Metric") so every control in these
+ * rows is a single 32px line and aligns cleanly with the buttons beside it —
+ * the default stacked label made the buttons float against a taller field. */
+.compare-embed-actions .control,
+.compare-embed-controls .control { display: flex; align-items: center; gap: 7px; margin: 0; }
 .compare-metric-chips { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .compare-embed-diff { margin-left: auto; white-space: nowrap; }
 

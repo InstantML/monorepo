@@ -88,14 +88,6 @@ test("runs tab offers a persisted panels/table view toggle", () => {
   assert.match(commandbarSrc, /aria-pressed=\{viewMode === "table"\}/);
 });
 
-// C4 — compare artifact strips group duplicate filenames into version chips.
-test("compare artifact strip groups versions by name", () => {
-  const src = read("app/dashboard/compare/side-by-side.tsx");
-  assert.match(src, /export function groupCompareArtifacts/);
-  assert.match(src, /versions/);
-  assert.match(src, /cmp-table-shell/);
-});
-
 // V2 — superseded by main's header simplification (#189): the serif flourish
 // is gone from every dashboard page header, including Runs.
 test("dashboard page headers carry no serif flourish", () => {

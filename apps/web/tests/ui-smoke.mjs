@@ -1304,9 +1304,6 @@ try {
   const compareRowText = await page.locator("#side-by-side").innerText();
   assert.match(compareRowText, /Duration/i);
   assert.match(compareRowText, new RegExp(escapeRegExp(compareMetricDisplay), "i"));
-  if ((await page.locator(".compare-artifact-strip").count()) > 0) {
-    assert.match(await page.locator(".compare-artifact-strip").innerText(), /artifact|checkpoint|file/i);
-  }
   await page.fill("#view-name", "demo-loss-review");
   await page.click("#save-view");
 
