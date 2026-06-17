@@ -593,9 +593,8 @@ export function MetricChart({
   const showSmoothing = showInlineControls && typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
   // What lands in the three-dot menu: chart/table view, y-axis scale/range,
-  // smoothing, exports. The view switch is always present so the menu mirrors
-  // the inline toggle (and stays reachable in summary view, where the inline
-  // controls below are hidden).
+  // smoothing, exports. The view switch is always present so it stays reachable
+  // in summary view, where the other controls below are hidden.
   const menuHasViewToggle = showViewToggle;
   const menuHasYAxis = showInlineControls && showYAxisControls;
   const menuHasExport = showInlineControls && Boolean(exportFilenameBase);
@@ -736,35 +735,6 @@ export function MetricChart({
 
   const actionsRow = showActions ? (
     <div className="chart-export-actions" aria-label="Chart actions">
-      {showViewToggle ? (
-        <div className="chart-view-switch" role="group" aria-label={`${metricKey} view`} data-view={chartView}>
-          {/* The thumb slides under the active icon; the live region below the
-              chart announces the change for screen-reader users. */}
-          <span className="chart-view-switch-thumb" aria-hidden="true" />
-          <button
-            aria-controls={chartPanelId}
-            aria-label={`Show ${metricKey} as a chart`}
-            aria-pressed={chartView === "chart"}
-            className={`chart-view-switch-btn${chartView === "chart" ? " selected" : ""}`}
-            onClick={() => setChartView("chart")}
-            title="Chart"
-            type="button"
-          >
-            <LineChart size={15} aria-hidden="true" />
-          </button>
-          <button
-            aria-controls={chartPanelId}
-            aria-label={`Show ${metricKey} as a summary table`}
-            aria-pressed={chartView === "summary"}
-            className={`chart-view-switch-btn${chartView === "summary" ? " selected" : ""}`}
-            onClick={() => setChartView("summary")}
-            title="Summary table"
-            type="button"
-          >
-            <Table2 size={15} aria-hidden="true" />
-          </button>
-        </div>
-      ) : null}
       {hasMenu ? (
         <details
           className="chart-menu"

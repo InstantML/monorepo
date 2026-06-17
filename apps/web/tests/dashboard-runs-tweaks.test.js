@@ -75,10 +75,11 @@ test("metric charts expose an accessible summary table view", () => {
   const chartsSrc = read("src/charts.js");
   const chartsCss = read("app/styles/charts.css");
 
-  // The chart/summary switcher is an icon segmented control; each button keeps
-  // an aria-label + aria-pressed so screen-reader users can toggle the view.
-  assert.match(metricChartSrc, /chart-view-switch/);
-  assert.match(metricChartSrc, /aria-label=\{`Show \$\{metricKey\} as a summary table`\}/);
+  // The chart/summary switcher lives in the three-dot options menu as a radio
+  // group; each option keeps a label + aria-pressed so screen-reader users can
+  // toggle the view.
+  assert.match(metricChartSrc, /chart-menu-radiogroup/);
+  assert.match(metricChartSrc, /<span className="chart-menu-radio-label">Summary table<\/span>/);
   assert.match(metricChartSrc, /aria-pressed=\{chartView === "summary"\}/);
   assert.match(metricChartSrc, /<caption>\{metricTitle\(metricKey\)\} summary table<\/caption>/);
   assert.match(metricChartSrc, /<th scope="col">Run<\/th>/);
