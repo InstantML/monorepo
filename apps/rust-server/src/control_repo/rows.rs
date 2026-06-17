@@ -10,8 +10,9 @@ use uuid::Uuid;
 use crate::domain::{
     BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
     BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
-    EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow, PublicApiKeyRow,
-    ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow, WorkspaceViewRow,
+    DataCellWriterLeaseRow, EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow,
+    PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow,
+    WorkspaceViewRow,
 };
 use crate::store::TenantRouteRecord;
 
@@ -445,6 +446,33 @@ impl From<DataCellRowDb> for DataCellRow {
             notes: row.notes,
             created_at: row.created_at,
             updated_at: row.updated_at,
+        }
+    }
+}
+
+#[derive(FromRow)]
+pub(super) struct DataCellWriterLeaseRowDb {
+    cell_id: String,
+    fence_token: i64,
+    holder_instance_id: String,
+    service_name: String,
+    revision: String,
+    acquired_at: DateTime<Utc>,
+    heartbeat_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+}
+
+impl From<DataCellWriterLeaseRowDb> for DataCellWriterLeaseRow {
+    fn from(row: DataCellWriterLeaseRowDb) -> Self {
+        DataCellWriterLeaseRow {
+            cell_id: row.cell_id,
+            fence_token: row.fence_token,
+            holder_instance_id: row.holder_instance_id,
+            service_name: row.service_name,
+            revision: row.revision,
+            acquired_at: row.acquired_at,
+            heartbeat_at: row.heartbeat_at,
+            expires_at: row.expires_at,
         }
     }
 }

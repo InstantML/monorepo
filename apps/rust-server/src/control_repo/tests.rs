@@ -88,6 +88,27 @@ fn data_cell(cell_id: &str, max_orgs: Option<i32>) -> DataCellRow {
     }
 }
 
+fn writer_lease_acquire(cell_id: &str, holder: &str) -> DataCellWriterLeaseAcquire {
+    DataCellWriterLeaseAcquire {
+        cell_id: cell_id.to_string(),
+        holder_instance_id: holder.to_string(),
+        service_name: "instantml-data-test".to_string(),
+        revision: "test-revision".to_string(),
+        ttl: ChronoDuration::seconds(30),
+    }
+}
+
+fn writer_lease_renewal(
+    lease: &crate::domain::DataCellWriterLeaseRow,
+) -> DataCellWriterLeaseRenewal {
+    DataCellWriterLeaseRenewal {
+        cell_id: lease.cell_id.clone(),
+        holder_instance_id: lease.holder_instance_id.clone(),
+        fence_token: lease.fence_token,
+        ttl: ChronoDuration::seconds(30),
+    }
+}
+
 fn route(org_id: Uuid, status: &str, endpoint: &str) -> TenantRouteRecord {
     let now = db_time_now();
     TenantRouteRecord {
@@ -310,6 +331,210 @@ async fn data_cell_heartbeat_registers_missing_cell_and_preserves_operator_field
     assert_eq!(refreshed.notes.as_deref(), Some("operator metadata"));
     assert_eq!(refreshed.last_health_at, heartbeat.last_health_at);
     assert_eq!(refreshed.last_backup_at, operator_row.last_backup_at);
+}
+
+#[sqlx::test]
+async fn data_cell_writer_lease_acquires_renews_and_releases_by_fence_token(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", None))
+        .await
+        .unwrap();
+
+    let lease = db
+        .acquire_data_cell_writer_lease(&writer_lease_acquire("free-us-central1-a", "holder-a"))
+        .await
+        .unwrap();
+    assert_eq!(lease.cell_id, "free-us-central1-a");
+    assert_eq!(lease.fence_token, 1);
+    assert_eq!(lease.holder_instance_id, "holder-a");
+
+    let renewed = db
+        .renew_data_cell_writer_lease(&writer_lease_renewal(&lease))
+        .await
+        .unwrap();
+    assert_eq!(renewed.fence_token, lease.fence_token);
+    assert_eq!(renewed.holder_instance_id, lease.holder_instance_id);
+    assert!(renewed.expires_at >= renewed.heartbeat_at);
+
+    let released = db
+        .release_data_cell_writer_lease(&DataCellWriterLeaseRelease {
+            cell_id: renewed.cell_id.clone(),
+            holder_instance_id: renewed.holder_instance_id.clone(),
+            fence_token: renewed.fence_token,
+        })
+        .await
+        .unwrap();
+    assert_eq!(released.fence_token, renewed.fence_token);
+    assert_eq!(released.holder_instance_id, renewed.holder_instance_id);
+
+    let err = db
+        .renew_data_cell_writer_lease(&writer_lease_renewal(&renewed))
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(err.safe_code(), "cell_writer_unavailable");
+}
+
+#[sqlx::test]
+async fn concurrent_data_cell_writer_lease_acquire_allows_one_holder(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", None))
+        .await
+        .unwrap();
+
+    let first_db = db.clone();
+    let second_db = db.clone();
+    let (first, second) = tokio::join!(
+        async move {
+            first_db
+                .acquire_data_cell_writer_lease(&writer_lease_acquire(
+                    "free-us-central1-a",
+                    "holder-a",
+                ))
+                .await
+        },
+        async move {
+            second_db
+                .acquire_data_cell_writer_lease(&writer_lease_acquire(
+                    "free-us-central1-a",
+                    "holder-b",
+                ))
+                .await
+        }
+    );
+
+    assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+    let loser = first.err().or_else(|| second.err()).unwrap();
+    assert_eq!(loser.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(loser.safe_code(), "cell_writer_unavailable");
+
+    let stored = db
+        .load_data_cell_writer_lease("free-us-central1-a")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.fence_token, 1);
+    assert!(matches!(
+        stored.holder_instance_id.as_str(),
+        "holder-a" | "holder-b"
+    ));
+}
+
+#[sqlx::test]
+async fn expired_data_cell_writer_lease_takeover_increments_token(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    db.upsert_data_cell(&data_cell("free-us-central1-a", None))
+        .await
+        .unwrap();
+
+    let first = db
+        .acquire_data_cell_writer_lease(&writer_lease_acquire("free-us-central1-a", "holder-a"))
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE data_cell_writer_leases \
+         SET heartbeat_at = clock_timestamp() - interval '2 seconds', \
+             expires_at = clock_timestamp() - interval '1 second' \
+         WHERE cell_id = $1",
+    )
+    .bind("free-us-central1-a")
+    .execute(db.pool())
+    .await
+    .unwrap();
+
+    let second = db
+        .acquire_data_cell_writer_lease(&writer_lease_acquire("free-us-central1-a", "holder-b"))
+        .await
+        .unwrap();
+    assert_eq!(second.fence_token, first.fence_token + 1);
+    assert_eq!(second.holder_instance_id, "holder-b");
+
+    let err = db
+        .renew_data_cell_writer_lease(&writer_lease_renewal(&first))
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(err.safe_code(), "cell_writer_unavailable");
+}
+
+#[sqlx::test]
+async fn data_cell_writer_lease_requires_registered_write_enabled_cell(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+
+    let missing = db
+        .acquire_data_cell_writer_lease(&writer_lease_acquire("missing-cell", "holder-a"))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        missing.status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(missing.safe_code(), "cell_writer_unavailable");
+
+    for status in ["open", "full", "draining"] {
+        let cell_id = format!("{status}-us-central1-a");
+        let mut cell = data_cell(&cell_id, None);
+        cell.status = status.to_string();
+        db.upsert_data_cell(&cell).await.unwrap();
+        let lease = db
+            .acquire_data_cell_writer_lease(&writer_lease_acquire(&cell_id, "holder-a"))
+            .await
+            .unwrap();
+        assert_eq!(lease.cell_id, cell_id);
+    }
+
+    for status in ["disabled", "failed"] {
+        let cell_id = format!("{status}-us-central1-a");
+        let mut cell = data_cell(&cell_id, None);
+        cell.status = status.to_string();
+        db.upsert_data_cell(&cell).await.unwrap();
+        let err = db
+            .acquire_data_cell_writer_lease(&writer_lease_acquire(&cell_id, "holder-a"))
+            .await
+            .unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.safe_code(), "cell_writer_unavailable");
+    }
+}
+
+#[sqlx::test]
+async fn data_cell_writer_lease_renewal_stops_when_cell_is_disabled(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let mut cell = data_cell("free-us-central1-a", None);
+    db.upsert_data_cell(&cell).await.unwrap();
+    let lease = db
+        .acquire_data_cell_writer_lease(&writer_lease_acquire("free-us-central1-a", "holder-a"))
+        .await
+        .unwrap();
+    assert!(db
+        .observe_data_cell_writer_lease(&DataCellWriterLeaseObservation {
+            cell_id: lease.cell_id.clone(),
+            holder_instance_id: lease.holder_instance_id.clone(),
+            fence_token: lease.fence_token,
+        })
+        .await
+        .unwrap()
+        .is_some());
+
+    cell.status = "disabled".to_string();
+    cell.updated_at = db_time_now();
+    db.upsert_data_cell(&cell).await.unwrap();
+
+    let err = db
+        .renew_data_cell_writer_lease(&writer_lease_renewal(&lease))
+        .await
+        .unwrap_err();
+    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(err.safe_code(), "cell_writer_unavailable");
+    assert!(db
+        .observe_data_cell_writer_lease(&DataCellWriterLeaseObservation {
+            cell_id: lease.cell_id.clone(),
+            holder_instance_id: lease.holder_instance_id.clone(),
+            fence_token: lease.fence_token,
+        })
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[sqlx::test]

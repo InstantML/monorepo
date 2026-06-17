@@ -156,7 +156,7 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     };
     let bind_addr = config.bind_addr;
     let service_plane = config.service_plane;
-    let app = instantml_rust_server::http::router(AppState::new(store, config));
+    let app = instantml_rust_server::http::router(AppState::new(store.clone(), config));
     let listener = TcpListener::bind(bind_addr).await?;
     tracing::info!(
         %bind_addr,
@@ -172,6 +172,19 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
     .map_err(|error| instantml_rust_server::AppError::internal(format!("server failed: {error}")));
     if let Some(handle) = background_refresh {
         handle.abort();
+    }
+    if let Err(error) = store.release_data_cell_writer_lease(service_plane).await {
+        tracing::warn!(
+            workflow = "data_cell_writer_lease",
+            operation = "shutdown_release",
+            outcome = "failure",
+            status = error.status().as_u16(),
+            code = error.safe_code(),
+            error_kind = error.safe_code(),
+            retryable = error.retryable(),
+            safe_summary = error.safe_summary(),
+            "failed to release data-cell writer lease during shutdown"
+        );
     }
     result
 }

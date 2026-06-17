@@ -71,7 +71,8 @@ in ClickHouse until a future compaction design exists.
 
 Owner: `apps/rust-server/src/control_db.rs` and
 `apps/rust-server/migrations/0001_init_control_plane.sql` plus the additive
-`0003_data_cells.sql` scaling migration.
+`0003_data_cells.sql` and `0004_data_cell_writer_leases.sql` scaling
+migrations.
 
 Purpose: hosted account, auth, organization, API-key, invitation, billing, and
 tenant-route state that must be visible to control and data services.
@@ -84,9 +85,10 @@ The implemented table list is:
 ```text
 users, identities, organizations, memberships, org_invitations,
 email_deliveries, sessions, service_accounts, api_keys, data_cells,
-tenant_routes, tenant_route_events, dashboard_preferences, workspace_views, billing_accounts,
-billing_checkout_intents, billing_change_intents, billing_subscriptions,
-billing_events, billing_usage_reports
+data_cell_writer_leases, tenant_routes, tenant_route_events,
+dashboard_preferences, workspace_views, billing_accounts, billing_checkout_intents,
+billing_change_intents, billing_subscriptions, billing_events,
+billing_usage_reports
 ```
 
 Keep the migration SQL as the authoritative column/index reference. The Rust
@@ -106,6 +108,15 @@ checks current-cell status, capacity, health, and backup freshness for managed
 hosted routes, writes the route, and appends a `tenant_route_events` audit row.
 Customer-owned ClickHouse routes keep their BYOC route and are not stamped into
 managed data cells.
+`data_cell_writer_leases` stores one write-admission lease per cell. Lease
+acquire/takeover uses Postgres time and increments a monotonic `fence_token`
+only for new ownership epochs; renew/release must match the exact
+`(cell_id, holder_instance_id, fence_token)` tuple, and renewal fails once the
+referenced `data_cells` row is no longer `open`, `full`, or `draining`. Hosted
+split data services must hold this lease before route-classified tenant-data
+mutations, and authenticated writes are rejected when a tenant route records a
+different cell. This prevents accidental deploy-overlap writers for one cell,
+but it is not downstream multi-writer ClickHouse fencing.
 
 ### Control Record Kinds
 
@@ -1240,9 +1251,11 @@ When changing schemas or payload fields:
 ## Known Gaps
 
 - There is no durable compaction for append-only operational records yet.
-- Shared data-plane cells remain single-writer by default. Durable uniqueness,
-  per-org sequences or deterministic ids, and atomic idempotency are required
-  before multi-writer data cells are safe.
+- Shared data-plane cells remain single-writer by default. The
+  `data_cell_writer_leases` table is a write-admission fence for one active
+  hosted data writer per cell; durable uniqueness, per-org sequences or
+  deterministic ids, and atomic idempotency are still required before
+  multi-writer data cells are safe.
 - Versioned artifact records support SDK-originated local inline uploads and R2
   presigned single/multipart uploads. Browser direct upload, live R2 smoke in
   CI, and physical hard-delete garbage collection for soft-deleted versioned

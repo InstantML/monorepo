@@ -21,8 +21,9 @@ use crate::{
     domain::{
         BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
         BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
-        EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow, PublicApiKeyRow,
-        ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow, WorkspaceViewRow,
+        DataCellWriterLeaseRow, EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow,
+        PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow,
+        WorkspaceViewRow,
     },
     errors::{AppError, AppResult},
     store::TenantRouteRecord,
@@ -44,6 +45,16 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 
 fn internal(context: &str, err: sqlx::Error) -> AppError {
     AppError::internal(format!("control-plane query failed ({context}): {err}"))
+}
+
+fn writer_lease_ttl_seconds(ttl: ChronoDuration) -> AppResult<i64> {
+    let seconds = ttl.num_seconds();
+    if seconds <= 0 {
+        return Err(AppError::config(
+            "data-cell writer lease TTL must be greater than zero seconds",
+        ));
+    }
+    Ok(seconds)
 }
 
 pub(crate) fn data_cell_timestamp_is_not_fresh(
@@ -80,6 +91,37 @@ pub struct TenantRoutePlacement {
     pub cell_id: String,
     pub actor: String,
     pub reason: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct DataCellWriterLeaseAcquire {
+    pub cell_id: String,
+    pub holder_instance_id: String,
+    pub service_name: String,
+    pub revision: String,
+    pub ttl: ChronoDuration,
+}
+
+#[derive(Clone, Debug)]
+pub struct DataCellWriterLeaseRenewal {
+    pub cell_id: String,
+    pub holder_instance_id: String,
+    pub fence_token: i64,
+    pub ttl: ChronoDuration,
+}
+
+#[derive(Clone, Debug)]
+pub struct DataCellWriterLeaseObservation {
+    pub cell_id: String,
+    pub holder_instance_id: String,
+    pub fence_token: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct DataCellWriterLeaseRelease {
+    pub cell_id: String,
+    pub holder_instance_id: String,
+    pub fence_token: i64,
 }
 
 impl ControlDb {
@@ -1190,6 +1232,22 @@ impl ControlDb {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    pub async fn load_tenant_route(&self, org_id: Uuid) -> AppResult<Option<TenantRouteRecord>> {
+        let row = sqlx::query_as::<_, TenantRouteRowDb>(
+            "SELECT org_id, status, provisioner, cell_id, route_version, placement_reason, assigned_at, \
+             plan_tier, warehouse_kind, \
+             requested_min_replica_memory_gb, requested_max_replica_memory_gb, requested_num_replicas, \
+             applied_min_replica_memory_gb, applied_max_replica_memory_gb, applied_num_replicas, \
+             endpoint, database, username, password_secret_ref, password_ciphertext, schema_version, \
+             service_id, created_at, updated_at, error FROM tenant_routes WHERE org_id = $1",
+        )
+        .bind(org_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("load_tenant_route", err))?;
+        Ok(row.map(Into::into))
+    }
+
     pub async fn load_data_cells(&self) -> AppResult<Vec<DataCellRow>> {
         let rows = sqlx::query_as::<_, DataCellRowDb>(
             "SELECT cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
@@ -1204,6 +1262,153 @@ impl ControlDb {
         Ok(rows.into_iter().map(Into::into).collect())
     }
 
+    pub async fn load_data_cell_writer_lease(
+        &self,
+        cell_id: &str,
+    ) -> AppResult<Option<DataCellWriterLeaseRow>> {
+        let row = sqlx::query_as::<_, DataCellWriterLeaseRowDb>(
+            "SELECT cell_id, fence_token, holder_instance_id, service_name, revision, \
+             acquired_at, heartbeat_at, expires_at \
+             FROM data_cell_writer_leases WHERE cell_id = $1",
+        )
+        .bind(cell_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("load_data_cell_writer_lease", err))?;
+        Ok(row.map(Into::into))
+    }
+
+    pub async fn acquire_data_cell_writer_lease(
+        &self,
+        acquire: &DataCellWriterLeaseAcquire,
+    ) -> AppResult<DataCellWriterLeaseRow> {
+        let ttl_seconds = writer_lease_ttl_seconds(acquire.ttl)?;
+        let row = sqlx::query_as::<_, DataCellWriterLeaseRowDb>(
+            "WITH ts AS (SELECT clock_timestamp() AS now), \
+             cell AS ( \
+               SELECT cell_id FROM data_cells \
+               WHERE cell_id = $1 AND status IN ('open', 'full', 'draining') \
+             ) \
+             INSERT INTO data_cell_writer_leases \
+               (cell_id, fence_token, holder_instance_id, service_name, revision, acquired_at, heartbeat_at, expires_at) \
+             SELECT cell.cell_id, 1, $2, $3, $4, ts.now, ts.now, ts.now + ($5::bigint * interval '1 second') \
+             FROM cell CROSS JOIN ts \
+             ON CONFLICT (cell_id) DO UPDATE SET \
+               fence_token = data_cell_writer_leases.fence_token + 1, \
+               holder_instance_id = EXCLUDED.holder_instance_id, \
+               service_name = EXCLUDED.service_name, \
+               revision = EXCLUDED.revision, \
+               acquired_at = (SELECT now FROM ts), \
+               heartbeat_at = (SELECT now FROM ts), \
+               expires_at = (SELECT now FROM ts) + ($5::bigint * interval '1 second') \
+             WHERE data_cell_writer_leases.expires_at <= (SELECT now FROM ts) \
+             RETURNING cell_id, fence_token, holder_instance_id, service_name, revision, \
+               acquired_at, heartbeat_at, expires_at",
+        )
+        .bind(&acquire.cell_id)
+        .bind(&acquire.holder_instance_id)
+        .bind(&acquire.service_name)
+        .bind(&acquire.revision)
+        .bind(ttl_seconds)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("acquire_data_cell_writer_lease", err))?;
+        match row {
+            Some(row) => Ok(row.into()),
+            None => Err(self.writer_lease_unavailable_error(&acquire.cell_id).await),
+        }
+    }
+
+    pub async fn renew_data_cell_writer_lease(
+        &self,
+        renewal: &DataCellWriterLeaseRenewal,
+    ) -> AppResult<DataCellWriterLeaseRow> {
+        let ttl_seconds = writer_lease_ttl_seconds(renewal.ttl)?;
+        let row = sqlx::query_as::<_, DataCellWriterLeaseRowDb>(
+            "WITH ts AS (SELECT clock_timestamp() AS now) \
+             UPDATE data_cell_writer_leases AS lease \
+             SET heartbeat_at = ts.now, expires_at = ts.now + ($4::bigint * interval '1 second') \
+             FROM ts, data_cells AS cell \
+             WHERE lease.cell_id = $1 \
+               AND cell.cell_id = lease.cell_id \
+               AND cell.status IN ('open', 'full', 'draining') \
+               AND lease.holder_instance_id = $2 \
+               AND lease.fence_token = $3 \
+               AND lease.expires_at > ts.now \
+             RETURNING lease.cell_id, lease.fence_token, lease.holder_instance_id, lease.service_name, lease.revision, \
+               lease.acquired_at, lease.heartbeat_at, lease.expires_at",
+        )
+        .bind(&renewal.cell_id)
+        .bind(&renewal.holder_instance_id)
+        .bind(renewal.fence_token)
+        .bind(ttl_seconds)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("renew_data_cell_writer_lease", err))?;
+        row.map(Into::into).ok_or_else(|| {
+            AppError::cell_writer_unavailable(format!(
+                "data cell {} writer lease is no longer held by this instance",
+                renewal.cell_id
+            ))
+        })
+    }
+
+    pub async fn observe_data_cell_writer_lease(
+        &self,
+        observation: &DataCellWriterLeaseObservation,
+    ) -> AppResult<Option<DataCellWriterLeaseRow>> {
+        let row = sqlx::query_as::<_, DataCellWriterLeaseRowDb>(
+            "WITH ts AS (SELECT clock_timestamp() AS now) \
+             SELECT lease.cell_id, lease.fence_token, lease.holder_instance_id, lease.service_name, lease.revision, \
+               lease.acquired_at, lease.heartbeat_at, lease.expires_at \
+             FROM data_cell_writer_leases AS lease \
+             JOIN data_cells AS cell ON cell.cell_id = lease.cell_id \
+             CROSS JOIN ts \
+             WHERE lease.cell_id = $1 \
+               AND lease.holder_instance_id = $2 \
+               AND lease.fence_token = $3 \
+               AND lease.expires_at > ts.now \
+               AND cell.status IN ('open', 'full', 'draining')",
+        )
+        .bind(&observation.cell_id)
+        .bind(&observation.holder_instance_id)
+        .bind(observation.fence_token)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("observe_data_cell_writer_lease", err))?;
+        Ok(row.map(Into::into))
+    }
+
+    pub async fn release_data_cell_writer_lease(
+        &self,
+        release: &DataCellWriterLeaseRelease,
+    ) -> AppResult<DataCellWriterLeaseRow> {
+        let row = sqlx::query_as::<_, DataCellWriterLeaseRowDb>(
+            "WITH ts AS (SELECT clock_timestamp() AS now) \
+             UPDATE data_cell_writer_leases \
+             SET heartbeat_at = ts.now, expires_at = LEAST(expires_at, ts.now) \
+             FROM ts \
+             WHERE cell_id = $1 \
+               AND holder_instance_id = $2 \
+               AND fence_token = $3 \
+               AND expires_at > ts.now \
+             RETURNING cell_id, fence_token, holder_instance_id, service_name, revision, \
+               acquired_at, heartbeat_at, expires_at",
+        )
+        .bind(&release.cell_id)
+        .bind(&release.holder_instance_id)
+        .bind(release.fence_token)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("release_data_cell_writer_lease", err))?;
+        row.map(Into::into).ok_or_else(|| {
+            AppError::cell_writer_unavailable(format!(
+                "data cell {} writer lease is no longer held by this instance",
+                release.cell_id
+            ))
+        })
+    }
+
     pub async fn load_tenant_route_events(&self) -> AppResult<Vec<TenantRouteEventRow>> {
         let rows = sqlx::query_as::<_, TenantRouteEventRowDb>(
             "SELECT id, org_id, old_cell_id, new_cell_id, old_status, new_status, \
@@ -1214,6 +1419,28 @@ impl ControlDb {
         .await
         .map_err(|err| internal("load_tenant_route_events", err))?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn writer_lease_unavailable_error(&self, cell_id: &str) -> AppError {
+        let status: Result<Option<String>, sqlx::Error> =
+            sqlx::query_scalar("SELECT status FROM data_cells WHERE cell_id = $1")
+                .bind(cell_id)
+                .fetch_optional(self.pool())
+                .await;
+        match status {
+            Ok(None) => AppError::cell_writer_unavailable(format!(
+                "data cell {cell_id} is not registered for writer leases"
+            )),
+            Ok(Some(status)) if !matches!(status.as_str(), "open" | "full" | "draining") => {
+                AppError::cell_writer_unavailable(format!(
+                    "data cell {cell_id} is not write-enabled"
+                ))
+            }
+            Ok(Some(_)) => AppError::cell_writer_unavailable(format!(
+                "data cell {cell_id} writer lease is held by another instance"
+            )),
+            Err(err) => internal("writer_lease_unavailable_error", err),
+        }
     }
 }
 

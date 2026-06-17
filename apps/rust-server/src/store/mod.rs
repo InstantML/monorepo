@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    env,
     sync::Arc,
     time::{Duration as StdDuration, Instant},
 };
@@ -52,9 +53,15 @@ use uuid::Uuid;
 use crate::{
     artifact_store::{prepare_base64_artifact, ArtifactByteStore, StoredArtifact},
     auth::{generate_api_key, generate_session_token, hash_idempotency, hash_secret},
-    config::{AppConfig, ByocClickHouseConfig, CellRoutingConfig, HostedClickHouseConfig},
+    config::{
+        AppConfig, ByocClickHouseConfig, CellRoutingConfig, HostedClickHouseConfig,
+        ServicePlaneRole,
+    },
     control_db::ControlDb,
-    control_repo::{ApiKeyWithHash, NewSession, TenantRoutePlacement},
+    control_repo::{
+        ApiKeyWithHash, DataCellWriterLeaseAcquire, DataCellWriterLeaseObservation,
+        DataCellWriterLeaseRelease, DataCellWriterLeaseRenewal, NewSession, TenantRoutePlacement,
+    },
     domain::{
         is_personal_account_type, plan_tier, validate_account_type, validate_email,
         validate_json_object, validate_limit, validate_membership_role, validate_name,
@@ -76,7 +83,7 @@ use crate::{
         CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest,
         CreateProjectRequest, CreateReportRequest, CreateRunForkRequest, CreateRunRequest,
         CreateUserRequest, CreatedAuthSession, CurrentUserOrganizationCreateResponse,
-        DashboardPreferenceRow, DataCellRow, DeleteArtifactAliasRequest,
+        DashboardPreferenceRow, DataCellRow, DataCellWriterLeaseRow, DeleteArtifactAliasRequest,
         DeleteArtifactVersionRequest, DevGoogleAuthRequest, EmailDeliveryRow,
         ImportWorkspaceViewRequest, InitialInvitationCreateResult, InitialOrganizationInvitation,
         InitiateArtifactUploadRequest, InvitationPreviewPayload, InvitationTokenRequest,
@@ -181,6 +188,9 @@ pub struct Store {
     hosted_clickhouse: Option<HostedClickHouseConfig>,
     byoc_clickhouse: ByocClickHouseConfig,
     cell_routing: CellRoutingConfig,
+    data_cell_writer_runtime: DataCellWriterLeaseRuntime,
+    data_cell_writer_lease: Arc<Mutex<DataCellWriterLeaseState>>,
+    data_cell_writer_refresh_lock: Arc<Mutex<()>>,
     tenant_metric_stores: Arc<Mutex<HashMap<Uuid, MetricStore>>>,
     customer_tenant_endpoints: Arc<Mutex<HashMap<Uuid, String>>>,
     tenant_loaded: Arc<Mutex<BTreeSet<Uuid>>>,
@@ -200,6 +210,9 @@ pub struct Store {
 }
 
 const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
+const DATA_CELL_WRITER_LEASE_DEFAULT_TTL_SECS: i64 = 30;
+const DATA_CELL_WRITER_LEASE_POSITIVE_CACHE: StdDuration = StdDuration::from_millis(500);
+const DATA_CELL_WRITER_LEASE_NEGATIVE_CACHE: StdDuration = StdDuration::from_millis(250);
 
 /// Cadence for the data-plane background refresh task.
 ///
@@ -208,6 +221,129 @@ const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
 /// removal). If this becomes a load problem, the right fix is push-based
 /// invalidation (Tier 3), not a longer interval.
 const CONTROL_REFRESH_BACKGROUND_INTERVAL: StdDuration = StdDuration::from_secs(2);
+
+#[derive(Clone, Debug)]
+struct DataCellWriterLeaseRuntime {
+    holder_instance_id: String,
+    service_name: String,
+    revision: String,
+    ttl: ChronoDuration,
+    renew_interval: StdDuration,
+}
+
+impl DataCellWriterLeaseRuntime {
+    fn from_env() -> AppResult<Self> {
+        let ttl_seconds = env::var("INSTANTML_CELL_WRITER_LEASE_TTL_SECONDS")
+            .ok()
+            .map(|value| {
+                value.trim().parse::<i64>().map_err(|_| {
+                    AppError::config(
+                        "INSTANTML_CELL_WRITER_LEASE_TTL_SECONDS must be a positive integer",
+                    )
+                })
+            })
+            .transpose()?
+            .unwrap_or(DATA_CELL_WRITER_LEASE_DEFAULT_TTL_SECS);
+        if ttl_seconds <= 0 {
+            return Err(AppError::config(
+                "INSTANTML_CELL_WRITER_LEASE_TTL_SECONDS must be greater than zero",
+            ));
+        }
+        let renew_seconds = (ttl_seconds / 3).clamp(1, 10) as u64;
+        Ok(Self {
+            holder_instance_id: env_label("INSTANTML_INSTANCE_ID")
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            service_name: env_label("K_SERVICE")
+                .or_else(|| env_label("INSTANTML_SERVICE_NAME"))
+                .unwrap_or_else(|| "instantml-rust-server".to_string()),
+            revision: env_label("K_REVISION")
+                .or_else(|| env_label("INSTANTML_REVISION"))
+                .unwrap_or_else(|| "local".to_string()),
+            ttl: ChronoDuration::seconds(ttl_seconds),
+            renew_interval: StdDuration::from_secs(renew_seconds),
+        })
+    }
+
+    #[cfg(test)]
+    fn for_tests() -> Self {
+        Self {
+            holder_instance_id: Uuid::new_v4().to_string(),
+            service_name: "instantml-test".to_string(),
+            revision: "test".to_string(),
+            ttl: ChronoDuration::seconds(DATA_CELL_WRITER_LEASE_DEFAULT_TTL_SECS),
+            renew_interval: StdDuration::from_secs(1),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct DataCellWriterLeaseState {
+    lease: Option<DataCellWriterLeaseRow>,
+    verified_until: Option<Instant>,
+    unavailable_cell_id: Option<String>,
+    unavailable_until: Option<Instant>,
+}
+
+fn env_label(key: &str) -> Option<String> {
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DataCellWriterLeaseReadiness {
+    pub required: bool,
+    pub ready: bool,
+    pub code: Option<String>,
+}
+
+impl DataCellWriterLeaseReadiness {
+    fn not_required() -> Self {
+        Self {
+            required: false,
+            ready: true,
+            code: None,
+        }
+    }
+
+    fn ready() -> Self {
+        Self {
+            required: true,
+            ready: true,
+            code: None,
+        }
+    }
+
+    fn unavailable(error: AppError) -> Self {
+        Self {
+            required: true,
+            ready: false,
+            code: Some(error.safe_code().to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum DataCellWriterLeaseRequirement {
+    NotRequired,
+    MissingControlDb,
+    MissingCellId,
+    Required { cell_id: String },
+}
+
+fn writer_lease_cache_ttl(lease: &DataCellWriterLeaseRow) -> StdDuration {
+    // `expires_at` is stamped by Postgres `clock_timestamp()` while this cache
+    // uses the app clock; the 100ms margin assumes normal app/Postgres clock
+    // skew stays below that bound.
+    let remaining = lease
+        .expires_at
+        .signed_duration_since(Utc::now())
+        .to_std()
+        .unwrap_or(StdDuration::ZERO)
+        .saturating_sub(StdDuration::from_millis(100));
+    remaining.min(DATA_CELL_WRITER_LEASE_POSITIVE_CACHE)
+}
 
 impl Store {
     pub async fn connect(
@@ -225,12 +361,16 @@ impl Store {
         // Build the shared-cell MetricStore when INSTANTML_SHARED_CELL_URL is set.
         let shared_cell_metric_store =
             build_shared_cell_metric_store(hosted_clickhouse.as_ref()).await?;
+        let data_cell_writer_runtime = DataCellWriterLeaseRuntime::from_env()?;
         let store = Self {
             metric_store,
             control_db,
             hosted_clickhouse,
             byoc_clickhouse,
             cell_routing,
+            data_cell_writer_runtime,
+            data_cell_writer_lease: Arc::new(Mutex::new(DataCellWriterLeaseState::default())),
+            data_cell_writer_refresh_lock: Arc::new(Mutex::new(())),
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
@@ -268,6 +408,345 @@ impl Store {
     /// methods route through this; `None` is local non-hosted mode.
     pub fn control_db(&self) -> Option<&ControlDb> {
         self.control_db.as_ref()
+    }
+
+    pub async fn ensure_data_cell_writer_lease_for_mutation(
+        &self,
+        service_plane: ServicePlaneRole,
+    ) -> AppResult<bool> {
+        self.ensure_data_cell_writer_lease(service_plane)
+            .await
+            .map(|lease| lease.is_some())
+    }
+
+    pub fn data_cell_writer_lease_renew_interval(&self) -> StdDuration {
+        self.data_cell_writer_runtime.renew_interval
+    }
+
+    pub async fn data_cell_writer_lease_readiness(
+        &self,
+        service_plane: ServicePlaneRole,
+    ) -> DataCellWriterLeaseReadiness {
+        let requirement = self.data_cell_writer_lease_requirement(service_plane);
+        match requirement {
+            DataCellWriterLeaseRequirement::NotRequired => {
+                DataCellWriterLeaseReadiness::not_required()
+            }
+            DataCellWriterLeaseRequirement::MissingControlDb => {
+                DataCellWriterLeaseReadiness::unavailable(AppError::cell_writer_unavailable(
+                    "hosted data plane requires DATABASE_URL before writes are enabled",
+                ))
+            }
+            DataCellWriterLeaseRequirement::MissingCellId => {
+                DataCellWriterLeaseReadiness::unavailable(AppError::cell_writer_unavailable(
+                    "hosted data plane requires INSTANTML_CELL_ID before writes are enabled",
+                ))
+            }
+            DataCellWriterLeaseRequirement::Required { cell_id } => {
+                if self.cached_data_cell_writer_lease(&cell_id).await.is_some() {
+                    return DataCellWriterLeaseReadiness::ready();
+                }
+                match self.observe_data_cell_writer_lease(&cell_id).await {
+                    Ok(true) => DataCellWriterLeaseReadiness::ready(),
+                    Ok(false) => DataCellWriterLeaseReadiness::unavailable(
+                        AppError::cell_writer_unavailable("data-cell writer lease is not held"),
+                    ),
+                    Err(error) => DataCellWriterLeaseReadiness::unavailable(error),
+                }
+            }
+        }
+    }
+
+    pub async fn release_data_cell_writer_lease(
+        &self,
+        service_plane: ServicePlaneRole,
+    ) -> AppResult<bool> {
+        let DataCellWriterLeaseRequirement::Required { cell_id: _ } =
+            self.data_cell_writer_lease_requirement(service_plane)
+        else {
+            return Ok(false);
+        };
+        let Some(control_db) = &self.control_db else {
+            return Err(AppError::cell_writer_unavailable(
+                "hosted data plane requires DATABASE_URL before writes are enabled",
+            ));
+        };
+        let _refresh_guard = self.data_cell_writer_refresh_lock.lock().await;
+        let lease = {
+            let mut state = self.data_cell_writer_lease.lock().await;
+            state.verified_until = None;
+            state.lease.take()
+        };
+        let Some(lease) = lease else {
+            return Ok(false);
+        };
+        control_db
+            .release_data_cell_writer_lease(&DataCellWriterLeaseRelease {
+                cell_id: lease.cell_id.clone(),
+                holder_instance_id: lease.holder_instance_id.clone(),
+                fence_token: lease.fence_token,
+            })
+            .await
+            .map_err(|error| self.writer_lease_guard_error(&lease.cell_id, error))?;
+        Ok(true)
+    }
+
+    async fn ensure_data_cell_writer_lease(
+        &self,
+        service_plane: ServicePlaneRole,
+    ) -> AppResult<Option<DataCellWriterLeaseRow>> {
+        let cell_id = match self.data_cell_writer_lease_requirement(service_plane) {
+            DataCellWriterLeaseRequirement::NotRequired => return Ok(None),
+            DataCellWriterLeaseRequirement::MissingControlDb => {
+                return Err(AppError::cell_writer_unavailable(
+                    "hosted data plane requires DATABASE_URL before writes are enabled",
+                ));
+            }
+            DataCellWriterLeaseRequirement::MissingCellId => {
+                return Err(AppError::cell_writer_unavailable(
+                    "hosted data plane requires INSTANTML_CELL_ID before writes are enabled",
+                ));
+            }
+            DataCellWriterLeaseRequirement::Required { cell_id } => cell_id,
+        };
+        let Some(control_db) = &self.control_db else {
+            return Err(AppError::cell_writer_unavailable(
+                "hosted data plane requires DATABASE_URL before writes are enabled",
+            ));
+        };
+        if let Some(lease) = self.cached_data_cell_writer_lease(&cell_id).await {
+            return Ok(Some(lease));
+        }
+        if self.cached_data_cell_writer_unavailable(&cell_id).await {
+            return Err(AppError::cell_writer_unavailable(
+                "data-cell writer lease is not available",
+            ));
+        }
+        let _refresh_guard = self.data_cell_writer_refresh_lock.lock().await;
+        if let Some(lease) = self.cached_data_cell_writer_lease(&cell_id).await {
+            return Ok(Some(lease));
+        }
+        if self.cached_data_cell_writer_unavailable(&cell_id).await {
+            return Err(AppError::cell_writer_unavailable(
+                "data-cell writer lease is not available",
+            ));
+        }
+        let previous = {
+            let state = self.data_cell_writer_lease.lock().await;
+            state
+                .lease
+                .as_ref()
+                .filter(|lease| lease.cell_id == cell_id)
+                .cloned()
+        };
+        let lease = if let Some(previous) = previous {
+            match control_db
+                .renew_data_cell_writer_lease(&DataCellWriterLeaseRenewal {
+                    cell_id: cell_id.clone(),
+                    holder_instance_id: previous.holder_instance_id,
+                    fence_token: previous.fence_token,
+                    ttl: self.data_cell_writer_runtime.ttl,
+                })
+                .await
+            {
+                Ok(lease) => lease,
+                Err(error) if error.safe_code() == "cell_writer_unavailable" => {
+                    self.acquire_data_cell_writer_lease(control_db, &cell_id)
+                        .await?
+                }
+                Err(error) => return Err(self.writer_lease_guard_error(&cell_id, error)),
+            }
+        } else {
+            self.acquire_data_cell_writer_lease(control_db, &cell_id)
+                .await?
+        };
+        self.store_data_cell_writer_lease(lease.clone()).await;
+        Ok(Some(lease))
+    }
+
+    async fn observe_data_cell_writer_lease(&self, cell_id: &str) -> AppResult<bool> {
+        let Some(control_db) = &self.control_db else {
+            return Err(AppError::cell_writer_unavailable(
+                "hosted data plane requires DATABASE_URL before writes are enabled",
+            ));
+        };
+        let previous = {
+            let state = self.data_cell_writer_lease.lock().await;
+            state
+                .lease
+                .as_ref()
+                .filter(|lease| lease.cell_id == cell_id)
+                .cloned()
+        };
+        let Some(previous) = previous else {
+            return Ok(false);
+        };
+        let observed = control_db
+            .observe_data_cell_writer_lease(&DataCellWriterLeaseObservation {
+                cell_id: cell_id.to_string(),
+                holder_instance_id: previous.holder_instance_id.clone(),
+                fence_token: previous.fence_token,
+            })
+            .await
+            .map_err(|error| self.writer_lease_guard_error(cell_id, error))?;
+        match observed {
+            Some(lease) => {
+                self.store_data_cell_writer_lease(lease).await;
+                Ok(true)
+            }
+            None => {
+                let mut state = self.data_cell_writer_lease.lock().await;
+                state.verified_until = None;
+                Ok(false)
+            }
+        }
+    }
+
+    async fn acquire_data_cell_writer_lease(
+        &self,
+        control_db: &ControlDb,
+        cell_id: &str,
+    ) -> AppResult<DataCellWriterLeaseRow> {
+        let result = control_db
+            .acquire_data_cell_writer_lease(&DataCellWriterLeaseAcquire {
+                cell_id: cell_id.to_string(),
+                holder_instance_id: self.data_cell_writer_runtime.holder_instance_id.clone(),
+                service_name: self.data_cell_writer_runtime.service_name.clone(),
+                revision: self.data_cell_writer_runtime.revision.clone(),
+                ttl: self.data_cell_writer_runtime.ttl,
+            })
+            .await
+            .map_err(|error| self.writer_lease_guard_error(cell_id, error));
+        if result
+            .as_ref()
+            .is_err_and(|error| error.safe_code() == "cell_writer_unavailable")
+        {
+            self.store_data_cell_writer_unavailable(cell_id).await;
+        }
+        result
+    }
+
+    async fn cached_data_cell_writer_lease(&self, cell_id: &str) -> Option<DataCellWriterLeaseRow> {
+        let state = self.data_cell_writer_lease.lock().await;
+        let lease = state
+            .lease
+            .as_ref()
+            .filter(|lease| lease.cell_id == cell_id)?;
+        let verified_until = state.verified_until?;
+        (verified_until > Instant::now()).then(|| lease.clone())
+    }
+
+    async fn cached_data_cell_writer_unavailable(&self, cell_id: &str) -> bool {
+        let state = self.data_cell_writer_lease.lock().await;
+        state
+            .unavailable_cell_id
+            .as_deref()
+            .filter(|cached_cell_id| *cached_cell_id == cell_id)
+            .zip(state.unavailable_until)
+            .is_some_and(|(_, unavailable_until)| unavailable_until > Instant::now())
+    }
+
+    async fn store_data_cell_writer_lease(&self, lease: DataCellWriterLeaseRow) {
+        let mut state = self.data_cell_writer_lease.lock().await;
+        state.verified_until = Some(Instant::now() + writer_lease_cache_ttl(&lease));
+        state.lease = Some(lease);
+        state.unavailable_cell_id = None;
+        state.unavailable_until = None;
+    }
+
+    async fn store_data_cell_writer_unavailable(&self, cell_id: &str) {
+        let mut state = self.data_cell_writer_lease.lock().await;
+        state.verified_until = None;
+        state.unavailable_cell_id = Some(cell_id.to_string());
+        state.unavailable_until = Some(Instant::now() + DATA_CELL_WRITER_LEASE_NEGATIVE_CACHE);
+    }
+
+    fn data_cell_writer_lease_requirement(
+        &self,
+        service_plane: ServicePlaneRole,
+    ) -> DataCellWriterLeaseRequirement {
+        if service_plane != ServicePlaneRole::Data {
+            return DataCellWriterLeaseRequirement::NotRequired;
+        }
+        if self.control_db.is_none() {
+            return DataCellWriterLeaseRequirement::MissingControlDb;
+        }
+        self.cell_routing
+            .heartbeat_data_cell_id
+            .clone()
+            .map(|cell_id| DataCellWriterLeaseRequirement::Required { cell_id })
+            .unwrap_or(DataCellWriterLeaseRequirement::MissingCellId)
+    }
+
+    pub async fn ensure_org_routed_to_current_data_cell(
+        &self,
+        org_id: Uuid,
+        service_plane: ServicePlaneRole,
+    ) -> AppResult<bool> {
+        if service_plane != ServicePlaneRole::Data || !self.hosted_clickhouse_enabled() {
+            return Ok(false);
+        }
+        let Some(current_cell_id) = self.cell_routing.heartbeat_data_cell_id.as_deref() else {
+            return Err(AppError::cell_writer_unavailable(
+                "hosted data plane requires INSTANTML_CELL_ID before writes are enabled",
+            ));
+        };
+        let route_cell = if let Some(control_db) = &self.control_db {
+            control_db
+                .load_tenant_route(org_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(
+                        workflow = "data_cell_writer_lease",
+                        operation = "route_cell_verify",
+                        outcome = "failure",
+                        status = error.status().as_u16(),
+                        code = error.safe_code(),
+                        error_kind = error.safe_code(),
+                        retryable = error.retryable(),
+                        safe_summary = error.safe_summary(),
+                        "failed to verify tenant route cell before hosted data write"
+                    );
+                    AppError::cell_writer_unavailable(
+                        "organization data-cell route could not be verified",
+                    )
+                })?
+                .and_then(|route| route.cell_id)
+        } else {
+            let data = self.data.lock().await;
+            data.tenant_routes
+                .get(&org_id)
+                .and_then(|route| route.cell_id.clone())
+        };
+        if let Some(route_cell) = route_cell {
+            if route_cell != current_cell_id {
+                return Err(AppError::cell_writer_unavailable(
+                    "organization is routed to a different data cell",
+                ));
+            }
+        }
+        Ok(true)
+    }
+
+    fn writer_lease_guard_error(&self, cell_id: &str, error: AppError) -> AppError {
+        if error.safe_code() == "cell_writer_unavailable" {
+            return error;
+        }
+        tracing::warn!(
+            workflow = "data_cell_writer_lease",
+            operation = "verify",
+            outcome = "failure",
+            status = error.status().as_u16(),
+            code = error.safe_code(),
+            error_kind = error.safe_code(),
+            retryable = error.retryable(),
+            safe_summary = error.safe_summary(),
+            cell_id,
+            "data-cell writer lease verification failed"
+        );
+        AppError::cell_writer_unavailable(format!(
+            "data cell {cell_id} writer lease could not be verified"
+        ))
     }
 
     async fn rebuild(&self) -> AppResult<()> {
@@ -2083,6 +2562,9 @@ mod tests {
                 placement_data_cell_id: None,
                 heartbeat_data_cell_id: None,
             },
+            data_cell_writer_runtime: DataCellWriterLeaseRuntime::for_tests(),
+            data_cell_writer_lease: Arc::new(Mutex::new(DataCellWriterLeaseState::default())),
+            data_cell_writer_refresh_lock: Arc::new(Mutex::new(())),
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
@@ -2106,6 +2588,76 @@ mod tests {
 
     fn store_without_control_db() -> Store {
         test_store("instantml_run_control_test", None)
+    }
+
+    fn hosted_clickhouse_config() -> HostedClickHouseConfig {
+        HostedClickHouseConfig {
+            tenant_base_url: "http://default:@127.0.0.1:8123/instantml_test_route".to_string(),
+            provisioner: crate::config::ClickHouseProvisioner::Database,
+            allow_stored_tenant_passwords: false,
+            cloud: None,
+            shared_cell_url: None,
+        }
+    }
+
+    fn test_data_cell(cell_id: &str) -> DataCellRow {
+        let now = Utc::now();
+        DataCellRow {
+            cell_id: cell_id.to_string(),
+            environment: "test".to_string(),
+            region: "us-central1".to_string(),
+            tier: "standard".to_string(),
+            status: "open".to_string(),
+            service_name: format!("instantml-data-{cell_id}"),
+            public_api_base: None,
+            internal_api_base: None,
+            clickhouse_endpoint_secret_ref: None,
+            clickhouse_username_secret_ref: None,
+            clickhouse_password_secret_ref: None,
+            clickhouse_database_mode: Some("per-org-database".to_string()),
+            max_orgs: None,
+            max_metric_points_monthly: None,
+            max_api_requests_monthly: None,
+            max_retained_bytes: None,
+            max_disk_usage_pct: None,
+            reserved_headroom_pct: None,
+            last_health_at: Some(now),
+            last_backup_at: Some(now),
+            notes: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn test_tenant_route(org_id: Uuid, cell_id: Option<&str>) -> TenantRouteRecord {
+        let now = Utc::now();
+        TenantRouteRecord {
+            org_id,
+            status: "ready".to_string(),
+            provisioner: "database".to_string(),
+            cell_id: cell_id.map(str::to_string),
+            route_version: 1,
+            placement_reason: cell_id.map(|_| "test".to_string()),
+            assigned_at: cell_id.map(|_| now),
+            plan_tier: Some("free".to_string()),
+            warehouse_kind: Some("shared".to_string()),
+            requested_min_replica_memory_gb: Some(8),
+            requested_max_replica_memory_gb: Some(8),
+            requested_num_replicas: Some(1),
+            applied_min_replica_memory_gb: Some(8),
+            applied_max_replica_memory_gb: Some(8),
+            applied_num_replicas: Some(1),
+            endpoint: "http://default:@127.0.0.1:8123/instantml_test_route".to_string(),
+            database: "instantml_test_route".to_string(),
+            username: "tenant".to_string(),
+            password_secret_ref: Some("secret://tenant".to_string()),
+            password_ciphertext: None,
+            schema_version: Some(crate::metric_store::METRIC_SCHEMA_VERSION),
+            service_id: None,
+            created_at: now,
+            updated_at: now,
+            error: None,
+        }
     }
 
     #[sqlx::test]
@@ -2252,6 +2804,276 @@ mod tests {
             .data_cells
             .contains_key("free-us-central1-a"));
         assert_eq!(control_db.load_data_cells().await.unwrap(), vec![stored]);
+    }
+
+    #[sqlx::test]
+    async fn data_cell_writer_lease_preserves_combined_and_local_write_compatibility(
+        pool: sqlx::PgPool,
+    ) {
+        let local = store_without_control_db();
+        assert!(!local
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Combined)
+            .await
+            .unwrap());
+
+        let hosted_combined = store_with_control_db(ControlDb::from_pool(pool));
+        assert!(!hosted_combined
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Combined)
+            .await
+            .unwrap());
+    }
+
+    #[sqlx::test]
+    async fn hosted_data_cell_writer_lease_fails_closed_without_cell_id(pool: sqlx::PgPool) {
+        let store = store_with_control_db(ControlDb::from_pool(pool));
+        let error = store
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.safe_code(), "cell_writer_unavailable");
+
+        let readiness = store
+            .data_cell_writer_lease_readiness(ServicePlaneRole::Data)
+            .await;
+        assert!(readiness.required);
+        assert!(!readiness.ready);
+        assert_eq!(readiness.code.as_deref(), Some("cell_writer_unavailable"));
+    }
+
+    #[sqlx::test]
+    async fn hosted_data_cell_writer_readiness_does_not_acquire_lease(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let mut store = store_with_control_db(control_db.clone());
+        store.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+        store
+            .refresh_current_data_cell_registration(&control_db)
+            .await
+            .unwrap();
+
+        let readiness = store
+            .data_cell_writer_lease_readiness(ServicePlaneRole::Data)
+            .await;
+        assert!(readiness.required);
+        assert!(!readiness.ready);
+        assert_eq!(readiness.code.as_deref(), Some("cell_writer_unavailable"));
+        assert!(control_db
+            .load_data_cell_writer_lease("free-us-central1-a")
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[sqlx::test]
+    async fn hosted_data_cell_writer_lease_allows_one_store_to_mutate(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let mut first = store_with_control_db(control_db.clone());
+        first.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+        first
+            .refresh_current_data_cell_registration(&control_db)
+            .await
+            .unwrap();
+
+        let mut second = store_with_control_db(control_db.clone());
+        second.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+
+        assert!(first
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap());
+        let error = second
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.safe_code(), "cell_writer_unavailable");
+
+        let readiness = first
+            .data_cell_writer_lease_readiness(ServicePlaneRole::Data)
+            .await;
+        assert!(readiness.required);
+        assert!(readiness.ready);
+        assert_eq!(readiness.code, None);
+    }
+
+    #[sqlx::test]
+    async fn hosted_data_cell_writer_lease_rejects_stale_store_after_takeover(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let mut first = store_with_control_db(control_db.clone());
+        first.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+        first
+            .refresh_current_data_cell_registration(&control_db)
+            .await
+            .unwrap();
+        assert!(first
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap());
+
+        sqlx::query(
+            "UPDATE data_cell_writer_leases \
+             SET heartbeat_at = clock_timestamp() - interval '2 seconds', \
+                 expires_at = clock_timestamp() - interval '1 second' \
+             WHERE cell_id = $1",
+        )
+        .bind("free-us-central1-a")
+        .execute(control_db.pool())
+        .await
+        .unwrap();
+
+        let mut second = store_with_control_db(control_db.clone());
+        second.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+        assert!(second
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap());
+
+        first.data_cell_writer_lease.lock().await.verified_until = None;
+        let error = first
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.safe_code(), "cell_writer_unavailable");
+    }
+
+    #[sqlx::test]
+    async fn hosted_data_cell_writer_lease_rejects_disabled_cell_on_renewal(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let mut store = store_with_control_db(control_db.clone());
+        store.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+        store
+            .refresh_current_data_cell_registration(&control_db)
+            .await
+            .unwrap();
+        assert!(store
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap());
+
+        sqlx::query("UPDATE data_cells SET status = 'disabled' WHERE cell_id = $1")
+            .bind("free-us-central1-a")
+            .execute(control_db.pool())
+            .await
+            .unwrap();
+        store.data_cell_writer_lease.lock().await.verified_until = None;
+
+        let error = store
+            .ensure_data_cell_writer_lease_for_mutation(ServicePlaneRole::Data)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.safe_code(), "cell_writer_unavailable");
+
+        let readiness = store
+            .data_cell_writer_lease_readiness(ServicePlaneRole::Data)
+            .await;
+        assert!(readiness.required);
+        assert!(!readiness.ready);
+        assert_eq!(readiness.code.as_deref(), Some("cell_writer_unavailable"));
+    }
+
+    #[tokio::test]
+    async fn hosted_data_cell_writer_rejects_org_routed_to_another_cell() {
+        let mut store = store_without_control_db();
+        store.hosted_clickhouse = Some(hosted_clickhouse_config());
+        store.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+        let org_id = Uuid::new_v4();
+        store
+            .data
+            .lock()
+            .await
+            .insert_tenant_route(test_tenant_route(org_id, Some("free-us-central1-b")));
+
+        let error = store
+            .ensure_org_routed_to_current_data_cell(org_id, ServicePlaneRole::Data)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.safe_code(), "cell_writer_unavailable");
+
+        store
+            .data
+            .lock()
+            .await
+            .insert_tenant_route(test_tenant_route(org_id, None));
+        assert!(store
+            .ensure_org_routed_to_current_data_cell(org_id, ServicePlaneRole::Data)
+            .await
+            .unwrap());
+    }
+
+    #[sqlx::test]
+    async fn hosted_data_cell_writer_uses_authoritative_control_route(pool: sqlx::PgPool) {
+        let control_db = ControlDb::from_pool(pool);
+        let org_id = Uuid::new_v4();
+        control_db
+            .upsert_org(&replay_org(org_id, "free"))
+            .await
+            .unwrap();
+        control_db
+            .upsert_data_cell(&test_data_cell("free-us-central1-a"))
+            .await
+            .unwrap();
+        control_db
+            .upsert_data_cell(&test_data_cell("free-us-central1-b"))
+            .await
+            .unwrap();
+
+        let route = test_tenant_route(org_id, None);
+        control_db
+            .upsert_tenant_route_with_placement(
+                &route,
+                Some(&TenantRoutePlacement {
+                    environment: "test".to_string(),
+                    cell_id: "free-us-central1-a".to_string(),
+                    actor: "test".to_string(),
+                    reason: "test".to_string(),
+                }),
+            )
+            .await
+            .unwrap();
+
+        let mut store = store_with_control_db(control_db.clone());
+        store.hosted_clickhouse = Some(hosted_clickhouse_config());
+        store.cell_routing.heartbeat_data_cell_id = Some("free-us-central1-a".to_string());
+        store.rebuild().await.unwrap();
+        assert!(store
+            .ensure_org_routed_to_current_data_cell(org_id, ServicePlaneRole::Data)
+            .await
+            .unwrap());
+
+        let mut moved = route;
+        moved.cell_id = Some("free-us-central1-b".to_string());
+        control_db
+            .upsert_tenant_route_with_placement(
+                &moved,
+                Some(&TenantRoutePlacement {
+                    environment: "test".to_string(),
+                    cell_id: "free-us-central1-b".to_string(),
+                    actor: "test".to_string(),
+                    reason: "move".to_string(),
+                }),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store
+                .data
+                .lock()
+                .await
+                .tenant_routes
+                .get(&org_id)
+                .and_then(|route| route.cell_id.as_deref()),
+            Some("free-us-central1-a")
+        );
+
+        let error = store
+            .ensure_org_routed_to_current_data_cell(org_id, ServicePlaneRole::Data)
+            .await
+            .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.safe_code(), "cell_writer_unavailable");
     }
 
     #[test]

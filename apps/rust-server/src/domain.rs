@@ -810,6 +810,18 @@ pub struct DataCellRow {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DataCellWriterLeaseRow {
+    pub cell_id: String,
+    pub fence_token: i64,
+    pub holder_instance_id: String,
+    pub service_name: String,
+    pub revision: String,
+    pub acquired_at: DateTime<Utc>,
+    pub heartbeat_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TenantRouteEventRow {
     pub id: Uuid,
     pub org_id: Uuid,

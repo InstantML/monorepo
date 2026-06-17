@@ -200,7 +200,7 @@ Operational correlation:
 | --- | --- | --- | --- | --- |
 | `GET` | `/health` | none | none | `{ "status": "ok" }` |
 | `GET` | `/healthz` | none | none | Same as `/health` |
-| `GET` | `/readyz` | none | none | `{ "status": "ok", "control_projection_loaded": true, "control_refresh_degraded": false }` when ClickHouse stores are reachable and the control projection has loaded |
+| `GET` | `/readyz` | none | none | `{ "status": "ok", "control_projection_loaded": true, "control_refresh_degraded": false, "write_ready": true, "writer_lease": { "required": false, "ready": true, "code": null } }` when ClickHouse stores are reachable and the control projection has loaded. Hosted split data services report `write_ready: false` and `writer_lease.code: "cell_writer_unavailable"` when this instance does not currently hold the cell writer lease, but read readiness can still return 200. |
 | `GET` | `/metrics` | none | none | Prometheus text metrics, including control projection loaded/degraded gauges |
 | `GET` | `/openapi.json` | none | none | Compact role-aware OpenAPI 3.1 route index with `x-instantml-service-plane` |
 
