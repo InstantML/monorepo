@@ -489,19 +489,6 @@ button:disabled,
   color: var(--text-2);
 }
 
-/* 32 — Chart scale/Y-auto toggles take the system 6px radius (were pills). */
-.chart-log-toggle,
-.chart-yauto-toggle,
-.chart-y-toggle {
-  border-radius: var(--radius-sm) !important;
-}
-.chart-log-toggle.active,
-.chart-yauto-toggle.active {
-  border-color: var(--accent-line);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
 /* 30 — Visual-bug nitpick pass: design-system discipline.
  *      green stays reserved for live/best; informational state is blue/neutral. */
 
