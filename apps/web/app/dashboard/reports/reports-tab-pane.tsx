@@ -667,7 +667,7 @@ function ReportsListPane({
         <div className="report-home__header">
           <div>
             <h2>
-              <FileText size={16} /> Reports
+              <FileText size={16} /> All reports
               <span>{summaries.length}</span>
             </h2>
             <p>Experiment writeups, live panels, and shareable readouts.</p>
