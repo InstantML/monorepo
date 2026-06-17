@@ -113,13 +113,124 @@ select,
 input,
 textarea {
   outline: none;
+  /* Resting state holds a collapsed, transparent ring so focus can animate
+   * it open instead of snapping in. */
+  box-shadow: 0 0 0 0 rgba(43, 224, 130, 0);
+  transition: border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 select:focus,
 input:focus,
 textarea:focus {
-  border-color: rgba(43, 224, 130, 0.48);
-  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.12);
+  border-color: rgba(43, 224, 130, 0.55);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.14);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  select,
+  input,
+  textarea {
+    transition: none;
+  }
+}
+
+/* ── Range sliders ──────────────────────────────────────────────────────────
+ * Custom thumb + track so sliders feel as considered as the rest of the UI.
+ * The thumb is an accent dot that eases up in scale and blooms a soft glow ring
+ * on hover / focus / drag. The filled portion is driven by --range-fill (a 0–100%
+ * value the markup sets inline from the control's value); it falls back to an
+ * empty track when unset. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  --range-fill: 0%;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--range-fill, 0%),
+    var(--line-strong) var(--range-fill, 0%)
+  );
+}
+input[type="range"]::-moz-range-track {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+input[type="range"]::-moz-range-progress {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4.5px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 0 0 0 rgba(43, 224, 130, 0);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 0 0 0 rgba(43, 224, 130, 0);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The thumb's glow ring is the slider's focus affordance, so drop the
+ * generic full-width focus outline and box-shadow ring that the shared
+ * input rules would otherwise draw around the whole control. */
+input[type="range"]:focus,
+input[type="range"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+input[type="range"]:hover::-moz-range-thumb {
+  transform: scale(1.12);
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb,
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.18);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 5px rgba(43, 224, 130, 0.16);
+}
+input[type="range"]:focus-visible::-moz-range-thumb,
+input[type="range"]:active::-moz-range-thumb {
+  transform: scale(1.18);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 5px rgba(43, 224, 130, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input[type="range"]::-webkit-slider-thumb,
+  input[type="range"]::-moz-range-thumb {
+    transition: none;
+  }
 }
 
 input[type="checkbox"] {
@@ -163,8 +274,8 @@ button.primary-button:hover {
 button:focus-visible,
 .select-trigger:focus-visible {
   outline: none;
-  border-color: rgba(43, 224, 130, 0.54);
-  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.14);
+  border-color: rgba(43, 224, 130, 0.55);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.14);
 }
 
 button.secondary {

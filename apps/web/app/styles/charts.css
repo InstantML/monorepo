@@ -1185,10 +1185,9 @@ small {
 .chart-smoothing-slider {
   grid-column: 1 / -1;
   width: 100%;
-  height: 4px;
+  height: 16px;
   margin: 2px 0 0;
   padding: 0;
-  accent-color: var(--accent);
   cursor: pointer;
 }
 

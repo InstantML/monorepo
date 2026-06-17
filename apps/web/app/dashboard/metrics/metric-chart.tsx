@@ -842,6 +842,7 @@ export function MetricChart({
                   onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
                   onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
                   step={10}
+                  style={{ "--range-fill": `${(displaySmoothing / 90) * 100}%` } as CSSProperties}
                   type="range"
                   value={displaySmoothing}
                 />
