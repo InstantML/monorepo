@@ -550,17 +550,6 @@ button:disabled,
 .tab-pane .panel-head h2 svg,
 .tab-pane .panel-head h3 svg { color: var(--muted); }
 
-/* Imports stepper + copy action: green only marks completion of the LIVE/best
- * sense — the stepper progress and a generic copy button are neutral. */
-.imports-command,
-.imports-copy {
-  border-color: var(--line-strong);
-  color: var(--muted);
-  background: transparent;
-}
-.imports-command:hover,
-.imports-copy:hover { border-color: var(--dim); color: var(--text); }
-
 /* 29 — API surface: HTTP method is a neutral mono tag (green = live/best
  *      only), and endpoint descriptions are body copy, not micro-labels. */
 .api-row span {

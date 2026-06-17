@@ -1233,7 +1233,6 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabToPath("distributed"), "/dashboard/distributed");
   // CK2: the Checkpoints tab merged into Run Detail; old ids stay routable.
   assert.equal(tabToPath("checkpoints"), "/dashboard/detail");
-  assert.equal(tabToPath("imports"), "/dashboard/imports");
   assert.equal(tabToPath("models"), "/dashboard/detail");
   assert.equal(tabToPath("insights"), "/dashboard/insights");
   assert.equal(tabToPath("unknown"), "/dashboard/runs");
@@ -1245,7 +1244,8 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabFromPath("/dashboard/health"), "alerts");
   assert.equal(tabToPath("run-health"), "/dashboard/alerts");
   assert.equal(tabFromPath("/dashboard/integrations?x=1"), "runs");
-  assert.equal(tabFromPath("/dashboard/imports?x=1"), "imports");
+  // The Imports tab was removed; old links fall back to Runs.
+  assert.equal(tabFromPath("/dashboard/imports?x=1"), "runs");
   assert.equal(tabFromPath("/dashboard/compare?x=1"), "compare");
   assert.equal(tabFromPath("/dashboard/reports/report_123"), "reports");
   assert.equal(tabFromPath("/dashboard/not-real"), "runs");
@@ -1254,7 +1254,7 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(canonicalDashboardPath("/dashboard/models"), "/dashboard/detail");
   assert.equal(canonicalDashboardPath("/dashboard/checkpoints"), "/dashboard/detail");
   assert.equal(canonicalDashboardPath("/dashboard/integrations"), "/dashboard/runs");
-  assert.equal(canonicalDashboardPath("/dashboard/imports"), "/dashboard/imports");
+  assert.equal(canonicalDashboardPath("/dashboard/imports"), "/dashboard/runs");
   assert.equal(canonicalDashboardPath("/dashboard/metrics/extra"), "/dashboard/metrics");
   assert.equal(pathFromLegacyHash("#detail"), "/dashboard/detail");
   assert.equal(pathFromLegacyHash("#/detail"), "");
