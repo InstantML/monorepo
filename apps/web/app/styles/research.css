@@ -22,6 +22,71 @@
   padding: 0;
 }
 
+/* Standalone distributed controls use the same page-head -> filter-band rhythm
+ * as the other dashboard pages, with run selection treated as the primary
+ * control instead of a small header accessory. */
+.distributed-control-band {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.8fr);
+  align-items: end;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 12px;
+}
+.distributed-run-summary {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.distributed-run-summary span {
+  color: var(--muted);
+  font: 600 10.5px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+.distributed-run-summary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font: 650 14px/1.2 var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.distributed-run-summary small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font: 500 11px/1 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.distributed-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.distributed-toolbar .custom-select-control {
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+.distributed-toolbar .select-trigger {
+  width: 100%;
+}
+.distributed-toolbar .distributed-run-select {
+  flex-basis: 320px;
+  max-width: 460px;
+}
+.distributed-toolbar .select-trigger-value {
+  display: grid;
+  gap: 2px;
+}
+
 /* ── Section band — used by compact embedded analysis panes. ─────────────── */
 .advanced-section-band {
   display: flex;
@@ -196,31 +261,42 @@
   display: inline-flex;
   flex-shrink: 0;
 }
+/* Help is a quiet glyph by default. The lucide circle provides the icon shape;
+ * the button only adds a soft square target on hover/focus/open. */
 .chart-help-trigger {
   display: inline-grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-2);
+  border: 0;
+  border-radius: var(--control-radius, 8px);
+  background: transparent;
   color: var(--muted);
   cursor: help;
+  transition: color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+.chart-help-trigger svg {
+  stroke-width: 1.9;
 }
 .chart-help-trigger:hover,
-.chart-help-trigger:focus-visible,
 .chart-help-trigger[aria-expanded="true"] {
-  border-color: var(--accent);
+  background: var(--surface-2);
   color: var(--accent);
+}
+.chart-help-trigger:focus-visible {
+  background: var(--surface-2);
+  color: var(--accent);
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .chart-help-pop {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
   z-index: 30;
-  width: 260px;
-  padding: 10px 12px;
+  width: min(280px, calc(100vw - 32px));
+  padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: var(--control-radius, 8px);
   background: var(--surface);
@@ -708,12 +784,28 @@
 @media (max-width: 900px) {
   .analysis-grid.two,
   .analysis-grid.four { grid-template-columns: minmax(0, 1fr); }
+  .distributed-control-band {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .distributed-toolbar {
+    justify-content: stretch;
+  }
+  .distributed-toolbar .custom-select-control,
+  .distributed-toolbar .distributed-run-select {
+    flex-basis: 240px;
+    max-width: none;
+  }
   .rank-tile-strip,
   .eval-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .advanced-section-band { flex-wrap: wrap; }
   .advanced-section-band .band-control { min-width: 0; flex: 1 1 100%; }
 }
 @media (max-width: 520px) {
+  .distributed-control-band { padding: 10px; }
+  .distributed-toolbar .custom-select-control,
+  .distributed-toolbar .distributed-run-select {
+    flex-basis: 100%;
+  }
   .rank-tile-strip,
   .eval-card-grid { grid-template-columns: minmax(0, 1fr); }
   .rank-tile { border-inline-end: 0; border-bottom: 1px solid var(--line-soft); }
