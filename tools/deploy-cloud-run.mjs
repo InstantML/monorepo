@@ -1508,8 +1508,6 @@ pathMatchers:
   - paths:
     - /api/auth
     - /api/auth/*
-    - /api/admin
-    - /api/admin/*
     - /api/invitations
     - /api/invitations/*
     - /api/billing
@@ -1521,8 +1519,6 @@ pathMatchers:
     - /api/orgs/*
     - /api/workspace-views
     - /api/workspace-views/*
-    - /api/reports
-    - /api/reports/*
     service: ${controlBackend}
 tests:
 - description: Auth routes use control plane
@@ -1533,10 +1529,6 @@ tests:
   host: instantml.local
   path: /api/billing/status
   service: ${controlBackend}
-- description: Admin routes use control plane
-  host: instantml.local
-  path: /api/admin/data-cells
-  service: ${controlBackend}
 - description: Dashboard preference routes use control plane
   host: instantml.local
   path: /api/dashboard/preferences
@@ -1545,14 +1537,14 @@ tests:
   host: instantml.local
   path: /api/workspace-views
   service: ${controlBackend}
-- description: Report routes use control plane
+- description: Report routes use data plane
   host: instantml.local
   path: /api/reports
-  service: ${controlBackend}
-- description: Report subpaths use control plane
+  service: ${dataBackend}
+- description: Report subpaths use data plane
   host: instantml.local
   path: /api/reports/panels
-  service: ${controlBackend}
+  service: ${dataBackend}
 - description: Data routes use data plane
   host: instantml.local
   path: /runs
@@ -1698,12 +1690,12 @@ async function verifyPublicRouter(url) {
     {
       path: "/api/reports",
       expect: (response, text) => response.status === 401 && /browser session required|missing bearer token/i.test(text),
-      label: "control reports route",
+      label: "data reports route",
     },
     {
       path: "/api/reports/panels",
       expect: (response, text) => response.status === 401 && /browser session required|missing bearer token/i.test(text),
-      label: "control reports panels route",
+      label: "data reports panels route",
     },
     {
       path: "/openapi.json",

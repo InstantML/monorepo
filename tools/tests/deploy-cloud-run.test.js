@@ -207,6 +207,13 @@ test("deploy helper keeps public routing HTTPS-only", () => {
   assert.doesNotMatch(source, /--ports", "80/);
 });
 
+test("deploy helper keeps admin routes off the public router", () => {
+  const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
+
+  assert.doesNotMatch(source, /- \/api\/admin\n\s+- \/api\/admin\/\*/);
+  assert.doesNotMatch(source, /path: \/api\/admin\/overview\n\s+service: \$\{controlBackend\}/);
+});
+
 test("deploy helper scopes provider secrets to the service planes that need them", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
@@ -256,7 +263,7 @@ test("deploy helper defaults hosted ClickHouse provisioning to database mode", (
   assert.doesNotMatch(source, /INSTANTML_CLICKHOUSE_PROVISIONER: "cloud-service"/);
 });
 
-test("deploy helper passes the current data cell into the runtime env", () => {
+test("deploy helper passes placement and heartbeat cell env into the runtime", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
   assert.match(source, /const dataCellId = value\("INSTANTML_CLOUD_RUN_DATA_CELL"\)/);
@@ -286,26 +293,34 @@ test("deploy helper keeps BYOC egress independent of legacy ClickHouse Cloud all
   assert.doesNotMatch(byocEgressBlock, /INSTANTML_CLICKHOUSE_CLOUD_IP_ACCESS_LIST/);
 });
 
-test("deploy helper keeps public router control paths and backend timeout complete", () => {
+test("deploy helper keeps public router split paths and backend timeout complete", () => {
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
   for (const path of [
     "/api/auth/*",
-    "/api/admin/*",
     "/api/invitations/*",
     "/api/billing/*",
     "/api/dashboard/preferences",
     "/api/users/*",
     "/api/orgs/*",
     "/api/workspace-views/*",
-    "/api/reports",
-    "/api/reports/*",
   ]) {
     assert.match(source, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
   }
-  assert.match(source, /path: "\/api\/reports"/, "public router smoke should verify the reports collection route");
-  assert.match(source, /path: "\/api\/reports\/panels"/, "public router smoke should verify report subroutes");
-  assert.match(source, /path: \/api\/admin\/data-cells/, "public router smoke should verify admin subroutes");
+  const urlMapPathBlock = source.match(/pathRules:\n  - paths:\n(?<paths>(?:    - .+\n)+)    service: \$\{controlBackend\}/)?.groups?.paths ?? "";
+  assert.ok(urlMapPathBlock, "public router control path rules should be inspectable");
+  const urlMapPaths = [...urlMapPathBlock.matchAll(/    - (.+)/g)].map((match) => match[1]);
+  assert.deepEqual(urlMapPaths, [...new Set(urlMapPaths)], "public router control path rules should be unique");
+  assert.doesNotMatch(
+    source,
+    /- \/api\/reports\s+- \/api\/reports\/\*\s+service: \$\{controlBackend\}/,
+    "reports should not be pinned to the control backend",
+  );
+  assert.doesNotMatch(source, /- \/api\/admin(?:\n|$)/, "admin routes should not be exposed through the public router");
+  assert.doesNotMatch(source, /path: \/api\/admin\//, "public router smoke should not exercise admin routes");
+  assert.match(source, /Report routes use data plane/, "URL map tests should route reports through the data backend");
+  assert.match(source, /label: "data reports route"/, "public router smoke should verify the reports collection route");
+  assert.match(source, /label: "data reports panels route"/, "public router smoke should verify report subroutes");
   assert.match(source, /response\.status === 401/, "protected control route smoke checks should accept auth failures, not route misses");
   assert.match(source, /function backendServiceTimeout/);
   assert.match(source, /--timeout", backendServiceTimeout\(\)/);

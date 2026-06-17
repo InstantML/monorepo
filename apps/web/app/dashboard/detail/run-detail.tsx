@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Activity, Box, Copy, Database, Download, FileText, Folder, GitBranch, GitFork, Server, Star, Tag, X } from "lucide-react";
 
 import { buildCheckpointResumeCode, checkpointStep, defaultForkRunName } from "../../../src/checkpoints.js";
-import { durationLabel, formatNumber, metricGoal, metricGoalLabel, statusTone, uploadHealthForRun } from "../../../src/state.js";
-import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, shortMetricName } from "../../dashboard-models";
+import { displayStatusForRun, durationLabel, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, metricGoalLabel, preferredMetricKey, statusTone, uploadHealthForRun } from "../../../src/state.js";
+import { artifactHasStoredBytes, compactValue, formatBytes, formatRunTime, lastMetricStep, runNoteText, safeArtifactUri, shortMetricName } from "../../dashboard-models";
 import { MetricCard } from "../ui/metric-card";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
 import { useFocusTrap } from "../ui/use-focus-trap";
@@ -61,23 +61,24 @@ function RunTimeline({ rows }: { rows: RunTimelineRow[] }) {
   );
 }
 
-function RunMetricTable({ rows }: { rows: RunMetricRow[] }) {
+export function RunMetricTable({ rows }: { rows: RunMetricRow[] }) {
   if (!rows.length) return <div className="empty compact-empty">No metric aggregates are available for this run.</div>;
   return (
     <div className="metric-summary-table">
       <div className="metric-summary-row metric-summary-head">
         <span>Metric</span>
         <span>Latest</span>
-        <span>Goal</span>
+        {/* Best by the metric's goal direction (min for loss-like keys, max otherwise). */}
+        <span title="Best value by the metric's goal direction">Best</span>
         <span>Mean</span>
         <span>Step</span>
       </div>
       {rows.slice(0, 12).map((row) => (
         <div className="metric-summary-row" key={row.key}>
           <strong title={row.key}>{shortMetricName(row.key)}</strong>
-          <span data-label="Latest">{formatNumber(row.latest, 3)}</span>
-          <span data-label="Goal" title={metricGoalLabel(row.key)}>{formatNumber(metricGoal(row.key) === "minimize" ? row.min : row.max, 3)}</span>
-          <span data-label="Mean">{formatNumber(row.mean, 3)}</span>
+          <span data-label="Latest">{formatMetricValue(row.latest, 3)}</span>
+          <span data-label="Best" title={`${metricGoalLabel(row.key)} (goal ${metricGoal(row.key) === "minimize" ? "↓" : "↑"})`}>{formatMetricValue(metricGoal(row.key) === "minimize" ? row.min : row.max, 3)}</span>
+          <span data-label="Mean">{formatMetricValue(row.mean, 3)}</span>
           <span data-label="Step">{formatNumber(row.bestStep, 0)}</span>
         </div>
       ))}
@@ -161,7 +162,12 @@ function CheckpointList({
             <article className="checkpoint-row" key={artifact.id}>
               <div className="checkpoint-main">
                 <strong title={artifact.name}>{artifact.name}</strong>
-                <small>{artifact.step === null ? "no step" : `step ${artifact.step}`} · {formatBytes(artifact.size_bytes)}</small>
+                <small>
+                  {artifact.step === null ? "no step" : `step ${artifact.step}`} · {formatBytes(artifact.size_bytes)}
+                  {artifact.metadata?.eval_return !== undefined ? ` · eval ${compactValue(artifact.metadata.eval_return)}` : ""}
+                </small>
+                {/* CK2: lineage URI lives here now that the Checkpoints tab merged in. */}
+                <small className="checkpoint-uri" title={artifact.uri}>{safeArtifactUri(artifact.uri)}</small>
               </div>
               <div className="checkpoint-actions">
                 {canDownload ? (
@@ -256,6 +262,7 @@ export function RunDetail({
   metricRows,
   objectRowsById = {},
   onForkCheckpoint,
+  onOpenFiles,
   onRunMetadataSave,
   run,
   selectedCount,
@@ -270,6 +277,7 @@ export function RunDetail({
   loggedObjects?: LoggedObject[];
   metricRows: RunMetricRow[];
   objectRowsById?: Record<number, LoggedObjectRow[]>;
+  onOpenFiles?: () => void;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onForkCheckpoint?: (artifact: Artifact, options: ForkCheckpointOptions) => Promise<void>;
   run: RunSummary | null;
@@ -279,6 +287,7 @@ export function RunDetail({
   workspaceSummary?: boolean;
   }) {
   if (!run) return <div className="empty">No run selected.</div>;
+  const displayStatus = displayStatusForRun(run);
   const chartRuns = selectedRuns?.length ? selectedRuns : [run];
   const uploadHealth = uploadHealthForRun(run);
   const commit = metadataScalar(run.metadata, "git_commit")
@@ -311,8 +320,18 @@ export function RunDetail({
   ];
   const artifactRows = artifacts.slice(0, 4);
   const artifactCount = artifactCountForRun(run, artifacts.length);
-  const activeMetric = run.metric_aggregates?.[activeMetricKey];
-  const activeBest = metricGoal(activeMetricKey) === "minimize" ? activeMetric?.min : activeMetric?.max;
+  // Internal SDK telemetry (system/instantml/*) lives on the System tab; the
+  // user-facing summary and KPI counts cover logged training metrics only.
+  const userMetricRows = metricRows.filter((row) => !isInternalInstantMlMetric(row.key));
+  // Headline cards follow the run's own logged metrics: when the workspace
+  // metric isn't logged for this run, fall back to its preferred metric
+  // instead of rendering "-" (the cross-project default-metric trap).
+  const aggregates = run.metric_aggregates ?? {};
+  const headlineMetricKey = aggregates[activeMetricKey]
+    ? activeMetricKey
+    : preferredMetricKey(userMetricRows.map((row) => row.key)) || activeMetricKey;
+  const activeMetric = aggregates[headlineMetricKey];
+  const activeBest = metricGoal(headlineMetricKey) === "minimize" ? activeMetric?.min : activeMetric?.max;
   const configRows = [
     ["Algorithm", compactValue(run.config.algo ?? run.config.model ?? run.config.policy ?? "-")],
     ["Dataset/env", compactValue(run.config.dataset ?? run.config.dataset_name ?? run.config.env ?? "-")],
@@ -331,7 +350,7 @@ export function RunDetail({
             <p>{run.project} · {durationLabel(run)} · {selectedCount ? `${selectedCount} runs selected for charts` : "not in comparison set"}</p>
           </div>
           <div className="run-detail-badges">
-            <span className={`pill ${statusTone(run.status)}`}>{run.status}</span>
+            <span className={`pill ${statusTone(displayStatus)}`}>{displayStatus}</span>
             {run.tags?.slice(0, 3).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
             {(run.tags?.length ?? 0) > 3 ? <span className="chip">+{(run.tags?.length ?? 0) - 3}</span> : null}
           </div>
@@ -364,13 +383,13 @@ export function RunDetail({
         </div>
       ) : null}
       <div className="run-kpi-grid">
-        <MetricCard label={`Latest ${shortMetricName(activeMetricKey)}`} value={formatNumber(activeMetric?.latest, 3)} tone="neutral" />
-        <MetricCard label={`${metricGoalLabel(activeMetricKey)} ${shortMetricName(activeMetricKey)}`} value={formatNumber(activeBest, 3)} tone="good" />
-        <MetricCard label="Metric keys" value={formatNumber(metricRows.length, 0)} tone="live" />
+        <MetricCard label={`Latest ${shortMetricName(headlineMetricKey)}`} value={formatNumber(activeMetric?.latest, 3)} tone="neutral" />
+        <MetricCard label={`${metricGoalLabel(headlineMetricKey)} ${shortMetricName(headlineMetricKey)}`} value={formatNumber(activeBest, 3)} tone="good" />
+        <MetricCard label="Metric keys" value={formatNumber(userMetricRows.length, 0)} tone="live" />
         <MetricCard label="Artifacts" value={formatNumber(artifactCount, 0)} tone={artifactCount ? "good" : "neutral"} />
       </div>
       {hover ? <div className="detail-row highlight"><span>Hovered point</span><strong>{hover.runName} / step {hover.point.step} / {formatNumber(hover.point.value, 4)}</strong></div> : null}
-      {run.status === "failed" ? (
+      {displayStatus === "failed" ? (
         <section className="failure-card">
           <strong>Failed run triage</strong>
           <div><span>Last metric step</span><b>{lastMetricStep(run)}</b></div>
@@ -382,13 +401,18 @@ export function RunDetail({
       <div className="detail-body-grid">
         <div className="detail-main-column">
           <section className="detail-section">
-            <h3><Database size={15} /> Metric Summary</h3>
-            <RunMetricTable rows={metricRows} />
+            <h3><Database size={15} /> Metric Summary <small className="detail-section-note">user metrics · SDK telemetry lives on the System tab</small></h3>
+            <RunMetricTable rows={userMetricRows} />
           </section>
           {!workspaceSummary ? (
             <>
               <section className="detail-section">
-                <h3><Folder size={15} /> Recent Artifacts ({artifacts.length})</h3>
+                <h3>
+                  <Folder size={15} /> Recent Artifacts ({artifacts.length})
+                  {onOpenFiles && artifacts.length ? (
+                    <button className="detail-link-button" onClick={onOpenFiles} type="button">Preview in Files →</button>
+                  ) : null}
+                </h3>
                 {artifactRows.length ? artifactRows.map((artifact) => (
                   <div className="artifact-mini" key={artifact.id}>
                     <span>{artifact.name}</span>
@@ -438,7 +462,14 @@ export function RunDetail({
           </section>
           <section className="detail-section">
             <h3><Star size={15} /> Reproducibility</h3>
-            <InfoRows rows={configRows} />
+            {configRows.every(([, value]) => value === "-") ? (
+              <div className="repro-empty">
+                <p>Nothing logged yet. Record algorithm, dataset, and seed with:</p>
+                <code>run = instantml.init(config=&#123;"algo": "...", "dataset": "...", "seed": 17&#125;)</code>
+              </div>
+            ) : (
+              <InfoRows rows={configRows} />
+            )}
           </section>
           <section className="detail-section">
             <h3><Tag size={15} /> Tags</h3>

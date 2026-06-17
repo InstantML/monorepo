@@ -6,10 +6,12 @@ import atexit
 import base64
 import functools
 import hashlib
+import importlib.metadata
 import json
 import math
 import mimetypes
 import os
+import random
 import signal
 import sqlite3
 import sys
@@ -30,6 +32,7 @@ from typing import Any, Callable
 
 from .async_queue import (
     AsyncQueueRepository,
+    DEFAULT_ASYNC_QUEUE_DIR,
     DEFAULT_PRODUCER_BATCH_BYTES,
     DEFAULT_PRODUCER_BATCH_EVENTS,
     DEFAULT_PRODUCER_FLUSH_SECONDS,
@@ -119,10 +122,41 @@ _PENDING_RUN_ID = "__instantml_pending__"
 _RATE_LIMIT_RETRY_ATTEMPTS = 3
 _RATE_LIMIT_RETRY_BASE_SECONDS = 0.25
 _RATE_LIMIT_RETRY_MAX_SECONDS = 5.0
+_STOP_POLL_JITTER_FRACTION = 0.10
+
+
+def _sdk_version() -> str:
+    try:
+        return importlib.metadata.version("instantml")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
+def _sdk_metadata() -> dict[str, Any]:
+    return {
+        "sdk_version": _sdk_version(),
+        "stop_signal_capable": True,
+    }
 
 
 def _default_base_url() -> str:
     return os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
+
+
+def _finish_drain_seconds(default: float) -> float:
+    """Drain budget for finish(); INSTANTML_FINISH_DRAIN_SECONDS overrides the default."""
+    raw = os.environ.get("INSTANTML_FINISH_DRAIN_SECONDS")
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        warnings.warn(
+            f"ignoring invalid INSTANTML_FINISH_DRAIN_SECONDS={raw!r}; using {default:g}s",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return default
 
 
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
@@ -156,6 +190,7 @@ class Client:
         async_init: bool = True,
         shadow_wandb: Any = False,
         queue_dir: str | None = None,
+        stop_check_interval_seconds: float = 30.0,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         if metadata and "_rlobs" in metadata:
@@ -165,6 +200,11 @@ class Client:
         if source_settings is not None:
             combined_metadata["_rlobs"] = {"source": _source_metadata(source_settings)}
         combined_metadata.update(metadata or {})
+        existing_sdk_metadata = combined_metadata.get("_instantml")
+        combined_metadata["_instantml"] = {
+            **(existing_sdk_metadata if isinstance(existing_sdk_metadata, dict) else {}),
+            **_sdk_metadata(),
+        }
         if notes is not None:
             combined_metadata["notes"] = _validate_note_text(notes)
         create_body = {
@@ -199,6 +239,7 @@ class Client:
                 upload_mode=upload_mode,
                 spool_dir=spool_dir,
                 queue_dir=queue_dir,
+                stop_check_interval_seconds=stop_check_interval_seconds,
                 _local_store=_LocalStore(local_store_dir, response["run"]["id"]) if local_store else None,
                 shadow=shadow,
             )
@@ -215,6 +256,7 @@ class Client:
             upload_mode=upload_mode,
             spool_dir=spool_dir,
             queue_dir=queue_dir,
+            stop_check_interval_seconds=stop_check_interval_seconds,
             shadow=shadow,
         )
 
@@ -261,6 +303,7 @@ class Client:
         capture_console: bool = False,
         queue_dir: str | None = None,
         validate: bool = True,
+        stop_check_interval_seconds: float = 30.0,
     ) -> "Run":
         """Return a Run handle for an existing server-side run."""
 
@@ -283,6 +326,7 @@ class Client:
             upload_mode=upload_mode,
             spool_dir=spool_dir,
             queue_dir=queue_dir,
+            stop_check_interval_seconds=stop_check_interval_seconds,
             _local_store=_LocalStore(local_store_dir, run_id) if local_store else None,
         )
         if system_metrics:
@@ -300,6 +344,7 @@ class Client:
         path: str,
         body: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
+        retry_rate_limits: bool = True,
     ) -> dict[str, Any]:
         url = self.base_url.rstrip("/") + path
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -322,7 +367,12 @@ class Client:
                     payload = response.read().decode("utf-8")
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code == 429 and _is_retryable_rate_limit(exc) and attempt < _RATE_LIMIT_RETRY_ATTEMPTS:
+                if (
+                    retry_rate_limits
+                    and exc.code == 429
+                    and _is_retryable_rate_limit(exc)
+                    and attempt < _RATE_LIMIT_RETRY_ATTEMPTS
+                ):
                     time.sleep(_rate_limit_retry_delay(exc, attempt))
                     continue
                 message = _error_message(exc)
@@ -336,6 +386,26 @@ class Client:
         if not isinstance(decoded, dict):
             raise InstantMLError("server returned a non-object JSON payload")
         return decoded
+
+
+@dataclass(frozen=True)
+class StopRequest:
+    run_id: str
+    stop_request_id: str
+    requested_at: str | None = None
+    acknowledged_at: str | None = None
+
+
+class InstantMLStopRequested(InstantMLError):
+    """Raised when a cooperative dashboard stop request is observed."""
+
+    def __init__(self, request: StopRequest):
+        super().__init__(f"stop requested for run {request.run_id}")
+        self.run_id = request.run_id
+        self.stop_request_id = request.stop_request_id
+        self.requested_at = request.requested_at
+        self.acknowledged_at = request.acknowledged_at
+        self.request = request
 
 
 def _rate_limit_retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
@@ -356,6 +426,11 @@ def _rate_limit_retry_delay(exc: urllib.error.HTTPError, attempt: int) -> float:
 def _is_retryable_rate_limit(exc: urllib.error.HTTPError) -> bool:
     scope = exc.headers.get("X-InstantML-RateLimit-Scope") if exc.headers else None
     return str(scope or "second").strip().lower() != "monthly"
+
+
+def _stop_signal_unsupported(exc: InstantMLError) -> bool:
+    message = str(exc).lower()
+    return "404" in message or "405" in message or "not found" in message or "method not allowed" in message
 
 
 def _versioned_artifact_idempotency_key(run_id: str, body: dict[str, Any]) -> str:
@@ -1111,6 +1186,7 @@ class Run:
         spool_dir: str | None = None,
         queue_dir: str | None = None,
         media_dir: str | None = None,
+        stop_check_interval_seconds: float = 30.0,
         _local_store: "_LocalStore | None" = None,
         shadow: "ShadowWandb | None" = None,
     ) -> None:
@@ -1122,6 +1198,7 @@ class Run:
         self.spool_dir = spool_dir
         self.queue_dir = queue_dir
         self.media_dir = media_dir
+        self.stop_check_interval_seconds = max(0.0, float(stop_check_interval_seconds))
         self._lock = threading.RLock()
         self._process_spool_run_dir = _process_spool_run_dir(spool_dir, run_id) if upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID else None
         if self._process_spool_run_dir is not None:
@@ -1143,6 +1220,10 @@ class Run:
         self._process_sequence: int = 0
         self._auto_step: int | float = 0
         self._finished = False
+        self._next_stop_check_at = 0.0
+        self._stop_signal_supported = True
+        self._stop_request: StopRequest | None = None
+        self._stop_acknowledged = False
         self._local_store: "_LocalStore | None" = _local_store
         _register_active_run(self)
         self._system_sampler: "_SystemMetricsSampler | None" = None
@@ -1372,10 +1453,134 @@ class Run:
                     process.wait(timeout=1.0)
             self._async_process = None
 
+    def stop_request(self, force: bool = False) -> StopRequest | None:
+        """Return the active cooperative stop request, if the server has one."""
+
+        if self._is_finished():
+            return self._stop_request
+        if not force and not self._stop_poll_due():
+            return self._stop_request
+        if not self._stop_signal_supported and not force:
+            return self._stop_request
+        fallback_delay = self.stop_check_interval_seconds
+        try:
+            payload = self._stop_client()._request(
+                "GET",
+                f"/api/runs/{urllib.parse.quote(self.run_id, safe='')}/stop-signal",
+                retry_rate_limits=False,
+            )
+        except InstantMLError as exc:
+            if _stop_signal_unsupported(exc):
+                self._stop_signal_supported = False
+            self._schedule_next_stop_check(fallback_delay)
+            return self._stop_request
+        self._schedule_next_stop_check(self._stop_poll_delay(payload, fallback_delay))
+        if not payload.get("stop_requested"):
+            self._stop_request = None
+            return None
+        raw = payload.get("stop_request")
+        if not isinstance(raw, dict):
+            return None
+        stop_request_id = str(raw.get("stop_request_id") or "")
+        if not stop_request_id:
+            return None
+        request = StopRequest(
+            run_id=str(payload.get("run_id") or self.run_id),
+            stop_request_id=stop_request_id,
+            requested_at=raw.get("requested_at") if isinstance(raw.get("requested_at"), str) else None,
+            acknowledged_at=raw.get("acknowledged_at") if isinstance(raw.get("acknowledged_at"), str) else None,
+        )
+        self._stop_request = request
+        return request
+
+    def should_stop(self, force: bool = False) -> bool:
+        """Return True when a cooperative dashboard stop request is active."""
+
+        return self.stop_request(force=force) is not None
+
+    def raise_if_stop_requested(self) -> None:
+        """Acknowledge and raise when a cooperative dashboard stop is pending."""
+
+        request = self.stop_request()
+        if request is None:
+            return
+        self._ack_stop_request(request, "acknowledged")
+        raise InstantMLStopRequested(request)
+
+    def finish_stopped(self, message: str | None = None, timeout: float | None = None) -> None:
+        """Finish a run after honoring a cooperative dashboard stop request."""
+
+        request = self._stop_request or self.stop_request(force=True)
+        completed_ack = False
+        if request is not None:
+            completed_ack = self._ack_stop_request(request, "completed", message=message)
+        if completed_ack:
+            try:
+                self.finish("failed", timeout=timeout)
+            except InstantMLError:
+                return
+        else:
+            self.finish("failed", timeout=timeout)
+
+    def _stop_poll_due(self) -> bool:
+        if self.stop_check_interval_seconds <= 0:
+            return False
+        return time.monotonic() >= self._next_stop_check_at
+
+    def _schedule_next_stop_check(self, delay_seconds: float) -> None:
+        delay = max(0.0, delay_seconds)
+        if delay > 0:
+            jitter = delay * _STOP_POLL_JITTER_FRACTION
+            delay = max(0.0, delay + random.uniform(-jitter, jitter))
+        self._next_stop_check_at = time.monotonic() + delay
+
+    def _stop_poll_delay(self, payload: dict[str, Any], fallback_delay: float) -> float:
+        raw = payload.get("poll_after_seconds")
+        try:
+            server_delay = float(raw)
+        except (TypeError, ValueError):
+            server_delay = 0.0
+        if math.isfinite(server_delay) and server_delay > 0:
+            return max(fallback_delay, server_delay)
+        return fallback_delay
+
+    def _stop_client(self) -> Client:
+        return Client(
+            base_url=self.client.base_url,
+            timeout=min(max(getattr(self.client, "timeout", 10.0), 0.1), 0.75),
+            offline_dir=getattr(self.client, "offline_dir", None),
+            api_key=getattr(self.client, "api_key", None),
+        )
+
+    def _ack_stop_request(self, request: StopRequest, state: str, message: str | None = None) -> bool:
+        if state == "acknowledged" and self._stop_acknowledged:
+            return True
+        body: dict[str, Any] = {"stop_request_id": request.stop_request_id, "state": state}
+        if message is not None:
+            body["message"] = message
+        try:
+            self._stop_client()._request(
+                "POST",
+                f"/api/runs/{urllib.parse.quote(self.run_id, safe='')}/stop-ack",
+                body,
+                retry_rate_limits=False,
+            )
+            if state == "acknowledged":
+                self._stop_acknowledged = True
+            return True
+        except InstantMLError:
+            # Stop helpers should not make user shutdown less reliable than a
+            # normal failed finish. The next helper call or finish_stopped() can
+            # retry the acknowledgement.
+            return False
+
     def __enter__(self) -> "Run":
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if isinstance(exc, InstantMLStopRequested):
+            self.finish_stopped()
+            return
         self.finish("failed" if exc_type else "finished")
 
     @_async_hot_path
@@ -2221,7 +2426,10 @@ class Run:
             # (or a second finish() call) cannot double-PATCH or double-drain.
             self._finished = True
         async_processed = True
-        async_finish_timeout = max(0.0, getattr(self.client, "timeout", 10.0) if timeout is None else timeout)
+        async_finish_timeout = max(
+            0.0,
+            _finish_drain_seconds(getattr(self.client, "timeout", 10.0)) if timeout is None else timeout,
+        )
         sampler = self._system_sampler
         if sampler is not None:
             sampler.stop()
@@ -2242,10 +2450,16 @@ class Run:
                     if self._async_disabled_reason is not None:
                         message = f"async upload unavailable; finish status was not delivered: {self._async_disabled_reason}"
                     else:
+                        queued = 0
+                        if self._async_queue is not None:
+                            snapshot = self._async_queue.status()
+                            queued = snapshot["pending"] + snapshot["in_flight"]
+                        queue_dir = self.queue_dir or DEFAULT_ASYNC_QUEUE_DIR
                         message = (
-                            "async upload did not finish before finish() timeout; flushed queue rows remain on disk for the "
-                            "background uploader or instantml-uploader recovery, while any still-buffered producer events "
-                            "remain process-local"
+                            f"async upload did not finish before the finish() drain timeout ({async_finish_timeout:g}s); "
+                            f"{queued} queued row(s) remain on disk for the background uploader, while any still-buffered "
+                            f"producer events remain process-local. Recover now with "
+                            f"`instantml-uploader --queue-dir {queue_dir}` or raise INSTANTML_FINISH_DRAIN_SECONDS"
                         )
                     warnings.warn(message, RuntimeWarning, stacklevel=2)
                 return
@@ -2294,7 +2508,10 @@ class Run:
         if self._init_error is not None or self._run_id == _PENDING_RUN_ID:
             return
         try:
-            self.finish(status)
+            if status == "finished" and self._stop_request is not None:
+                self.finish_stopped()
+            else:
+                self.finish(status)
         except Exception:  # noqa: BLE001 - shutdown must stay best-effort
             pass
 
@@ -2425,6 +2642,7 @@ def init(
     async_init: bool = True,
     shadow_wandb: Any = False,
     queue_dir: str | None = None,
+    stop_check_interval_seconds: float = 30.0,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 
@@ -2457,6 +2675,7 @@ def init(
         capture_console=capture_console,
         async_init=async_init,
         shadow_wandb=shadow_wandb,
+        stop_check_interval_seconds=stop_check_interval_seconds,
     )
 
 
@@ -2476,6 +2695,7 @@ def attach_run(
     capture_console: bool = False,
     queue_dir: str | None = None,
     validate: bool = True,
+    stop_check_interval_seconds: float = 30.0,
 ) -> Run:
     """Attach SDK logging to an existing run, such as a UI-created fork."""
 
@@ -2497,6 +2717,7 @@ def attach_run(
         capture_console=capture_console,
         queue_dir=queue_dir,
         validate=validate,
+        stop_check_interval_seconds=stop_check_interval_seconds,
     )
 
 

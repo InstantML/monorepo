@@ -9,7 +9,6 @@ import type {
   Artifact,
   DatasetRow,
   MetricCatalogRow,
-  CheckpointRow,
   ReportRow,
   RunMetricRow,
   RunSummary,
@@ -120,10 +119,14 @@ export function metricNamespace(metricKey: string) {
   return metricKey.includes("/") ? metricKey.split("/")[0] : "custom";
 }
 
+const METRIC_ACRONYMS = new Set(["kl", "lr", "rl", "gpu", "cpu", "sdk", "api", "ppo", "dpo", "sft", "ema"]);
+
 export function metricTitle(metricKey: string) {
   return shortMetricName(metricKey)
     .replace(/[_-]/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
+    .split(" ")
+    .map((word) => (METRIC_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.replace(/^\w/, (c) => c.toUpperCase())))
+    .join(" ");
 }
 
 export function workspaceStorageKey(project: string, scope = "") {
@@ -517,7 +520,8 @@ export function buildRunTimelineRows(run: RunSummary | null, artifacts: Artifact
       id: "best-metric",
       label: `Best ${shortMetricName(metricKey)}`,
       detail: `step ${compactValue(metric.best_step ?? "-")}`,
-      value: compactValue(metric.max ?? "-"),
+      // Same precision as the KPI strip and summary table — one number, one format.
+      value: typeof metric.max === "number" ? formatNumber(metric.max, 3) : "-",
       tone: "good",
     });
   }
@@ -673,7 +677,7 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       rows.push({
         id: `${run.id}:checkpoint`,
         severity: "warning",
-        tone: "live",
+        tone: "warn",
         title: `${run.name} has no checkpoints`,
         detail: "Checkpoint lineage is unavailable for this run.",
         label: "warning",
@@ -683,14 +687,50 @@ export function buildAlertRows(runs: RunSummary[], metricKey: string): AlertRow[
       rows.push({
         id: `${run.id}:metric`,
         severity: "warning",
-        tone: "live",
+        tone: "warn",
         title: `${run.name} is missing ${metricKey}`,
         detail: "The selected metric is not present in latest summaries.",
         label: "warning",
       });
     }
   }
-  return rows.slice(0, 20);
+  return dedupeAlertRows(rows).slice(0, 20);
+}
+
+// Identical per-run warnings (every seed run "has no checkpoints") train users
+// to ignore the page. Collapse same-kind warnings into one grouped row; only
+// failures and active runs stay individual because each is actionable.
+export function dedupeAlertRows(rows: AlertRow[]): AlertRow[] {
+  const collapsibleKinds = new Map<string, { rows: AlertRow[]; title: (count: number) => string }>([
+    ["checkpoint", { rows: [], title: (count) => `${count} runs have no checkpoints` }],
+    ["metric", { rows: [], title: (count) => `${count} runs are missing the selected metric` }],
+  ]);
+  const result: AlertRow[] = [];
+  for (const row of rows) {
+    const kind = row.id.split(":")[1] ?? "";
+    const bucket = collapsibleKinds.get(kind);
+    if (bucket) bucket.rows.push(row);
+    else result.push(row);
+  }
+  for (const [kind, bucket] of collapsibleKinds) {
+    if (bucket.rows.length <= 1) {
+      result.push(...bucket.rows);
+      continue;
+    }
+    // Titles are "<run name> has no checkpoints" / "<run name> is missing …";
+    // strip the known suffix so run names containing spaces survive intact.
+    const names = bucket.rows.map((row) => row.title.replace(/ has no checkpoints$| is missing .*$/, ""));
+    const sample = names.slice(0, 3).join(", ");
+    result.push({
+      id: `grouped:${kind}`,
+      severity: "warning",
+      tone: "warn",
+      title: bucket.title(bucket.rows.length),
+      detail: `${sample}${names.length > 3 ? ` and ${names.length - 3} more` : ""}`,
+      label: "warning",
+    });
+  }
+  return result;
 }
 
 export function buildDatasetRows(runs: RunSummary[], metricKey: string): DatasetRow[] {
@@ -758,20 +798,6 @@ export function runRailTooltip(run: RunSummary) {
   return lines.join("\n");
 }
 
-export function buildCheckpointRows(run: RunSummary | null, artifacts: Artifact[]): CheckpointRow[] {
-  if (!run) return [];
-  return artifacts
-    .filter((artifact) => artifact.type === "checkpoint")
-    .sort((left, right) => (left.step ?? -1) - (right.step ?? -1))
-    .map((artifact) => ({
-      id: artifact.id,
-      name: artifact.name,
-      uri: artifact.uri,
-      step: artifact.step === null ? "no step" : `step ${artifact.step}`,
-      evalReturn: compactValue(artifact.metadata.eval_return ?? "-"),
-    }));
-}
-
 export function buildReportRows(savedViews: Array<string | { label: string; value: string }>): ReportRow[] {
   return savedViews.map((view) => {
     const key = typeof view === "string" ? view : view.value;
@@ -785,11 +811,12 @@ export function buildReportRows(savedViews: Array<string | { label: string; valu
   });
 }
 
-export function buildApiRows(metricKey: string, project: string, status: string): ApiRow[] {
+export function buildApiRows(metricKey: string, project: string, statusParams: { display_status?: string; status?: string }): ApiRow[] {
+  const runQuery = { project, ...statusParams };
   return [
     { method: "GET", path: "/projects", description: "List tracked projects." },
-    { method: "GET", path: `/api/overview${queryString({ project, status, metric_key: metricKey })}`, description: "Current run and metric summary." },
-    { method: "GET", path: `/api/runs/summary${queryString({ project, status, limit: 100, offset: 0 })}`, description: "Paginated run summaries." },
+    { method: "GET", path: `/api/overview${queryString({ ...runQuery, metric_key: metricKey })}`, description: "Current run and metric summary." },
+    { method: "GET", path: `/api/runs/summary${queryString({ ...runQuery, limit: 100, offset: 0 })}`, description: "Paginated run summaries." },
     { method: "GET", path: `/runs/:id/metrics${queryString({ key: metricKey, limit: 1000 })}`, description: "Bounded metric series for one run." },
     { method: "GET", path: "/api/runs/:id/artifacts", description: "Artifacts for one selected run." },
     { method: "GET", path: "/api/runs/:id/objects", description: "Rich object manifests for one selected run." },

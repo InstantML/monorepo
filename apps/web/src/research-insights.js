@@ -1,4 +1,4 @@
-import { metricAggregate, metricGoalValue } from "./state.js";
+import { formatNumber, metricAggregate, metricGoalValue } from "./state.js";
 
 const EVAL_KEY_PATTERNS = [
   { id: "accuracy", label: "Accuracy", patterns: [/accuracy$/i, /eval\/accuracy/i, /val\/accuracy/i] },
@@ -16,9 +16,50 @@ export function insightsRunUniverse(selectedRunIds, sortedRuns) {
   const selectedRuns = runs.filter((run) => selected.has(run.id));
   return {
     runs: selectedRuns.length ? selectedRuns : runs,
-    scope: selectedRuns.length ? "selected loaded runs" : "current loaded page",
+    scopeKind: selectedRuns.length ? "selected" : "page",
     excluded: selected.size > selectedRuns.length ? selected.size - selectedRuns.length : 0,
   };
+}
+
+export function insightsScopeLabel(universe) {
+  const count = universe?.runs?.length ?? 0;
+  const noun = universe?.scopeKind === "selected" ? "selected" : "loaded";
+  const base = `Analyzing the ${formatNumber(count, 0)} ${noun} ${count === 1 ? "run" : "runs"}`;
+  const excluded = universe?.excluded ?? 0;
+  return excluded ? `${base} · ${formatNumber(excluded, 0)} selected without loaded summaries` : base;
+}
+
+// Human label for the field groupedRunReducers buckets by ("seed", "tag", a
+// config field), or null when runs collapse into a single "all" bucket and
+// naming the key would be noise.
+export function runGroupingKeyLabel(runs) {
+  const field = chooseGroupField(runs);
+  if (field === "tag") return "tag";
+  if (field === "all") return null;
+  if (field.startsWith("config.")) return field.slice("config.".length);
+  return null;
+}
+
+export function partitionEvaluationCards(cards) {
+  const list = Array.isArray(cards) ? cards : [];
+  return {
+    logged: list.filter((card) => Boolean(card.key)),
+    unlogged: list.filter((card) => !card.key),
+  };
+}
+
+// Per-axis min/max for parallel coordinates, flagging degenerate axes so the
+// chart can annotate "constant · value" instead of printing the same number
+// twice, and axes with no finite values at all.
+export function parallelAxisDomains(rows, fields) {
+  const list = Array.isArray(rows) ? rows : [];
+  return (Array.isArray(fields) ? fields : []).map((field) => {
+    const values = list.map((row) => row?.values?.[field]).filter(isFiniteNumber);
+    if (!values.length) return { field, min: null, max: null, constant: false, empty: true };
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    return { field, min, max, constant: min === max, empty: false };
+  });
 }
 
 export function groupedRunReducers(runs, metricKey) {

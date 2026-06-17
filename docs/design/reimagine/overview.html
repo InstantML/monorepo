@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview · InstantML</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=Spline+Sans+Mono:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body data-page="overview">
+<div class="shell">
+  <header class="ticker"></header>
+  <nav class="rail" aria-label="Primary"></nav>
+
+  <main class="main">
+    <div class="page-head rise">
+      <div>
+        <div class="page-head__crumb mlabel">instantml<span class="sep">/</span>atlas-rl</div>
+        <h1>Overview</h1>
+      </div>
+      <div class="page-head__actions">
+        <div class="seg" role="group" aria-label="Time range">
+          <button>1H</button><button>6H</button><button class="is-active">24H</button><button>7D</button>
+        </div>
+        <button class="btn">Share</button>
+        <button class="btn btn--primary">+ New Run</button>
+      </div>
+    </div>
+
+    <!-- stat strip -->
+    <div class="grid" style="margin-bottom:12px">
+      <div class="panel col-3 rise">
+        <div class="panel__head"><span class="mlabel">Active runs</span><span class="pulse"></span></div>
+        <div class="panel__body stat">
+          <span class="stat__value">5<small> / 12 today</small></span>
+          <span class="stat__delta up">▲ 2 since 06:00</span>
+        </div>
+      </div>
+      <div class="panel col-3 rise">
+        <div class="panel__head"><span class="mlabel">Fleet utilization</span><span class="panel__unit">184 GPU</span></div>
+        <div class="panel__body stat">
+          <span class="stat__value">87.2<small>%</small></span>
+          <span class="stat__delta flat">— steady · 4 idle nodes</span>
+        </div>
+      </div>
+      <div class="panel col-3 rise">
+        <div class="panel__head"><span class="mlabel">Ingest rate</span><span class="panel__unit">pts/min</span></div>
+        <div class="panel__body stat">
+          <span class="stat__value">1.24<small>M</small></span>
+          <span class="stat__delta up">▲ 6.1% vs 1h ago</span>
+        </div>
+      </div>
+      <div class="panel col-3 rise">
+        <div class="panel__head"><span class="mlabel">Open alerts</span></div>
+        <div class="panel__body stat">
+          <span class="stat__value" style="color:var(--crit)">2<small style="color:var(--text-dim)"> crit · 3 warn</small></span>
+          <span class="stat__delta down">▼ grad-explosion on curr-007</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- main chart + alert feed -->
+    <div class="grid" style="margin-bottom:12px">
+      <div class="panel col-8 rise">
+        <div class="panel__head">
+          <span class="mlabel">eval/return_mean — active runs</span>
+          <span class="chip chip--live"><span class="pulse" style="width:5px;height:5px"></span>Streaming</span>
+          <span class="panel__unit">step</span>
+        </div>
+        <div class="panel__body panel__body--chart">
+          <div class="chart-host" id="ch-return"></div>
+          <div class="legend" id="lg-return"></div>
+        </div>
+      </div>
+      <div class="panel col-4 rise">
+        <div class="panel__head">
+          <span class="mlabel">Alert feed</span>
+          <a class="mlabel" href="health.html" style="color:var(--signal);letter-spacing:.08em">View all →</a>
+        </div>
+        <div class="panel__body panel__body--flush" id="alert-feed"></div>
+      </div>
+    </div>
+
+    <!-- active runs + side column -->
+    <div class="grid">
+      <div class="panel col-7 rise">
+        <div class="panel__head">
+          <span class="mlabel">Active runs</span>
+          <a class="mlabel" href="runs.html" style="color:var(--signal);letter-spacing:.08em">All runs →</a>
+        </div>
+        <div class="panel__body panel__body--flush" style="overflow-x:auto">
+          <table class="dtable" id="active-table">
+            <thead><tr>
+              <th></th><th>Run</th><th>Trend</th><th style="text-align:right">eval/return</th>
+              <th>Progress</th><th style="text-align:right">ETA</th><th style="text-align:right">GPUs</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="col-5" style="display:flex;flex-direction:column;gap:12px">
+        <div class="panel rise">
+          <div class="panel__head"><span class="mlabel">Fleet throughput</span><span class="panel__unit">tok/s</span></div>
+          <div class="panel__body panel__body--chart">
+            <div class="chart-host" id="ch-tput"></div>
+          </div>
+        </div>
+        <div class="panel rise" style="flex:1">
+          <div class="panel__head"><span class="mlabel">Data freshness</span><a class="mlabel" href="health.html" style="color:var(--signal);letter-spacing:.08em">Datasets →</a></div>
+          <div class="panel__body panel__body--flush">
+            <table class="dtable" id="fresh-table">
+              <thead><tr><th>Dataset</th><th style="text-align:right">Rows</th><th style="text-align:right">Updated</th><th>Schema</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="data.js"></script>
+<script src="charts.js"></script>
+<script src="shell.js"></script>
+<script>
+(function () {
+  const palette = ["--s1","--s2","--s3","--s4","--s5"].map(v => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+  const live = IM.RUNS.filter(r => r.status === "running" && r.ret > 0);
+
+  /* main return chart */
+  const series = live.map((r, i) => ({
+    name: r.name.replace(/^[a-z]+-/, ""),
+    color: palette[i],
+    points: IM.curvesFor(r).ret,
+    live: i === 0,
+  }));
+  Charts.line(document.getElementById("ch-return"), { series, height: 224, smooth: 0.5, area: true });
+  document.getElementById("lg-return").innerHTML = series.map(s =>
+    `<span class="legend__item"><i style="background:${s.color}"></i>${s.name}</span>`).join("");
+
+  /* throughput */
+  Charts.line(document.getElementById("ch-tput"), {
+    series: [{ name: "fleet tok/s", color: palette[1], points: IM.curvesFor(IM.RUNS[0]).tput, live: true }],
+    height: 120, smooth: 0.3,
+  });
+
+  /* alert feed */
+  document.getElementById("alert-feed").innerHTML = IM.ALERTS.slice(0, 5).map(a => `
+    <div class="feed-row">
+      <span class="dot dot--${a.sev === "crit" ? "crit" : a.sev === "warn" ? "warn" : "info"}" style="margin-top:5px"></span>
+      <div class="feed-row__body">
+        <div class="feed-row__title">${a.title}</div>
+        <div class="feed-row__meta">${a.run} · <span class="tag">${a.rule}</span></div>
+      </div>
+      <span class="feed-row__time">${a.time}</span>
+    </div>`).join("");
+
+  /* active runs table */
+  const tbody = document.querySelector("#active-table tbody");
+  tbody.innerHTML = IM.RUNS.filter(r => r.status === "running").map((r, i) => {
+    const pct = Math.round((r.step / r.total) * 100);
+    const eta = r.ret ? ["2h 14m","2h 51m","11h 02m","0h 09m","6h 44m"][i] || "—" : "—";
+    return `<tr>
+      <td style="width:24px"><span class="dot dot--ok"></span></td>
+      <td class="td-name">${r.name}<span class="td-dim" style="margin-left:8px;font-weight:400">${r.id}</span></td>
+      <td><span class="row-spark" data-i="${i}"></span></td>
+      <td class="td-num ${r.ret > 460 ? "is-best" : ""}">${r.ret ? r.ret.toFixed(1) : "—"}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div class="meter" style="width:72px"><i style="width:${pct}%"></i></div><span class="td-dim" style="font-size:10px">${pct}%</span></div></td>
+      <td class="td-num">${eta}</td>
+      <td class="td-num">${r.gpus}</td>
+    </tr>`;
+  }).join("");
+  IM.RUNS.filter(r => r.status === "running").forEach((r, i) => {
+    const el = tbody.querySelector(`[data-i="${i}"]`);
+    Charts.spark(el, IM.sparkOf(r.ret ? IM.curvesFor(r).ret : IM.curvesFor(r).loss, 28), { w: 76, h: 18, color: palette[i % palette.length], live: true });
+  });
+
+  /* freshness table */
+  document.querySelector("#fresh-table tbody").innerHTML = IM.DATASETS.map(d => `
+    <tr>
+      <td class="td-name">${d.name}</td>
+      <td class="td-num">${d.rows}</td>
+      <td class="td-num">${d.freshness}</td>
+      <td>${d.schema === "ok" ? '<span class="chip chip--done">stable</span>' : '<span class="chip chip--warn">changed</span>'}</td>
+    </tr>`).join("");
+})();
+</script>
+</body>
+</html>

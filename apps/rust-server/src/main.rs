@@ -2,7 +2,7 @@ use std::{net::SocketAddr, process::ExitCode, time::Duration};
 
 use instantml_rust_server::{
     capacity,
-    config::{AppConfig, ClickHouseProvisioner, ServicePlaneRole},
+    config::{AppConfig, AuthMode, ClickHouseProvisioner, ServicePlaneRole},
     control_db::ControlDb,
     domain::{DevGoogleAuthRequest, RequestContext},
     http::AppState,
@@ -110,6 +110,13 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
             .min(u128::from(u64::MAX)) as u64),
         "rust server starting"
     );
+    if local_auth_exposed_beyond_loopback(&config.auth_mode, &config.bind_addr) {
+        tracing::warn!(
+            bind_addr = %config.bind_addr,
+            "local auth mode accepts unauthenticated requests and should not be exposed beyond \
+             loopback; bind to 127.0.0.1 or set INSTANTML_AUTH_MODE=api-key"
+        );
+    }
     let metrics = metric_store::connect(&config)?;
     if should_migrate_primary_metric_store(&config) {
         metric_store::migrate(&metrics).await?;
@@ -167,6 +174,13 @@ async fn serve(config: AppConfig) -> instantml_rust_server::AppResult<()> {
         handle.abort();
     }
     result
+}
+
+/// Local auth mode serves every request with an unauthenticated local
+/// context, so it is only safe while the server is reachable solely from the
+/// machine itself (127.0.0.1 / ::1).
+fn local_auth_exposed_beyond_loopback(auth_mode: &AuthMode, bind_addr: &SocketAddr) -> bool {
+    matches!(auth_mode, AuthMode::Local) && !bind_addr.ip().is_loopback()
 }
 
 async fn connect_store_with_retry(
@@ -407,4 +421,49 @@ fn print_help() {
          INSTANTML_HOSTED_CLICKHOUSE_ENABLED, INSTANTML_SERVICE_PLANE, DATABASE_URL, CONTROL_DB_MAX_CONNECTIONS, \
          INSTANTML_CAPACITY_ACTIVE_REVISIONS, INSTANTML_CAPACITY_ACTIVE_INSTANCES, INSTANTML_CLOUD_SQL_CONNECTION_LIMIT"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(value: &str) -> SocketAddr {
+        value.parse().expect("test bind address must parse")
+    }
+
+    #[test]
+    fn local_auth_on_loopback_is_not_flagged() {
+        assert!(!local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("127.0.0.1:8001")
+        ));
+        assert!(!local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("[::1]:8001")
+        ));
+    }
+
+    #[test]
+    fn local_auth_on_public_bind_is_flagged() {
+        assert!(local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("0.0.0.0:8001")
+        ));
+        assert!(local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("[::]:8001")
+        ));
+        assert!(local_auth_exposed_beyond_loopback(
+            &AuthMode::Local,
+            &addr("10.0.0.5:8001")
+        ));
+    }
+
+    #[test]
+    fn api_key_auth_is_never_flagged() {
+        assert!(!local_auth_exposed_beyond_loopback(
+            &AuthMode::ApiKey,
+            &addr("0.0.0.0:8001")
+        ));
+    }
 }

@@ -4,34 +4,29 @@ import { Star } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
 
+/**
+ * Secondary scope controls beneath the main chart. Smoothing and the x-axis
+ * moved into the chart panel head (mockup parity); the metric search lives in
+ * the metric browser panel. What remains here is the metric/group/identifier
+ * scope plus the group-average toggle.
+ */
 export function ChartControls(props: {
   idPrefix?: string;
-  metricFilter: string;
-  metricFilterValid: boolean;
   metricKey: string;
   metricOptions: string[];
   groupBy: string;
-  xMode: string;
-  smoothing: number;
   groupAverage: boolean;
   identifierMode: string;
   pinnedMetrics: string[];
-  onMetricFilter: (value: string) => void;
   onMetricKey: (value: string) => void;
   onGroupBy: (value: string) => void;
-  onXMode: (value: string) => void;
-  onSmoothing: (value: number) => void;
   onIdentifierMode: (value: string) => void;
   onGroupAverage: (value: boolean) => void;
   onPinnedMetric: (metric: string) => void;
 }) {
   const idPrefix = props.idPrefix ?? "";
   return (
-    <div className="panel-controls metrics-chart-controls">
-      <label className={`control metric-filter-control ${props.metricFilterValid ? "" : "invalid"}`}>
-        Metric filter
-        <input aria-label="Metric filter" id={`${idPrefix}metric-filter`} type="search" value={props.metricFilter} onChange={(event) => props.onMetricFilter(event.target.value)} placeholder="train/.*" />
-      </label>
+    <div className="panel-controls mx-secondary-controls">
       <CustomSelect
         disabled={!props.metricOptions.length}
         id={`${idPrefix}metric-select`}
@@ -63,16 +58,6 @@ export function ChartControls(props: {
         value={props.groupBy}
       />
       <CustomSelect
-        id={`${idPrefix}x-mode`}
-        label="X axis"
-        onChange={props.onXMode}
-        options={[
-          { value: "step", label: "Step" },
-          { value: "time", label: "Logged time" },
-        ]}
-        value={props.xMode}
-      />
-      <CustomSelect
         id={`${idPrefix}identifier-mode`}
         label="Identifier"
         onChange={props.onIdentifierMode}
@@ -83,20 +68,6 @@ export function ChartControls(props: {
         ]}
         value={props.identifierMode}
       />
-      <label className="control metrics-smoothing-control">
-        <span>Smooth {props.smoothing}</span>
-        <input
-          aria-label="Smoothing"
-          id={`${idPrefix}smoothing`}
-          max="90"
-          min="0"
-          onChange={(event) => props.onSmoothing(Number(event.currentTarget.value))}
-          onInput={(event) => props.onSmoothing(Number(event.currentTarget.value))}
-          step="10"
-          type="range"
-          value={props.smoothing}
-        />
-      </label>
       <label className="control metrics-average-control">
         <span>Avg</span>
         <input aria-label="Group average" id={`${idPrefix}group-average`} type="checkbox" checked={props.groupAverage} onChange={(event) => props.onGroupAverage(event.target.checked)} />

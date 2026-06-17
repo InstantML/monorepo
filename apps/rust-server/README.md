@@ -1,12 +1,12 @@
 # Rust Server
 
-This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, tenant routes, dashboard preferences, and saved workspace views, then stores tenant-owned runs and metrics in the org's routed ClickHouse database. Production and staging currently use InstantML-owned self-hosted ClickHouse on Google Cloud for this hosted path. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
+This directory contains the primary Rust backend for InstantML. The current storage slice is ClickHouse-only: a low-volume operational record log rebuilds local/control-plane state, while metric tables remain the high-volume analytical layer. Hosted ClickHouse mode adds an InstantML User Data control table for users, orgs, sessions, API keys, tenant routes, dashboard preferences, and saved workspace views, then stores tenant-owned runs, reports, and metrics in the org's routed ClickHouse database. Production and staging currently use InstantML-owned self-hosted ClickHouse on Google Cloud for this hosted path. The deprecated Node server remains only as a compatibility oracle, JSON migration source, and legacy fallback.
 
 ## Purpose
 
 - Serve the product API with `axum`, `tokio`, and `tower-http`.
 - Store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, projects, runs, attributes, raw artifacts, versioned artifact collections/manifests/aliases/lineage edges/upload sessions, imports, usage snapshots, and idempotency records as append-only operational records in ClickHouse.
-- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
+- In hosted ClickHouse mode, store users, orgs, sessions, API keys, dashboard preferences, saved workspace views, tenant routes, and Stripe billing projections in the User Data control table, while projects/runs/reports/metrics stay in each org tenant database. The current hosted deployment uses database-mode tenant routes on self-hosted GCP ClickHouse.
 - Accept Free/Pro/Premium signup, redirect paid signup through Stripe Checkout before unlocking writes, send token-backed organization invitation emails, activate verified invited members into the same org, expose UTC calendar-month metric and API-request usage plus retained-resource usage, enforce billing/payment gates and blocked-at-limit usage guardrails for new data-plane writes, apply plan-aware short-window API rate limits, and manage org API keys. For managed Clerk signups, auto-derive the workspace name from the Clerk display name or email handle when `org_name` is absent; mint a one-time `sdk:ingest`-scoped SDK key and return it in the auth response as `onboarding_api_key` only for new org creation after payment is verified and storage setup is ready. Browser sessions can also create additional organization workspaces through `POST /api/orgs/current-user`; the bootstrap `POST /api/orgs` route remains operator/admin-only.
 - Support Premium customer-owned GCP ClickHouse onboarding for empty orgs through a data-plane validation route. BYOC orgs stay in `storage_unconfigured` until an owner/admin validates and saves a public HTTPS ClickHouse endpoint, database, username, and password; SDK key creation and product writes are blocked until the route is ready.
 - Store raw scalar metric points, raw per-rank metric points, and aggregated scalar metric series in ClickHouse via `metric_store::MetricStore`.
@@ -19,6 +19,13 @@ This directory contains the primary Rust backend for InstantML. The current stor
   exact tags/status/ID prefixes, quoted phrases, uppercase booleans,
   field/group exclusion such as `-tag:debug`, parentheses, and bounded explicit
   `re:/.../` regex.
+- Record cooperative run stop requests through `runs:control` routes while the
+  SDK polls a cheap `sdk:ingest` stop-signal endpoint and acknowledges cleanup.
+  This does not hard-kill unmanaged training processes; dashboards derive
+  `stopping` and `stopped` from run-control metadata while legacy run status
+  stays backwards compatible. Stop reason text is omitted from ordinary
+  list/summary/export-style read surfaces, and the stop-signal endpoint is
+  no-store and excluded from monthly billable API-request rollups.
 - Serve bounded user-owned exports through `GET /api/export`. JSON remains the
   default portable export shape; `format=csv` returns a normalized single CSV
   for selected runs or filtered runs, `run_ids`/`runs` selects exact visible
@@ -202,8 +209,8 @@ send token-backed invites after checkout activates the workspace.
 Logical control/data-plane division is available before deployment:
 
 - `INSTANTML_SERVICE_PLANE=combined` is the default and exposes the current full route set from one Rust process.
-- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, invitation, billing, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/metric/product data routes.
-- `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, metrics, logs, attributes, objects, artifacts, export, usage, imports, demo reset, and customer-owned ClickHouse validation/setup. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
+- `INSTANTML_SERVICE_PLANE=control` exposes platform, auth/session, invitation, billing, user/org, seat, API-key, service-account, dashboard preference, workspace-view, tenant provisioning, and route-management surfaces. It requires hosted ClickHouse/User Data and does not expose project/run/report/metric product data routes.
+- `INSTANTML_SERVICE_PLANE=data` exposes platform and tenant product routes for projects, runs, reports, metrics, logs, attributes, objects, artifacts, export, usage, imports, demo reset, and customer-owned ClickHouse validation/setup. It requires hosted ClickHouse/User Data, refreshes control records before bearer/session auth, and then loads the routed tenant data plane for the authenticated org.
 
 The local `test:hosted-clickhouse` smoke runs this split against disposable ClickHouse to validate the division. The deploy helper now supports deploying the split shape, but shared data cells still must not be raised above the documented single-writer default until the remaining multi-writer gates are closed.
 
@@ -221,7 +228,7 @@ Environment variables:
 - `CLICKHOUSE_URL`: ClickHouse HTTP connection string of the form `http://user:pass@host:port/database`. Default: `http://default:@127.0.0.1:8123/instantml`. The named database is created if missing on startup.
 - `INSTANTML_BIND_ADDR`: API bind address. Default: `127.0.0.1:8001`.
 - `INSTANTML_SERVICE_PLANE`: `combined`, `control`, or `data`. Default: `combined`. `control` and `data` require `INSTANTML_HOSTED_CLICKHOUSE_ENABLED=true`.
-- `INSTANTML_CELL_ID`: optional operator label for a data-plane cell. The deploy helper sets it for split data services.
+- `INSTANTML_CELL_ID`: optional operator label for this data-plane cell. The deploy helper sets it only for split data services; when present, the service can register and heartbeat its `data_cells` row.
 - `CONTROL_DB_MAX_CONNECTIONS`: Postgres control-plane sqlx pool size per
   Rust process. Default: `10`. Invalid or zero values fail startup so runtime
   behavior matches the Phase 0 capacity preflight. Include this value before
@@ -242,6 +249,7 @@ Environment variables:
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: HTTP timeout. Default: `30`.
 - `INSTANTML_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
 - `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warning logs. Default: `1000`.
+- `INSTANTML_SHARE_TOKEN_TTL_DAYS`: report share-link lifetime in days from the moment the token is rotated/minted; expired tokens 404 like unknown tokens. `0` disables expiry. Tokens persisted before issuance tracking stay valid until rotated. Default: `30`.
 - `INSTANTML_DEV_AUTH_ENABLED`: enables the local Google-style auth endpoint when `INSTANTML_AUTH_MODE=local`. Loopback local binds enable it by default.
 - `CLERK_SECRET_KEY`: Clerk Backend API secret used to verify hosted browser sessions and fetch user profiles.
 - `INSTANTML_MANAGED_CLERK_ENABLED`: enables hosted Clerk auth. Defaults to enabled when `CLERK_SECRET_KEY` is present and `INSTANTML_AUTH_MODE=api-key`.
@@ -358,16 +366,16 @@ Root helper-only environment variables:
 - `INSTANTML_DEPLOY_ENV`: `prod` or `staging`. Defaults to `prod`; staging changes default service/router names, secret names, and User Data database path.
 - `INSTANTML_CLOUD_RUN_SCALING`, `INSTANTML_CLOUD_RUN_INSTANCES`: combined-service scaling mode and manual instance count. The legacy single deploy defaults to manual `1` in prod and auto min `0` max `1` in staging.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
-- `INSTANTML_DEFAULT_DATA_CELL_ID`: default current data cell used when stamping new hosted tenant routes. The Cloud Run helper sets this from `INSTANTML_CLOUD_RUN_DATA_CELL` for split services.
-- `INSTANTML_CELL_ID`: per-process cell label. Data services receive it from the deploy helper, and it takes precedence over `INSTANTML_DEFAULT_DATA_CELL_ID` so future per-cell services do not all stamp routes to the default cell.
+- `INSTANTML_DEFAULT_DATA_CELL_ID`: default placement target used when stamping new hosted tenant routes. The Cloud Run helper sets this from `INSTANTML_CLOUD_RUN_DATA_CELL` so control/combined services can place new hosted orgs without claiming data-cell liveness.
+- `INSTANTML_CELL_ID`: per-process data-cell identity. Data services receive it from the deploy helper, it takes precedence over `INSTANTML_DEFAULT_DATA_CELL_ID` for local placement, and it is the only env var that enables automatic `data_cells` registration and heartbeats.
 
-When either current-cell variable is set and Postgres control storage is
-configured, the Rust service auto-registers and heartbeats a conservative
-`data_cells` row before placement. Operators can overwrite the row with richer
-metadata or close/drain it; the heartbeat only refreshes health/backup
-timestamps on existing rows. Placement still fails closed when the matching row
-is closed, stale, or full. Customer-owned ClickHouse routes are not assigned to
-managed data cells.
+When `INSTANTML_CELL_ID` is set and Postgres control storage is configured, the
+Rust data service auto-registers and heartbeats a conservative `data_cells` row
+before placement. Operators can overwrite the row with richer metadata or
+close/drain it; the heartbeat only refreshes health/backup timestamps on
+existing rows. Placement still fails closed when the matching row is closed,
+stale, or full. Customer-owned ClickHouse routes are not assigned to managed
+data cells.
 - `INSTANTML_CLOUD_RUN_CONTROL_SCALING`, `INSTANTML_CLOUD_RUN_DATA_SCALING`: `auto` or `manual`. Prod defaults to `manual`; staging defaults to `auto`.
 - `INSTANTML_CLOUD_RUN_CONTROL_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual split instance counts. Values above `1` are blocked unless the matching unsafe control/data test flag is set.
 - `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES`, `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for split services. Defaults are min `0`, max `1`.
@@ -391,7 +399,7 @@ Implemented health and platform endpoints:
 - `GET /metrics`: includes `instantml_control_projection_loaded` and `instantml_control_refresh_degraded` gauges.
 - `GET /openapi.json`
 
-Implemented compatibility routes cover bootstrap users/orgs/API keys, bootstrap-protected read-only admin overview (`GET /api/admin/overview`) and data-cell registry summary (`GET /api/admin/data-cells`), API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views, projects, runs, same-project checkpoint forks (`POST /api/runs/:run_id/forks`) and bounded lineage reads (`GET /api/runs/:run_id/lineage`), scalar metrics, per-rank metric ingest and run-scoped rank summaries, typed attributes, rich logged objects, raw artifact metadata/upload/download, versioned artifact collections/manifests/aliases/retention/delete/input-output edges/upload sessions/lineage, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports plus Import v2 job/chunk/commit migration routes, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
+Implemented compatibility routes cover bootstrap users/orgs/API keys, bootstrap-protected read-only admin overview (`GET /api/admin/overview`) and data-cell registry summary (`GET /api/admin/data-cells`), API-key auth, hosted Clerk onboarding, local dev Google-style onboarding, Free/Pro/Premium plan selection, Stripe billing status/Checkout sync/Customer Portal/webhook endpoints under `/api/billing`, browser sessions, org seat list/reservation, token-backed organization invitations (`/api/orgs/:org_id/invitations`, resend/revoke, `/api/invitations/preview`, `/api/invitations/accept`), customer-owned ClickHouse setup (`GET /api/storage/clickhouse-connections/current`, `POST /api/storage/clickhouse-connections/validate`, `POST /api/storage/clickhouse-connections`, `POST /api/storage/clickhouse-connections/rotate-credentials`), invited-member activation, dashboard project preferences, saved workspace views with export/import/soft-delete, agent view data projection (`POST /api/workspace-view-data`), projects, runs, cooperative stop control (`POST /api/runs/:run_id/stop`, `POST /api/runs/stop`, `GET /api/runs/:run_id/stop-signal`, `POST /api/runs/:run_id/stop-ack`), same-project checkpoint forks (`POST /api/runs/:run_id/forks`) and bounded lineage reads (`GET /api/runs/:run_id/lineage`), scalar metrics, per-rank metric ingest and run-scoped rank summaries, typed attributes, rich logged objects, raw artifact metadata/upload/download, versioned artifact collections/manifests/aliases/retention/delete/input-output edges/upload sessions/lineage, side-by-side comparison, bounded export, Neptune/W&B/MLflow imports plus Import v2 job/chunk/commit migration routes, usage summaries/export with UTC calendar-month metric usage, retained ClickHouse storage bytes for dedicated tenant databases, BYOC storage warnings that count only InstantML-owned artifact bytes, billing/payment and blocked-at-limit write guardrails, API-key management, demo reset, and RFC 8628 device-code CLI login (`POST /api/auth/device-code/start`, `POST /api/auth/device-code/poll`, `POST /api/auth/device-code/confirm`). List endpoints are bounded; raw metric history is fetched through separate series endpoints.
 
 Run-summary pages default to 100 rows and are capped at 1,000 rows. Bulk UI
 selection should use `GET /api/runs/summary?projection=selection`, which skips
@@ -412,7 +420,7 @@ envelope, auth rule, limit, table, record kind, or payload field changes. The
 live service's `GET /openapi.json` returns a compact role-aware route index and
 includes `x-instantml-service-plane` for operator verification.
 
-In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, run/metric/artifact reads and `/api/export` require `export:read`, raw and versioned artifact write/upload routes require `artifacts:write`, artifact alias/retention/delete routes require `artifacts:manage` or an owner/admin browser session, imports require `imports:write`, usage requires `usage:read`, and key administration requires `api_keys:write` or an owner/admin session.
+In `INSTANTML_AUTH_MODE=api-key`, tenant context comes from the bearer API key. Project-scoped keys can access only their project; org-wide usage, demo reset, seat administration, and API-key administration require unrestricted org-scoped keys, an owner/admin browser session, or the bootstrap token depending on route class. Run/metric/attribute mutations require `sdk:ingest`, run/metric/artifact reads and `/api/export` require `export:read`, raw and versioned artifact write/upload routes require `artifacts:write`, artifact alias/retention/delete routes require `artifacts:manage` or an owner/admin browser session, imports require `imports:write`, usage requires `usage:read`, cooperative stop requests require `runs:control`, stop polling/acknowledgement requires `sdk:ingest`, and key administration requires `api_keys:write` or an owner/admin session.
 
 Run fork creation requires source read plus run creation rights: `export:read`
 and `sdk:ingest`, or an equivalent mutating browser session. Forks are
@@ -425,7 +433,19 @@ Dashboard preference and workspace-view routes are browser-session control
 state. Hosted SDK/API keys cannot read or mutate them; owner/admin/member
 browser sessions may save views, viewers may read preferences/views, and shared
 demo sessions remain read-only. Local compatibility mode keeps the same route
-shapes without requiring a hosted browser session.
+shapes without requiring a hosted browser session. Saved workspace-view payloads
+are capped at 64 KiB, imports must explicitly send `dry_run`, and export/import
+sanitization strips embedded current/selected run IDs such as `primaryRunId`,
+`referenceRunId`, and `selectedRunIds`. Live saved views are capped at 200 per
+user and 1,000 per org, and hosted delete tombstones are pruned to the newest 50
+per user after delete. The data-plane `POST /api/workspace-view-data` route
+accepts browser sessions or `export:read` API keys, returns `404` for missing or
+inaccessible run IDs, and projects run summaries/metric series to the sanitized
+panel metric keys rather than every metric on each run.
+
+Report routes are tenant product-data routes in hosted split mode. The Next
+proxy sends `/api/reports` to the data plane so creation and auto-save write
+to the org's routed tenant ClickHouse store, alongside projects and runs.
 
 Console logs are stored in tenant ClickHouse through `console_log_lines`.
 `POST /api/runs/:run_id/logs` requires `sdk:ingest`, accepts client-supplied
@@ -560,6 +580,7 @@ Coverage exception (multi-writer):
 - `src/store/artifact_versions.rs`: versioned artifact collections, manifests, upload-session commit flow, aliases, retention/delete state, manifest downloads, and run/artifact lineage edges.
 - `src/store/imports.rs`: Neptune, W&B, MLflow, and TensorBoard import normalization plus Import v2 job/chunk state, canonical chunk validation, redaction, provenance, and commit logic.
 - `src/store/export.rs`: side-by-side comparison and bounded JSON export.
+- `src/store/reports/`: tenant-scoped persisted report documents, block validation, share tokens, panel inventory, and Markdown export.
 - `src/store/usage.rs`: usage summaries, UTC calendar-month metric periods, daily snapshots, and worker cleanup helpers.
 - `src/store/demo.rs`: demo project reset and synthetic data generation.
 - `src/store/access.rs`: shared project/run/session access checks and auth-adjacent row helpers.

@@ -1,0 +1,261 @@
+/* parity-health — mockup-parity layer for the Run health tab.
+ * Ported from docs/design/reimagine/health.html + app.css, remapped onto the
+ * app token set (tokens.css) so light and dark themes both hold. Classes are
+ * hp- prefixed to keep this layer independent of the legacy panel styles.
+ * Severity chips reuse the existing .pill.bad / .pill.warn / .pill.live. */
+
+/* ---- 12-col layout grid (mockup .grid / .col-*) -------------------------- */
+.hp-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.hp-col-3 { grid-column: span 3; }
+.hp-col-5 { grid-column: span 5; }
+.hp-col-7 { grid-column: span 7; }
+.hp-col-12 { grid-column: span 12; }
+
+/* ---- Panel — the instrument bezel with corner registration ticks --------- */
+.hp-panel {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hp-panel::before,
+.hp-panel::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-color: var(--line-strong);
+  border-style: solid;
+  transition: border-color 0.2s ease;
+  pointer-events: none;
+}
+.hp-panel::before { top: 4px; left: 4px; border-width: 1px 0 0 1px; border-top-left-radius: 3px; }
+.hp-panel::after { bottom: 4px; right: 4px; border-width: 0 1px 1px 0; border-bottom-right-radius: 3px; }
+.hp-panel:hover::before,
+.hp-panel:hover::after { border-color: var(--accent); }
+
+.hp-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  min-height: 36px;
+}
+.hp-panel-body {
+  padding: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.hp-panel-body.hp-flush {
+  padding: 0;
+  overflow-x: auto;
+}
+
+/* ---- Micro-label + unit (mockup .mlabel / .panel__unit) ------------------- */
+/* Panel + tile titles are prose → Archivo sans, sentence case. (Was uppercase
+ * mono, which made every card read like a log line.) */
+.hp-mlabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-display);
+  color: var(--text);
+}
+.hp-unit {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ---- Stat block (mockup .stat) -------------------------------------------- */
+.hp-stat { display: flex; flex-direction: column; gap: 2px; }
+.hp-stat-value {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+.hp-stat-value small {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.hp-stat-delta {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--muted);
+}
+.hp-stat-delta.down { color: var(--danger); }
+.hp-crit { color: var(--danger); }
+.hp-warnc { color: var(--warm); }
+.hp-live { color: var(--accent); }
+
+/* ---- Segmented control (mockup .seg) -------------------------------------- */
+.hp-seg {
+  display: inline-flex;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px;
+  gap: 2px;
+}
+.hp-seg button {
+  height: 22px;
+  padding: 0 10px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.hp-seg button:hover { color: var(--text-2); }
+.hp-seg button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+/* ---- Data table (mockup .dtable) ------------------------------------------ */
+/* charts.css sets table { min-width: 960px; table-layout: fixed } globally;
+ * undo both so this dense table sizes to its panel like the mockup. */
+.hp-dtable {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: 12px;
+}
+.hp-dtable tr { height: 36px; }
+.hp-dtable th {
+  position: static;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  white-space: nowrap;
+  user-select: none;
+}
+.hp-dtable td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.hp-dtable tbody tr { transition: background 0.1s; }
+.hp-dtable tbody tr:hover { background: var(--surface-hover); }
+.hp-dtable tbody tr:last-child td { border-bottom: 0; }
+.hp-dtable th.hp-right,
+.hp-dtable td.hp-td-num { text-align: right; }
+.hp-dtable td.hp-td-alert {
+  white-space: normal;
+  min-width: 200px;
+  max-width: 320px;
+  color: var(--text);
+  font-weight: 500;
+  line-height: 1.35;
+}
+.hp-dtable td.hp-td-name {
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-weight: 500;
+}
+.hp-dtable td.hp-td-dim {
+  font-family: var(--font-mono);
+  color: var(--faint);
+}
+.hp-dtable td.hp-td-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+}
+.hp-dtable td.hp-td-num.hp-td-dim { color: var(--faint); }
+
+/* ---- Quiet rule tag (mockup .tag) ------------------------------------------ */
+.hp-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+/* ---- Detail key/value list (restyled run-health panel) --------------------- */
+.hp-kv {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+.hp-kv > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.hp-kv > div:first-child { padding-top: 2px; }
+.hp-kv > div:last-child { border-bottom: 0; }
+.hp-kv dt {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.hp-kv dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: var(--text);
+}
+.hp-note {
+  margin: 10px 0 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---- Responsive collapse ---------------------------------------------------- */
+@media (max-width: 1100px) {
+  .hp-col-3 { grid-column: span 6; }
+  .hp-col-5,
+  .hp-col-7 { grid-column: span 12; }
+}
+@media (max-width: 640px) {
+  .hp-col-3 { grid-column: span 12; }
+}

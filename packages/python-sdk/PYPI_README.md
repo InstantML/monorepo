@@ -48,6 +48,24 @@ for step, batch in enumerate(loader):
 run.finish()
 ```
 
+Dashboard stop requests are cooperative. Add a stop check at a safe point in
+your training loop; older servers that do not expose stop endpoints simply
+continue normal training.
+
+```python
+run = im.init(project="llm-7b-sft", stop_check_interval_seconds=5)
+
+for step, batch in enumerate(loader):
+    loss = train_step(batch)
+    run.log({"loss": loss}, step=step)
+    if run.should_stop():
+        save_model("./ckpt/final.pt")
+        run.finish_stopped("stopped from dashboard")
+        break
+else:
+    run.finish()
+```
+
 For binary classification evals, log a typed rich object instead of a screenshot:
 
 ```python

@@ -27,6 +27,9 @@ let clickhouse = null;
 let postgresContainer = "";
 const serverLogs = {};
 let smokeRequestSequence = 0;
+const smokeRunId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const ownerEmail = `hosted-smoke+${smokeRunId}@example.com`;
+const teammateEmail = `teammate+${smokeRunId}@example.com`;
 
 try {
   clickhouse = await ensureLocalClickHouse({
@@ -48,13 +51,13 @@ try {
   await assertRouteStatus(dataBaseUrl, "/api/orgs", { method: "GET" }, 404);
 
   const signup = await postJson(controlBaseUrl, "/api/auth/dev/google", {
-    email: "hosted-smoke@example.com",
+    email: ownerEmail,
     display_name: "Hosted Smoke",
     mode: "signup",
     account_type: "business",
     org_name: `Hosted Smoke ${Date.now()}`,
     plan_tier: "pro",
-    seat_emails: ["teammate@example.com"],
+    seat_emails: [teammateEmail],
   });
   const cookie = signup.cookie;
   const orgId = signup.body.organization.id;
@@ -70,10 +73,10 @@ try {
 
   let seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
   assert.equal(seats.seats.length, 2);
-  assert.equal(seats.seats.some((seat) => seat.user.primary_email === "teammate@example.com" && seat.membership.status === "invited"), true);
+  assert.equal(seats.seats.some((seat) => seat.user.primary_email === teammateEmail && seat.membership.status === "invited"), true);
 
   const teammateSignin = await postJson(controlBaseUrl, "/api/auth/dev/google", {
-    email: "teammate@example.com",
+    email: teammateEmail,
     display_name: "Teammate Smoke",
     mode: "signin",
   });
@@ -82,7 +85,7 @@ try {
   assert.equal(teammateSignin.body.membership.role, "member");
   assert.equal(teammateSignin.body.membership.status, "active");
   seats = await getJson(controlBaseUrl, `/api/orgs/${orgId}/seats`, { cookie });
-  assert.equal(seats.seats.some((seat) => seat.user.primary_email === "teammate@example.com" && seat.membership.status === "active"), true);
+  assert.equal(seats.seats.some((seat) => seat.user.primary_email === teammateEmail && seat.membership.status === "active"), true);
 
   const demoFirst = await postJson(controlBaseUrl, "/api/auth/dev/google", {
     email: "hello@instantml.ai",
@@ -218,7 +221,7 @@ try {
 
   await stopServer("data");
   await stopServer("control");
-  assertObservabilityLogs();
+  assertObservabilityLogs([ownerEmail, teammateEmail]);
   console.log(
     JSON.stringify(
       {
@@ -251,7 +254,7 @@ try {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
-function assertObservabilityLogs() {
+function assertObservabilityLogs(privateValues = []) {
   const controlLog = readServiceLogs("control");
   const dataLog = readServiceLogs("data");
   const controlEvents = readServiceLogEvents("control");
@@ -264,7 +267,9 @@ function assertObservabilityLogs() {
     assert.match(log, /request_id/, `${servicePlane} logs should include request IDs`);
     assert.match(log, /trace_id/, `${servicePlane} logs should include trace IDs`);
     assert.match(log, /route_plane/, `${servicePlane} logs should include route plane tags`);
-    assert.doesNotMatch(log, /hosted-smoke@example\.com|teammate@example\.com/);
+    for (const privateValue of privateValues) {
+      assert.equal(log.includes(privateValue), false, `${servicePlane} logs should not include ${privateValue}`);
+    }
     assert.doesNotMatch(log, /eval\/return_mean|train\/loss/);
   }
   for (const [servicePlane, events] of [

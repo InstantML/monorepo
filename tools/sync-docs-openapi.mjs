@@ -18,10 +18,14 @@ export const publicOpenApiPaths = [
   "/api/overview",
   "/api/runs/summary",
   "/api/runs/side-by-side",
+  "/api/runs/stop",
   "/api/metrics/series",
   "/api/runs/{run_id}/rank-metrics/summary",
   "/api/runs/{run_id}/lineage",
   "/api/runs/{run_id}/forks",
+  "/api/runs/{run_id}/stop",
+  "/api/runs/{run_id}/stop-signal",
+  "/api/runs/{run_id}/stop-ack",
   "/api/runs/{run_id}/attributes",
   "/api/runs/{run_id}/objects",
   "/api/runs/{run_id}/artifacts",
@@ -48,8 +52,11 @@ export const publicOpenApiPaths = [
   "/api/reports/panels",
   "/api/reports/{report_id}/markdown",
   "/api/dashboard/preferences",
+  "/api/workspace-view-data",
   "/api/workspace-views",
+  "/api/workspace-views/import",
   "/api/workspace-views/{view_id}",
+  "/api/workspace-views/{view_id}/export",
 ];
 
 const defaultServers = [

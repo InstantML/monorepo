@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>InstantML Run Stop Signal Mockups</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --border: #d9e2ec;
+      --border-strong: #b9c7d5;
+      --text: #172033;
+      --muted: #64748b;
+      --muted-2: #8390a3;
+      --green: #0f9f6e;
+      --green-soft: #e7f8f1;
+      --blue: #2563eb;
+      --blue-soft: #e8f0ff;
+      --amber: #b7791f;
+      --amber-soft: #fff4dc;
+      --red: #c2410c;
+      --red-soft: #fff0e8;
+      --ink: #111827;
+      --shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .page {
+      display: grid;
+      gap: 40px;
+      padding: 40px;
+    }
+
+    .mock {
+      width: 1440px;
+      height: 960px;
+      overflow: hidden;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      position: relative;
+    }
+
+    .topbar {
+      height: 78px;
+      display: grid;
+      grid-template-columns: 220px 1fr auto;
+      align-items: center;
+      gap: 24px;
+      padding: 0 28px;
+      background: rgba(255, 255, 255, 0.92);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #102033, #0f9f6e);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 16px;
+    }
+
+    .workbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .search {
+      width: 360px;
+      height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .seg {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      border-radius: 8px;
+      overflow: hidden;
+      height: 38px;
+    }
+
+    .seg span {
+      padding: 9px 12px;
+      border-right: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .seg span:last-child {
+      border-right: 0;
+    }
+
+    .seg .active {
+      color: var(--ink);
+      background: var(--blue-soft);
+      font-weight: 700;
+    }
+
+    .account {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #dbeafe;
+      color: var(--blue);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+    }
+
+    .shell {
+      height: calc(100% - 78px);
+      display: grid;
+      grid-template-columns: 76px 1fr;
+    }
+
+    .rail {
+      background: #101827;
+      padding: 18px 14px;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+
+    .rail-dot {
+      width: 48px;
+      height: 42px;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #cbd5e1;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .rail-dot.active {
+      background: #ffffff;
+      color: #0f172a;
+    }
+
+    .content {
+      padding: 24px;
+      min-width: 0;
+    }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 15px 16px;
+    }
+
+    .kpi small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+
+    .kpi strong {
+      display: block;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+
+    .toolbar {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 10px;
+    }
+
+    .toolbar h1,
+    .panel h1 {
+      font-size: 22px;
+      line-height: 1.1;
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    .toolbar p,
+    .panel p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .button {
+      height: 36px;
+      border-radius: 7px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--ink);
+      padding: 0 13px;
+      font-weight: 700;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .button.primary {
+      border-color: #146c4f;
+      background: var(--green);
+      color: #fff;
+    }
+
+    .button.danger {
+      border-color: #ea580c;
+      background: #fff7ed;
+      color: var(--red);
+    }
+
+    .button.danger-fill {
+      border-color: #c2410c;
+      background: #c2410c;
+      color: #fff;
+    }
+
+    .button[aria-disabled="true"] {
+      opacity: 0.48;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    th {
+      text-align: left;
+      height: 42px;
+      color: var(--muted);
+      background: var(--surface-soft);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      padding: 0 14px;
+      font-weight: 700;
+    }
+
+    td {
+      height: 68px;
+      border-bottom: 1px solid #edf2f7;
+      padding: 0 14px;
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .run-name {
+      display: grid;
+      gap: 4px;
+    }
+
+    .run-name strong {
+      font-size: 14px;
+      color: var(--ink);
+    }
+
+    .run-name small {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+      border-radius: 999px;
+      padding: 0 9px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .pill.running {
+      background: var(--green-soft);
+      color: #08724f;
+    }
+
+    .pill.finished {
+      background: #edf7ed;
+      color: #257346;
+    }
+
+    .pill.failed {
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .pill.stopping {
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
+    .pill.neutral {
+      background: #edf2f7;
+      color: #475569;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .row-action {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .selected-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .selected-banner strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .selected-banner span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 18px;
+      height: calc(100% - 30px);
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      min-width: 0;
+    }
+
+    .run-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+      margin-bottom: 16px;
+    }
+
+    .run-header h1 {
+      font-size: 28px;
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      height: 34px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: #fff;
+      padding: 0 12px;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+    }
+
+    .tab.active {
+      color: var(--ink);
+      background: var(--blue-soft);
+      border-color: #bfdbfe;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .metric-box {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 13px;
+      background: var(--surface-soft);
+    }
+
+    .metric-box small {
+      color: var(--muted);
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .metric-box strong {
+      font-size: 22px;
+    }
+
+    .chart {
+      height: 300px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background:
+        linear-gradient(to right, #edf2f7 1px, transparent 1px),
+        linear-gradient(to bottom, #edf2f7 1px, transparent 1px),
+        #fff;
+      background-size: 64px 64px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .chart svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .control-card {
+      display: grid;
+      gap: 14px;
+    }
+
+    .control-section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      background: var(--surface-soft);
+    }
+
+    .control-section h2 {
+      margin: 0 0 8px;
+      font-size: 15px;
+      letter-spacing: 0;
+    }
+
+    .control-section p {
+      margin: 0;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .textarea {
+      min-height: 86px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: #fff;
+      padding: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .timeline-node {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-top: 2px;
+    }
+
+    .timeline-node.warn {
+      background: var(--amber);
+    }
+
+    .timeline-node.red {
+      background: var(--red);
+    }
+
+    .timeline-item strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .timeline-item span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .code {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      background: #0f172a;
+      color: #dbeafe;
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .notice {
+      background: var(--blue-soft);
+      border: 1px solid #bfdbfe;
+      border-radius: var(--radius);
+      padding: 12px;
+      font-size: 13px;
+      color: #1d4ed8;
+      line-height: 1.4;
+    }
+
+    .mobile-shell {
+      width: 430px;
+      height: 860px;
+      margin: 48px auto;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .mobile-top {
+      height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mobile-body {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .mobile-run {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .mobile-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="mock" id="mock-runs-table">
+      <div class="topbar">
+        <div class="brand"><div class="mark">IM</div> InstantML</div>
+        <div class="workbar">
+          <div class="search">Search runs, tags, config, notes</div>
+          <div class="seg">
+            <span>All 1,248</span>
+            <span class="active">Running 18</span>
+            <span>Stopping 3</span>
+            <span>Stopped 7</span>
+            <span>Failed 41</span>
+          </div>
+        </div>
+        <div class="account"><span>Acme Research</span><div class="avatar">BW</div></div>
+      </div>
+      <div class="shell">
+        <aside class="rail">
+          <div class="rail-dot active">RUN</div>
+          <div class="rail-dot">MET</div>
+          <div class="rail-dot">ART</div>
+          <div class="rail-dot">SET</div>
+        </aside>
+        <section class="content">
+          <div class="kpis">
+            <div class="kpi"><small>Total runs</small><strong>1,248</strong></div>
+            <div class="kpi"><small>Running now</small><strong>18</strong></div>
+            <div class="kpi"><small>Stop requested</small><strong>3</strong></div>
+            <div class="kpi"><small>Metric points</small><strong>842M</strong></div>
+          </div>
+          <div class="toolbar">
+            <div>
+              <h1>Runs</h1>
+              <p>Display status comes from run-control state; legacy status stays available in details.</p>
+            </div>
+            <div class="actions">
+              <button class="button">Columns</button>
+              <button class="button danger">Review stop requests</button>
+            </div>
+          </div>
+          <div class="selected-banner">
+            <div>
+              <strong>2 new stop requests, 2 already stopping, 1 skipped.</strong>
+              <span>Review affected runs before sending. Bulk requests are capped at 100 running runs.</span>
+            </div>
+            <button class="button danger-fill">Review stop requests</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 44px;"></th>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Control state</th>
+                <th>Latest eval/return</th>
+                <th>Duration</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><div class="run-name"><strong>policy-sweep-128</strong><small>rl-cartpole - seed 128 - gpu:a10</small></div></td>
+                <td><span class="pill running"><span class="dot"></span>running</span></td>
+                <td><span class="pill neutral">legacy running</span></td>
+                <td>481.2</td>
+                <td>2h 18m</td>
+                <td><div class="row-action"><button class="button danger">Request stop</button></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><div class="run-name"><strong>policy-sweep-129</strong><small>rl-cartpole - seed 129 - gpu:a10</small></div></td>
+                <td><span class="pill stopping">stopping</span></td>
+                <td><span class="pill stopping">requested 8m ago, no SDK ack</span></td>
+                <td>472.8</td>
+                <td>2h 14m</td>
+                <td><div class="row-action"><button class="button" aria-disabled="true">Needs SDK</button></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><div class="run-name"><strong>policy-sweep-130</strong><small>rl-cartpole - seed 130 - gpu:a10</small></div></td>
+                <td><span class="pill stopping">stopping</span></td>
+                <td><span class="pill stopping">acked by SDK</span></td>
+                <td>468.1</td>
+                <td>2h 11m</td>
+                <td><div class="row-action"><button class="button" aria-disabled="true">Stopping</button></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox"></td>
+                <td><div class="run-name"><strong>baseline-fast-004</strong><small>supervised-regression - pro - cpu</small></div></td>
+                <td><span class="pill finished">finished</span></td>
+                <td><span class="pill neutral">legacy finished</span></td>
+                <td>0.91</td>
+                <td>18m</td>
+                <td><div class="row-action"><button class="button" aria-disabled="true">Request stop</button></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" checked></td>
+                <td><div class="run-name"><strong>long-context-088</strong><small>finetune - lr 2e-5 - gpu:h100</small></div></td>
+                <td><span class="pill running"><span class="dot"></span>running</span></td>
+                <td><span class="pill neutral">legacy running</span></td>
+                <td>0.76</td>
+                <td>47m</td>
+                <td><div class="row-action"><button class="button danger">Request stop</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </section>
+
+    <section class="mock" id="mock-run-detail">
+      <div class="topbar">
+        <div class="brand"><div class="mark">IM</div> InstantML</div>
+        <div class="workbar">
+          <div class="seg">
+            <span>Runs</span>
+            <span>Metrics</span>
+            <span class="active">Run Detail</span>
+            <span>Artifacts</span>
+          </div>
+        </div>
+        <div class="account"><span>Acme Research</span><div class="avatar">BW</div></div>
+      </div>
+      <div class="shell">
+        <aside class="rail">
+          <div class="rail-dot active">RUN</div>
+          <div class="rail-dot">MET</div>
+          <div class="rail-dot">ART</div>
+          <div class="rail-dot">SET</div>
+        </aside>
+        <section class="content">
+          <div class="main-grid">
+            <article class="panel">
+              <header class="run-header">
+                <div>
+                  <p>Run</p>
+                  <h1>policy-sweep-128</h1>
+                  <p>rl-cartpole - seed 128 - source clean - started 2h 18m ago</p>
+                </div>
+                <div class="actions">
+                  <span class="pill running"><span class="dot"></span>running</span>
+                  <button class="button danger">Request stop</button>
+                </div>
+              </header>
+              <nav class="tabs">
+                <div class="tab active">Summary</div>
+                <div class="tab">Data</div>
+                <div class="tab">Logs</div>
+                <div class="tab">Files</div>
+                <div class="tab">System</div>
+                <div class="tab">Graph</div>
+              </nav>
+              <div class="metric-grid">
+                <div class="metric-box"><small>Return mean</small><strong>481.2</strong></div>
+                <div class="metric-box"><small>Loss</small><strong>0.18</strong></div>
+                <div class="metric-box"><small>Upload health</small><strong>synced</strong></div>
+              </div>
+              <div class="chart">
+                <svg viewBox="0 0 820 300" aria-hidden="true">
+                  <polyline fill="none" stroke="#2563eb" stroke-width="4" points="20,252 100,220 180,210 260,168 340,140 420,115 500,92 580,78 660,68 740,54 800,48" />
+                  <polyline fill="none" stroke="#0f9f6e" stroke-width="4" points="20,268 100,245 180,218 260,192 340,150 420,128 500,104 580,86 660,84 740,70 800,64" />
+                </svg>
+              </div>
+            </article>
+            <aside class="panel control-card">
+              <div>
+                <h1>Request Stop</h1>
+                <p>Record a cooperative request. The run exits only after training code checks the SDK signal.</p>
+              </div>
+              <div class="control-section">
+                <h2>Confirmation</h2>
+                <p>The API records the request immediately. It cannot terminate external compute by itself.</p>
+                <div class="field">
+                  <label for="reason">Reason optional</label>
+                  <div class="textarea" id="reason">Validation loss diverged after the new reward scale change.</div>
+                </div>
+                <p style="margin-top: 8px;">Reason text is visible in the run audit trail to workspace members with run access.</p>
+              </div>
+              <div class="control-section">
+                <h2>Current signal path</h2>
+                <p>SDK capability is unknown. Last upload heartbeat was 11 seconds ago. If no acknowledgement arrives after two poll windows, the run stays marked as stop requested.</p>
+              </div>
+              <div class="actions">
+                <button class="button">Cancel</button>
+                <button class="button danger-fill">Send request</button>
+              </div>
+              <div class="notice">For jobs that do not poll InstantML, this marks the run as stop requested but cannot terminate external compute.</div>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="mock" id="mock-stopped-state">
+      <div class="topbar">
+        <div class="brand"><div class="mark">IM</div> InstantML</div>
+        <div class="workbar">
+          <div class="seg">
+            <span>Runs</span>
+            <span>Metrics</span>
+            <span class="active">Run Detail</span>
+            <span>Artifacts</span>
+          </div>
+        </div>
+        <div class="account"><span>Acme Research</span><div class="avatar">BW</div></div>
+      </div>
+      <div class="shell">
+        <aside class="rail">
+          <div class="rail-dot active">RUN</div>
+          <div class="rail-dot">MET</div>
+          <div class="rail-dot">ART</div>
+          <div class="rail-dot">SET</div>
+        </aside>
+        <section class="content">
+          <div class="main-grid">
+            <article class="panel">
+              <header class="run-header">
+                <div>
+                  <p>Run</p>
+                  <h1>policy-sweep-130</h1>
+                  <p>rl-cartpole - seed 130 - stopped after user request</p>
+                </div>
+                <div class="actions">
+                  <span class="pill failed">stopped</span>
+                  <button class="button">Fork from checkpoint</button>
+                </div>
+              </header>
+              <div class="metric-grid">
+                <div class="metric-box"><small>Final return mean</small><strong>468.1</strong></div>
+                <div class="metric-box"><small>Stopped at step</small><strong>18,420</strong></div>
+                <div class="metric-box"><small>SDK acknowledgement</small><strong>8s</strong></div>
+              </div>
+              <div class="chart">
+                <svg viewBox="0 0 820 300" aria-hidden="true">
+                  <polyline fill="none" stroke="#2563eb" stroke-width="4" points="20,262 90,238 160,214 230,186 300,154 370,128 440,110 510,98 580,82 650,76 720,74" />
+                  <line x1="720" y1="24" x2="720" y2="280" stroke="#c2410c" stroke-width="3" stroke-dasharray="8 7" />
+                  <circle cx="720" cy="74" r="7" fill="#c2410c" />
+                </svg>
+              </div>
+              <div class="timeline">
+                <div class="timeline-item"><div class="timeline-node warn"></div><div><strong>Stop requested</strong><span>Brendan requested a cooperative stop at 10:42:18.</span></div></div>
+                <div class="timeline-item"><div class="timeline-node"></div><div><strong>SDK acknowledged</strong><span>instantml 0.18.0 observed the request 8 seconds later.</span></div></div>
+                <div class="timeline-item"><div class="timeline-node red"></div><div><strong>Run closed as stopped</strong><span>Legacy status is failed for older clients; dashboard displays stopped from run control metadata.</span></div></div>
+              </div>
+            </article>
+            <aside class="panel control-card">
+              <div>
+                <h1>SDK Stop Helper</h1>
+                <p>Training code chooses where it is safe to exit.</p>
+              </div>
+              <div class="code">try:
+    for step, batch in batches:
+        run.raise_if_stop_requested()
+        train_step(batch)
+except im.InstantMLStopRequested:
+    run.finish_stopped()
+    raise SystemExit(143)
+
+# or
+if run.should_stop():
+    run.finish_stopped()
+    return</div>
+              <div class="control-section">
+                <h2>Backwards compatible behavior</h2>
+                <p>Older SDKs keep logging. Older dashboards see this as a failed run. New dashboards display the stopped state and audit trail.</p>
+              </div>
+              <button class="button primary">Copy helper snippet</button>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="mock" id="mock-mobile-stop">
+      <div class="mobile-shell">
+        <div class="mobile-top">
+          <div class="brand"><div class="mark">IM</div> Runs</div>
+          <div class="avatar">BW</div>
+        </div>
+        <div class="mobile-body">
+          <div class="seg">
+            <span>All</span>
+            <span class="active">Running 18</span>
+            <span>Stopping 3</span>
+          </div>
+          <div class="mobile-run">
+            <div class="run-name">
+              <strong>policy-sweep-128</strong>
+              <small>rl-cartpole - seed 128</small>
+            </div>
+            <span class="pill running"><span class="dot"></span>running</span>
+            <div class="metric-grid" style="grid-template-columns: 1fr 1fr; margin: 0;">
+              <div class="metric-box"><small>Return</small><strong>481.2</strong></div>
+              <div class="metric-box"><small>Duration</small><strong>2h</strong></div>
+            </div>
+            <div class="mobile-actions">
+              <button class="button">Details</button>
+              <button class="button danger">Request stop</button>
+            </div>
+          </div>
+          <div class="panel control-card" style="padding: 16px;">
+            <div>
+              <h1>Request stop</h1>
+              <p>Confirm before sending a cooperative stop signal.</p>
+            </div>
+            <div class="field">
+              <label>Reason optional</label>
+              <div class="textarea">Metric diverged after reward scale change.</div>
+            </div>
+            <div class="control-section" style="padding: 12px;">
+              <h2>Signal path</h2>
+              <p>SDK capability unknown. Last heartbeat 11 seconds ago.</p>
+            </div>
+            <div class="mobile-actions">
+              <button class="button">Cancel</button>
+              <button class="button danger-fill" style="justify-content: center;">Send request</button>
+            </div>
+            <div class="notice">External jobs stop only after their SDK checks the signal.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

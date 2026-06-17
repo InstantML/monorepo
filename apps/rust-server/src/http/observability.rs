@@ -825,7 +825,6 @@ fn is_control_route(segments: &[&str]) -> bool {
             | ["api", "billing", ..]
             | ["api", "dashboard", "preferences"]
             | ["api", "workspace-views", ..]
-            | ["api", "reports", ..]
             | ["api", "users"]
             | ["api", "orgs", ..]
     ) && !is_platform_route(segments)
@@ -840,6 +839,7 @@ fn is_data_route(segments: &[&str]) -> bool {
             | ["api", "metrics", "series"]
             | ["api", "objects", ..]
             | ["api", "artifacts", ..]
+            | ["api", "reports", ..]
             | ["api", "overview"]
             | ["api", "export"]
             | ["api", "usage", ..]
@@ -1076,7 +1076,7 @@ mod tests {
         );
         assert_eq!(
             route_plane_for_path("/api/reports/share/sensitive-token"),
-            RoutePlane::Control
+            RoutePlane::Data
         );
         assert_eq!(
             route_plane_for_path("/runs/run-1/metrics"),

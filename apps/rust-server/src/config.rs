@@ -212,7 +212,8 @@ pub struct HostedClickHouseConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CellRoutingConfig {
     pub environment: String,
-    pub current_data_cell_id: Option<String>,
+    pub placement_data_cell_id: Option<String>,
+    pub heartbeat_data_cell_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -421,14 +422,19 @@ fn cell_routing_config() -> AppResult<CellRoutingConfig> {
         .or_else(|_| env::var("INSTANTML_ENVIRONMENT"))
         .unwrap_or_else(|_| "local".to_string());
     let environment = normalize_cell_label("INSTANTML_DEPLOY_ENV", &environment)?;
-    let current_data_cell_id = env::var("INSTANTML_CELL_ID")
-        .or_else(|_| env::var("INSTANTML_DEFAULT_DATA_CELL_ID"))
+    let heartbeat_data_cell_id = env::var("INSTANTML_CELL_ID")
         .ok()
         .map(|value| normalize_cell_label("INSTANTML_CELL_ID", &value))
         .transpose()?;
+    let default_data_cell_id = env::var("INSTANTML_DEFAULT_DATA_CELL_ID")
+        .ok()
+        .map(|value| normalize_cell_label("INSTANTML_DEFAULT_DATA_CELL_ID", &value))
+        .transpose()?;
+    let placement_data_cell_id = heartbeat_data_cell_id.clone().or(default_data_cell_id);
     Ok(CellRoutingConfig {
         environment,
-        current_data_cell_id,
+        placement_data_cell_id,
+        heartbeat_data_cell_id,
     })
 }
 
@@ -1041,12 +1047,23 @@ mod tests {
         let config = cell_routing_config().unwrap();
         assert_eq!(config.environment, "prod");
         assert_eq!(
-            config.current_data_cell_id.as_deref(),
+            config.placement_data_cell_id.as_deref(),
+            Some("us-central1-b")
+        );
+        assert_eq!(
+            config.heartbeat_data_cell_id.as_deref(),
             Some("us-central1-b")
         );
 
+        std::env::remove_var("INSTANTML_CELL_ID");
+        let config = cell_routing_config().unwrap();
+        assert_eq!(
+            config.placement_data_cell_id.as_deref(),
+            Some("us-central1-a")
+        );
+        assert_eq!(config.heartbeat_data_cell_id.as_deref(), None);
+
         std::env::remove_var("INSTANTML_DEPLOY_ENV");
         std::env::remove_var("INSTANTML_DEFAULT_DATA_CELL_ID");
-        std::env::remove_var("INSTANTML_CELL_ID");
     }
 }

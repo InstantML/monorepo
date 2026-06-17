@@ -1,5 +1,6 @@
 use super::*;
 
+mod control;
 mod helpers;
 mod lifecycle;
 mod lineage;
@@ -15,6 +16,7 @@ use metrics::{count_points_for_runs_chunked, metric_series_for_runs_key_chunked}
 use naming::{generate_run_name, DEFAULT_PROJECT_NAME};
 use search::{compile_run_search, run_matches_search, CompiledRunSearch};
 
+pub use control::{acknowledge_run_stop, request_bulk_run_stop, request_run_stop, run_stop_signal};
 pub use helpers::numeric_desc;
 pub use lifecycle::{create_run, get_run, update_run};
 pub use lineage::{fork_run, run_lineage};

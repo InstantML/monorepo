@@ -44,7 +44,12 @@ npm run deploy:cloud-run
 npm run deploy:cloud-run -- --help
 ```
 
-The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. The managed router pins auth, billing, org, dashboard preference, and workspace-view routes to control; tenant product routes such as `/api/reports` use the data backend. Admin endpoints stay on the control service for operator access and are not added to the public router path map. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
+
+For split deployments with the managed HTTPS router, auth, billing,
+organization, workspace-view, dashboard-preference, and invitation routes are
+routed to the control service. Report routes and other product data routes use
+the data service by default.
 
 Important environment variables:
 
@@ -53,7 +58,7 @@ Important environment variables:
 - `INSTANTML_CLOUD_RUN_SERVICE`: legacy combined Cloud Run service name. Default: `instantml-rust-api`.
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`: split control Cloud Run service name. Default: `instantml-control`.
 - `INSTANTML_CLOUD_RUN_DATA_SERVICE`: split data Cloud Run service name. Default: `instantml-data-<region>-a`.
-- `INSTANTML_CLOUD_RUN_DATA_CELL`: split data-cell label. Default: `<region>-a`; the helper also sets runtime `INSTANTML_DEFAULT_DATA_CELL_ID` from this value so the Rust service can auto-register and heartbeat the current `data_cells` row before stamping new hosted tenant routes.
+- `INSTANTML_CLOUD_RUN_DATA_CELL`: split data-cell label. Default: `<region>-a`; the helper sets runtime `INSTANTML_DEFAULT_DATA_CELL_ID` from this value for route placement and sets `INSTANTML_CELL_ID` only on the split data service so that service can register and heartbeat its `data_cells` row.
 - `INSTANTML_CLOUD_RUN_CONTROL_SCALING` / `INSTANTML_CLOUD_RUN_DATA_SCALING`: `manual` or `auto`. Prod defaults to manual one-instance services; staging defaults to auto min `0` max `1`.
 - `INSTANTML_CLOUD_RUN_CONTROL_MIN_INSTANCES` / `INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES`: auto-scaling bounds for control. Defaults: `0` and `1`.
 - `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES` / `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for data. Defaults: `0` and `1`.

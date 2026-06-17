@@ -546,7 +546,7 @@ impl Store {
 
     fn current_cell_placement(&self) -> Option<TenantRoutePlacement> {
         self.cell_routing
-            .current_data_cell_id
+            .placement_data_cell_id
             .as_ref()
             .map(|cell_id| TenantRoutePlacement {
                 environment: self.cell_routing.environment.clone(),
@@ -2146,7 +2146,8 @@ mod tests {
             },
             cell_routing: CellRoutingConfig {
                 environment: "test".to_string(),
-                current_data_cell_id: None,
+                placement_data_cell_id: None,
+                heartbeat_data_cell_id: None,
             },
             tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
             customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),

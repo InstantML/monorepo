@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Columns3, Download, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Columns3, Download, LayoutGrid, RefreshCw, Search, SlidersHorizontal, Square, Table2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -8,13 +8,17 @@ import { shortMetricName } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import type { TableColumns } from "../../dashboard-types";
 
+export type RunsViewMode = "panels" | "table";
+
+// Keys are persisted (TableColumns); labels track the parity table columns
+// each key now controls: notes drives Owner, duration drives Step.
 const tableColumnLabels: Array<[keyof TableColumns, string]> = [
   ["status", "Status"],
   ["tags", "Tags"],
-  ["notes", "Notes"],
+  ["notes", "Owner"],
   ["started", "Started"],
-  ["duration", "Duration"],
-  ["latest", "Latest metric"],
+  ["duration", "Step"],
+  ["latest", "Metric"],
 ];
 
 export function RunsCommandbar({
@@ -28,7 +32,9 @@ export function RunsCommandbar({
   onPinnedMetricFilter,
   onPinnedMetric,
   onRefresh,
+  onRequestSelectedStop,
   onTableColumns,
+  onViewMode,
   pinnedMetricFilter,
   pinnedMetricFilterValid,
   pinnedMetricOptions,
@@ -36,7 +42,10 @@ export function RunsCommandbar({
   selectedRunCount,
   selectedRunExportDisabled,
   selectedRunExportTitle,
+  selectedStopCandidateCount = 0,
+  selectedStopDisabledReason = "",
   tableColumns,
+  viewMode,
 }: {
   columnsOpen: boolean;
   exportSelectedBusy: boolean;
@@ -48,7 +57,9 @@ export function RunsCommandbar({
   onPinnedMetricFilter: (value: string) => void;
   onPinnedMetric: (metric: string) => void;
   onRefresh: () => void;
+  onRequestSelectedStop?: () => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
+  onViewMode: (view: RunsViewMode) => void;
   pinnedMetricFilter: string;
   pinnedMetricFilterValid: boolean;
   pinnedMetricOptions: string[];
@@ -56,7 +67,10 @@ export function RunsCommandbar({
   selectedRunCount: number;
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
+  selectedStopCandidateCount?: number;
+  selectedStopDisabledReason?: string;
   tableColumns: TableColumns;
+  viewMode: RunsViewMode;
 }) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
@@ -64,6 +78,7 @@ export function RunsCommandbar({
   const columnsMenuRef = useRef<HTMLDivElement>(null);
   const columnsTriggerRef = useRef<HTMLButtonElement>(null);
   const exportHelpId = "selected-runs-export-help";
+  const stopHelpId = "selected-runs-stop-help";
 
   useEffect(() => {
     if (!actionsOpen) return undefined;
@@ -124,6 +139,26 @@ export function RunsCommandbar({
         value={metricOptions.length ? metricKey : ""}
       />
       <div className="command-spacer" />
+      <div className="runs-view-switch" role="group" aria-label="Runs view">
+        <button
+          aria-pressed={viewMode === "panels"}
+          className={viewMode === "panels" ? "active" : ""}
+          onClick={() => onViewMode("panels")}
+          title="Run selector with chart panels"
+          type="button"
+        >
+          <LayoutGrid size={14} /> Panels
+        </button>
+        <button
+          aria-pressed={viewMode === "table"}
+          className={viewMode === "table" ? "active" : ""}
+          onClick={() => onViewMode("table")}
+          title="Flat sortable runs table"
+          type="button"
+        >
+          <Table2 size={14} /> Table
+        </button>
+      </div>
       <div className="runs-actions-menu" ref={actionsMenuRef}>
         <button
           aria-controls="runs-actions-popover"
@@ -189,11 +224,31 @@ export function RunsCommandbar({
               <Download size={15} /> {exportSelectedBusy ? "Exporting" : "Export CSV"}
             </button>
             {selectedRunExportDisabled ? <span className="export-selected-runs-help">{selectedRunExportTitle}</span> : null}
+            {onRequestSelectedStop ? (
+              <>
+                <button
+                  aria-describedby={!selectedStopCandidateCount && selectedStopDisabledReason ? stopHelpId : undefined}
+                  aria-label={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason || "No selected running runs can be stopped"}
+                  className="secondary compact-button stop-selected-runs-button"
+                  disabled={!selectedStopCandidateCount}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onRequestSelectedStop();
+                  }}
+                  title={selectedStopCandidateCount ? `Review stop request for ${selectedStopCandidateCount} selected runs` : selectedStopDisabledReason || "Select running runs that are not already stopping."}
+                  type="button"
+                >
+                  <Square size={15} /> Review stop{selectedStopCandidateCount === 1 ? " request" : " requests"}{selectedStopCandidateCount ? ` ${selectedStopCandidateCount}` : ""}
+                </button>
+                {!selectedStopCandidateCount && selectedStopDisabledReason ? <span className="stop-selected-runs-help">{selectedStopDisabledReason}</span> : null}
+              </>
+            ) : null}
             <button className="secondary compact-button" type="button" aria-label="Refresh runs" onClick={() => { setActionsOpen(false); onRefresh(); }}><RefreshCw size={15} /> Refresh runs</button>
           </div>
         ) : null}
       </div>
       <span className="visually-hidden" id={exportHelpId}>{selectedRunExportTitle}</span>
+      {selectedStopDisabledReason ? <span className="visually-hidden" id={stopHelpId}>{selectedStopDisabledReason}</span> : null}
     </div>
   );
 }

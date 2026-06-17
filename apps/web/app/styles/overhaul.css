@@ -163,7 +163,7 @@
 }
 :root[data-theme="light"] .tabs.pinned,
 :root[data-theme="light"] .shell.nav-auto-open .tabs {
-  box-shadow: 2px 0 16px 0 rgba(15, 23, 42, 0.08);
+  box-shadow: 2px 0 16px 0 rgba(23, 26, 20, 0.08);
 }
 .tab-button {
   border-radius: var(--radius);
@@ -872,6 +872,72 @@ textarea:focus {
   gap: 14px;
   padding: 14px;
 }
+.workspace-view-modal.compact {
+  width: min(460px, calc(100vw - 32px));
+}
+.workspace-view-import-body {
+  gap: 12px;
+}
+.workspace-view-import-text {
+  min-height: 180px;
+  resize: vertical;
+  font: 500 12px/1.5 var(--font-mono);
+}
+.workspace-view-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.workspace-view-preview div,
+.workspace-view-delete-body dl {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  margin: 0;
+}
+.workspace-view-preview span,
+.workspace-view-delete-body dt {
+  color: var(--muted);
+  font: 650 10.5px/1 var(--font-mono);
+  letter-spacing: var(--tracking-eyebrow);
+  text-transform: uppercase;
+}
+.workspace-view-preview strong,
+.workspace-view-delete-body dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: 600 12px/1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.workspace-view-preview ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font: 500 12px/1.4 var(--font-sans);
+}
+.workspace-view-delete-body p {
+  margin: 0;
+  color: var(--text);
+  font: 500 13px/1.4 var(--font-sans);
+}
+button.secondary.danger-action,
+:root[data-theme="dark"] button.secondary.danger-action {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: var(--surface);
+  color: var(--danger);
+  box-shadow: none;
+}
+button.secondary.danger-action:hover:not(:disabled),
+:root[data-theme="dark"] button.secondary.danger-action:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
 .workspace-segment,
 .workspace-plan-grid {
   display: grid;
@@ -1030,7 +1096,7 @@ textarea:focus {
 .empty-workspace-snippet__code {
   padding: 14px 16px;
   font: 500 12.5px/1.65 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  color: #e2e8f0;
+  color: #e0e3d8;
   white-space: pre;
   overflow-x: auto;
   margin: 0;
@@ -1222,6 +1288,13 @@ textarea:focus {
   color: var(--muted);
 }
 .topbar .icon-button.framed:hover { background: var(--surface-hover); color: var(--text); border-color: var(--line-strong); }
+.topbar .icon-button.framed:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.topbar .icon-button.framed.view-action-button.danger:not(:disabled) {
+  color: var(--danger);
+}
 
 /* Clerk UserButton: line up with the 30px square icon-buttons. */
 .brandbar-user-avatar {
@@ -1297,6 +1370,9 @@ textarea:focus {
 .workbar .status-message.error { color: var(--danger); }
 .workbar #demo-reset,
 .workbar #save-view { height: 32px; border-radius: var(--radius); white-space: nowrap; }
+.workbar .view-action-button {
+  flex: 0 0 30px;
+}
 
 /* ── Run Detail header — tight single row (run-detail.html mock) ────────── */
 .run-workspace-header {
@@ -1559,7 +1635,7 @@ textarea:focus {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--line-soft);
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.18), 0 0 0 1px var(--line-soft);
   color: var(--text);
 }
 :root[data-theme="dark"] .workbar-search-popover {
@@ -1741,7 +1817,7 @@ textarea:focus {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--line-soft);
+  box-shadow: 0 18px 44px rgba(23, 26, 20, 0.18), 0 0 0 1px var(--line-soft);
 }
 :root[data-theme="dark"] .view-actions-popover {
   background: color-mix(in srgb, var(--surface) 92%, var(--bg));
@@ -1775,6 +1851,17 @@ textarea:focus {
 .view-actions-popover .secondary {
   justify-content: center;
   width: 100%;
+}
+.view-actions-divider {
+  height: 1px;
+  background: var(--line);
+}
+.view-actions-popover .secondary.danger:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
+  color: var(--danger);
+}
+.view-actions-popover .secondary.danger:not(:disabled):hover {
+  background: var(--danger-soft);
 }
 .view-actions-help {
   color: var(--muted);
@@ -2062,6 +2149,74 @@ textarea:focus {
   padding: 5px;
 }
 
+/* ── Settings: calm, well-segmented key/value lists ────────────────────────
+ * The settings tab is a reference surface, not a telemetry wall. Render each
+ * panel as one ruled list (sans label left, value right) instead of a stack of
+ * separately bordered tiles with corner registration ticks. Mono is dropped
+ * here: the values are short and column-aligned, so tabular sans figures read
+ * cleanly and the page stops looking like terminal output. */
+.settings-grid .settings-list .setting-row {
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+  align-items: baseline;
+  gap: 16px;
+  padding: 9px 2px;
+}
+.settings-grid .settings-list > .setting-row:last-child {
+  border-bottom: 0;
+}
+
+/* A metered quota reads as one unit: label/value line with the bar tucked
+ * directly beneath it (was a tile floating above a detached bar). */
+.settings-grid .settings-list .usage-row {
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 9px;
+}
+.settings-grid .settings-list > .usage-row:last-child {
+  border-bottom: 0;
+}
+.settings-grid .settings-list .usage-row > .setting-row {
+  border-bottom: 0;
+  padding: 9px 2px 5px;
+}
+.settings-grid .settings-list .usage-row .usage-meter {
+  margin-top: 3px;
+}
+
+/* Labels: sans, sentence case, quiet (were uppercase mono micro-labels). */
+.settings-grid .settings-list .setting-row span {
+  font: 500 12.5px/1.35 var(--font-sans);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+/* Values: sans + tabular figures, right-aligned so digits still line up. */
+.settings-grid .settings-list .setting-row strong {
+  font: 600 13.5px/1.3 var(--font-sans);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text);
+}
+.settings-grid .settings-list .setting-row strong.good { color: var(--accent); }
+.settings-grid .settings-list .setting-row strong.bad { color: var(--danger); }
+.settings-grid .settings-list .setting-row strong.live { color: var(--warm); }
+.settings-grid .settings-list .setting-hint { margin-top: 8px; }
+/* The usage-limit warning is a prose sentence, not a code line → sans. */
+.settings-grid .admin-alert-list .api-row strong {
+  font: 600 12.5px/1.45 var(--font-sans);
+  letter-spacing: 0;
+}
+
+/* Usage meters read as a utilization gauge: quiet → amber → red as the quota
+ * fills (green stays reserved for live/best, never "you used some quota"). */
+.usage-meter.tone-neutral span { background: var(--dim); }
+.usage-meter.tone-live span { background: var(--warm); }
+.usage-meter.tone-bad span { background: var(--danger); }
+.usage-meter.tone-good span { background: var(--accent); }
+
 @media (max-width: 860px) {
   .admin-form-row {
     grid-template-columns: 1fr;
@@ -2277,7 +2432,7 @@ textarea:focus {
 :root[data-theme="dark"] .compare-run-cell.changed,
 .compare-cell.changed,
 .compare-run-cell.changed {
-  background: rgba(31, 184, 119, 0.07);
+  background: rgba(43, 224, 130, 0.07);
   color: var(--accent-strong);
   font-weight: 600;
 }
@@ -2416,14 +2571,14 @@ button.compare-row-head.active {
 
 :root[data-theme="dark"] button.compare-row-head:hover,
 :root[data-theme="dark"] button.compare-row-head.active {
-  background: rgba(31, 184, 119, 0.13);
+  background: rgba(43, 224, 130, 0.13);
   color: var(--accent-strong);
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
 :root[data-theme="dark"] .compare-row-head,
 :root[data-theme="dark"] .compare-run-identity {
-  background: #0b121e;
+  background: #0d0f0c;
 }
 
 :root[data-theme="dark"] .compare-row-head {
@@ -2455,14 +2610,16 @@ button.compare-row-head.active {
   border-right: 1px solid var(--line);
   padding: 12px 8px 10px;
   overflow: visible;
-  transition: box-shadow 140ms ease;
+  transition: width 160ms ease, box-shadow 140ms ease;
 }
 :root[data-theme="dark"] .tabs { background: var(--color-ink); }
 
 /* Auto-open expands the .tabs element itself to 212px so its opaque
  * background covers tab labels without leaking page content through gaps
- * between buttons. Keyboard focus only — hover never expands the rail, so
- * icon clicks always navigate on the first click. */
+ * between buttons. The grid column stays 56px, so the expanded rail slides
+ * out as an overlay rather than reflowing the page. Triggered by hover
+ * (nav-auto-open) and by keyboard focus; hover expands on pointer-enter —
+ * before any click — so icon clicks still land on their first press. */
 .shell:not(.nav-pinned).nav-auto-open .tabs,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) {
   width: 212px;
@@ -2470,7 +2627,7 @@ button.compare-row-head.active {
 }
 :root[data-theme="light"] .shell:not(.nav-pinned).nav-auto-open .tabs,
 :root[data-theme="light"] .shell:not(.nav-pinned) .tabs:has(:focus-visible) {
-  box-shadow: 22px 0 46px -12px rgba(15, 23, 42, 0.18);
+  box-shadow: 22px 0 46px -12px rgba(23, 26, 20, 0.18);
 }
 
 .tab-scroll {
@@ -2483,19 +2640,24 @@ button.compare-row-head.active {
 /* dashboard.css owns the base nav-label behavior. This later layer repeats the
  * state selectors because overhaul.css is currently the winning chrome layer. */
 .tab-group-label {
-  display: none;
+  display: block;
+  min-height: 17px;
   padding: 3px 9px 4px;
   color: var(--faint);
   font: 700 10px/1 var(--font-mono);
+  opacity: 0;
   text-transform: uppercase;
+  visibility: hidden;
 }
 .shell.nav-pinned .tab-group-label,
 .shell:not(.nav-pinned).nav-auto-open .tab-group-label,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-group-label {
-  display: block;
+  opacity: 1;
+  visibility: visible;
 }
-.shell:not(.nav-pinned):not(.nav-auto-open) .tab-group-label {
-  display: none;
+.shell:not(.nav-pinned):not(.nav-auto-open) .tabs:not(:has(:focus-visible)) .tab-group-label {
+  opacity: 0;
+  visibility: hidden;
 }
 /* WebKit / Blink — subtle thumb that matches the dark dashboard chrome,
  * brightens on hover. Track stays invisible so the rail stays clean. */
@@ -2528,9 +2690,9 @@ button.compare-row-head.active {
   box-shadow: 1px 0 0 var(--line);
 }
 .shell:not(.nav-pinned) .tab-button {
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0;
-  padding: 8px;
+  padding: 8px 12px;
 }
 .shell:not(.nav-pinned) .tab-label {
   max-width: 0;
@@ -2540,7 +2702,7 @@ button.compare-row-head.active {
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-button {
   justify-content: flex-start;
   gap: 8px;
-  padding: 8px 9px;
+  padding: 8px 12px;
 }
 .shell:not(.nav-pinned).nav-auto-open .tab-label,
 .shell:not(.nav-pinned) .tabs:has(:focus-visible) .tab-label {
@@ -2569,6 +2731,7 @@ button.compare-row-head.active {
   background: var(--accent);
 }
 .tab-button.active svg { color: var(--accent); }
+.tab-button svg { flex: 0 0 16px; }
 .tab-label { white-space: nowrap; }
 .nav-footer { border-top: 1px solid var(--line-soft); padding-top: 8px; }
 
@@ -2759,9 +2922,9 @@ button.compare-row-head.active {
   .workbar-spacer,
   .workbar .system-status,
   .workbar-name,
-  .workbar #demo-reset,
-  .workbar #save-view,
-  .workbar .custom-select-control.compact,
+  .workbar > #demo-reset,
+  .workbar > #save-view,
+  .workbar > .custom-select-control.compact,
   .workbar > .icon-button {
     display: none;
   }
@@ -2877,7 +3040,7 @@ button.compare-row-head.active {
 .breadcrumb .crumb-link:hover { color: var(--text); text-decoration-color: currentColor; }
 
 /* Tokenize row-hover wash so light theme stays visible */
-:root { --row-hover: rgba(15, 23, 42, 0.04); }
+:root { --row-hover: rgba(23, 26, 20, 0.04); }
 :root[data-theme="dark"] { --row-hover: rgba(255, 255, 255, 0.03); }
 .table tr:hover td,
 :root[data-theme="dark"] tbody tr:hover,
@@ -2894,7 +3057,7 @@ button.compare-row-head.active {
  * from comparison; the body = open the run. */
 .workspace-run-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr) 34px;
   align-items: stretch;
   gap: 0;
   padding: 0;
@@ -2926,7 +3089,15 @@ button.compare-row-head.active {
   padding: 8px 10px 8px 4px;
   cursor: pointer;
   min-width: 0;
-  border-radius: 0 var(--radius) var(--radius) 0;
+  border-radius: 0;
+}
+.workspace-run-stop {
+  align-self: center;
+  margin: 0 6px 0 0;
+}
+.workspace-run-stop:hover,
+.workspace-run-stop:focus-visible {
+  background: var(--danger-soft);
 }
 .workspace-run-open:hover { background: var(--surface-hover); }
 .workspace-run-open:hover .workspace-run-body strong { color: var(--accent-strong); }
@@ -2948,6 +3119,43 @@ button.compare-row-head.active {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Persistent run-selection tray: renders only while a selection exists, so it
+ * never reserves dead space. Fixed above page content, below modals. */
+.selection-tray {
+  position: fixed;
+  right: 16px;
+  bottom: 14px;
+  left: calc(var(--sidebar-width, 56px) + 16px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
+  padding: 9px 14px;
+}
+
+.selection-tray-count {
+  color: var(--accent);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.selection-tray-names {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-tray-spacer {
+  flex: 1;
+}
+
 .upload-health-chip {
   justify-self: start;
   width: max-content;
@@ -2960,7 +3168,7 @@ button.compare-row-head.active {
   white-space: nowrap;
 }
 .upload-health-chip.good {
-  border-color: rgba(31, 184, 119, 0.24);
+  border-color: rgba(43, 224, 130, 0.24);
   color: var(--accent-strong);
 }
 .upload-health-chip.live {
@@ -3157,3 +3365,29 @@ button.compare-row-head.active {
   border-radius: var(--radius);
 }
 .workspace-run-select:focus-visible .workspace-eye span { border-color: var(--accent); }
+
+/* 3.4: the breadcrumb project crumb is a button that opens the project
+   selector; inherit the crumb-link look without button chrome. */
+button.crumb-project {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.admin-hint a {
+  color: var(--accent);
+}
+
+.admin-hint code {
+  font-size: 11.5px;
+}

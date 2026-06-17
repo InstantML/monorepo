@@ -28,20 +28,24 @@ pub async fn overview(
     if project_filter(query).is_none()
         && !has_text_search(query)
         && !has_status_filter(query)
+        && !has_display_status_filter(query)
         && ctx.auth.as_ref().and_then(|auth| auth.project_id).is_none()
     {
-        let (total_runs, active_runs, failed_runs) = {
+        let (total_runs, active_runs, failed_runs, stopping_runs, stopped_runs) = {
             let data = store.data.lock().await;
             data.runs
                 .values()
                 .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
                 .fold(
-                    (0_usize, 0_usize, 0_usize),
-                    |(total, active, failed), run| {
+                    (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
+                    |(total, active, failed, stopping, stopped), run| {
+                        let display = run_control_display_status(run, run_control_for(&data, run));
                         (
                             total + 1,
                             active + usize::from(run.status == "running"),
                             failed + usize::from(run.status == "failed"),
+                            stopping + usize::from(display == "stopping"),
+                            stopped + usize::from(display == "stopped"),
                         )
                     },
                 )
@@ -59,6 +63,8 @@ pub async fn overview(
                 "total_runs": total_runs,
                 "active_runs": active_runs,
                 "failed_runs": failed_runs,
+                "stopping_runs": stopping_runs,
+                "stopped_runs": stopped_runs,
                 "best_eval_return": best_eval_return,
                 "metric_points": metric_points
             }
@@ -67,9 +73,10 @@ pub async fn overview(
     if let Some(project) = project_filter(query) {
         if !has_text_search(query)
             && !has_status_filter(query)
+            && !has_display_status_filter(query)
             && ctx.auth.as_ref().and_then(|auth| auth.project_id).is_none()
         {
-            let (total_runs, active_runs, failed_runs) = {
+            let (total_runs, active_runs, failed_runs, stopping_runs, stopped_runs) = {
                 let data = store.data.lock().await;
                 data.runs
                     .values()
@@ -79,12 +86,16 @@ pub async fn overview(
                             && is_visible_run(&data, run)
                     })
                     .fold(
-                        (0_usize, 0_usize, 0_usize),
-                        |(total, active, failed), run| {
+                        (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
+                        |(total, active, failed, stopping, stopped), run| {
+                            let display =
+                                run_control_display_status(run, run_control_for(&data, run));
                             (
                                 total + 1,
                                 active + usize::from(run.status == "running"),
                                 failed + usize::from(run.status == "failed"),
+                                stopping + usize::from(display == "stopping"),
+                                stopped + usize::from(display == "stopped"),
                             )
                         },
                     )
@@ -115,6 +126,8 @@ pub async fn overview(
                     "total_runs": total_runs,
                     "active_runs": active_runs,
                     "failed_runs": failed_runs,
+                    "stopping_runs": stopping_runs,
+                    "stopped_runs": stopped_runs,
                     "best_eval_return": best_eval_return,
                     "metric_points": metric_points
                 }
@@ -125,6 +138,17 @@ pub async fn overview(
     let total_runs = runs.len();
     let active_runs = runs.iter().filter(|run| run.status == "running").count();
     let failed_runs = runs.iter().filter(|run| run.status == "failed").count();
+    let (stopping_runs, stopped_runs) = {
+        let data = store.data.lock().await;
+        runs.iter()
+            .fold((0_usize, 0_usize), |(stopping, stopped), run| {
+                let display = run_control_display_status(run, run_control_for(&data, run));
+                (
+                    stopping + usize::from(display == "stopping"),
+                    stopped + usize::from(display == "stopped"),
+                )
+            })
+    };
     let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let series =
@@ -139,6 +163,8 @@ pub async fn overview(
             "total_runs": total_runs,
             "active_runs": active_runs,
             "failed_runs": failed_runs,
+            "stopping_runs": stopping_runs,
+            "stopped_runs": stopped_runs,
             "best_eval_return": best_eval_return,
             "metric_points": metric_points
         }
@@ -210,10 +236,17 @@ pub async fn runs_summary(
     let next_offset = offset + page_runs.len();
     let has_next = next_offset < total;
     if selection_projection {
+        let controls = {
+            let data = store.data.lock().await;
+            page_runs
+                .iter()
+                .map(|run| (run.id, run_control_for(&data, run).cloned()))
+                .collect::<HashMap<_, _>>()
+        };
         return Ok(json!({
             "runs": page_runs
                 .into_iter()
-                .map(selection_run_value)
+                .map(|run| selection_run_value(run.clone(), controls.get(&run.id).and_then(Option::as_ref)))
                 .collect::<AppResult<Vec<_>>>()?,
             "metric_keys": [],
             "total": total,
@@ -289,6 +322,7 @@ async fn collect_filtered_runs_with_search(
             })
             .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
             .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
+            .filter(|run| run_matches_display_status(&data, query, run))
             .cloned()
             .collect());
     }
@@ -307,20 +341,11 @@ async fn collect_filtered_runs_with_search(
             })
             .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
             .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
-            .map(|run| {
-                let doc = data
-                    .run_search_documents
-                    .get(&run.id)
-                    .cloned()
-                    .unwrap_or_else(|| Arc::new(run_search_document(run)));
-                (run.id, doc)
-            })
+            .filter(|run| run_matches_display_status(&data, query, run))
+            .filter(|run| run_matches_search(&data, run, search))
+            .map(|run| run.id)
             .collect::<Vec<_>>()
     };
-    let matching_ids = matching_ids
-        .into_iter()
-        .filter_map(|(run_id, doc)| search.matches(doc.as_ref()).then_some(run_id))
-        .collect::<Vec<_>>();
     let mut data = store.data.lock().await;
     if let Some(cache_key) = cache_key {
         data.insert_run_filter_cache(cache_key, matching_ids.clone());
@@ -368,12 +393,15 @@ pub(super) async fn sort_runs(
                 .cmp(&b.name)
                 .then_with(|| b.created_at.cmp(&a.created_at))
         }),
-        "status" => runs.sort_by(|a, b| {
-            a.status
-                .cmp(&b.status)
-                .then_with(|| a.name.cmp(&b.name))
-                .then_with(|| b.created_at.cmp(&a.created_at))
-        }),
+        "status" => {
+            let data = store.data.lock().await;
+            runs.sort_by(|a, b| {
+                run_control_display_status(a, run_control_for(&data, a))
+                    .cmp(run_control_display_status(b, run_control_for(&data, b)))
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| b.created_at.cmp(&a.created_at))
+            })
+        }
         "created" => runs.sort_by_key(|run| std::cmp::Reverse(run.created_at)),
         _ => runs.sort_by_key(|run| std::cmp::Reverse(run.created_at)),
     }
@@ -389,7 +417,7 @@ async fn metric_sorted_index_page(
     offset: usize,
     limit: usize,
 ) -> AppResult<Option<(usize, Vec<RunRow>)>> {
-    if has_text_search(query) || has_status_filter(query) {
+    if has_text_search(query) || has_status_filter(query) || has_display_status_filter(query) {
         return Ok(None);
     }
     let search = CompiledRunSearch::empty();
@@ -556,7 +584,7 @@ fn indexed_run_total(
     query: &HashMap<String, String>,
     search: &CompiledRunSearch,
 ) -> usize {
-    if search.is_empty() && !has_status_filter(query) {
+    if search.is_empty() && !has_status_filter(query) && !has_display_status_filter(query) {
         if let Some(project_id) = ctx.auth.as_ref().and_then(|auth| auth.project_id) {
             let Some(project) = data.projects.get(&project_id) else {
                 return 0;
@@ -619,6 +647,7 @@ fn run_filter_cache_key(
         auth_project_id: ctx.auth.as_ref().and_then(|auth| auth.project_id),
         project: query.get("project").cloned().unwrap_or_default(),
         status: query.get("status").cloned().unwrap_or_default(),
+        display_status: query.get("display_status").cloned().unwrap_or_default(),
         q: query.get("q").cloned().unwrap_or_default(),
     }
 }
@@ -651,6 +680,9 @@ fn run_matches_indexed_query(
         .map(|status| run.status != *status)
         .unwrap_or(false)
     {
+        return false;
+    }
+    if !run_matches_display_status(data, query, run) {
         return false;
     }
     if !run_matches_search(data, run, search) {

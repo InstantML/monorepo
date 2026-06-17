@@ -102,6 +102,20 @@ test("docs routes bypass Clerk proxy middleware", async () => {
   assert.match(proxy, /__clerk/);
 });
 
+test("local explicit API-base runs bypass Clerk proxy when Clerk is unconfigured", async () => {
+  const proxy = await readFile(path.join(webRoot, "proxy.ts"), "utf8");
+  assert.match(proxy, /usesExplicitLocalApiBases/);
+  assert.match(proxy, /configuredApiBasesAreLoopback/);
+  assert.match(proxy, /isLoopbackHostname/);
+  assert.match(proxy, /new URL/);
+  assert.match(proxy, /INSTANTML_CONTROL_API_BASE/);
+  assert.match(proxy, /INSTANTML_DATA_API_BASE/);
+  assert.match(proxy, /hasClerkRuntimeConfig/);
+  assert.match(proxy, /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY/);
+  assert.match(proxy, /CLERK_SECRET_KEY/);
+  assert.match(proxy, /NextResponse\.next/);
+});
+
 test("API rewrites bypass Clerk proxy middleware", async () => {
   const proxy = await readFile(path.join(webRoot, "proxy.ts"), "utf8");
   assert.match(proxy, /\(?!_next\|api\|trpc\|docs/);

@@ -478,14 +478,44 @@ export function ArtifactsTabPane({
   const rawArtifacts = versionedUnsupported ? legacyArtifacts : visibleArtifacts;
   const hasRawArtifacts = rawArtifacts.length > 0 || loggedObjects.length > 0;
   const rawPanelOpen = versionedUnsupported || (!collections.length && hasRawArtifacts);
+  const collectionsCollapsed = !loading && !collections.length && !collectionQuery && !typeFilter;
 
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Artifacts" emphasis="and lineage" lede={collectionCountLabel} />
+      <PageHead eyebrow="Workspace" title="Artifacts" />
       {error ? <div className="failure-card" role="alert"><strong>{error}</strong></div> : null}
       {loading ? <div className="status-strip loading" aria-live="polite">{loading}</div> : null}
       {versionedUnsupported ? <div className="status-strip" aria-live="polite">Versioned artifact catalog unavailable on this backend. Showing raw run artifacts.</div> : null}
+      <div className="analysis-stat-strip artifact-stat-strip">
+        <div className="analysis-stat"><span>Files</span><strong>{formatNumber(artifactTotals.file, 0)}</strong></div>
+        <div className="analysis-stat"><span>Checkpoints</span><strong>{formatNumber(artifactTotals.checkpoint, 0)}</strong></div>
+        <div className="analysis-stat"><span>Rollouts</span><strong>{formatNumber(artifactTotals.rollout, 0)}</strong></div>
+        <div className="analysis-stat"><span>Inspected run</span><strong>{primaryRun?.name ?? "-"}</strong></div>
+      </div>
+      {/* Hold the empty state until the legacy fetch settles — otherwise it
+          flashes "No artifacts yet" while raw artifacts are still loading. */}
+      {collectionsCollapsed && !hasRawArtifacts && !legacyLoading ? (
+        <section className="panel artifact-empty-panel">
+          <div className="panel-body artifact-empty-state">
+            <Package size={22} aria-hidden />
+            <strong>No artifacts yet</strong>
+            <span>
+              Checkpoints, rollouts, and files logged from the SDK will appear here
+              {versionedUnsupported ? " — this backend serves raw run artifacts only" : ""}.
+            </span>
+            <code>run.log_artifact(&quot;policy/step-1000&quot;, path=&quot;ckpt.pt&quot;)</code>
+          </div>
+        </section>
+      ) : (
       <div className="artifact-workspace">
+        {collectionsCollapsed ? (
+          <section className="panel artifact-catalog-panel artifact-note-panel">
+            <div className="panel-body artifact-inline-note">
+              <Package size={14} />
+              <span>{hasRawArtifacts ? "No versioned artifact collections. Raw run artifacts are shown below." : "No versioned artifact collections."}</span>
+            </div>
+          </section>
+        ) : (
         <section className="panel artifact-catalog-panel">
           <div className="panel-head">
             <h2><Package size={15} /> Collections {collectionTotal || collections.length ? <span>({collectionCountLabel})</span> : null}</h2>
@@ -518,7 +548,10 @@ export function ArtifactsTabPane({
             )) : <div className="empty">{hasRawArtifacts ? "No versioned artifact collections. Raw run artifacts are shown below." : "No versioned artifact collections."}</div>}
           </div>
         </section>
+        )}
 
+        {selectedCollection ? (
+        <>
         <section className="panel artifact-version-panel">
           <div className="panel-head">
             <h2><Archive size={15} /> Versions <span>{selectedCollection ? `${versions.length}/${versionTotal || versions.length}` : "none"}</span></h2>
@@ -591,6 +624,15 @@ export function ArtifactsTabPane({
             <ArtifactLineageView graph={lineage} />
           </div>
         </section>
+        </>
+        ) : collectionsCollapsed ? null : (
+        <section className="panel artifact-hint-panel">
+          <div className="panel-body artifact-inline-note">
+            <Archive size={14} />
+            <span>Select a collection or version to inspect versions, manifest entries, and lineage.</span>
+          </div>
+        </section>
+        )}
 
         <details className="panel artifact-raw-panel" open={rawPanelOpen}>
           <summary className="panel-head"><h2><Package size={15} /> Raw run artifacts <span>({rawArtifacts.length})</span></h2></summary>
@@ -600,17 +642,8 @@ export function ArtifactsTabPane({
             <ArtifactBrowser artifacts={rawArtifacts} />
           </div>
         </details>
-
-        <section className="panel artifact-totals-panel">
-          <div className="panel-head"><h2><Archive size={15} /> Selected page totals</h2></div>
-          <div className="panel-body insight-stack">
-            <MetricCard label="Files" value={formatNumber(artifactTotals.file, 0)} tone="neutral" />
-            <MetricCard label="Checkpoints" value={formatNumber(artifactTotals.checkpoint, 0)} tone="good" />
-            <MetricCard label="Rollouts" value={formatNumber(artifactTotals.rollout, 0)} tone="live" />
-            <MetricCard label="Inspected run" value={primaryRun?.name ?? "-"} tone="neutral" />
-          </div>
-        </section>
       </div>
+      )}
     </>
   );
 }

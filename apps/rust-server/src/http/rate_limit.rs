@@ -23,6 +23,8 @@ use super::{handlers::helpers, observability, AppState};
 
 const UNAUTH_RATE_LIMIT_RPS: u32 = 25;
 const UNAUTH_RATE_LIMIT_BURST: u32 = 100;
+const CONTROL_POLL_RATE_LIMIT_RPS: u32 = 10;
+const CONTROL_POLL_RATE_LIMIT_BURST: u32 = 100;
 const MAX_BUCKETS_BEFORE_PRUNE: usize = 20_000;
 const BUCKET_IDLE_TTL: Duration = Duration::from_secs(5 * 60);
 
@@ -91,6 +93,7 @@ pub enum RequestClass {
     General,
     Ingest,
     Import,
+    ControlPoll,
 }
 
 impl RequestClass {
@@ -99,6 +102,7 @@ impl RequestClass {
             Self::General => "general",
             Self::Ingest => "ingest",
             Self::Import => "import",
+            Self::ControlPoll => "control_poll",
         }
     }
 }
@@ -236,7 +240,9 @@ fn classify_route(method: &Method, path: &str) -> Option<RouteLimitPolicy> {
     if method == Method::OPTIONS {
         return None;
     }
-    let class = if is_import_route(method, path) {
+    let class = if is_control_poll_route(method, path) {
+        RequestClass::ControlPoll
+    } else if is_import_route(method, path) {
         RequestClass::Import
     } else if is_ingest_route(method, path) {
         RequestClass::Ingest
@@ -245,9 +251,21 @@ fn classify_route(method: &Method, path: &str) -> Option<RouteLimitPolicy> {
     };
     Some(RouteLimitPolicy {
         class,
-        metered: true,
+        metered: !is_unmetered_route(method, path),
         monthly_enforced: !is_monthly_quota_exempt_route(method, path),
     })
+}
+
+fn is_control_poll_route(method: &Method, path: &str) -> bool {
+    *method == Method::GET && path.starts_with("/api/runs/") && path.ends_with("/stop-signal")
+}
+
+fn is_run_control_route(method: &Method, path: &str) -> bool {
+    is_control_poll_route(method, path)
+        || (*method == Method::POST && path == "/api/runs/stop")
+        || (*method == Method::POST
+            && path.starts_with("/api/runs/")
+            && (path.ends_with("/stop") || path.ends_with("/stop-ack")))
 }
 
 fn is_ingest_route(method: &Method, path: &str) -> bool {
@@ -285,7 +303,12 @@ fn is_import_route(method: &Method, path: &str) -> bool {
 
 fn is_monthly_quota_exempt_route(method: &Method, path: &str) -> bool {
     (*method == Method::GET && matches!(path, "/api/usage" | "/api/usage/export"))
+        || is_run_control_route(method, path)
         || is_storage_setup_route(method, path)
+}
+
+fn is_unmetered_route(method: &Method, path: &str) -> bool {
+    is_control_poll_route(method, path)
 }
 
 fn is_storage_setup_route(method: &Method, path: &str) -> bool {
@@ -314,6 +337,10 @@ fn plan_limit(plan: PlanTier, class: RequestClass) -> RateLimitSpec {
         RequestClass::Import => RateLimitSpec {
             rps: plan.ingest_rate_limit_rps,
             burst: (plan.ingest_rate_limit_rps.saturating_mul(5)).min(plan.rate_limit_burst),
+        },
+        RequestClass::ControlPoll => RateLimitSpec {
+            rps: CONTROL_POLL_RATE_LIMIT_RPS.max(plan.rate_limit_rps),
+            burst: CONTROL_POLL_RATE_LIMIT_BURST.max(plan.rate_limit_burst),
         },
     }
 }
@@ -540,6 +567,21 @@ mod tests {
                 .class,
             RequestClass::General
         );
+        let stop_signal =
+            classify_route(&Method::GET, "/api/runs/run-1/stop-signal").expect("policy");
+        assert_eq!(stop_signal.class, RequestClass::ControlPoll);
+        assert!(!stop_signal.metered);
+        assert!(!stop_signal.monthly_enforced);
+        for (method, path) in [
+            (Method::POST, "/api/runs/run-1/stop"),
+            (Method::POST, "/api/runs/stop"),
+            (Method::POST, "/api/runs/run-1/stop-ack"),
+        ] {
+            let policy = classify_route(&method, path).expect("policy");
+            assert_eq!(policy.class, RequestClass::General, "{method} {path}");
+            assert!(policy.metered, "{method} {path}");
+            assert!(!policy.monthly_enforced, "{method} {path}");
+        }
         assert!(
             !classify_route(&Method::GET, "/api/storage/clickhouse-connections/current")
                 .expect("policy")
@@ -688,7 +730,10 @@ mod tests {
         );
         assert_eq!(plan_limit(PLAN_FREE, RequestClass::Ingest).rps, 2);
         assert_eq!(plan_limit(PLAN_FREE, RequestClass::Import).rps, 2);
+        assert_eq!(plan_limit(PLAN_FREE, RequestClass::ControlPoll).rps, 10);
+        assert_eq!(plan_limit(PLAN_FREE, RequestClass::ControlPoll).burst, 100);
         assert_eq!(plan_limit(PLAN_PRO, RequestClass::General).rps, 50);
+        assert_eq!(plan_limit(PLAN_PRO, RequestClass::ControlPoll).rps, 50);
     }
 
     #[test]

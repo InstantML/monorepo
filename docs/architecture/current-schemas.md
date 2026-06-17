@@ -71,7 +71,7 @@ in ClickHouse until a future compaction design exists.
 
 Owner: `apps/rust-server/src/control_db.rs` and
 `apps/rust-server/migrations/0001_init_control_plane.sql` plus the additive
-`0002_data_cells.sql` scaling migration.
+`0003_data_cells.sql` scaling migration.
 
 Purpose: hosted account, auth, organization, API-key, invitation, billing, and
 tenant-route state that must be visible to control and data services.
@@ -94,9 +94,9 @@ store keeps a read projection loaded from Postgres so existing route handlers
 can stay on the same in-process lookup path.
 
 `data_cells` is the operator/heartbeat-maintained registry for hosted
-data-plane cells. A current-cell Rust process can auto-register a conservative
-row and then refresh health/backup timestamps, while operator edits retain
-status, capacity, service, and secret metadata.
+data-plane cells. A Rust data service with `INSTANTML_CELL_ID` can
+auto-register a conservative row and then refresh health/backup timestamps,
+while operator edits retain status, capacity, service, and secret metadata.
 `tenant_routes` now carries nullable `cell_id`, monotonic `route_version`,
 `placement_reason`, and `assigned_at` fields. Route creation/update goes
 through the control repository transaction that takes a per-org advisory lock,
@@ -447,7 +447,7 @@ provider-backed path after payment and spend gates are in place.
 {
   "id": "uuid",
   "org_id": "uuid",
-  "user_id": "uuid",
+  "owner_user_id": "uuid",
   "name": "Daily comparison",
   "project": "hosted-scale-data",
   "payload": {
@@ -475,6 +475,35 @@ Workspace-view payloads are complete JSON objects. The first persisted frontend
 slice stores the active tab, selected runs/metrics, Compare settings, and the
 Runs workspace layout; future schema versions should keep backward-compatible
 read support for older payloads.
+
+### `WorkspaceViewExportEnvelope`
+
+Portable saved-view exports use a wrapper that intentionally omits
+`WorkspaceViewRow.id`, `org_id`, and `owner_user_id`.
+
+```json
+{
+  "kind": "instantml.workspace_view",
+  "schema_version": 1,
+  "exported_at": "2026-06-08T00:00:00Z",
+  "source": {
+    "product": "instantml",
+    "format": "workspace_view"
+  },
+  "view": {
+    "name": "Daily comparison",
+    "project": "hosted-scale-data",
+    "payload": {}
+  },
+  "integrity": {
+    "payload_sha256": "hex"
+  }
+}
+```
+
+Imports verify `kind`, `schema_version`, payload object size, and
+`payload_sha256` before sanitizing sensitive fields and creating or replacing a
+row for the current browser user.
 
 ## Data Plane
 

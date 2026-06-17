@@ -105,7 +105,7 @@ Proposed (see mockups):
 - D2: LATEST/BEST header cards show "-" when the workspace default metric isn't logged for this run; they should default to the run's own primary metric (best objective) instead.
 - D3: Metric Summary includes `system/` and `upload_lag_seconds` rows: `MEAN 1,781,077,552` (a unix timestamp averaged) — meaningless and alarming. Exclude system/internal metrics from the user table; render upload health as a status, not a series.
 - D4: GOAL column duplicates LATEST for most rows; meaning (objective target? best?) is undefined anywhere. Define or drop.
-- D5: Timeline right column dates clipped ("Jun 10," with the time cut). 
+- D5: Timeline right column dates clipped ("Jun 10," with the time cut).
 - D6: Reproducibility card renders five empty labeled rows when nothing is logged; collapse to a single teaching empty state with the SDK snippet.
 - D7: Data tab on a specific run still asks "Select one or more runs…" and inherits the global default metric — it should default to this run + its first logged metric.
 - D8: System tab is a counters table only; no GPU/CPU/memory/network charts (parity gap; W&B captures these automatically). Raw `upload_health_unix_seconds` rows shown with comma formatting.
@@ -113,7 +113,7 @@ Proposed (see mockups):
 - D10: Clicking a run name in the selector navigates here (expected), but there's no way back to the workspace preserving context except browser back; add an explicit "Back to runs" breadcrumb action.
 
 ### 4.5 Metrics
-- M1: Strong when project-scoped (catalog, leaderboard, pin, smoothing, grouping). 
+- M1: Strong when project-scoped (catalog, leaderboard, pin, smoothing, grouping).
 - M2: Single-point series (test/accuracy logged once) render as near-invisible dots; render visible markers when a series has < 3 points.
 - M3: Leaderboard includes runs without the metric as "-" rows; filter them out.
 - M4: "Metric filter" placeholder `train/.*` implies regex with no hint or validation feedback.
@@ -132,7 +132,7 @@ Proposed (see mockups):
 - I1: Group table header shows raw group values ("17", "7") without the grouping key (seed); say "Grouped by seed".
 - I2: Evaluation metric cards render 4 of 7 as "not logged" placeholders; hide unlogged cards behind a "+3 not logged" disclosure.
 - I3: Parallel coordinates: degenerate axes show the same number top and bottom (EPOCHS 160/160); collapse or annotate constant axes ("constant: 160"). Otherwise a genuinely good panel (best-run highlight works).
-- I4: No interaction from points/lines to runs (click → run detail / select). 
+- I4: No interaction from points/lines to runs (click → run detail / select).
 - I5: "Using 6 current loaded page" header copy is broken English; "Analyzing the 6 loaded runs".
 
 ### 4.8 Distributed

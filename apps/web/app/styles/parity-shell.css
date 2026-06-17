@@ -1,0 +1,135 @@
+/* ── parity-shell.css — telemetry ticker + Instrument rail (mockup parity) ──
+ * Ports docs/design/reimagine/app.css shell sections onto the app's chrome.
+ * Loaded last; desktop-only layout gated to ≥900px so the mobile drawer is
+ * untouched.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+@media (min-width: 900px) {
+  /* ── Topbar: slim account/search strip + optional filter workbar.
+   *    Brand mark / wordmark / workspace label / breadcrumb are owned by the
+   *    rail + page-head now, so they're hidden — but the account & search
+   *    cluster stays (its popovers anchor here) right-aligned. ── */
+  .topbar {
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    box-shadow: none;
+    backdrop-filter: none;
+    /* Stack the slim brandbar + workbar at their natural heights; the
+     * ResizeObserver in DashboardTopbar re-syncs --topbar-height to match,
+     * keeping rail/content sticky offsets correct. */
+    height: auto;
+    min-height: 0;
+  }
+  .topbar > .brandbar,
+  .topbar > .workbar {
+    flex: none;
+  }
+
+  .topbar .brandbar {
+    min-height: 0;
+    padding: 6px 16px;
+    border-bottom: 1px solid var(--line);
+    /* Global chrome row: logo + project selector on the left, account/search
+     * cluster on the right. */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  /* Logo + wordmark, left. */
+  .topbar .brand-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    text-decoration: none;
+    /* The base .brand-cell carries a right hairline divider; give it room so it
+       isn't crammed against the wordmark (balances the gap to the project select). */
+    padding-right: 14px;
+  }
+  .topbar .brand-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+  }
+  .topbar .brand-wordmark {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    color: var(--text);
+  }
+  .topbar .brand-wordmark__accent { color: var(--accent); }
+  /* Project selector, left (after the logo). */
+  .topbar .brandbar-project { flex: none; }
+  /* The org/workspace label, breadcrumb, and mobile menu button are owned by the
+   * account menu + page-head now, so they stay hidden on desktop. */
+  .topbar .org-switcher-label,
+  .topbar .brandbar .breadcrumb,
+  .topbar .mobile-menu-button {
+    display: none;
+  }
+  /* Push the account/search actions to the right. The ⌘K search button is the
+   * primary search affordance; the plan chip stays hidden (reachable from Settings). */
+  .topbar .brandbar-row { margin-left: auto; }
+  .topbar .brandbar-actions { margin-left: auto; }
+  .topbar .plan-usage-badge {
+    display: none;
+  }
+
+  /* The telemetry ticker ("live" bar) was removed; the ticker-ping keyframe is
+     kept here because the run-detail live pulse (parity-detail.css) still uses it. */
+  @keyframes ticker-ping {
+    0% { transform: scale(0.5); opacity: 0.9; }
+    70%, 100% { transform: scale(1.6); opacity: 0; }
+  }
+
+  /* ── Rail brand + project card (Instrument layout) ── */
+  /* The rail is a simple flex column: the tab list takes the remaining height
+     and scrolls, and .rail-foot (margin-top:auto) stays pinned to the bottom.
+     (The brand block moved to the topbar.) */
+  .tabs {
+    display: flex;
+    flex-direction: column;
+  }
+  .tab-scroll {
+    flex: 1 1 auto;
+  }
+
+  /* ── Nav group label row metrics (visibility is controlled by shell state) ── */
+  .tabs .tab-group-label {
+    display: block;
+    padding: 12px 16px 4px;
+    font: 500 10px/1 var(--font-mono);
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .tabs .tab-button {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 7px 16px;
+  }
+  .tabs .tab-label { max-width: none; opacity: 1; }
+  .tab-count {
+    margin-left: auto;
+    font: 500 10px/1 var(--font-mono);
+    color: var(--muted);
+  }
+  .tab-count.is-alert { color: var(--danger); font-weight: 600; }
+
+  /* ── Rail footer: avatar + user + version ── */
+  .rail-foot {
+    margin-top: auto;
+    padding: 12px 16px 0;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+}
+
+/* The Overview cockpit page (ov-* namespace) was removed; its styles lived here. */

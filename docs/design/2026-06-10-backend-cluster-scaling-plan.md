@@ -700,10 +700,10 @@ GET /api/admin/data-cells
 
 Authenticated by bootstrap token. Returns safe data-cell metadata, admission
 status, and route counts. It omits internal API bases, Secret Manager
-references, operator notes, and tenant credentials. Current-cell services also
-heartbeat an auto-registered `data_cells` row so configured placement has a
-fresh liveness/backup attestation even before a richer operator write API
-exists.
+references, operator notes, and tenant credentials. Data services with
+`INSTANTML_CELL_ID` also heartbeat an auto-registered `data_cells` row so
+configured placement has a fresh liveness/backup attestation even before a
+richer operator write API exists.
 
 First future route-discovery endpoint:
 

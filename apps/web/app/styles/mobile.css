@@ -425,6 +425,13 @@
     width: 100%;
   }
   .runs-commandbar .command-spacer { display: none; }
+  .runs-commandbar .runs-view-switch {
+    min-width: 0;
+    height: 40px;
+  }
+  .runs-commandbar .runs-actions-menu {
+    grid-column: 1 / -1;
+  }
   .runs-commandbar .compact-button,
   .runs-commandbar .icon-button,
   .runs-commandbar .select-trigger,
@@ -432,7 +439,8 @@
     width: 100%;
     min-height: 40px;
   }
-  .runs-commandbar .export-selected-runs-help {
+  .runs-commandbar .export-selected-runs-help,
+  .runs-commandbar .stop-selected-runs-help {
     display: block;
     grid-column: 1 / -1;
   }
@@ -491,7 +499,7 @@
     overflow-y: auto;
   }
   .workspace-run-row {
-    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
   }
   .workspace-run-select {
     width: 44px;
@@ -766,6 +774,10 @@
   }
   .runs-workspace-filter .runs-commandbar {
     grid-template-columns: 1fr;
+  }
+  .runs-commandbar .runs-actions-menu,
+  .runs-commandbar .runs-view-switch {
+    grid-column: 1 / -1;
   }
   .topbar--workbar.mobile-filters-open .workbar {
     grid-template-columns: 1fr;

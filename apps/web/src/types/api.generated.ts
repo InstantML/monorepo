@@ -1135,6 +1135,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["stop_runs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/summary": {
         parameters: {
             query?: never;
@@ -1327,6 +1343,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["stop_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/stop-ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["stop_ack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/stop-signal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["stop_signal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/storage/clickhouse-connections": {
         parameters: {
             query?: never;
@@ -1439,6 +1503,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace-view-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["workspace_view_data"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace-views": {
         parameters: {
             query?: never;
@@ -1455,6 +1535,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace-views/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["import_workspace_view"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace-views/{view_id}": {
         parameters: {
             query?: never;
@@ -1464,6 +1560,22 @@ export interface paths {
         };
         get: operations["get_workspace_view"];
         put: operations["update_workspace_view"];
+        post?: never;
+        delete: operations["delete_workspace_view"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace-views/{view_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["export_workspace_view"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -2806,6 +2918,17 @@ export interface components {
             code?: string | null;
             message?: string | null;
         };
+        ImportWorkspaceViewRequest: {
+            conflict_strategy?: string | null;
+            dry_run: boolean;
+            /** Format: uuid */
+            existing_view_id?: string | null;
+            /** Format: date-time */
+            expected_updated_at?: string | null;
+            exported_view: components["schemas"]["WorkspaceViewExportEnvelope"];
+            name?: string | null;
+            project?: string | null;
+        };
         ImportsEnvelope: {
             imports: components["schemas"]["ImportJobRow"][];
         };
@@ -3302,6 +3425,13 @@ export interface components {
             /** Format: int32 */
             schema_version: number;
             share_token?: string | null;
+            /**
+             * Format: date-time
+             * @description When the current share token was minted (S6). Tokens older than the
+             *     configured TTL stop resolving. `None` on rows persisted before this
+             *     field existed — those legacy tokens stay valid until rotated.
+             */
+            share_token_issued_at?: string | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -3334,6 +3464,44 @@ export interface components {
         ReserveSeatRequest: {
             email?: string | null;
             role?: string | null;
+        };
+        RunControlRow: {
+            /** Format: date-time */
+            acknowledged_at?: string | null;
+            actor?: string | null;
+            /** Format: date-time */
+            completed_at?: string | null;
+            completion_message?: string | null;
+            /** Format: uuid */
+            org_id: string;
+            reason?: string | null;
+            /** Format: date-time */
+            requested_at?: string | null;
+            /** Format: uuid */
+            run_id: string;
+            /** Format: uuid */
+            stop_request_id?: string | null;
+            stop_state: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        RunControlSummary: {
+            actor?: string | null;
+            completion_message?: string | null;
+            display_status: string;
+            reason?: string | null;
+            /** Format: date-time */
+            stop_acknowledged_at?: string | null;
+            /** Format: date-time */
+            stop_completed_at?: string | null;
+            /** Format: uuid */
+            stop_request_id?: string | null;
+            stop_requested: boolean;
+            /** Format: date-time */
+            stop_requested_at?: string | null;
+            stop_state: string;
+            /** Format: date-time */
+            updated_at?: string | null;
         };
         RunEnvelope: {
             run: components["schemas"]["RunRow"];
@@ -3402,6 +3570,33 @@ export interface components {
             status: string;
             tags: string[];
         };
+        RunStopBulkEnvelope: {
+            limit: number;
+            results: components["schemas"]["RunStopResult"][];
+        };
+        RunStopEnvelope: {
+            already_requested?: boolean | null;
+            already_terminal?: boolean | null;
+            ok?: boolean | null;
+            run_control: components["schemas"]["RunControlSummary"];
+            /** Format: uuid */
+            run_id: string;
+        };
+        RunStopResult: {
+            already_requested?: boolean | null;
+            already_terminal?: boolean | null;
+            error?: string | null;
+            ok: boolean;
+            run_control?: null | components["schemas"]["RunControlSummary"];
+            /** Format: uuid */
+            run_id: string;
+        };
+        RunSummariesEnvelope: {
+            runs: components["schemas"]["RunSummaryRow"][];
+        };
+        RunSummaryEnvelope: {
+            run: components["schemas"]["RunSummaryRow"];
+        };
         RunSummaryRow: {
             artifact_counts: {
                 [key: string]: number;
@@ -3433,6 +3628,7 @@ export interface components {
             project: string;
             /** Format: uuid */
             project_id: string;
+            run_control: components["schemas"]["RunControlSummary"];
             /** Format: date-time */
             started_at: string;
             status: string;
@@ -3486,6 +3682,37 @@ export interface components {
             artifact_version_id: string;
             confirm?: string | null;
             reason?: string | null;
+        };
+        StopAckRequest: {
+            message?: string | null;
+            state: string;
+            /** Format: uuid */
+            stop_request_id: string;
+        };
+        StopRunRequest: {
+            reason?: string | null;
+        };
+        StopRunsRequest: {
+            reason?: string | null;
+            run_ids: string[];
+        };
+        StopSignalEnvelope: {
+            /** Format: int64 */
+            poll_after_seconds: number;
+            /** Format: uuid */
+            run_id: string;
+            run_status: string;
+            stop_request?: null | components["schemas"]["StopSignalRequestSummary"];
+            stop_requested: boolean;
+            terminal: boolean;
+        };
+        StopSignalRequestSummary: {
+            /** Format: date-time */
+            acknowledged_at?: string | null;
+            /** Format: date-time */
+            requested_at?: string | null;
+            /** Format: uuid */
+            stop_request_id?: string | null;
         };
         SwitchOrganizationRequest: {
             /** Format: uuid */
@@ -3572,8 +3799,101 @@ export interface components {
         VersionedArtifactManifestInput: {
             entries: components["schemas"]["VersionedArtifactManifestEntryInput"][];
         };
+        WorkspaceViewData: {
+            /** Format: date-time */
+            generated_at: string;
+            limits: components["schemas"]["WorkspaceViewDataLimits"];
+            metric_keys: string[];
+            metric_series: components["schemas"]["WorkspaceViewMetricSeries"][];
+            panels: components["schemas"]["WorkspaceViewDataPanelResult"][];
+            run_ids: string[];
+            runs: unknown[];
+            /** Format: int32 */
+            schema_version: number;
+            warnings: string[];
+        };
+        WorkspaceViewDataLimits: {
+            /** Format: int64 */
+            max_points_per_series: number;
+            max_response_bytes: number;
+            max_total_points: number;
+            panels: number;
+            /** Format: int64 */
+            points_per_series: number;
+            run_ids: number;
+            total_points: number;
+        };
+        WorkspaceViewDataOptions: {
+            max_panels?: number | null;
+            /** Format: int64 */
+            metric_point_limit?: number | null;
+        };
+        WorkspaceViewDataPanelResult: {
+            data_kind: string;
+            id: string;
+            metric_key: string;
+            section_id: string;
+            section_name: string;
+            series_key?: string | null;
+            summary_values: unknown[];
+            title: string;
+            type: string;
+            warnings: string[];
+        };
+        WorkspaceViewDataRequest: {
+            options?: null | components["schemas"]["WorkspaceViewDataOptions"];
+            run_ids: string[];
+            view: {
+                [key: string]: unknown;
+            } | null;
+        };
+        WorkspaceViewDataResponse: {
+            view_data: components["schemas"]["WorkspaceViewData"];
+        };
+        WorkspaceViewDeleteResponse: {
+            deleted: boolean;
+            /** Format: date-time */
+            deleted_at: string;
+            /** Format: uuid */
+            view_id: string;
+        };
         WorkspaceViewEnvelope: {
             workspace_view: components["schemas"]["WorkspaceViewRow"];
+        };
+        WorkspaceViewExportEnvelope: {
+            /** Format: date-time */
+            exported_at: string;
+            integrity: components["schemas"]["WorkspaceViewExportIntegrity"];
+            kind: string;
+            /** Format: int32 */
+            schema_version: number;
+            source: components["schemas"]["WorkspaceViewExportSource"];
+            view: components["schemas"]["WorkspaceViewExportedView"];
+        };
+        WorkspaceViewExportIntegrity: {
+            payload_sha256: string;
+        };
+        WorkspaceViewExportSource: {
+            format: string;
+            product: string;
+        };
+        WorkspaceViewExportedView: {
+            name: string;
+            payload: Record<string, never>;
+            project?: string | null;
+        };
+        WorkspaceViewImportResponse: {
+            action: string;
+            dry_run: boolean;
+            name: string;
+            payload_bytes: number;
+            project?: string | null;
+            warnings: string[];
+            workspace_view?: null | components["schemas"]["WorkspaceViewRow"];
+        };
+        WorkspaceViewMetricSeries: {
+            metric_key: string;
+            series: unknown[];
         };
         WorkspaceViewRow: {
             /** Format: date-time */
@@ -6293,6 +6613,8 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
+                /** @description Filter by derived display status: running, stopping, stopped, finished, or failed */
+                display_status?: string;
                 /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Metric key for best-value column */
@@ -6770,6 +7092,60 @@ export interface operations {
             };
         };
     };
+    stop_runs: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate bulk stop retries */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopRunsRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded bulk stop requests */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStopBulkEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing runs:control scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     runs_summary: {
         parameters: {
             query?: {
@@ -6777,6 +7153,8 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
+                /** @description Filter by derived display status: running, stopping, stopped, finished, or failed */
+                display_status?: string;
                 /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key */
@@ -7584,6 +7962,194 @@ export interface operations {
             };
         };
     };
+    stop_run: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate stop retries */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Recorded stop request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStopEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing runs:control scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    stop_ack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StopAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Acknowledged or completed stop request */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunStopEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing ingest scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run or stop request not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stop request id mismatch */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    stop_signal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cooperative stop signal for SDK callers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StopSignalEnvelope"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing ingest scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     create_customer_clickhouse_connection: {
         parameters: {
             query?: never;
@@ -7958,6 +8524,66 @@ export interface operations {
             };
         };
     };
+    workspace_view_data: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceViewDataRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded data projection for a portable workspace view and explicit runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewDataResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing export scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Selected run is missing or not visible to the caller */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     list_workspace_views: {
         parameters: {
             query?: {
@@ -8025,6 +8651,57 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    import_workspace_view: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportWorkspaceViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Dry-run preview or imported workspace view */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewImportResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view update conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8107,6 +8784,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_workspace_view: {
+        parameters: {
+            query: {
+                /** @description Last observed updated_at timestamp for optimistic delete */
+                expected_updated_at: string;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace view UUID */
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted workspace view marker */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewDeleteResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace view update conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    export_workspace_view: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace view UUID */
+                view_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Portable workspace view JSON */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewExportEnvelope"];
                 };
             };
             /** @description Authentication required */
@@ -8256,6 +9036,8 @@ export interface operations {
                 project?: string;
                 /** @description Filter by run status */
                 status?: string;
+                /** @description Filter by derived display status: running, stopping, stopped, finished, or failed */
+                display_status?: string;
                 /** @description Run search query. Bare text preserves legacy substring search; supports fields, boolean operators, and explicit re:/.../ regex. */
                 q?: string;
                 /** @description Sort key: created, name, status, duration, metric-latest, or metric-best */
@@ -8279,7 +9061,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunsEnvelope"];
+                    "application/json": components["schemas"]["RunSummariesEnvelope"];
                 };
             };
             /** @description Invalid run search or query parameter */
@@ -8362,7 +9144,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunEnvelope"];
+                    "application/json": components["schemas"]["RunSummaryEnvelope"];
                 };
             };
             /** @description Run not found */

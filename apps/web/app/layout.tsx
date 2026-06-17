@@ -3,25 +3,20 @@ import "./auth.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk, Instrument_Serif } from "next/font/google";
+import { Archivo, Spline_Sans_Mono, Instrument_Serif } from "next/font/google";
 
-const display = Space_Grotesk({
+// Instrument design language (docs/design/reimagine/DESIGN-SYSTEM.md):
+// Archivo carries display + UI prose, Spline Sans Mono carries all data.
+const display = Archivo({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
   variable: "--font-sans-next",
   display: "swap",
 });
 
-const ui = IBM_Plex_Sans({
+const mono = Spline_Sans_Mono({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-ui-next",
-  display: "swap",
-});
-
-const mono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700"],
   variable: "--font-mono-next",
   display: "swap",
 });
@@ -38,12 +33,12 @@ const themeBootstrap = `
 (() => {
   try {
     const stored = localStorage.getItem("instantml:next:theme");
-    const theme = stored === "dark" || stored === "light" ? stored : "dark";
+    const theme = stored === "dark" || stored === "light" ? stored : "light";
     document.documentElement.dataset.theme = theme;
-    document.documentElement.style.backgroundColor = theme === "dark" ? "#0E1116" : "#F5F4F1";
+    document.documentElement.style.backgroundColor = theme === "dark" ? "#0d0f0c" : "#f6f7f3";
   } catch {
-    document.documentElement.dataset.theme = "dark";
-    document.documentElement.style.backgroundColor = "#0E1116";
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.backgroundColor = "#f6f7f3";
   }
 })();
 `;
@@ -130,8 +125,17 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#0E1116",
+  themeColor: "#0d0f0c",
 };
+
+// JSON-LD is embedded with dangerouslySetInnerHTML, so escape `<` (script
+// breakout) and U+2028/U+2029 (invalid in JS string contexts) before inlining.
+function serializeJsonLd(data: unknown): string {
+  return JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
 
 const organizationJsonLd = {
   "@context": "https://schema.org",
@@ -159,17 +163,17 @@ const softwareApplicationJsonLd = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${ui.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${display.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
         <script dangerouslySetInnerHTML={{ __html: logoIntroFlag }} />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(organizationJsonLd) }}
         />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(softwareApplicationJsonLd) }}
         />
       </head>
       <body>

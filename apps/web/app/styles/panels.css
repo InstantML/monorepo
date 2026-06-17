@@ -106,7 +106,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--control-radius);
   background: var(--chart-card-bg);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.045), 0 10px 28px rgba(15, 23, 42, 0.035);
+  box-shadow: 0 1px 2px rgba(23, 26, 20, 0.045), 0 10px 28px rgba(23, 26, 20, 0.035);
   overflow-anchor: none;
   scroll-margin-top: calc(var(--topbar-height) + var(--runs-filter-sticky-height) + 74px);
 }
@@ -240,11 +240,10 @@
 }
 
 .workspace-panel-card:not(.fullscreen-panel-card) .metric-chart-frame,
-.workspace-panel-card:not(.fullscreen-panel-card) .alt-panel-chart svg {
+.workspace-panel-card:not(.fullscreen-panel-card) .alt-panel-chart .alt-chart-frame {
   order: 1;
   height: 100%;
   min-height: 80px;
-  aspect-ratio: auto;
 }
 
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-legend {
@@ -266,7 +265,7 @@
 }
 
 .workspace-panel-card .chart-area-exportable {
-  padding-top: 38px;
+  padding-top: 44px;
 }
 
 .workspace-panel-card .metric-chart {
@@ -297,10 +296,19 @@
   margin: 7px 0 0;
 }
 
-.alt-panel-chart svg {
+/* The frame is the measured element: the inner SVG renders its viewBox at the
+ * frame's CSS-pixel size, so chart text never stretches with the container. */
+.alt-chart-frame {
+  position: relative;
   width: 100%;
-  aspect-ratio: 560 / 360;
   min-height: 180px;
+  height: var(--chart-frame-height, 320px);
+}
+
+.alt-panel-chart svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .alt-panel-chart .axis-line {
@@ -330,7 +338,7 @@
 }
 
 .histogram-bar {
-  fill: #3b9ba7;
+  fill: var(--series-6);
   opacity: 0.56;
 }
 
@@ -345,13 +353,12 @@
   gap: 7px;
 }
 
-.histogram-timeline-panel-chart svg {
-  aspect-ratio: 720 / 300;
+.histogram-timeline-panel-chart .alt-chart-frame {
   min-height: 160px;
   max-height: 320px;
 }
 
-.fullscreen-panel-card .histogram-timeline-panel-chart svg {
+.fullscreen-panel-card .histogram-timeline-panel-chart .alt-chart-frame {
   max-height: none;
 }
 
@@ -432,11 +439,11 @@
   min-width: min(220px, calc(100% - 24px));
   max-width: calc(100% - 24px);
   transform: translate(-50%, -50%);
-  border: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.1));
+  border: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.1));
   border-radius: 10px;
   background: var(--chart-tooltip-bg, rgba(255, 255, 255, 0.98));
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
-  color: var(--chart-tooltip-text, #1e2933);
+  box-shadow: 0 12px 28px rgba(23, 26, 20, 0.14);
+  color: var(--chart-tooltip-text, #1e2218);
   padding: 8px 10px;
   pointer-events: none;
 }
@@ -514,7 +521,7 @@
 .panel-resize-handle:hover,
 .panel-resize-handle:focus-visible {
   border-color: transparent;
-  background: rgba(31, 184, 119, 0.08);
+  background: rgba(43, 224, 130, 0.08);
   color: var(--accent-strong);
   outline: 0;
   box-shadow: none;
@@ -727,9 +734,11 @@
 }
 
 .chart-type-segment button.active {
-  border-color: rgba(18, 160, 105, 0.45);
-  background: var(--accent-soft);
-  color: var(--accent);
+  /* Neutral active segment (fill + border + bright text); green is reserved for
+     live/best, not a chart-type toggle. */
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--text);
 }
 
 .drawer-group {
@@ -1000,7 +1009,7 @@ kbd {
 
 .quick-search-row:hover,
 .quick-search-row.active {
-  border-color: rgba(31, 184, 119, 0.24);
+  border-color: rgba(43, 224, 130, 0.24);
   background: var(--surface-tint);
   color: var(--text);
 }
@@ -1032,6 +1041,12 @@ kbd {
 
 .fullscreen-panel-card {
   display: grid;
+  /* Reset the dashboard-grid spans (.workspace-panel-card spans 6 cols / 4 rows)
+     so the card is a plain single-column grid item in the fullscreen modal.
+     Otherwise it creates 6 implicit columns and the top bar (drawer-head) only
+     fills the first one instead of the full card width. */
+  grid-column: auto;
+  grid-row: auto;
   grid-template-rows: auto minmax(0, 1fr);
   --fullscreen-chart-width: min(100%, 1120px, calc(213.954vh - 509px));
   min-height: 0;
@@ -1046,8 +1061,7 @@ kbd {
 }
 
 .fullscreen-panel-card .workspace-panel-meta {
-  justify-content: center;
-  padding: 0 0 12px;
+  display: none;
 }
 
 .fullscreen-panel-card .chart-area {
@@ -1061,7 +1075,7 @@ kbd {
 }
 
 .fullscreen-panel-card .chart-area-exportable {
-  padding-top: 38px;
+  padding-top: 44px;
 }
 
 .fullscreen-panel-card .chart-legend {
@@ -1078,16 +1092,16 @@ kbd {
   overflow: hidden;
 }
 
+/* Fullscreen charts are width-bound with a fixed pixel height; the SVG
+ * renders at the measured size, so no aspect-ratio lock is needed. */
 .fullscreen-panel-card .metric-chart {
   justify-self: center;
   width: var(--fullscreen-chart-width);
-  height: auto;
-  aspect-ratio: 920 / 430;
+  height: 100%;
 }
 
-.fullscreen-panel-card .alt-panel-chart svg {
+.fullscreen-panel-card .alt-panel-chart .alt-chart-frame {
   justify-self: center;
   width: var(--fullscreen-chart-width);
-  height: auto;
-  aspect-ratio: 920 / 430;
+  height: min(56vh, 520px);
 }

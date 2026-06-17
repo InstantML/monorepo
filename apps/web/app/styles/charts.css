@@ -11,13 +11,7 @@
   justify-self: center;
   align-self: start;
   width: var(--fullscreen-chart-width, min(100%, 1120px));
-  height: auto;
-  aspect-ratio: 920 / 430;
-}
-
-.fullscreen-panel-card .axis-label,
-.fullscreen-panel-card .tick-label {
-  font-size: 10.5px;
+  height: min(56vh, 520px);
 }
 
 .fullscreen-panel-card .chart-range-row {
@@ -337,6 +331,17 @@
 
 .settings-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+/* Each settings column is an independent tight stack so a tall panel in one
+   column (Plan Usage) doesn't leave a void beside a short panel in the other
+   (Billing) the way a row-paired grid did. */
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
 }
 
 .panel,
@@ -368,7 +373,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #111922;
+  color: #121511;
   font-size: 14px;
   font-weight: 760;
 }
@@ -430,17 +435,17 @@ tbody tr:hover {
 }
 
 tr.selected {
-  background: rgba(31, 184, 119, 0.028);
-  box-shadow: inset 2px 0 0 rgba(31, 184, 119, 0.48);
+  background: rgba(43, 224, 130, 0.028);
+  box-shadow: inset 2px 0 0 rgba(43, 224, 130, 0.48);
 }
 
 tr.inspected {
-  background: rgba(31, 184, 119, 0.045);
+  background: rgba(43, 224, 130, 0.045);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
 tr.selected.inspected {
-  background: rgba(31, 184, 119, 0.055);
+  background: rgba(43, 224, 130, 0.055);
 }
 
 .col-select {
@@ -519,13 +524,13 @@ tr.selected.inspected {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
-  color: #004f59;
+  color: #14605a;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .run-name-button:focus-visible {
-  outline: 2px solid rgba(31, 184, 119, 0.22);
+  outline: 2px solid rgba(43, 224, 130, 0.22);
   outline-offset: 2px;
   border-radius: 3px;
 }
@@ -592,9 +597,15 @@ small {
 }
 
 .pill.live {
-  border-color: #c7d9f7;
+  border-color: #d8dccd;
   background: #f4f8ff;
   color: var(--blue);
+}
+
+.pill.warning {
+  border-color: #f4d6a1;
+  background: #fff8e8;
+  color: #9a4a00;
 }
 
 .chips {
@@ -630,7 +641,7 @@ small {
 }
 
 .table-footer strong {
-  color: #4b5967;
+  color: #555b4c;
   font-weight: 650;
 }
 
@@ -652,7 +663,7 @@ small {
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: #fff;
-  color: #344251;
+  color: #3a3f33;
   padding: 4px 8px;
   font-size: 12px;
 }
@@ -662,7 +673,7 @@ small {
   min-height: 30px;
   height: 30px;
   padding: 4px 8px;
-  color: #344251;
+  color: #3a3f33;
   font-size: 12px;
 }
 
@@ -676,7 +687,7 @@ small {
 }
 
 .table-empty strong {
-  color: #1a2632;
+  color: #1d211b;
   font-size: 14px;
 }
 
@@ -717,7 +728,7 @@ small {
 }
 
 .smoothing-control strong {
-  color: #4b5967;
+  color: #555b4c;
   font-size: 12px;
   font-weight: 650;
 }
@@ -786,7 +797,7 @@ small {
 }
 
 .pin-button.active {
-  border-color: #c7d9f7;
+  border-color: #d8dccd;
   background: #f4f8ff;
   color: var(--blue);
 }
@@ -799,7 +810,7 @@ small {
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: var(--surface);
-  color: #344251;
+  color: #3a3f33;
   padding: 6px 10px;
   font-size: 12px;
   font-weight: 700;
@@ -830,6 +841,13 @@ small {
    * when the smoothing pill joins the csv/svg buttons on a narrow grid panel. */
   flex-wrap: wrap;
   max-width: calc(100% - 24px);
+  /* When the row wraps over the plot, the container itself must not swallow
+   * chart pointer events — only the actual controls do. */
+  pointer-events: none;
+}
+
+.chart-export-actions > * {
+  pointer-events: auto;
 }
 
 @media (max-width: 900px) {
@@ -848,7 +866,7 @@ small {
   height: 28px;
   border: 1px solid var(--line);
   background: var(--surface);
-  color: var(--ink, #344251);
+  color: var(--text);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
 }
 
@@ -856,6 +874,144 @@ small {
 .chart-export-button[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.chart-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+}
+
+.chart-view-toggle button {
+  min-height: 26px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chart-view-toggle button + button {
+  border-left: 1px solid var(--line-soft);
+}
+
+.chart-view-toggle button.selected,
+.chart-view-toggle button[aria-pressed="true"] {
+  background: var(--surface-selected);
+  color: var(--text);
+}
+
+.chart-log-toggle {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.chart-log-toggle.active {
+  border-color: var(--accent);
+  background: var(--accent-soft, rgba(37, 99, 235, 0.12));
+  color: var(--accent);
+}
+
+.chart-y-range {
+  position: relative;
+}
+
+.chart-y-range > summary {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chart-y-range > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chart-y-range[open] > summary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chart-y-range-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  /* Dropdown layer (tray 60 < dropdowns 80 < modals 120). */
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: 180px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px rgba(23, 33, 43, 0.16);
+}
+
+.chart-y-range-field {
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-y-range-field input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.chart-y-range-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.chart-y-range-hint {
+  color: #7a4d12;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .chart-smoothing-control {
@@ -867,7 +1023,7 @@ small {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--ink, #344251);
+  color: var(--text);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
   cursor: pointer;
 }
@@ -910,6 +1066,14 @@ small {
   width: 60px;
 }
 
+/* A manual range widens the Y pill ("Y 1.2e-4–3.4e-1"); cap it in tight grid
+   cards so the toolbar wraps less. The full label remains in the title. */
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-y-range > summary {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chart-export-helper {
   max-width: min(280px, calc(100vw - 160px));
   border: 1px solid rgba(185, 135, 42, 0.28);
@@ -936,7 +1100,7 @@ small {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #fbfcfd;
+  background: #fdfdfb;
 }
 
 .metric-panel-head {
@@ -951,7 +1115,7 @@ small {
 
 .metric-panel-head h3 {
   overflow: hidden;
-  color: #111922;
+  color: #121511;
   font-size: 12px;
   font-weight: 760;
   text-overflow: ellipsis;
@@ -963,7 +1127,7 @@ small {
 }
 
 .metric-panel .chart-area-exportable {
-  padding-top: 38px;
+  padding-top: 44px;
 }
 
 .metric-panel .chart-legend,
@@ -988,9 +1152,105 @@ small {
   overflow: hidden;
 }
 
-.metric-panel .metric-chart {
-  aspect-ratio: 560 / 360;
+.chart-summary-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
+
+.chart-summary-takeaway {
+  margin: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--tight-radius);
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 9px 11px;
+  font-size: 13px;
+  font-weight: 680;
+  line-height: 1.45;
+}
+
+.chart-summary-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--tight-radius);
+  background: var(--surface);
+}
+
+.chart-summary-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.chart-summary-table caption {
+  color: var(--muted);
+  padding: 9px 10px;
+  text-align: left;
+  font-weight: 760;
+}
+
+.chart-summary-table th,
+.chart-summary-table td {
+  border-top: 1px solid var(--line-soft);
+  padding: 8px 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chart-summary-table th:first-child,
+.chart-summary-table td:first-child {
+  text-align: left;
+}
+
+.chart-summary-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-weight: 780;
+}
+
+.chart-summary-table tbody th {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 760;
+  text-overflow: ellipsis;
+}
+
+.chart-summary-table tbody tr:nth-child(even) {
+  background: var(--surface-soft);
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-summary-panel {
+  order: 1;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-summary-takeaway {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-summary-table {
+  min-width: 680px;
+}
+
+.workspace-panel-card:not(.fullscreen-panel-card) .chart-view-toggle button {
+  padding: 0 7px;
+}
+
 
 .chart-legend {
   display: grid;
@@ -1009,7 +1269,7 @@ small {
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
   background: transparent;
-  color: var(--ink, #344251);
+  color: var(--text);
   font-size: 12px;
   padding: 3px 6px;
   text-overflow: ellipsis;
@@ -1019,6 +1279,18 @@ small {
 
 .legend-chip:hover {
   background: var(--chart-grid);
+}
+
+/* R6 cross-highlight: when a series is isolated (legend, rail, or in-plot
+   hover) the matching chip pops and the rest recede. */
+.chart-legend.has-active .legend-chip:not(.legend-chip-active):not(.legend-overflow) {
+  opacity: 0.55;
+}
+
+.legend-chip.legend-chip-active {
+  border-color: var(--line);
+  background: var(--chart-grid);
+  font-weight: 700;
 }
 
 .legend-chip.legend-overflow {
@@ -1060,14 +1332,16 @@ small {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 560 / 360;
 }
 
+/* The chart renders at its measured CSS-pixel size (viewBox == frame size),
+ * so text and strokes never scale with the container. The frame owns the
+ * height; width always tracks the layout. */
 .metric-chart-frame {
   position: relative;
   width: 100%;
+  height: var(--chart-frame-height, 360px);
   overflow: visible;
-  aspect-ratio: 560 / 360;
 }
 
 .metric-chart-frame .metric-chart {
@@ -1075,7 +1349,6 @@ small {
   z-index: 2;
   width: 100%;
   height: 100%;
-  aspect-ratio: auto;
   overflow: hidden;
 }
 
@@ -1085,9 +1358,6 @@ small {
   z-index: 1;
   width: 100%;
   height: 100%;
-  /* Stretch like the overlay SVG's preserveAspectRatio="none" mapping so
-   * dense canvas lines stay pixel-aligned with axes in resized panels. */
-  object-fit: fill;
   pointer-events: none;
 }
 
@@ -1143,6 +1413,9 @@ small {
   /* Opacity scales down with series count (set per-chart in MetricChart) so a
    * dense run set reads as a translucent band rather than an opaque slab. */
   opacity: var(--series-stroke-opacity, 0.92);
+  /* Cross-highlight muting eases instead of hard-flipping, so sweeping the
+   * rail doesn't strobe every panel. */
+  transition: opacity 120ms ease;
 }
 
 .series.line-style-1 {
@@ -1185,7 +1458,7 @@ small {
 }
 
 .series-point {
-  stroke: #fff;
+  stroke: var(--chart-card-bg);
   stroke-width: 1;
   opacity: 0.78;
   cursor: crosshair;
@@ -1251,60 +1524,60 @@ small {
 
 .hover-ring {
   fill: none;
-  stroke: var(--chart-tick, #94a3b8);
+  stroke: var(--chart-tick, #8b9280);
   stroke-width: 1.5;
   opacity: 0.65;
 }
 
 .hover-guide {
-  stroke: #9099a5;
+  stroke: #8b9280;
   stroke-dasharray: 4 4;
   stroke-width: 1;
 }
 
 .series-0,
 .point-0 {
-  stroke: #8a5ccf;
+  stroke: #15a35d;
 }
 
 .point-0 {
-  fill: #8a5ccf;
+  fill: #15a35d;
 }
 
 .series-1,
 .point-1 {
-  stroke: #2e8b57;
+  stroke: #3b82e0;
 }
 
 .point-1 {
-  fill: #2e8b57;
+  fill: #3b82e0;
 }
 
 .series-2,
 .point-2 {
-  stroke: #2a7fbd;
+  stroke: #bd8113;
 }
 
 .point-2 {
-  fill: #2a7fbd;
+  fill: #bd8113;
 }
 
 .series-3,
 .point-3 {
-  stroke: #c26300;
+  stroke: #c44fb2;
 }
 
 .point-3 {
-  fill: #c26300;
+  fill: #c44fb2;
 }
 
 .series-4,
 .point-4 {
-  stroke: #d04a3a;
+  stroke: #7a5fe0;
 }
 
 .point-4 {
-  fill: #d04a3a;
+  fill: #7a5fe0;
 }
 
 /* Light, wandb/neptune-style readout: a clean card with a step header, a
@@ -1319,10 +1592,10 @@ small {
   gap: 2px;
   min-width: 248px;
   border-radius: 12px;
-  border: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.1));
+  border: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.1));
   background: var(--chart-tooltip-bg, rgba(255, 255, 255, 0.98));
-  color: var(--chart-tooltip-text, #1e2933);
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.16);
+  color: var(--chart-tooltip-text, #1e2218);
+  box-shadow: 0 14px 34px rgba(23, 26, 20, 0.16);
   padding: 9px 11px 8px;
   font-size: 12px;
   backdrop-filter: blur(6px);
@@ -1383,7 +1656,7 @@ small {
   gap: 10px;
   padding: 3px 0 4px;
   margin-bottom: 2px;
-  border-bottom: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
+  border-bottom: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.08));
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1410,7 +1683,7 @@ small {
   gap: 7px;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--chart-tooltip-text, #1e2933);
+  color: var(--chart-tooltip-text, #1e2218);
 }
 
 .chart-tooltip-row.active {
@@ -1438,7 +1711,7 @@ small {
 .chart-tooltip-more {
   margin-top: 4px;
   padding-top: 6px;
-  border-top: 1px solid var(--chart-tooltip-border, rgba(15, 23, 42, 0.08));
+  border-top: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.08));
   color: var(--muted);
   font-size: 12px;
   font-weight: 650;
@@ -1474,9 +1747,9 @@ small {
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  border: 1px solid #cbd6e1;
+  border: 1px solid #c8ccbc;
   border-radius: var(--tight-radius);
-  background: #f3f7fa;
+  background: #f4f6f0;
 }
 
 .chart-range svg {
@@ -1507,7 +1780,7 @@ small {
 
 .range-window {
   fill: rgba(255, 255, 255, 0.5);
-  stroke: #8fa2b5;
+  stroke: #8b9280;
   stroke-width: 1;
 }
 
@@ -1869,7 +2142,7 @@ small {
 }
 
 .metric-catalog-row.active .metric-catalog-main {
-  border-color: rgba(31, 184, 119, 0.36);
+  border-color: rgba(43, 224, 130, 0.36);
   background: var(--surface-tint);
 }
 

@@ -91,6 +91,10 @@ Current implemented design sequence, continued:
 - `2026-05-31-exporting-data.md`: reviewed export first slice with selected-run
   JSON/CSV exports, per-chart plotted-data/image downloads, CSV safety rules,
   bounded synchronous limits, and the async export roadmap.
+- `2026-06-08-run-stop-signal.md`: reviewed cooperative stop-signal plan for
+  Rust stop request endpoints, SDK polling/acknowledgement, dashboard request
+  controls, backwards-compatible legacy status behavior, and production rollout
+  checks.
 - `2026-06-10-backend-cluster-scaling-plan.md`: draft backend scaling plan for
   moving from one control service, one data cell, and one ClickHouse host toward
   a Postgres-backed cell registry, multiple single-writer data cells, explicit

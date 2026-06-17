@@ -3,6 +3,7 @@ import type { components } from "../src/types/api.generated";
 type GeneratedArtifactCollectionSummary = components["schemas"]["ArtifactCollectionSummary"];
 type GeneratedArtifactVersion = components["schemas"]["PublicArtifactVersionRow"];
 type GeneratedArtifactManifestEntry = components["schemas"]["PublicArtifactManifestEntryRow"];
+export type RunControlSummary = components["schemas"]["RunControlSummary"];
 
 export type RunSummary = {
   id: string;
@@ -21,6 +22,7 @@ export type RunSummary = {
   latest_metrics: Record<string, number>;
   metric_aggregates: Record<string, Record<string, number>>;
   artifact_counts: { checkpoint: number; rollout: number; file: number };
+  run_control?: RunControlSummary | null;
 };
 
 export type Summary = {
@@ -38,6 +40,8 @@ export type Overview = {
   total_runs: number;
   active_runs: number;
   failed_runs: number;
+  stopping_runs?: number;
+  stopped_runs?: number;
   best_eval_return: number | null;
   metric_points: number;
 };
@@ -213,6 +217,7 @@ export type CompareRunSort =
   | "config";
 
 export type TabId =
+  | "overview"
   | "runs"
   | "metrics"
   | "distributed"
@@ -223,12 +228,11 @@ export type TabId =
   | "imports"
   | "insights"
   | "artifacts"
-  | "checkpoints"
   | "reports"
   | "settings"
   | "api";
 
-export type Tone = "good" | "bad" | "live" | "neutral";
+export type Tone = "good" | "bad" | "live" | "neutral" | "warn";
 
 export type AlertRow = {
   id: string;
@@ -244,14 +248,6 @@ export type DatasetRow = {
   runs: number;
   seeds: string[];
   best: number | null;
-};
-
-export type CheckpointRow = {
-  id: string;
-  name: string;
-  uri: string;
-  step: string;
-  evalReturn: string;
 };
 
 export type ReportRow = {

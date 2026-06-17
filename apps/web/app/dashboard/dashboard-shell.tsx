@@ -1,7 +1,7 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { Activity } from "lucide-react";
+import { Activity, Square, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -10,11 +10,11 @@ import { ApiClient, ApiError, isAbortError, queryString, retryTransientRequest }
 import { downloadBlob, filenameFromContentDisposition, safeExportFilename } from "../../src/chart-export.js";
 import { buildCheckpointForkBody, checkpointForkIdempotencyKey } from "../../src/checkpoints.js";
 import { canonicalDashboardPath, pathFromLegacyHash, postAuthRedirectPath, safeCheckoutRedirectUrl, safeSameOriginInviteUrl, sanitizeNextPath, tabFromPath, tabToPath } from "../../src/routes.js";
-import { averageGroupedSeries, chartDomain, chartSummary, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../../src/charts.js";
+import { averageGroupedSeries, chartSummary, smoothSeries } from "../../src/charts.js";
 import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
-import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, capSelectionToMatching, defaultRunSelection, deselectVisible, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
@@ -22,7 +22,8 @@ import { ArtifactsTabPane } from "./artifacts/tab-pane";
 import { CompareTabPane } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
-import { DashboardTopbar } from "./chrome/topbar";
+import { SelectionTray } from "./chrome/selection-tray";
+import { AccountWorkspaceMenu, DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
@@ -30,21 +31,21 @@ import { DistributedTabPane } from "./distributed/tab-pane";
 import { InsightsTabPane } from "./insights/tab-pane";
 import { ImportsTabPane } from "./imports/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
-import { CheckpointsTabPane } from "./checkpoints/tab-pane";
 import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
+import { RunFilterBar } from "./runs/run-filter-bar";
 import { SettingsTabPane } from "./settings/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { useFocusTrap } from "./ui/use-focus-trap";
-import { isTabId, tabs } from "../dashboard-config";
+import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
+import type { ShellTabId } from "../dashboard-config";
 import {
   artifactTotalsForRuns,
   buildAlertRows,
   buildApiRows,
   buildDatasetRows,
   buildMetricCatalogRows,
-  buildCheckpointRows,
   buildRunMetricRows,
   buildRunTimelineRows,
   buildAutomaticWorkspace,
@@ -52,9 +53,6 @@ import {
   COMPARE_ARTIFACT_LIMIT,
   COMPARE_RUN_LIMIT,
   DEFAULT_METRIC_KEY,
-  chartHeight,
-  chartPadding,
-  chartWidth,
   defaultTableColumns,
   metricTitle,
   sanitizePanelLayout,
@@ -69,7 +67,7 @@ import {
 import { AppLoadingScreen } from "../loading-screen";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HistogramTimelineState, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
 import type { RunWorkspaceTabId } from "./components/run-workspace";
-import { LEGACY_SAVED_VIEW_PREFIX, NAV_PINNED_KEY, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
+import { LEGACY_SAVED_VIEW_PREFIX, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
 import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "./state/workspace-view-api";
 import type { components } from "../../src/types/api.generated";
@@ -83,6 +81,9 @@ type GeneratedSeatRow = components["schemas"]["SeatRow"];
 type GeneratedApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 type GeneratedInvitationRow = components["schemas"]["PublicInvitationRow"];
 type GeneratedOrgMembershipSummary = components["schemas"]["OrganizationMembershipSummary"];
+type GeneratedRunControlSummary = components["schemas"]["RunControlSummary"];
+type GeneratedRunStopBulkEnvelope = components["schemas"]["RunStopBulkEnvelope"];
+type GeneratedRunStopEnvelope = components["schemas"]["RunStopEnvelope"];
 
 type ThemeMode = "light" | "dark";
 type ChartZoomRange = { min: number; max: number } | null;
@@ -103,8 +104,34 @@ type QuickSearchItem = {
 };
 type SavedViewOption = {
   label: string;
+  project?: string | null;
   source: "control" | "local" | "system";
+  updatedAt?: string;
   value: string;
+};
+type StopDialogSkipCounts = {
+  alreadyStopping: number;
+  readOnly: number;
+  terminal: number;
+  unavailable: number;
+};
+type StopDialogState = {
+  idempotencyKey: string;
+  reason: string;
+  runIds: string[];
+  ineligibleRunCount: number;
+  skippedCounts: StopDialogSkipCounts;
+  skippedRunCount: number;
+  source: "single" | "bulk";
+} | null;
+type WorkspaceViewImportPreview = {
+  action?: string;
+  dry_run?: boolean;
+  name?: string;
+  payload_bytes?: number;
+  project?: string | null;
+  warnings?: string[];
+  workspace_view?: { id?: string; updated_at?: string } | null;
 };
 type DashboardSessionPayload = {
   authenticated?: boolean;
@@ -116,6 +143,9 @@ type DashboardSessionPayload = {
 
 const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
+const DISPLAY_STATUS_VALUES = new Set(["running", "stopping", "stopped", "finished", "failed"]);
+const MAX_STOP_DIALOG_RUNS = 100;
+const SELECTED_RUN_DETAILS_HYDRATION_LIMIT = Math.max(COMPARE_RUN_LIMIT, MAX_STOP_DIALOG_RUNS);
 // Sourced from the generated OpenAPI spec; `list_org_memberships` returns
 // an `OrgMembershipsEnvelope { memberships: OrganizationMembershipSummary[] }`.
 // Rust struct `domain::OrganizationMembershipSummary`.
@@ -169,6 +199,7 @@ const MAX_METRIC_OPTIONS = 120;
 const MAX_METRIC_CATALOG_ROWS = 200;
 const MAX_COMPARE_TABLE_METRICS = 12;
 const MAX_EXPORT_SELECTED_RUNS = 100;
+const MAX_WORKSPACE_VIEW_IMPORT_BYTES = 128 * 1024;
 const ARTIFACT_PAGE_LIMIT = 100;
 const WORKSPACE_HISTOGRAM_TIMELINE_LIMIT = 3;
 const WORKSPACE_HISTORY_LIMIT = 50;
@@ -187,7 +218,16 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<TabId>(["runs", "metrics", "detail", "compare", "artifacts", "checkpoints"]);
+const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
+
+const EMPTY_OVERVIEW: Overview = { total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 };
+// The Overview cockpit lives at a static route segment while every other tab is
+// served by the catch-all, so crossing between them remounts the whole shell
+// and resets overview state to zero — the telemetry ticker would flash
+// "LIVE 0 / PTS 0" until the next load resolves. Cache the last real overview at
+// module scope (per browser tab, cleared on full reload) so a remount restores
+// the previous numbers instead of flashing placeholders.
+let lastKnownOverview: Overview | null = null;
 
 function boundedOptions(options: string[], activeValue: string, limit = MAX_METRIC_OPTIONS) {
   const capped = options.slice(0, limit);
@@ -232,7 +272,7 @@ function isWarehouseStartingError(error: unknown) {
   return error instanceof ApiError && error.code === "warehouse_unavailable";
 }
 
-function shouldSurfaceRunLoadMessage(tab: TabId) {
+function shouldSurfaceRunLoadMessage(tab: ShellTabId) {
   return RUN_LOAD_STATUS_TABS.has(tab);
 }
 
@@ -321,12 +361,14 @@ function richerRunSummary(primary: RunSummary | null | undefined, fallback: RunS
   const latestMetrics = mergeFreshRecord(primary.latest_metrics, fallback.latest_metrics);
   const metricAggregates = mergeFreshRecord(primary.metric_aggregates, fallback.metric_aggregates);
   const artifactCounts = primary.artifact_counts ?? fallback.artifact_counts;
+  const runControl = primary.run_control ?? fallback.run_control;
   if (
     config === primary.config &&
     metadata === primary.metadata &&
     latestMetrics === primary.latest_metrics &&
     metricAggregates === primary.metric_aggregates &&
-    artifactCounts === primary.artifact_counts
+    artifactCounts === primary.artifact_counts &&
+    runControl === primary.run_control
   ) return primary;
   return {
     ...fallback,
@@ -336,7 +378,32 @@ function richerRunSummary(primary: RunSummary | null | undefined, fallback: RunS
     latest_metrics: latestMetrics,
     metric_aggregates: metricAggregates,
     artifact_counts: artifactCounts,
+    run_control: runControl,
   };
+}
+
+function mergeRunControl(run: RunSummary, control: GeneratedRunControlSummary): RunSummary {
+  return { ...run, run_control: control };
+}
+
+function normalizeDisplayStatus(value: string | null | undefined) {
+  const status = (value ?? "").trim().toLowerCase();
+  return DISPLAY_STATUS_VALUES.has(status) ? status : "";
+}
+
+function runHasPendingStop(run: RunSummary | null | undefined) {
+  const state = run?.run_control?.stop_state;
+  return state === "requested" || state === "acknowledged";
+}
+
+function adjustOverviewForDisplayStatus(overview: Overview, before: string, after: string): Overview {
+  if (before === after) return overview;
+  const next = { ...overview };
+  if (before === "stopping") next.stopping_runs = Math.max(0, Number(next.stopping_runs ?? 0) - 1);
+  if (after === "stopping") next.stopping_runs = Number(next.stopping_runs ?? 0) + 1;
+  if (before === "stopped") next.stopped_runs = Math.max(0, Number(next.stopped_runs ?? 0) - 1);
+  if (after === "stopped") next.stopped_runs = Number(next.stopped_runs ?? 0) + 1;
+  return next;
 }
 
 function sanitizeWorkspaceFieldPatch(value: string | undefined) {
@@ -504,13 +571,17 @@ function safeSavedView(raw: string | null) {
   }
 }
 
-function initialActiveTab(initialTab: TabId) {
+function initialActiveTab(initialTab: ShellTabId) {
   if (typeof window === "undefined") return initialTab;
   const legacyPath = pathFromLegacyHash(window.location.hash);
-  return legacyPath ? tabFromPath(legacyPath) as TabId : tabFromPath(window.location.pathname) as TabId;
+  return legacyPath ? shellTabFromPath(legacyPath) : shellTabFromPath(window.location.pathname);
 }
 
-export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) {
+function workspaceViewImportByteLength(value: string) {
+  return new TextEncoder().encode(value).length;
+}
+
+export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabId }) {
   const api = useMemo(() => new ApiClient(), []);
   const clerk = useClerk();
   const dashboardRequestRef = useRef(0);
@@ -555,12 +626,14 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const dashboardSelectionFilterKeyRef = useRef("");
   const selectAllMatchingControllerRef = useRef<AbortController | null>(null);
   const applySavedViewRequestRef = useRef(0);
+  const viewImportTextRef = useRef("");
+  const viewImportRequestRef = useRef(0);
   const projectPreferenceWriteTimerRef = useRef<number | null>(null);
   const compareArtifactCacheRef = useRef<Map<string, Artifact[]>>(new Map());
   const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
   const compareArtifactCacheVersionRef = useRef(0);
   const messageRef = useRef("Loading runs...");
-  const [activeTab, setActiveTab] = useState<TabId>(() => initialActiveTab(initialTab));
+  const [activeTab, setActiveTab] = useState<ShellTabId>(() => initialActiveTab(initialTab));
   const activeTabRef = useRef(activeTab);
   const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
   const [dashboardSessionChecked, setDashboardSessionChecked] = useState(false);
@@ -610,7 +683,16 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [pageNavigationPending, setPageNavigationPending] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
   const [summary, setSummary] = useState<Summary>({ runs: [], metric_keys: [], total: 0 });
-  const [overview, setOverview] = useState<Overview>({ total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 });
+  const [overview, setOverviewState] = useState<Overview>(() => lastKnownOverview ?? EMPTY_OVERVIEW);
+  // Persist every real overview to the module cache so a shell remount (Overview
+  // route ⇄ catch-all tabs) restores the last numbers instead of flashing zero.
+  const setOverview = useCallback((value: Overview | ((current: Overview) => Overview)) => {
+    setOverviewState((current) => {
+      const next = typeof value === "function" ? (value as (c: Overview) => Overview)(current) : value;
+      lastKnownOverview = next;
+      return next;
+    });
+  }, []);
   // Seed selection from ?runs=… so compare links survive reloads and can be
   // shared. The default auto-select skips when the URL provided a selection.
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>(() =>
@@ -635,11 +717,18 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [savedViews, setSavedViews] = useState<SavedViewOption[]>([]);
   const [savedViewKey, setSavedViewKey] = useState("");
   const [viewName, setViewName] = useState("");
+  const [viewImportOpen, setViewImportOpen] = useState(false);
+  const [viewImportText, setViewImportText] = useState("");
+  const [viewImportFileName, setViewImportFileName] = useState("");
+  const [viewImportPreview, setViewImportPreview] = useState<WorkspaceViewImportPreview | null>(null);
+  const [viewImportPreviewText, setViewImportPreviewText] = useState("");
+  const [viewImportBusy, setViewImportBusy] = useState(false);
+  const [viewImportError, setViewImportError] = useState("");
+  const [deleteViewTarget, setDeleteViewTarget] = useState<SavedViewOption | null>(null);
+  const [viewActionBusy, setViewActionBusy] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [tableColumns, setTableColumns] = useState<TableColumns>(defaultTableColumns);
   const [pinnedMetrics, setPinnedMetrics] = useState<string[]>([]);
-  // Pinned (labeled) nav is the default; collapsing to icons is an explicit choice.
-  const [navPinned, setNavPinned] = useState(true);
   const [navAutoOpen, setNavAutoOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isMobile = useIsMobile();
@@ -658,6 +747,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const [quickSearchOpen, setQuickSearchOpen] = useState(false);
   const [quickSearchInput, setQuickSearchInput] = useState("");
   const [quickSearchActiveIndex, setQuickSearchActiveIndex] = useState(0);
+  const [stopDialog, setStopDialog] = useState<StopDialogState>(null);
+  const [stopSubmitting, setStopSubmitting] = useState(false);
+  const [stopError, setStopError] = useState("");
   const [workspaceUndoStack, setWorkspaceUndoStack] = useState<WorkspaceView[]>([]);
   const [workspaceRedoStack, setWorkspaceRedoStack] = useState<WorkspaceView[]>([]);
   const [chartZoomRange, setChartZoomRange] = useState<ChartZoomRange>(null);
@@ -826,10 +918,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     return smoothSeries(grouped, smoothing);
   }, [groupAverage, seriesWithGroups, smoothing]);
 
-  const fullDomain = useMemo(() => chartDomain(displaySeries, xMode, metricKey), [displaySeries, metricKey, xMode]);
-  const rangeSeries = useMemo(() => normalizeSeries(displaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey), [displaySeries, metricKey, xMode]);
-  const normalizedSeries = useMemo(() => normalizeSeries(displaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
-  const domain = useMemo(() => chartDomain(displaySeries, xMode, metricKey, chartZoomRange), [chartZoomRange, displaySeries, metricKey, xMode]);
   const chartSummaries = useMemo(() => chartSummary(displaySeries), [displaySeries]);
   const metricCatalogSelectionIds = useMemo(
     () => (selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id)),
@@ -842,10 +930,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const found = seriesWithGroups.find((item) => item.id === primaryRun?.id);
     return found ? smoothSeries([found], smoothing) : [];
   }, [primaryRun?.id, seriesWithGroups, smoothing]);
-  const primaryFullDomain = useMemo(() => chartDomain(primaryDisplaySeries, xMode, metricKey), [metricKey, primaryDisplaySeries, xMode]);
-  const primaryRangeSeries = useMemo(() => normalizeSeries(primaryDisplaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey), [metricKey, primaryDisplaySeries, xMode]);
-  const primaryNormalizedSeries = useMemo(() => normalizeSeries(primaryDisplaySeries, chartWidth, chartHeight, chartPadding, xMode, metricKey, primaryChartZoomRange), [metricKey, primaryChartZoomRange, primaryDisplaySeries, xMode]);
-  const primaryDomain = useMemo(() => chartDomain(primaryDisplaySeries, xMode, metricKey, primaryChartZoomRange), [metricKey, primaryChartZoomRange, primaryDisplaySeries, xMode]);
   const pinnedChartPanels = useMemo(() => (
     pinnedMetrics
       .filter((metric) => metric && metric !== metricKey)
@@ -864,23 +948,20 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         return {
           metric,
           series: preparedSeries,
-          normalizedSeries: normalizeSeries(preparedSeries, chartWidth, chartHeight, chartPadding, xMode, metric, zoomRange),
-          domain: chartDomain(preparedSeries, xMode, metric, zoomRange),
-          fullDomain: chartDomain(preparedSeries, xMode, metric),
-          rangeSeries: normalizeSeries(preparedSeries, chartWidth, chartHeight, chartPadding, xMode, metric),
           summaries: chartSummary(preparedSeries),
           zoomRange,
         };
       })
-  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns, xMode]);
+  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns]);
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
+  // Rail count badges: total runs on Runs, open-alert count on Run Health.
   const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
-  const checkpointRows = useMemo(() => buildCheckpointRows(primaryRun, visibleArtifacts), [primaryRun, visibleArtifacts]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
-  const apiRows = useMemo(() => buildApiRows(metricKey, project, status), [metricKey, project, status]);
+  const apiStatusParams = useMemo(() => dashboardStatusQueryParams(status, status), [status]);
+  const apiRows = useMemo(() => buildApiRows(metricKey, project, apiStatusParams), [apiStatusParams, metricKey, project]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
   const localSavedViewScope = useMemo(
     () => storageScopeId([activeOrgId, sessionPayload?.user?.primary_email ?? ""].filter(Boolean).join(":")),
@@ -899,6 +980,19 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   const sharedDemoSession = isSharedDemoSession(sessionPayload);
   const canManageOrg = roleCanManageOrg(activeMembershipRole) && !sharedDemoSession;
   const canWriteWorkspace = canWriteRuns && !sharedDemoSession;
+  const canControlRuns = canWriteRuns && !sharedDemoSession;
+  const selectedStopCandidateTotal = useMemo(
+    () => selectedRuns.filter((run) => canRequestStop(run, canControlRuns)).length,
+    [canControlRuns, selectedRuns],
+  );
+  const selectedStopCandidateCount = Math.min(MAX_STOP_DIALOG_RUNS, selectedStopCandidateTotal);
+  const selectedStopDisabledReason = selectedStopCandidateCount
+    ? ""
+    : !canControlRuns
+      ? "Your role can view runs but cannot stop them."
+      : selectedRunIds.length
+        ? "Selected runs are not running or are already stopping."
+        : "Select running runs that are not already stopping.";
   const canEditReports = canWriteWorkspace;
   const activeMembershipSummary = useMemo(
     () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
@@ -1020,6 +1114,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }, [activeOrgId, resetRunPagination]);
   const workspacePanelMetrics = useMemo(() => workspaceMetricKeys(workspaceView, panelSearch), [panelSearch, workspaceView]);
   const workspacePanelMetricKey = useMemo(() => workspacePanelMetrics.join("\u0000"), [workspacePanelMetrics]);
+  const workspaceSeriesViewKey = workspaceView.id;
   const availableWorkspaceMetrics = useMemo(() => allMetricOptions.slice(0, MAX_METRIC_OPTIONS), [allMetricOptions]);
   const maxWorkspacePanelRuns = useMemo(() => {
     const values = workspaceView.sections.flatMap((section) => (
@@ -1068,8 +1163,23 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     [editingFieldCatalogMaxRuns, workspacePanelRuns],
   );
   const workspaceFetchRuns = useMemo(() => {
-    if (selectedRuns.length) return selectedRuns.slice(0, MAX_SELECTED_RUNS);
-    return sortedRuns.slice(0, maxWorkspacePanelRuns);
+    // Always fetch the visible page's runs so the Runs-table Trend column keeps
+    // its sparklines no matter what is selected — and so toggling a *visible*
+    // row never changes this set (which would otherwise clear workspaceSeries
+    // and collapse every Trend cell mid-reload). Union in any off-page selected
+    // runs so the workspace line panels (which filter series by run id) still
+    // plot selections that aren't on the current page.
+    const pageRuns = sortedRuns.slice(0, maxWorkspacePanelRuns);
+    if (!selectedRuns.length) return pageRuns;
+    const seen = new Set(pageRuns.map((run) => run.id));
+    const merged = pageRuns.slice();
+    for (const run of selectedRuns) {
+      if (seen.has(run.id)) continue;
+      seen.add(run.id);
+      merged.push(run);
+      if (merged.length >= MAX_SELECTED_RUNS) break;
+    }
+    return merged.slice(0, MAX_SELECTED_RUNS);
   }, [maxWorkspacePanelRuns, selectedRuns, sortedRuns]);
   const workspaceFetchRunKey = useMemo(() => workspaceFetchRuns.map((run) => run.id).join("\u0000"), [workspaceFetchRuns]);
   const hasLiveWorkspaceRun = useMemo(() => workspaceFetchRuns.some((run) => run.status === "running"), [workspaceFetchRuns]);
@@ -1100,6 +1210,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     { id: "escape", group: "General", label: "Close top overlay", shortcut: "Esc", enabled: true },
     { id: "undo-workspace", group: "Workspace", label: "Undo workspace change", shortcut: `${modifierLabel}+Z`, enabled: workspaceUndoStack.length > 0 },
     { id: "redo-workspace", group: "Workspace", label: "Redo workspace change", shortcut: `${modifierLabel}+Shift+Z`, enabled: workspaceRedoStack.length > 0 },
+    { id: "tab-jump", group: "Navigation", label: "Jump to tab (rail order)", shortcut: "1-9", enabled: true, description: "1 opens Runs, 2 Metrics, and so on down the sidebar." },
     { id: "runs-rail", group: "Navigation", label: runsRailCollapsed ? "Restore Runs selector" : "Collapse Runs selector", shortcut: `${modifierLabel}+.`, enabled: activeTab === "runs" },
     { id: "focus-workspace", group: "Navigation", label: "Focus Runs selector or workspace", shortcut: `${modifierLabel}+J`, enabled: activeTab === "runs" },
     { id: "fullscreen-prev", group: "Panels", label: "Previous fullscreen panel", shortcut: "Left Arrow", enabled: Boolean(fullscreenPanelContext && fullscreenPanelIndex > 0) },
@@ -1109,6 +1220,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     Boolean(fullscreenPanelContext),
     () => setFullscreenPanelRef(null),
     "button[aria-label='Close fullscreen panel']",
+  );
+  const stopDialogRef = useFocusTrap<HTMLDivElement>(
+    Boolean(stopDialog),
+    closeStopDialog,
+    "#stop-reason",
   );
   const quickSearchItems = useMemo<QuickSearchItem[]>(() => {
     const items: QuickSearchItem[] = [
@@ -1133,7 +1249,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         id: `run:${run.id}`,
         group: "Run",
         label: run.name,
-        description: `${run.project} · ${run.status} · ${(run.tags ?? []).join(" ")} · ${run.metadata?.notes ?? ""}`,
+        description: `${run.project} · ${displayStatusForRun(run)} · ${(run.tags ?? []).join(" ")} · ${run.metadata?.notes ?? ""}`,
         onSelect: () => {
           setPrimaryRunId(run.id);
           selectTab("detail");
@@ -1193,6 +1309,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       : quickSearchItems;
     return filtered.slice(0, 24);
   }, [quickSearchInput, quickSearchItems]);
+  const selectedControlSavedView = useMemo(
+    () => savedViews.find((view) => view.value === savedViewKey && view.source === "control") ?? null,
+    [savedViewKey, savedViews],
+  );
 
   const loadProjects = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     try {
@@ -1229,7 +1349,9 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       const controlOptions = workspaceViewSummariesFromPayload(payload)
         .map((view) => ({
           label: view.name,
+          project: view.project ?? null,
           source: "control" as const,
+          updatedAt: view.updated_at,
           value: controlSavedViewKey(view.id),
         }));
       setSavedViews([...controlOptions, ...localOptions]);
@@ -1254,9 +1376,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }
     let keepInitialRunsLoading = false;
     try {
+      const displayStatus = normalizeDisplayStatus(status);
+      const statusParams = dashboardStatusQueryParams(displayStatus, status);
       const params = currentPageCursor
-        ? { project, status, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
-        : { project, status, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
+        ? { project, ...statusParams, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
+        : { project, ...statusParams, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
       let summaryPayload: Summary;
       try {
@@ -1276,7 +1400,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       }
       if (requestId !== dashboardRequestRef.current) return;
       const overviewResult = await retryTransientRequest(
-        () => api.get(`/api/overview${queryString({ project, status, q: query, metric_key: metricKey })}`, requestOptions),
+        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, metric_key: metricKey })}`, requestOptions),
         retryOptions,
       ).then(
         (value) => ({ status: "fulfilled" as const, value }),
@@ -1607,7 +1731,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         const canonicalPath = canonicalDashboardPath(window.location.pathname);
         if (window.location.pathname !== canonicalPath) window.history.replaceState(null, "", canonicalPath + search);
       }
-      const nextTab = tabFromPath(window.location.pathname) as TabId;
+      const nextTab = shellTabFromPath(window.location.pathname);
       setActiveTab(nextTab);
       // Sync project state from the URL on popstate so back/forward restores
       // the previously-selected project.
@@ -1684,13 +1808,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   useEffect(() => {
     setSavedViews(localSavedViewOptions(localSavedViewProjectScope));
-    // Default to the pinned (labeled) rail; only an explicit unpin collapses it.
-    setNavPinned(localStorage.getItem(NAV_PINNED_KEY) !== "false");
     setRunsRailCollapsed(localStorage.getItem(RUNS_RAIL_COLLAPSED_KEY) === "true");
     const storedTheme = localStorage.getItem(THEME_KEY);
     const nextTheme = storedTheme === "dark" || storedTheme === "light"
       ? storedTheme
-      : "dark";
+      : "light";
     setTheme(nextTheme);
     setThemeReady(true);
   }, [localSavedViewProjectScope]);
@@ -1760,10 +1882,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     localStorage.setItem(scopedWorkspaceStorageKey, JSON.stringify({ ...workspaceView, updatedAt: new Date().toISOString() }));
   }, [project, scopedWorkspaceStorageKey, workspaceReady, workspaceView]);
 
-  useEffect(() => {
-    localStorage.setItem(NAV_PINNED_KEY, String(navPinned));
-  }, [navPinned]);
-
   // Mirror explicit run selections into ?runs=… (replaceState, capped) so the
   // current compare/chart context survives reloads and can be shared.
   useEffect(() => {
@@ -1809,8 +1927,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     const keepIds = [...new Set([...selectedRunIds, primaryRunId, referenceRunId].filter(Boolean))];
     const pageDetails = Object.fromEntries(sortedRuns.filter((run) => keepIds.includes(run.id)).map((run) => [run.id, run]));
     const missingIds = keepIds
-      .filter((id) => !selectedRunDetails[id] && !pageDetails[id])
-      .slice(0, COMPARE_RUN_LIMIT);
+      .filter((id) => (!selectedRunDetails[id] && !pageDetails[id]) || (runHasPendingStop(selectedRunDetails[id]) && !pageDetails[id]))
+      .slice(0, SELECTED_RUN_DETAILS_HYDRATION_LIMIT);
     if (!missingIds.length) {
       setSelectedRunDetails((current) => pruneRunDetails(current, pageDetails, {}, keepIds));
       return () => {
@@ -1934,7 +2052,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    const signature = `${activeTab}|${workspaceFetchRunKey}|${workspacePanelMetricKey}`;
+    const signature = `${activeTab}|${workspaceSeriesViewKey}|${workspaceFetchRunKey}|${workspacePanelMetricKey}`;
     const isLiveRefresh = signature === workspaceSeriesSignatureRef.current;
     workspaceSeriesSignatureRef.current = signature;
     async function loadWorkspaceSeries() {
@@ -1955,7 +2073,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey, liveSeriesTick]);
+  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey, workspaceSeriesViewKey, liveSeriesTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2031,7 +2149,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     let cancelled = false;
     const controller = new AbortController();
     async function loadArtifacts() {
-      const shouldLoad = activeTab === "detail" || activeTab === "checkpoints" || activeTab === "artifacts";
+      const shouldLoad = activeTab === "detail" || activeTab === "artifacts";
       if (!shouldLoad || !primaryRun?.id) {
         setArtifacts([]);
         setArtifactsRunId("");
@@ -2612,6 +2730,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       setMessage("API key management is available to workspace admins.");
       return;
     }
+    // Irreversible for any SDK still using the key — always confirm.
+    if (!window.confirm("Revoke this API key? SDK clients using it stop authenticating immediately. This cannot be undone.")) return;
     setAdminBusy(true);
     setApiAdminTone("status");
     setApiAdminMessage("Revoking API key...");
@@ -2699,7 +2819,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         : await api.post("/api/workspace-views", { name, project: project || null, payload });
       const savedView = workspaceViewFromPayload(response);
       if (savedView) {
-        upsertOption({ label: name, source: "control", value: controlSavedViewKey(savedView.id) });
+        upsertOption({
+          label: name,
+          project: savedView.project ?? null,
+          source: "control",
+          updatedAt: savedView.updated_at,
+          value: controlSavedViewKey(savedView.id),
+        });
         await loadSavedViews();
         setMessage("Saved view.");
         return;
@@ -2711,6 +2837,209 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       upsertOption({ label: name, source: "local", value: key });
       setMessage("Saved view locally. Shared save unavailable.");
       return;
+    }
+  }
+
+  async function exportSavedView() {
+    const controlId = controlSavedViewId(savedViewKey);
+    if (!controlId || !selectedControlSavedView) {
+      setMessage("Choose a shared saved view before exporting.");
+      return;
+    }
+    setViewActionBusy(true);
+    setMessage("Exporting saved view...");
+    try {
+      const { blob, headers } = await api.download(`/api/workspace-views/${controlId}/export`, {
+        credentials: "same-origin",
+      });
+      const serverName = filenameFromContentDisposition(headers.get("content-disposition"));
+      const fallbackName = `${safeExportFilename(selectedControlSavedView.label, "workspace-view")}.instantml-view.json`;
+      const safeName = safeExportFilename(serverName || fallbackName, fallbackName);
+      downloadBlob(blob, safeName.endsWith(".json") ? safeName : `${safeName}.json`);
+      setMessage("Exported saved view.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to export saved view.");
+    } finally {
+      setViewActionBusy(false);
+    }
+  }
+
+  function openImportSavedView() {
+    if (!canWriteWorkspace) {
+      setMessage("Read only workspaces cannot import shared views.");
+      return;
+    }
+    setViewImportError("");
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    setViewImportOpen(true);
+  }
+
+  function updateImportSavedViewText(value: string) {
+    viewImportTextRef.current = value;
+    viewImportRequestRef.current += 1;
+    setViewImportText(value);
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    setViewImportError(
+      workspaceViewImportByteLength(value) > MAX_WORKSPACE_VIEW_IMPORT_BYTES
+        ? "Import JSON must be 128 KiB or smaller."
+        : "",
+    );
+  }
+
+  async function updateImportSavedViewFile(file: File | null) {
+    setViewImportError("");
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    const requestId = viewImportRequestRef.current + 1;
+    viewImportRequestRef.current = requestId;
+    if (!file) {
+      setViewImportFileName("");
+      return;
+    }
+    setViewImportFileName(file.name);
+    if (file.size > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+      viewImportTextRef.current = "";
+      setViewImportText("");
+      setViewImportError("Import JSON files must be 128 KiB or smaller.");
+      return;
+    }
+    try {
+      const text = await file.text();
+      if (requestId !== viewImportRequestRef.current) return;
+      if (workspaceViewImportByteLength(text) > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+        viewImportTextRef.current = "";
+        setViewImportText("");
+        setViewImportError("Import JSON files must be 128 KiB or smaller.");
+        return;
+      }
+      viewImportTextRef.current = text;
+      setViewImportText(text);
+    } catch {
+      if (requestId !== viewImportRequestRef.current) return;
+      setViewImportError("Unable to read import file.");
+    }
+  }
+
+  async function previewImportSavedView() {
+    if (viewImportBusy) return;
+    const previewText = viewImportTextRef.current;
+    if (workspaceViewImportByteLength(previewText) > MAX_WORKSPACE_VIEW_IMPORT_BYTES) {
+      setViewImportError("Import JSON must be 128 KiB or smaller.");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      return;
+    }
+    setViewImportError("");
+    setViewImportPreview(null);
+    setViewImportPreviewText("");
+    let exportedView: unknown = null;
+    try {
+      exportedView = JSON.parse(previewText);
+    } catch {
+      setViewImportError("Import file must be valid JSON.");
+      return;
+    }
+    const requestId = viewImportRequestRef.current;
+    setViewImportBusy(true);
+    try {
+      const preview = await api.post("/api/workspace-views/import", {
+        exported_view: exportedView,
+        dry_run: true,
+        conflict_strategy: "create",
+      }) as WorkspaceViewImportPreview;
+      if (requestId !== viewImportRequestRef.current || previewText !== viewImportTextRef.current) {
+        setViewImportError("Import JSON changed. Preview it again before importing.");
+        return;
+      }
+      setViewImportPreview(preview);
+      setViewImportPreviewText(previewText);
+      setMessage("Import preview ready.");
+    } catch (error) {
+      setViewImportError(error instanceof Error ? error.message : "Unable to preview import.");
+    } finally {
+      setViewImportBusy(false);
+    }
+  }
+
+  async function confirmImportSavedView() {
+    if (viewImportBusy || !viewImportPreview) return;
+    if (!viewImportPreviewText || viewImportPreviewText !== viewImportTextRef.current) {
+      setViewImportError("Import JSON changed. Preview it again before importing.");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      return;
+    }
+    setViewImportError("");
+    let exportedView: unknown = null;
+    try {
+      exportedView = JSON.parse(viewImportPreviewText);
+    } catch {
+      setViewImportError("Import file must be valid JSON.");
+      return;
+    }
+    setViewImportBusy(true);
+    try {
+      const response = await api.post("/api/workspace-views/import", {
+        exported_view: exportedView,
+        dry_run: false,
+        conflict_strategy: "create",
+      }) as WorkspaceViewImportPreview;
+      const savedView = response.workspace_view;
+      await loadSavedViews();
+      if (savedView?.id) {
+        const key = controlSavedViewKey(savedView.id);
+        await applySavedView(key);
+        setSavedViewKey(key);
+      }
+      setViewImportOpen(false);
+      setViewImportText("");
+      viewImportTextRef.current = "";
+      setViewImportFileName("");
+      setViewImportPreview(null);
+      setViewImportPreviewText("");
+      setMessage("Imported saved view.");
+    } catch (error) {
+      setViewImportError(error instanceof Error ? error.message : "Unable to import saved view.");
+    } finally {
+      setViewImportBusy(false);
+    }
+  }
+
+  function requestDeleteSavedView() {
+    if (!selectedControlSavedView) {
+      setMessage("Choose a shared saved view before deleting.");
+      return;
+    }
+    if (!selectedControlSavedView.updatedAt) {
+      setMessage("Refreshing saved views before delete...");
+      loadSavedViews();
+      return;
+    }
+    setDeleteViewTarget(selectedControlSavedView);
+  }
+
+  async function confirmDeleteSavedView() {
+    const target = deleteViewTarget;
+    const controlId = target ? controlSavedViewId(target.value) : "";
+    if (!target || !controlId || !target.updatedAt || viewActionBusy) return;
+    setViewActionBusy(true);
+    setMessage("Deleting saved view...");
+    try {
+      await api.delete(`/api/workspace-views/${controlId}${queryString({ expected_updated_at: target.updatedAt })}`);
+      setSavedViews((current) => current.filter((view) => view.value !== target.value));
+      if (savedViewKey === target.value) {
+        setSavedViewKey("");
+        setViewName("");
+      }
+      setDeleteViewTarget(null);
+      await loadSavedViews();
+      setMessage("Deleted saved view.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to delete saved view.");
+    } finally {
+      setViewActionBusy(false);
     }
   }
 
@@ -2902,6 +3231,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       let offset = 0;
       let cursor = "";
       let total = 0;
+      const displayStatus = normalizeDisplayStatus(status);
+      const statusParams = dashboardStatusQueryParams(displayStatus, status);
       while (matchingRuns.length < BULK_SELECT_MATCHING_LIMIT) {
         if (controller.signal.aborted || requestFilterKey !== dashboardSelectionFilterKeyRef.current) {
           controller.abort();
@@ -2910,7 +3241,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         }
         const params = cursor ? {
           project,
-          status,
+          ...statusParams,
           q: query,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           cursor,
@@ -2919,7 +3250,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           metric_key: metricKey,
         } : {
           project,
-          status,
+          ...statusParams,
           q: query,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           offset,
@@ -3081,6 +3412,196 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setPrimaryRunId(child.id);
     setRunWorkspaceTab("graph");
     setMessage("Forked run created. InstantML did not start training.");
+  }
+
+  function runSummaryForId(runId: string) {
+    return selectedRunDetails[runId]
+      ?? sortedRuns.find((run) => run.id === runId)
+      ?? runDirectoryRef.current.get(runId)
+      ?? null;
+  }
+
+  function stopCandidatesForIds(runIds: string[]) {
+    const seen = new Set<string>();
+    const runs: RunSummary[] = [];
+    const skippedCounts: StopDialogSkipCounts = {
+      alreadyStopping: 0,
+      readOnly: 0,
+      terminal: 0,
+      unavailable: 0,
+    };
+    for (const runId of runIds) {
+      if (seen.has(runId)) continue;
+      seen.add(runId);
+      const run = runSummaryForId(runId);
+      if (!run) {
+        skippedCounts.unavailable += 1;
+        continue;
+      }
+      if (!canControlRuns) {
+        skippedCounts.readOnly += 1;
+        continue;
+      }
+      if (run.status !== "running") {
+        skippedCounts.terminal += 1;
+        continue;
+      }
+      if (!canRequestStop(run, canControlRuns)) {
+        skippedCounts.alreadyStopping += displayStatusForRun(run) === "stopping" || ["requested", "acknowledged"].includes(run.run_control?.stop_state || "")
+          ? 1
+          : 0;
+        skippedCounts.unavailable += displayStatusForRun(run) === "stopping" || ["requested", "acknowledged"].includes(run.run_control?.stop_state || "")
+          ? 0
+          : 1;
+        continue;
+      }
+      runs.push(run);
+    }
+    const cappedRuns = runs.slice(0, MAX_STOP_DIALOG_RUNS);
+    const ineligibleRunCount = Object.values(skippedCounts).reduce((total, count) => total + count, 0);
+    return {
+      runs: cappedRuns,
+      ineligibleRunCount,
+      skippedCounts,
+      skippedRunCount: Math.max(0, runs.length - cappedRuns.length),
+    };
+  }
+
+  function nextStopIdempotencyKey(source: "single" | "bulk") {
+    const entropy = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    return `instantml-stop:${source}:${entropy}`;
+  }
+
+  function openStopDialogForRuns(runIds: string[], source: "single" | "bulk" = "single") {
+    if (!canControlRuns) {
+      setMessage("Read only workspaces can view runs but cannot stop them.");
+      return;
+    }
+    const { runs: candidates, ineligibleRunCount, skippedCounts, skippedRunCount } = stopCandidatesForIds(runIds);
+    if (!candidates.length) {
+      setMessage(source === "bulk" ? "No selected running runs can be stopped." : "This run cannot be stopped.");
+      return;
+    }
+    const dialogSource = source === "bulk" || candidates.length > 1 ? "bulk" : "single";
+    setStopError("");
+    setStopDialog({
+      idempotencyKey: nextStopIdempotencyKey(dialogSource),
+      ineligibleRunCount,
+      reason: "",
+      runIds: candidates.map((run) => run.id),
+      skippedCounts,
+      skippedRunCount,
+      source: dialogSource,
+    });
+  }
+
+  function closeStopDialog() {
+    if (stopSubmitting) return;
+    setStopDialog(null);
+    setStopError("");
+  }
+
+  function setStopDialogReason(reason: string) {
+    setStopDialog((current) => current ? { ...current, reason } : current);
+  }
+
+  function collectStopControls(payload: GeneratedRunStopEnvelope | GeneratedRunStopBulkEnvelope) {
+    const controls = new Map<string, GeneratedRunControlSummary>();
+    const failures: string[] = [];
+    let terminalCount = 0;
+    if ("results" in payload) {
+      for (const result of payload.results ?? []) {
+        if (result.run_control?.stop_requested) controls.set(result.run_id, result.run_control);
+        if (result.ok && result.already_terminal) terminalCount += 1;
+        if (!result.ok) failures.push(result.error || `Unable to stop ${result.run_id}.`);
+      }
+    } else {
+      if (payload.run_control?.stop_requested) controls.set(payload.run_id, payload.run_control);
+      if (payload.ok && payload.already_terminal) terminalCount += 1;
+    }
+    return { controls, failures, terminalCount };
+  }
+
+  async function submitStopDialog() {
+    if (!stopDialog || stopSubmitting) return;
+    const runIds = stopDialog.runIds.slice(0, MAX_STOP_DIALOG_RUNS);
+    if (!runIds.length) {
+      setStopError("No eligible runs remain.");
+      return;
+    }
+    setStopSubmitting(true);
+    setStopError("");
+    try {
+      const reason = stopDialog.reason.trim();
+      const headers = { "Idempotency-Key": stopDialog.idempotencyKey };
+      const payload = stopDialog.source === "single" && runIds.length === 1
+        ? await api.post(`/api/runs/${runIds[0]}/stop`, { reason: reason || null }, { headers }) as GeneratedRunStopEnvelope
+        : await api.post("/api/runs/stop", { run_ids: runIds, reason: reason || null }, { headers }) as GeneratedRunStopBulkEnvelope;
+      const { controls, failures, terminalCount } = collectStopControls(payload);
+      const okCount = controls.size;
+      if (!okCount && failures.length) throw new Error(failures[0]);
+      if (!okCount && terminalCount) {
+        setStopError("These runs are no longer running. Refresh the run list and try again if needed.");
+        return;
+      }
+      setStopDialog(null);
+      setStopError("");
+      setMessage(failures.length
+        ? `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. ${failures.length + terminalCount} could not be updated.`
+        : `Stop requested for ${okCount} ${okCount === 1 ? "run" : "runs"}. Waiting for SDK acknowledgement.`);
+      setSummary((current) => {
+        let removed = 0;
+        const activeDisplayStatus = normalizeDisplayStatus(status);
+        const runs = current.runs.flatMap((run) => {
+          if (!controls.has(run.id)) return [run];
+          const next = mergeRunControl(run, controls.get(run.id)!);
+          if (activeDisplayStatus && displayStatusForRun(next) !== activeDisplayStatus) {
+            removed += 1;
+            return [];
+          }
+          return [next];
+        });
+        return {
+          ...current,
+          runs,
+          total: removed > 0 ? Math.max(0, current.total - removed) : current.total,
+        };
+      });
+      setSelectedRunDetails((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [runId, control] of controls.entries()) {
+          const existing = next[runId] ?? sortedRuns.find((run) => run.id === runId) ?? runDirectoryRef.current.get(runId);
+          if (!existing) continue;
+          next[runId] = mergeRunControl(existing, control);
+          runDirectoryRef.current.set(runId, next[runId]);
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+      setSideBySide((current: any) => current ? {
+        ...current,
+        runs: (current.runs ?? []).map((run: RunSummary) => controls.has(run.id) ? mergeRunControl(run, controls.get(run.id)!) : run),
+      } : current);
+      setOverview((current) => {
+        let next = current;
+        for (const [runId, control] of controls.entries()) {
+          const before = displayStatusForRun(runSummaryForId(runId));
+          const after = normalizeDisplayStatus(control.display_status) || before;
+          next = adjustOverviewForDisplayStatus(next, before, after);
+        }
+        return next;
+      });
+      void loadDashboard({ silent: true });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to request stop.";
+      setStopError(detail);
+      setMessage(detail);
+    } finally {
+      setStopSubmitting(false);
+    }
   }
 
   function clearFilters() {
@@ -3399,7 +3920,17 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
   }
 
   function setWorkspaceMode(mode: "automatic" | "manual") {
-    commitWorkspace(() => mode === "automatic" ? buildAutomaticWorkspace(allMetricOptions, project) : buildManualWorkspace(project), `Workspace switched to ${mode} mode. Undo available.`);
+    commitWorkspace(
+      (current) => {
+        if (mode === "automatic") return buildAutomaticWorkspace(allMetricOptions, project);
+        // Manual mode seeds from whatever is on the board right now — switching
+        // modes must never present an empty board (reads as data loss).
+        const seeded = buildManualWorkspace(project);
+        const hasPanels = current.sections?.some((section) => section.panels.length);
+        return hasPanels ? { ...seeded, sections: current.sections } : seeded;
+      },
+      `Workspace switched to ${mode} mode. Undo available.`,
+    );
     setAddPanelSectionId("");
   }
 
@@ -3480,7 +4011,21 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     setMessage(item.group === "View" ? "Saved view applied." : `Opened ${item.label}.`);
   }
 
-  function dismissTopOverlay() {
+function dismissTopOverlay() {
+  if (stopDialog) {
+    closeStopDialog();
+    return true;
+  }
+  if (deleteViewTarget) {
+    clearChartHover();
+    setDeleteViewTarget(null);
+    return true;
+    }
+  if (viewImportOpen) {
+    clearChartHover();
+    setViewImportOpen(false);
+    return true;
+  }
     if (quickSearchOpen) {
       clearChartHover();
       setQuickSearchOpen(false);
@@ -3538,25 +4083,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     }, 0);
   }
 
-  function handleChartMove(event: MouseEvent<SVGSVGElement>) {
-    handleChartMoveFor(event, normalizedSeries, metricKey);
-  }
-
-  function handleChartMoveFor(event: MouseEvent<SVGSVGElement>, chartSeries: any[], chartMetricKey: string) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const point = svgPointFromClient(rect, event.clientX, event.clientY, chartWidth, chartHeight);
-    pendingHoverRef.current = { chartMetricKey, chartSeries, x: point.x, y: point.y };
-    if (hoverFrameRef.current !== null) return;
-    hoverFrameRef.current = window.requestAnimationFrame(() => {
-      hoverFrameRef.current = null;
-      const pending = pendingHoverRef.current;
-      if (!pending) return;
-      const nextHover = nearestPoint(pending.chartSeries, pending.x, pending.y, 10000) as HoverPoint;
-      setHover(nextHover);
-      if (nextHover) setHoverMetricKey(pending.chartMetricKey);
-    });
-  }
-
   globalKeyHandlerRef.current = (event: globalThis.KeyboardEvent) => {
     if (event.key === "Escape" && dismissTopOverlay()) {
       event.preventDefault();
@@ -3568,6 +4094,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
       return;
     }
     if (quickSearchOpen || shortcutHelpOpen) return;
+    if (stopDialog) return;
     if (fullscreenPanelRef && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
       moveFullscreenPanel(event.key === "ArrowLeft" ? -1 : 1);
@@ -3598,6 +4125,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
     } else if (matchesShortcut(event, "focus-workspace", platform)) {
       event.preventDefault();
       focusWorkspaceRegion();
+    } else if (/^[1-9]$/.test(event.key) && !event.metaKey && !event.ctrlKey && !event.altKey && !fullscreenPanelRef) {
+      // Number keys jump between nav tabs (1 = Runs … in rail order).
+      const target = tabs[Number(event.key) - 1];
+      if (target) {
+        event.preventDefault();
+        selectTab(target.id);
+      }
     }
   };
 
@@ -3611,6 +4145,23 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
   const activeTabIcon = tabs.find((tab) => tab.id === activeTab)?.icon ?? Activity;
   const ActiveIcon = activeTabIcon;
+  const stopDialogRuns = stopDialog
+    ? stopDialog.runIds.map((runId) => runSummaryForId(runId)).filter(Boolean) as RunSummary[]
+    : [];
+  const stopDialogTitle = stopDialogRuns.length === 1
+    ? `Request stop for ${stopDialogRuns[0]?.name ?? "run"}`
+    : `Request stop for ${stopDialogRuns.length} runs`;
+  const stopDialogSkipRows = stopDialog
+    ? [
+        { count: stopDialog.skippedCounts.alreadyStopping, label: "Already stopping" },
+        { count: stopDialog.skippedCounts.terminal, label: "Terminal" },
+        { count: stopDialog.skippedCounts.unavailable, label: "Unavailable" },
+        { count: stopDialog.skippedCounts.readOnly, label: "Read only" },
+      ].filter((row) => row.count > 0)
+    : [];
+  const stopDialogSkippedSummary = stopDialogSkipRows.length
+    ? stopDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
+    : "";
 
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
@@ -3620,7 +4171,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           <p className="eyebrow">Session</p>
           <h1>Sign in required</h1>
           <p>{dashboardAuthMessage}</p>
-          <Link className="button-link" href={`/signin?next=${encodeURIComponent("/dashboard/runs")}`}>Open sign in</Link>
+          <SignInLink />
         </section>
       </main>
     );
@@ -3633,17 +4184,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         activeTab={activeTab}
         accountUser={sessionPayload?.user ?? null}
         detailRunName={primaryRun?.name ?? ""}
-        message={message}
         mobileNavOpen={mobileNavOpen}
-        onApplySavedView={applySavedView}
-        onClearFilters={clearFilters}
         onMobileMenuToggle={() => setMobileNavOpen((open) => !open)}
         onProject={changeProject}
-        onQuery={changeRunQueryInput}
         onQuickSearch={() => setQuickSearchOpen(true)}
-        onRefresh={loadDashboard}
-        onSaveView={saveView}
-        canSaveView={canWriteWorkspace}
         onCheckWorkspaceName={checkWorkspaceName}
         onCreateWorkspace={createWorkspace}
         onOpenBilling={() => selectTab("settings")}
@@ -3651,34 +4195,81 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         onSelectTab={selectTab}
         onSignOut={signOut}
         onShortcutHelp={openShortcutHelp}
-        onSortBy={changeRunSort}
-        onStatus={changeStatus}
-        onViewName={setViewName}
+        onToggleTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+        theme={theme}
         orgMemberships={orgMemberships}
         orgSwitchBusy={orgSwitchBusy}
         orgSwitchError={orgSwitchError}
         onSwitchOrg={switchOrganization}
-        overview={overview}
         metricUsagePercent={metricPercent}
         apiRequestUsagePercent={apiRequestsPercent}
         planLabel={activePlan}
         project={project}
         projects={projects}
-        query={queryInput}
-        searchError={searchError}
-        searchErrorStale={Boolean(searchError && searchError.query !== queryInput)}
-        savedViewKey={savedViewKey}
-        savedViews={savedViews}
-        sortBy={sortBy}
-        status={status}
         storageUsagePercent={storagePercent}
-        tone={currentMessageTone}
         usageAvailable={usageAvailable}
         usageResetLabel={usageResetLabel}
-        viewName={viewName}
         workspaceName={sessionPayload?.organization?.name ?? ""}
         workspaceId={activeOrgId}
       />
+
+      {stopDialog ? (
+        <div className="workspace-modal checkpoint-fork-modal" role="dialog" aria-modal="true" aria-labelledby="stop-dialog-title">
+          <div className="workspace-modal-card checkpoint-fork-card" ref={stopDialogRef} tabIndex={-1}>
+            <div className="drawer-head">
+              <div>
+                <span className="analysis-eyebrow eyebrow--accent">Cooperative stop</span>
+                <h2 id="stop-dialog-title">{stopDialogTitle}</h2>
+              </div>
+              <button aria-label="Close stop dialog" className="icon-button framed" disabled={stopSubmitting} onClick={closeStopDialog} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="checkpoint-fork-body">
+              <p className="checkpoint-fork-notice">InstantML records a cooperative stop request and waits for SDK code that polls stop-signal to acknowledge it. Old, offline, or non-polling loops cannot be force-terminated from the dashboard.</p>
+              <div className="checkpoint-fork-grid stop-request-grid">
+                <div><span>Eligible runs</span><strong>{stopDialogRuns.length}</strong></div>
+                <div><span>Mode</span><strong>{stopDialog.source === "bulk" ? "bulk" : "single"}</strong></div>
+                {stopDialogSkipRows.map((row) => (
+                  <div key={row.label}><span>{row.label}</span><strong>{row.count}</strong></div>
+                ))}
+                {stopDialog.skippedRunCount > 0 ? <div><span>Skipped</span><strong>{stopDialog.skippedRunCount}</strong></div> : null}
+              </div>
+              {stopDialogSkippedSummary ? (
+                <p className="checkpoint-fork-notice">Skipped selected runs ({stopDialogSkippedSummary}). Only eligible running runs receive a new stop request.</p>
+              ) : null}
+              {stopDialog.skippedRunCount > 0 ? (
+                <p className="checkpoint-fork-notice">Only the first {MAX_STOP_DIALOG_RUNS} eligible selected runs are included. {stopDialog.skippedRunCount} more will be left untouched.</p>
+              ) : null}
+              <div className="stop-request-list" aria-label="Runs to stop">
+                {stopDialogRuns.slice(0, 6).map((run) => (
+                  <span key={run.id} title={run.name}>{run.name}</span>
+                ))}
+                {stopDialogRuns.length > 6 ? <em>+{stopDialogRuns.length - 6} more</em> : null}
+              </div>
+              <label className="checkpoint-fork-field">
+                <span>Reason</span>
+                <textarea
+                  aria-label="Stop reason"
+                  id="stop-reason"
+                  maxLength={500}
+                  onChange={(event) => setStopDialogReason(event.target.value)}
+                  placeholder="Optional note for the run history"
+                  rows={3}
+                  value={stopDialog.reason}
+                />
+              </label>
+              {stopError ? <div className="checkpoint-fork-error" role="alert">{stopError}</div> : null}
+            </div>
+            <div className="checkpoint-fork-actions">
+              <button className="secondary" disabled={stopSubmitting} onClick={closeStopDialog} type="button">Cancel</button>
+              <button className="primary-button stop-dialog-submit" disabled={stopSubmitting || !stopDialogRuns.length} onClick={submitStopDialog} type="button">
+                <Square size={14} /> {stopSubmitting ? "Requesting..." : "Send stop request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {isMobile && mobileNavOpen ? (
         <div
@@ -3688,25 +4279,27 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         />
       ) : null}
 
-      <section className={`shell ${navPinned ? "nav-pinned" : ""} ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
+      <section className={`shell ${navAutoOpen ? "nav-auto-open" : ""} ${mobileNavOpen ? "mobile-nav-open" : ""}`}>
         <DashboardNav
           activeTab={activeTab}
           compactNav={isMobile}
           mobileOpen={mobileNavOpen}
           onAutoOpenChange={setNavAutoOpen}
           onMobileClose={closeMobileNav}
-          onPinnedChange={setNavPinned}
           onSelect={selectTab}
           onShortcutHelp={() => closeMobileNav({ afterFocus: openShortcutHelp })}
-          pinned={navPinned}
+          onThemeToggle={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+          theme={theme}
         />
 
         <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
           {activeTab === "runs" ? (
             <RunsTabPane
               addPanelSectionId={addPanelSectionId}
+              primaryRunId={primaryRun?.id ?? ""}
               allMetricOptions={allMetricOptions}
               availableWorkspaceMetrics={availableWorkspaceMetrics}
+              canControlRuns={canControlRuns}
               columnMetricFilter={columnMetricFilter}
               columnMetricFilterValid={columnMetricFilterValid}
               columnMetricOptionsForControls={columnMetricOptionsForControls}
@@ -3721,6 +4314,37 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               hasNextPage={hasNextPage}
               hasPreviousPage={hasPreviousPage}
               initialLoadDone={initialLoadDone}
+              filterBar={(
+                <RunFilterBar
+                  overview={overview}
+                  status={status}
+                  onStatus={changeStatus}
+                  query={queryInput}
+                  onQuery={changeRunQueryInput}
+                  sortBy={sortBy}
+                  onSortBy={changeRunSort}
+                  project={project}
+                  onProject={changeProject}
+                  searchError={searchError}
+                  searchErrorStale={Boolean(searchError && searchError.query !== queryInput)}
+                  savedViews={savedViews}
+                  savedViewKey={savedViewKey}
+                  viewName={viewName}
+                  onViewName={setViewName}
+                  onSaveView={saveView}
+                  canSaveView={canWriteWorkspace}
+                  onExportSavedView={exportSavedView}
+                  onImportSavedView={openImportSavedView}
+                  onDeleteSavedView={requestDeleteSavedView}
+                  canExportSavedView={Boolean(selectedControlSavedView) && !viewActionBusy}
+                  canDeleteSavedView={Boolean(selectedControlSavedView?.updatedAt) && canWriteWorkspace && !viewActionBusy}
+                  onApplySavedView={applySavedView}
+                  onClearFilters={clearFilters}
+                  onRefresh={loadDashboard}
+                  message={message}
+                  tone={currentMessageTone}
+                />
+              )}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
               onAddPanel={addWorkspacePanel}
@@ -3748,6 +4372,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onPreviousPage={goToPreviousRunPage}
               onRefresh={loadDashboard}
               onRemovePanel={removeWorkspacePanel}
+              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
               onResetWorkspace={resetWorkspaceLayout}
               onResizePanel={resizeWorkspacePanel}
               onPanelSmoothing={setWorkspacePanelSmoothing}
@@ -3762,6 +4387,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
                 setSelectedRunIds([]);
               }}
               onSelectAllVisible={selectAllVisibleRuns}
+              onSelectProject={changeProject}
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
@@ -3787,6 +4413,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               selectedRunIds={selectedRunIds}
               selectedRunExportDisabled={selectedRunExportDisabled}
               selectedRunExportTitle={selectedRunExportTitle}
+              selectedStopCandidateCount={selectedStopCandidateCount}
+              selectedStopDisabledReason={selectedStopDisabledReason}
               sortedRuns={sortedRuns}
               status={status}
               summaryTotal={summary.total}
@@ -3807,8 +4435,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               activeMetricCatalogRow={activeMetricCatalogRow}
               chartSummaries={chartSummaries}
               chartZoomRange={chartZoomRange}
-              domain={domain}
-              fullDomain={fullDomain}
               groupAverage={groupAverage}
               groupBy={groupBy}
               hover={hover}
@@ -3818,14 +4444,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               metricFilterValid={metricFilterValid}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
-              normalizedSeries={normalizedSeries}
               onGroupAverage={setGroupAverage}
               onGroupBy={setGroupBy}
               onMetricFilter={setMetricFilter}
               onMetricKey={changeMetricKey}
               onChartLeave={() => setHover(null)}
-              onChartMove={handleChartMove}
-              onChartMoveFor={handleChartMoveFor}
               onPinnedMetric={togglePinnedMetric}
               onPointHoverChange={(point, key) => { setHoverMetricKey(key); setHover(point); }}
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
@@ -3836,8 +4459,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onZoomRangeChange={setChartZoomRange}
               pinnedChartPanels={pinnedChartPanels}
               pinnedMetrics={pinnedMetrics}
-              rangeSeries={rangeSeries}
               selectedRuns={metricSeriesRuns}
+              series={displaySeries}
               smoothing={smoothing}
               sortedRuns={sortedRuns}
               visibleMetricCatalogRows={visibleMetricCatalogRows}
@@ -3850,6 +4473,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "distributed" ? (
             <DistributedTabPane
               api={api}
+              availableRuns={sortedRuns}
+              onSelectRun={setPrimaryRunId}
               primaryRun={primaryRun}
             />
           ) : null}
@@ -3859,6 +4484,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           {activeTab === "detail" ? (
             <DetailTabPane
               api={api}
+              canControlRuns={canControlRuns}
               dataControls={
                 <>
                   <CustomSelect
@@ -3881,16 +4507,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               loggedObjects={loggedObjects}
               objectRowsById={objectRowsById}
               onChartLeave={() => setHover(null)}
-              onChartMove={(event) => handleChartMoveFor(event, primaryNormalizedSeries, metricKey)}
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
+              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
-              primaryDomain={primaryDomain}
-              primaryFullDomain={primaryFullDomain}
-              primaryNormalizedSeries={primaryNormalizedSeries}
-              primaryRangeSeries={primaryRangeSeries}
+              primarySeries={primaryDisplaySeries}
               primaryChartZoomRange={primaryChartZoomRange}
               run={primaryRun}
               runMetricRows={runMetricRows}
@@ -3963,7 +4586,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
 
         <section className={`tab-pane ${activeTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {activeTab === "datasets" ? (
-            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} projectCount={projects.length} runsInView={sortedRuns.length} />
+            <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} />
           ) : null}
         </section>
 
@@ -3998,12 +4621,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "checkpoints" ? "active" : ""}`} aria-label="Checkpoints">
-          {activeTab === "checkpoints" ? (
-            <CheckpointsTabPane checkpointRows={checkpointRows} primaryRun={primaryRun} />
-          ) : null}
-        </section>
-
         <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
           {activeTab === "reports" ? <ReportsTabPane canEditReports={canEditReports} /> : null}
         </section>
@@ -4011,6 +4628,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
         <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
           {activeTab === "settings" ? (
             <SettingsTabPane
+              accountUser={sessionPayload?.user ?? null}
               activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
               activePlan={activePlan}
               activeUsageWarnings={activeUsageOrg?.warnings ?? []}
@@ -4046,11 +4664,8 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
               onXMode={setXMode}
               orgName={sessionPayload?.organization?.name ?? ""}
               orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
-              project={project}
               reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
               seats={seats}
-              selectedRunCount={selectedRunIds.length}
-              status={status}
               storagePercent={storagePercent}
               storageUsed={storageUsed}
               storageLimit={storageLimit}
@@ -4090,6 +4705,22 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           ) : null}
         </section>
       </section>
+      <SelectionTray
+        count={selectedRunIds.length}
+        exportDisabled={selectedRunExportDisabled}
+        exportTitle={selectedRunExportTitle}
+        onClear={() => {
+          // Mark the default as initialized so the page auto-select doesn't
+          // immediately refill the selection the user just cleared.
+          defaultSelectionInitializedRef.current = true;
+          selectionUrlSyncRef.current = true;
+          setSelectedRunIds([]);
+          selectionAnchorRunIdRef.current = "";
+        }}
+        onCompare={() => selectTab("compare")}
+        onExport={exportSelectedRunsCsv}
+        sampleNames={selectedRuns.slice(0, 3).map((run) => run.name)}
+      />
       {quickSearchOpen ? (
         <QuickSearchModal
           activeIndex={quickSearchActiveIndex}
@@ -4110,7 +4741,170 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: TabId }) 
           returnFocusSelector="[data-shortcut-help-trigger='true']"
         />
       ) : null}
+      {viewImportOpen ? (
+        <WorkspaceViewImportModal
+          busy={viewImportBusy}
+          error={viewImportError}
+          fileName={viewImportFileName}
+          onClose={() => {
+            clearChartHover();
+            setViewImportOpen(false);
+          }}
+          onConfirm={confirmImportSavedView}
+          onFile={updateImportSavedViewFile}
+          onPreview={previewImportSavedView}
+          onText={updateImportSavedViewText}
+          preview={viewImportPreview}
+          previewCurrent={Boolean(viewImportPreview && viewImportPreviewText && viewImportPreviewText === viewImportText)}
+          text={viewImportText}
+        />
+      ) : null}
+      {deleteViewTarget ? (
+        <WorkspaceViewDeleteModal
+          busy={viewActionBusy}
+          name={deleteViewTarget.label}
+          onClose={() => setDeleteViewTarget(null)}
+          onConfirm={confirmDeleteSavedView}
+          updatedAt={deleteViewTarget.updatedAt ?? ""}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function WorkspaceViewImportModal({
+  busy,
+  error,
+  fileName,
+  onClose,
+  onConfirm,
+  onFile,
+  onPreview,
+  onText,
+  preview,
+  previewCurrent,
+  text,
+}: {
+  busy: boolean;
+  error: string;
+  fileName: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  onFile: (file: File | null) => void;
+  onPreview: () => void;
+  onText: (value: string) => void;
+  preview: WorkspaceViewImportPreview | null;
+  previewCurrent: boolean;
+  text: string;
+}) {
+  const dialogRef = useFocusTrap<HTMLDivElement>(
+    true,
+    onClose,
+    "#workspace-view-import-file",
+    "[data-view-actions-trigger='true']",
+  );
+  const canPreview = Boolean(text.trim()) && !busy && workspaceViewImportByteLength(text) <= MAX_WORKSPACE_VIEW_IMPORT_BYTES;
+  const canConfirm = Boolean(preview) && previewCurrent && !busy;
+  return (
+    <div className="workspace-modal-backdrop" role="presentation">
+      <section className="workspace-create-modal workspace-view-modal" role="dialog" aria-modal="true" aria-label="Import saved view" ref={dialogRef} tabIndex={-1}>
+        <div className="workspace-create-head">
+          <div>
+            <h2>Import saved view</h2>
+            <p>{fileName || "Select an exported InstantML view JSON file."}</p>
+          </div>
+          <button className="icon-button framed" type="button" aria-label="Close import saved view" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div className="workspace-create-form">
+          <div className="workspace-create-body workspace-view-import-body">
+            <label className="workspace-create-field">
+              JSON file
+              <input
+                accept="application/json,.json"
+                id="workspace-view-import-file"
+                onChange={(event) => onFile(event.target.files?.[0] ?? null)}
+                type="file"
+              />
+            </label>
+            <label className="workspace-create-field">
+              JSON payload
+              <textarea
+                aria-label="Saved view JSON payload"
+                className="workspace-view-import-text"
+                onChange={(event) => onText(event.target.value)}
+                spellCheck={false}
+                value={text}
+              />
+            </label>
+            {error ? <p className="form-error" role="alert">{error}</p> : null}
+            {preview ? (
+              <div className="workspace-view-preview" role="status">
+                <div><span>Name</span><strong>{preview.name ?? "Untitled view"}</strong></div>
+                <div><span>Project</span><strong>{preview.project || "All projects"}</strong></div>
+                <div><span>Payload</span><strong>{formatBytes(preview.payload_bytes ?? 0)}</strong></div>
+                {preview.warnings?.length ? (
+                  <ul>
+                    {preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          <div className="workspace-create-actions">
+            <button className="secondary" disabled={busy} type="button" onClick={onClose}>Cancel</button>
+            <button className="secondary" disabled={!canPreview} type="button" onClick={onPreview}>{busy ? "Checking..." : "Preview"}</button>
+            <button className="primary-button" disabled={!canConfirm} type="button" onClick={onConfirm}>{busy ? "Importing..." : "Import"}</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function WorkspaceViewDeleteModal({
+  busy,
+  name,
+  onClose,
+  onConfirm,
+  updatedAt,
+}: {
+  busy: boolean;
+  name: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  updatedAt: string;
+}) {
+  const dialogRef = useFocusTrap<HTMLDivElement>(
+    true,
+    onClose,
+    "button[data-delete-view-cancel='true']",
+    "[data-view-actions-trigger='true']",
+  );
+  return (
+    <div className="workspace-modal-backdrop" role="presentation">
+      <section className="workspace-create-modal workspace-view-modal compact" role="dialog" aria-modal="true" aria-label="Delete saved view" ref={dialogRef} tabIndex={-1}>
+        <div className="workspace-create-head">
+          <div>
+            <h2>Delete saved view</h2>
+            <p>{name}</p>
+          </div>
+          <button className="icon-button framed" type="button" aria-label="Close delete saved view" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div className="workspace-create-form">
+          <div className="workspace-create-body workspace-view-delete-body">
+            <p>This removes the shared view for your workspace account.</p>
+            <dl>
+              <dt>Last saved</dt>
+              <dd>{updatedAt || "Unknown"}</dd>
+            </dl>
+          </div>
+          <div className="workspace-create-actions">
+            <button className="secondary" data-delete-view-cancel="true" disabled={busy} type="button" onClick={onClose}>Cancel</button>
+            <button className="secondary danger-action" data-delete-view-confirm="true" disabled={busy} type="button" onClick={onConfirm}>{busy ? "Deleting..." : "Delete"}</button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -4252,4 +5046,18 @@ async function runWithConcurrency(tasks: Array<() => Promise<void>>, concurrency
     }
   });
   await Promise.all(workers);
+}
+
+function SignInLink() {
+  // The real destination (current path + query) is only known in the browser;
+  // resolve it after mount so server and client render the same initial href.
+  const [next, setNext] = useState("/dashboard/runs");
+  useEffect(() => {
+    setNext(`${window.location.pathname}${window.location.search}`);
+  }, []);
+  return (
+    <Link className="button-link" href={`/signin?next=${encodeURIComponent(next)}`}>
+      Open sign in
+    </Link>
+  );
 }
