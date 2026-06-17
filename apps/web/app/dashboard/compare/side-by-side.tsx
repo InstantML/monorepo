@@ -434,7 +434,7 @@ function CompareRunTable({
                   <span className="cmp-run-name" title={run.name}>{run.name}</span>
                   <span className="cmp-identity-sub">
                     <span className={`pill cmp-status ${statusTone(displayStatus)}`}>{displayStatus}</span>
-                    {isReference ? <span className="cmp-ref-tag">Reference</span> : <span className="cmp-proj">{run.project}</span>}
+                    {!isReference ? <span className="cmp-proj">{run.project}</span> : null}
                   </span>
                 </span>
                 {onReference ? (
@@ -594,7 +594,7 @@ export function SideBySide({
   // back to the default sort so the row order is never silently ambiguous.
   const sortColValid = sort.col === "identity" || columns.some((column) => column.key === sort.col);
   const effectiveSort: SortState = sortColValid ? sort : { col: defaultSortCol, dir: metricGoal(metricKey) === "minimize" ? "asc" : "desc" };
-  const sortedRuns = sortRunsForTable(visibleRuns, effectiveSort, referenceRunId, lookup);
+  const sortedRuns = sortRunsForTable(visibleRuns, effectiveSort, lookup);
 
   const onSortColumn = (col: string, preferAsc: boolean) => {
     setSort((current) => current.col === col ? { col, dir: current.dir === "asc" ? "desc" : "asc" } : { col, dir: preferAsc ? "asc" : "desc" });
@@ -651,9 +651,9 @@ export function SideBySide({
   );
 }
 
-// Sort the visible runs by the active column, then pin the reference run to the top
-// so deltas always read against a fixed anchor row.
-function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: string, lookup: MetricLookup) {
+// Sort the visible runs by the active column. The reference run remains marked
+// in-place so header sorting always changes the row order users are inspecting.
+function sortRunsForTable(runs: RunSummary[], sort: SortState, lookup: MetricLookup) {
   const selectedOrder = new Map(runs.map((run, index) => [run.id, index]));
   const tie = (left: RunSummary, right: RunSummary) => (selectedOrder.get(left.id) ?? 0) - (selectedOrder.get(right.id) ?? 0);
   const dir = sort.dir === "asc" ? 1 : -1;
@@ -671,6 +671,5 @@ function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: s
     else if (sort.col === "artifacts") result = numericNullsLast(artifactTotalForRun(left), artifactTotalForRun(right), dir);
     return result || tie(left, right);
   });
-  const reference = sorted.find((run) => run.id === referenceRunId);
-  return reference ? [reference, ...sorted.filter((run) => run.id !== referenceRunId)] : sorted;
+  return sorted;
 }

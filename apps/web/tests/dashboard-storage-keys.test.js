@@ -566,7 +566,6 @@ test("API key UI does not expose admin controls to read-only members", () => {
   assert.match(shell, /if \(!activeOrgId \|\| !canManageOrg\) \{[\s\S]*?API key management is available to workspace admins\.[\s\S]*?return;[\s\S]*?\}[\s\S]*setAdminBusy\(true\);[\s\S]*Creating API key/, "API-key create handler should reject non-admin invocation");
   assert.match(shell, /if \(!activeOrgId \|\| !keyId \|\| !canManageOrg\) \{[\s\S]*?API key management is available to workspace admins\.[\s\S]*?return;[\s\S]*?\}[\s\S]*setAdminBusy\(true\);[\s\S]*Revoking API key/, "API-key revoke handler should reject non-admin invocation");
   assert.match(shell, /canManageOrg=\{canManageOrg\}/, "API tab should receive membership capabilities");
-  assert.match(apiPane, /PageHead eyebrow=\{canManageOrg \? "Admin" : "Read-only"\}/, "API tab should label read-only access");
   assert.match(apiPane, /const visibleApiKeys = canManageOrg \? apiKeys : \[\];/, "API tab should hide stale key rows from read-only members");
   assert.match(apiPane, /const visibleNewApiKey = canManageOrg \? newApiKey : "";/, "API tab should hide stale copy-once keys from read-only members");
   assert.match(apiPane, /\{canManageOrg \? \(/, "API-key creation controls should be gated");

@@ -40,11 +40,11 @@ management controls disabled.
 
 ![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
 
-Run Detail includes a Files section for the selected run. It groups checkpoints,
+Run Detail includes an Artifacts tab for the selected run. It groups checkpoints,
 media and rich objects, and files, then opens a bounded preview beside the
 evidence rail.
 
-The Files section previews:
+The Artifacts tab previews:
 
 - Tables with capped rows and columns.
 - Histograms.
@@ -83,8 +83,8 @@ the same-origin route until bytes are uploaded to InstantML.
 
 ## Checkpoint forks
 
-Checkpoint artifacts are visible in Run Detail and in the Checkpoints
-workspace. They can carry restore metadata such as source run and step. When
+Checkpoint artifacts are visible in Run Detail (on the Overview and Lineage
+tabs). They can carry restore metadata such as source run and step. When
 checkpoint bytes are stored through the API, downloads go through the
 same-origin artifact download route.
 
@@ -97,9 +97,9 @@ training script that resumes the checkpoint.
 
 ## Checkpoint lineage
 
-![Checkpoint lineage workspace](/images/product/dashboard-checkpoints.png)
+![Run Detail Lineage tab](/images/product/dashboard-lineage-graph.png)
 
-The Checkpoints workspace gives the same selected-run context a lineage-first
+Run Detail's Lineage tab gives the same selected-run context a lineage-first
 view. Use it to confirm the checkpoint URI, step, run config context, and
 whether a run has forkable restore points before moving into a resumed
 experiment.

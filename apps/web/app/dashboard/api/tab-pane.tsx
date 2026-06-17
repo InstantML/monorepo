@@ -54,7 +54,7 @@ export function ApiTabPane({
   const visibleNewApiKey = canManageOrg ? newApiKey : "";
   return (
     <>
-      <PageHead eyebrow={canManageOrg ? "Admin" : "Read-only"} title="API" />
+      <PageHead title="API" />
       <div className="tab-grid two-col api-tab-grid">
         <section className="panel">
           <div className="panel-head">

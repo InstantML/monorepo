@@ -28,7 +28,8 @@ metadata.
 | Python SDK | Create runs, log metrics, logs, attributes, artifacts, rich objects, checkpoints, and source context. |
 | Uploader | Drain process-isolated spool events from disk and replay them through the API. |
 | Rust API | Validate requests, enforce auth/scopes/limits, store records, stream artifact downloads, and expose dashboard/API routes. |
-| ClickHouse operational layer | Store low-volume append-only product and control records. |
+| Control-plane Postgres | Store account/control records: users, orgs, memberships, sessions, API keys, billing, and tenant routes (Cloud SQL in hosted mode; single-binary local mode may keep these in ClickHouse instead). |
+| ClickHouse operational layer | Store low-volume append-only product/operational records (projects, runs, attributes). |
 | ClickHouse metric layer | Store raw scalar/rank metrics and maintained metric summaries. |
 | Artifact store | Store hosted private object-storage bytes for uploaded artifacts. |
 | Next dashboard and docs | Browse, chart, compare, annotate, export, administer workspaces, and serve public `/docs` documentation. |
@@ -39,16 +40,16 @@ metadata.
 | --- | --- |
 | Browser / Next app and Python SDK / uploader | Send product traffic to the public HTTPS API. |
 | Public HTTPS API | Routes requests to control or data service responsibilities. |
-| Rust control service | Reads and writes User Data ClickHouse records and tenant-route metadata. |
+| Rust control service | Reads and writes the control-plane Postgres database (Cloud SQL) for account, billing, and tenant-route metadata. |
 | Rust data service | Reads and writes tenant ClickHouse databases and private artifact buckets. |
 
 The control service handles auth, orgs, sessions, API keys, billing, seats,
 tenant route metadata, dashboard preferences, reports, report share links, and
 report Markdown export. The data service handles projects, runs, metrics, logs,
 attributes, rich objects, imports, export, usage, and artifact data paths.
-InstantML-hosted production and staging currently use InstantML-owned
-self-hosted ClickHouse on Google Cloud for these User Data and tenant
-databases.
+InstantML-hosted production and staging keep account/control records in a
+control-plane Postgres database (Cloud SQL) and tenant run data and metrics in
+InstantML-owned self-hosted ClickHouse on Google Cloud.
 
 ## Design constraints users can rely on
 

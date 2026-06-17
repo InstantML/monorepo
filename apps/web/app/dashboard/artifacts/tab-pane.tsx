@@ -482,7 +482,7 @@ export function ArtifactsTabPane({
 
   return (
     <>
-      <PageHead eyebrow="Workspace" title="Artifacts" />
+      <PageHead title="Artifacts" />
       {error ? <div className="failure-card" role="alert"><strong>{error}</strong></div> : null}
       {loading ? <div className="status-strip loading" aria-live="polite">{loading}</div> : null}
       {versionedUnsupported ? <div className="status-strip" aria-live="polite">Versioned artifact catalog unavailable on this backend. Showing raw run artifacts.</div> : null}

@@ -1,14 +1,15 @@
 # Store Module
 
-The store module owns the Rust API's ClickHouse-backed operational index and the storage-facing service logic used by HTTP handlers. In hosted ClickHouse mode, the module splits persistence between the InstantML User Data control table and each org's tenant ClickHouse data plane. Multi-instance hosting is still gated by `docs/design/2026-05-16-multi-instance-control-data-plane.md`: this module now has deterministic full replay helpers, tenant-scoped replay validation, and a full User Data refresh path used by `INSTANTML_SERVICE_PLANE=data` before auth, but it does not provide shared-cell multi-writer freshness, atomic metric/log idempotency, or distributed write uniqueness yet.
+The store module owns the Rust API's ClickHouse-backed operational index and the storage-facing service logic used by HTTP handlers. In hosted ClickHouse mode, the module splits persistence between the InstantML User Data control table and each org's tenant ClickHouse data plane. Multi-instance hosting is still gated by `docs/design/2026-05-16-multi-instance-control-data-plane.md`: this module now has deterministic full replay helpers, tenant-scoped replay validation, a full User Data refresh path used by `INSTANTML_SERVICE_PLANE=data` before auth, and a Postgres-backed data-cell writer lease used as a write-admission fence for hosted split data services. It does not provide shared-cell multi-writer freshness, atomic metric/log idempotency, or downstream ClickHouse fence-token validation yet.
 
 ## Module Map
 
 - `mod.rs`: shared `Store`/`StoreData` types, deterministic control/tenant
   operational replay, data-plane control-record refresh, current-cell data-cell
-  heartbeat, tenant replay validation, local org bootstrap, durable append
-  helper, readiness checks, and public re-exports. Route movement events stay
-  in Postgres audit tables and are not loaded on every projection refresh.
+  heartbeat, data-cell writer-lease acquisition/renewal state, tenant replay
+  validation, local org bootstrap, durable append helper, readiness checks, and
+  public re-exports. Route movement events stay in Postgres audit tables and
+  are not loaded on every projection refresh.
 - `admin.rs`: read-only operator overview projection for users, orgs, storage
   posture, billing state, public API-key metadata, data-cell registry summaries,
   and risk queues.
@@ -50,7 +51,7 @@ npm run test:rust:ui
 npm run test:hosted-clickhouse
 ```
 
-Pure helper behavior should get unit tests close to the module that owns it. Behavior that depends on ClickHouse, HTTP auth, SDK compatibility, hosted tenant routing, or the Next dashboard should be covered by the shared contract, SDK, hosted ClickHouse, and UI smokes. The hosted ClickHouse smoke starts separate `control` and `data` service-plane processes to verify control-record refresh and tenant replay across process boundaries.
+Pure helper behavior should get unit tests close to the module that owns it. Behavior that depends on ClickHouse, HTTP auth, SDK compatibility, hosted tenant routing, Postgres writer leases, or the Next dashboard should be covered by the shared contract, SDK, hosted ClickHouse, and UI smokes. The hosted ClickHouse smoke starts separate `control` and `data` service-plane processes to verify control-record refresh, data-cell writer lease acquisition, route-cell write admission, and tenant replay across process boundaries.
 
 Run-search parser/evaluator tests live beside the run store. Keep route-level
 search behavior aligned across `/runs`, `/api/overview`, `/api/runs/summary`,

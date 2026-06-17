@@ -7515,7 +7515,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
+                  "$ref": "#/components/schemas/ReadyzResponse"
                 }
               }
             }
@@ -14454,6 +14454,33 @@
           }
         }
       },
+      "ReadyzResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "control_projection_loaded",
+          "control_refresh_degraded",
+          "write_ready",
+          "writer_lease"
+        ],
+        "properties": {
+          "control_projection_loaded": {
+            "type": "boolean"
+          },
+          "control_refresh_degraded": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "write_ready": {
+            "type": "boolean"
+          },
+          "writer_lease": {
+            "$ref": "#/components/schemas/WriterLeaseReadinessResponse"
+          }
+        }
+      },
       "RenewArtifactUploadRequest": {
         "type": "object",
         "required": [
@@ -16468,6 +16495,27 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "WriterLeaseReadinessResponse": {
+        "type": "object",
+        "required": [
+          "required",
+          "ready"
+        ],
+        "properties": {
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "required": {
+            "type": "boolean"
           }
         }
       }

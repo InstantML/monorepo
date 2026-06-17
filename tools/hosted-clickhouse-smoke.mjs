@@ -359,6 +359,7 @@ async function startServer(servicePlane) {
       INSTANTML_HOSTED_CLICKHOUSE_ENABLED: "true",
       INSTANTML_CLICKHOUSE_PROVISIONER: "database",
       INSTANTML_SERVICE_PLANE: servicePlane,
+      ...(servicePlane === "data" ? { INSTANTML_CELL_ID: "local-us-central1-a" } : {}),
       INSTANTML_BIND_ADDR: `127.0.0.1:${port}`,
       INSTANTML_AUTH_MODE: "local",
       INSTANTML_LOG_FORMAT: process.env.INSTANTML_HOSTED_SMOKE_LOG_FORMAT || "json",

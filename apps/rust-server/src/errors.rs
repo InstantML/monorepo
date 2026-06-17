@@ -114,6 +114,14 @@ impl AppError {
         )
     }
 
+    pub fn cell_writer_unavailable(message: impl Into<String>) -> Self {
+        Self::with_code(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cell_writer_unavailable",
+            message,
+        )
+    }
+
     pub fn warehouse_unavailable(message: impl Into<String>) -> Self {
         Self::with_code(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -153,6 +161,7 @@ impl AppError {
 
     pub fn safe_summary(&self) -> &'static str {
         match self.safe_code() {
+            "cell_writer_unavailable" => "cell_writer_unavailable",
             "warehouse_unavailable" => "warehouse_unavailable",
             "service_unavailable" => "service_unavailable",
             "run_search_invalid" | "run_search_regex_unsupported" => "search_validation_failed",

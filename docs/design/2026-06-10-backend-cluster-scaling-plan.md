@@ -2,15 +2,19 @@
 
 Date: 2026-06-10
 
-Status: Phase 0 preflight/runbook slice accepted and implemented; later phases
-remain draft
+Status: Phase 0, Phase 1, and Phase 1A foundation slices accepted and
+implemented; later public-routing, migration, and multi-writer phases remain
+draft
 
 Owner: Codex
 
-Implementation note, 2026-06-10: the first Phase 0 slice is implemented as an
-operator runbook plus a Rust `capacity-plan` preflight for Cloud SQL connection
-budgeting. It does not change public APIs, schemas, service scaling, routing,
-or cell placement.
+Implementation note, 2026-06-10: Phase 0 added the operator runbook plus a
+Rust `capacity-plan` preflight for Cloud SQL connection budgeting. Phase 1
+added the Postgres data-cell registry, route placement metadata, route audit
+events, current-cell heartbeats, and admin visibility. Phase 1A adds the
+Postgres per-cell writer lease and route-aware hosted data write guard. These
+foundation slices do not create a second public cell, move tenant traffic, or
+change SDK/browser route discovery yet.
 
 ## Summary
 
@@ -46,18 +50,20 @@ only after auth, route-version, and deployment-fencing gates are accepted.
 
 ## Slice Boundaries
 
-The accepted Phase 0 implementation in this change is limited to:
+Accepted and implemented foundation slices:
 
 - Phase 0 hardening: ClickHouse backups/restore drill, Cloud SQL connection
   budget, cell-scoped dashboards, and current-cell capacity limits.
+- Phase 1 ledger: Postgres `data_cells`, tenant-route placement fields,
+  `tenant_route_events`, transactional initial placement, current-cell
+  heartbeat, and bootstrap-protected admin visibility.
+- Phase 1A writer lock: Postgres `data_cell_writer_leases`, status-gated
+  acquire/renew/release, side-effect-free write readiness, route-aware mutation
+  guard, authoritative route-cell verification for hosted writes, and
+  backwards-compatible local/combined behavior.
 
 Later implementation slices should be reviewed separately and may include:
 
-- Postgres `data_cells`, route placement fields, and route audit events.
-- Admin/operator visibility for cell inventory, cell health, assigned orgs, and
-  route status.
-- A Postgres-backed per-cell writer lease/fencing token used by data-plane
-  mutations.
 - A manifest or repeatable deploy command that can create one internal second
   data cell, with no public placement until the writer lease and health checks
   pass.
@@ -318,20 +324,64 @@ data_cell_writer_leases
 
 Rules:
 
-- A data service must acquire or renew the lease for its `INSTANTML_CELL_ID`
-  before `/readyz` reports write-ready.
-- Lease acquisition increments `fence_token` in a Postgres transaction.
-- Mutating data-plane handlers must prove the local holder still owns the
-  unexpired lease before performing side effects. A short heartbeat cache is
-  acceptable only if the staleness bound is documented and tested; the safest
-  first implementation checks before each mutation.
+- A hosted split data service must have `INSTANTML_CELL_ID` before it can write.
+  Local, combined-plane, and no-Postgres development modes keep their current
+  write behavior.
+- A data service may acquire a lease only for an existing `data_cells` row whose
+  status is `open`, `full`, or `draining`. `disabled` and `failed` cells reject
+  writer acquisition. `full` and `draining` still allow writes for already routed
+  orgs while preventing new placement through Phase 1 admission rules.
+- Lease SQL must use Postgres `clock_timestamp()` and conditional
+  `INSERT ... ON CONFLICT ... WHERE ... RETURNING` or `UPDATE ... WHERE ...
+  RETURNING` statements. The holder identity is a process-start UUID;
+  `service_name` and `revision` are diagnostics.
+- First acquisition inserts `fence_token = 1`. Takeover can increment
+  `fence_token` only after `expires_at <= clock_timestamp()`. Renewal must
+  require the exact `(cell_id, holder_instance_id, fence_token)` tuple, an
+  unexpired lease, and a still write-enabled cell status; it must not increment
+  the token.
+- `/readyz` continues to report whole-service read readiness. Data services add
+  side-effect-free `write_ready` and `writer_lease` fields that do not acquire
+  or renew a lease and do not expose holder, token, or expiry details. A
+  no-traffic replacement revision normally reports `write_ready=false` while
+  the old revision still owns the writer lease, so deploy startup and traffic
+  flips must not be gated on that field unless an operator first performs an
+  explicit lease handoff. Deploy smokes can require write readiness only through
+  a dedicated post-handoff write check.
+- Route-classified mutating tenant-data requests must pass one centralized
+  route/store guard before handler side effects. Data-plane `POST`, `PUT`,
+  `PATCH`, and `DELETE` routes should be guarded by default; read-style POSTs
+  and BYOC storage setup routes must be explicit exemptions so future mutation
+  routes fail safe instead of silently bypassing the lease. The guard verifies
+  the process holds the current cell writer lease and rejects authenticated
+  writes whose authoritative Postgres tenant route records a different
+  `cell_id`; legacy routes without `cell_id` remain allowed for backwards
+  compatibility. BYOC storage setup routes configure customer-owned storage and
+  remain outside this current-cell writer lease. Guard failures, including
+  Postgres outages, return retryable `503` with `code:
+  "cell_writer_unavailable"`. Reads and read-style POST endpoints remain
+  available if the operational store is otherwise healthy.
+- Phase 1A is a write-admission fence, not full downstream multi-writer
+  ClickHouse fencing. Long-running mutation paths must either keep the lease TTL
+  comfortably above the first implementation's request timeout or re-check at
+  durable side-effect boundaries before a later phase claims true downstream
+  fence-token enforcement.
+- A short positive lease cache is acceptable for hot paths only when bounded by
+  the lease expiry with a safety margin and capped at no more than 1 second.
+  Negative availability should not be cached beyond normal retry/backoff.
 - Losing the lease immediately disables writes and returns a retryable `503`
   with `code: "cell_writer_unavailable"` until another writer is ready.
-- Deploys should use no-traffic revision deploy, readiness verify, lease
-  acquire, traffic flip, old revision drain, old lease release/expiry, then
-  post-flip smoke.
-- Add a two-process test proving that only one writer can mutate a cell and
-  that the loser fails closed.
+- Deploys should use no-traffic revision deploy, read-readiness verify, traffic
+  flip, old revision drain, conditional old lease release/expiry, and then a
+  post-flip write smoke. If an incident or release needs a zero-503 cutover,
+  operators should deliberately release the old lease or wait for its TTL before
+  routing mutations to the replacement; otherwise the first post-flip writes may
+  see retryable `cell_writer_unavailable` responses until release/expiry and the
+  short negative cache have cleared.
+- Add tests for concurrent acquire, expired takeover increments, unexpired
+  takeover fails, stale holder renew fails, disabled/missing cells reject
+  acquisition, local/backwards-compatible bypasses, and a two-process guard path
+  proving that only the lease holder can mutate a hosted split data cell.
 
 ### Phase 2: More Single-Writer Data Cells
 
@@ -632,11 +682,11 @@ unavailable.
 
 Backend:
 
-- Add Postgres `data_cells` and tenant route placement fields.
+- Added Postgres `data_cells` and tenant route placement fields in Phase 1.
 - Add route discovery and route-version checks in a later public-routing slice.
-- Add cell-aware tenant route selection in `apps/rust-server/src/store/tenants.rs`.
-- Add admin/operator reads for cell health and route placement.
-- Add `data_cell_writer_leases` and write-fence checks in Phase 1A.
+- Added cell-aware tenant route selection in `apps/rust-server/src/store/tenants.rs`.
+- Added admin/operator reads for cell health and route placement.
+- Added `data_cell_writer_leases` and write-fence checks in Phase 1A.
 - Later: move request-critical control reads to direct Postgres helpers.
 
 Frontend:
@@ -655,10 +705,10 @@ Python SDK:
 
 Storage:
 
-- Add `data_cells`.
-- Extend `tenant_routes`.
-- Add `tenant_route_events`.
-- Add `data_cell_writer_leases` in Phase 1A.
+- Added `data_cells`.
+- Extended `tenant_routes`.
+- Added `tenant_route_events`.
+- Added `data_cell_writer_leases` in Phase 1A.
 - Add backups/restore runbooks for ClickHouse cells.
 - Add `org_migrations` when Phase 5 starts.
 
@@ -679,11 +729,10 @@ Initial schema changes:
 - `tenant_routes.placement_reason`.
 - `tenant_routes.assigned_at`.
 - `tenant_route_events` for route movement audit history.
+- `data_cell_writer_leases` for Phase 1A per-cell write admission.
 
 Possible follow-up schema:
 
-- `data_cell_writer_leases` before any shared cell can run multiple active
-  writers.
 - `org_migrations` for resumable cell moves. This is required before Phase 5,
   not optional for any production migration.
 - `cell_capacity_snapshots` if operator UI needs historical placement trends.
@@ -937,9 +986,44 @@ Fresh reviewer 3: product/platform and economics
   transactional placement, migration states, customer impact policy,
   compatibility details, and the near-term scale-up alternative.
 
+Fresh reviewer 4: Phase 1A distributed correctness
+
+- Finding: Writer lease acquisition, renewal, and takeover needed exact atomic
+  SQL semantics; `/readyz` could deadlock deploys if write ownership was coupled
+  to startup readiness; long-running mutations needed a bounded claim; and a
+  scattered guard would be easy to bypass.
+- Risk: Deploy overlap could still produce two accepted writers, a no-traffic
+  revision could never become startup-ready while the old revision held the
+  lease, or one unguarded endpoint could bypass the single-writer invariant.
+- Recommended edit: Use Postgres time and conditional lease transitions, expose
+  read readiness separately from write readiness, centralize the data-plane
+  mutation guard, fail closed on Postgres guard outages, and document the first
+  slice as write admission rather than full downstream fence-token enforcement.
+- Decision: Accepted. Phase 1A now requires conditional Postgres-time SQL,
+  explicit write-readiness fields, a single guard boundary for mutating
+  data-plane routes, hosted fail-closed behavior when `INSTANTML_CELL_ID` is
+  missing, and a bounded long-running request claim.
+
+Fresh reviewer 5: Phase 1A Rust/Postgres implementation
+
+- Finding: Renewal must match the holder and fence token, acquisition must not
+  approve typo or disabled cells, token reset must be impossible, and hot-path
+  Postgres checks need either a tested small cache or an explicit cost decision.
+- Risk: Renewing by holder alone or deleting lease rows could let stale writers
+  regain authority; silently accepting unknown cells could route writes to the
+  wrong service; and unbounded per-mutation checks could harm ingest latency.
+- Recommended edit: Keep the row forever, condition release/renew on
+  `(cell_id, holder_instance_id, fence_token)`, permit writer leases only for
+  `open`, `full`, or `draining` cells, add focused sqlx and two-process tests,
+  and document cache/TTL/readiness/deploy handoff semantics.
+- Decision: Accepted. The implementation slice will use a process-start UUID,
+  diagnostics-only service/revision labels, conditional release without row
+  deletion, status-gated acquisition, and focused tests for SQL races, stale
+  renewal, status semantics, and backwards-compatible local behavior.
+
 ## Coverage Exceptions
 
-None for the Phase 0 preflight/runbook slice.
+None for the implemented Phase 0, Phase 1, or Phase 1A foundation slices.
 
 ## Decision
 

@@ -211,6 +211,15 @@
   padding: 0;
   gap: 0;
 }
+/* In panels view the filter band joins seamlessly onto the .runs-workspace box
+ * directly below it (which drops its top border and rounds only its bottom
+ * corners), so the band rounds only its top corners — otherwise a rounded pill
+ * bottom collides with the square, top-borderless workspace top and the shared
+ * seam shows a doubled / mismatched edge. Table view keeps the standalone pill
+ * because its .runs-table-panel is a separate rounded card. */
+.runs-workspace-filter:has(+ .runs-workspace) {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
 .runs-commandbar {
   padding: 10px 12px;
   margin-bottom: 0;
@@ -224,9 +233,16 @@
 }
 
 /* ── Run rail — compact 44px rows, reveal-on-attention ─────────────────── */
+/* The rail is an interior column of the workspace box: its top edge sits under
+ * the filter band and its right edge butts against the canvas (both panels), so
+ * only the bottom-left corner — the one next to the page, matching the
+ * container's rounded bottom-left — rounds. The divider against the canvas is a
+ * single border-right (see below); drop the base inset-shadow rule so the two
+ * don't stack into a doubled 2px seam. */
 .workspace-run-rail {
-  border-radius: var(--radius);
+  border-radius: 0 0 0 var(--radius);
   background: var(--surface);
+  box-shadow: none;
 }
 .workspace-run-row {
   border-radius: var(--radius);
@@ -294,8 +310,11 @@
 }
 
 /* ── Canvas + panels — flat cards, mono meta ───────────────────────────── */
+/* The canvas is the workspace box's right column: its left edge butts against
+ * the rail and its top sits under the filter band (both panels), so only the
+ * bottom-right corner rounds to follow the container's rounded bottom-right. */
 .workspace-canvas {
-  border-radius: var(--radius);
+  border-radius: 0 0 var(--radius) 0;
   background: var(--surface);
 }
 

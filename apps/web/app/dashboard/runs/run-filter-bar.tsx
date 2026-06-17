@@ -196,7 +196,6 @@ export function RunFilterBar({
             <code>name:"long context" -tag:debug</code>
             <code>(tag:baseline OR tag:candidate) notes:ablated</code>
             <code>re:/seed-(13|14)/</code>
-            <span>Regex requires the Rust API.</span>
             <span>Fields: all, name, project, notes, config, metadata, tag/tags, status, id.</span>
           </div>
         ) : null}

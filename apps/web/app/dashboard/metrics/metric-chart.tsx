@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, ImageDown, RefreshCw } from "lucide-react";
+import { Check, FileText, ImageDown, LineChart, MoreVertical, RefreshCw, Table2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
 
@@ -386,20 +386,22 @@ export function MetricChart({
   const [yRange, setYRange] = useState<{ min: number; max: number } | null>(null);
   const [yMinDraft, setYMinDraft] = useState("");
   const [yMaxDraft, setYMaxDraft] = useState("");
-  const yRangeDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  // The three-dot options menu (log scale, y-range, smoothing, export) lives in
+  // a single disclosure so the toolbar stays just a view switcher + one button.
+  const menuDetailsRef = useRef<HTMLDetailsElement | null>(null);
   const yAxisOptions = useMemo(() => ({ scale: yScale, range: yRange }), [yRange, yScale]);
 
-  // The y-range popover dismisses like every other dropdown in the app:
+  // The options menu dismisses like every other dropdown in the app:
   // click-away closes it, Escape closes it and returns focus to its trigger.
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
-      const details = yRangeDetailsRef.current;
+      const details = menuDetailsRef.current;
       if (!details?.open) return;
       if (event.target instanceof Node && details.contains(event.target)) return;
       details.open = false;
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      const details = yRangeDetailsRef.current;
+      const details = menuDetailsRef.current;
       if (event.key !== "Escape" || !details?.open) return;
       details.open = false;
       const summary = details.querySelector("summary");
@@ -590,7 +592,14 @@ export function MetricChart({
   const showInlineControls = chartView === "chart" && showExportActions;
   const showSmoothing = showInlineControls && typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
-  const showActions = showViewToggle || (showExportActions && (Boolean(exportFilenameBase) || showSmoothing || showYAxisControls));
+  // What lands in the three-dot menu: chart/table view, y-axis scale/range,
+  // smoothing, exports. The view switch is always present so it stays reachable
+  // in summary view, where the other controls below are hidden.
+  const menuHasViewToggle = showViewToggle;
+  const menuHasYAxis = showInlineControls && showYAxisControls;
+  const menuHasExport = showInlineControls && Boolean(exportFilenameBase);
+  const hasMenu = menuHasViewToggle || menuHasYAxis || showSmoothing || menuHasExport;
+  const showActions = showViewToggle || hasMenu;
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
@@ -701,18 +710,18 @@ export function MetricChart({
     return sanitizeYAxisRange({ min, max }, yScale);
   }
 
+  // Apply/Auto commit the range but leave the menu open so the user can keep
+  // nudging the bounds and watch the plot update behind the popover.
   function applyYRangeDraft() {
     const next = draftYRange();
     if (!next) return;
     setYRange(next);
-    if (yRangeDetailsRef.current) yRangeDetailsRef.current.open = false;
   }
 
   function clearYRange() {
     setYRange(null);
     setYMinDraft("");
     setYMaxDraft("");
-    if (yRangeDetailsRef.current) yRangeDetailsRef.current.open = false;
   }
 
   const yDraftDirty = yMinDraft.trim() !== "" || yMaxDraft.trim() !== "";
@@ -726,132 +735,151 @@ export function MetricChart({
 
   const actionsRow = showActions ? (
     <div className="chart-export-actions" aria-label="Chart actions">
-      <div className="chart-view-toggle" role="group" aria-label={`${metricKey} view`}>
-        <button
-          aria-controls={chartPanelId}
-          aria-pressed={chartView === "chart"}
-          className={chartView === "chart" ? "selected" : ""}
-          onClick={() => setChartView("chart")}
-          type="button"
+      {hasMenu ? (
+        <details
+          className="chart-menu"
+          onToggle={(event) => {
+            if ((event.currentTarget as HTMLDetailsElement).open && yRange) {
+              setYMinDraft(String(yRange.min));
+              setYMaxDraft(String(yRange.max));
+            }
+          }}
+          ref={menuDetailsRef}
         >
-          Chart
-        </button>
-        <button
-          aria-controls={chartPanelId}
-          aria-pressed={chartView === "summary"}
-          className={chartView === "summary" ? "selected" : ""}
-          onClick={() => setChartView("summary")}
-          type="button"
-        >
-          Summary table
-        </button>
-      </div>
-      {showInlineControls && showYAxisControls ? (
-        <>
-          <button
-            aria-pressed={yScale === "log"}
-            className={`chart-log-toggle${yScale === "log" ? " active" : ""}`}
-            onClick={toggleYScale}
-            title={yScale === "log"
-              ? `Logarithmic y-axis${hiddenLogPoints ? ` — ${hiddenLogPoints} non-positive points hidden` : ""}. Click for linear.`
-              : "Switch to a logarithmic y-axis (plots positive values only)"}
-            type="button"
-          >
-            Log
-          </button>
-          <details
-            className="chart-y-range"
-            onToggle={(event) => {
-              if ((event.currentTarget as HTMLDetailsElement).open && yRange) {
-                setYMinDraft(String(yRange.min));
-                setYMaxDraft(String(yRange.max));
-              }
-            }}
-            ref={yRangeDetailsRef}
-          >
-            <summary aria-label={`Y-axis range for ${metricKey}`} title="Set a manual y-axis range">
-              Y {yRange ? `${formatAxisTick(yRange.min)}–${formatAxisTick(yRange.max)}` : "auto"}
-            </summary>
-            <div className="chart-y-range-pop">
-              <label className="chart-y-range-field">
-                <span>Min</span>
+          <summary aria-label={`${metricKey} chart options`} title="Chart options">
+            <MoreVertical size={16} aria-hidden="true" />
+          </summary>
+          <div className="chart-menu-pop" aria-label={`${metricKey} chart options`}>
+            {menuHasViewToggle ? (
+              <>
+                <div className="chart-menu-radiogroup" role="group" aria-label={`${metricKey} view`}>
+                  <button
+                    aria-controls={chartPanelId}
+                    aria-pressed={chartView === "chart"}
+                    className={`chart-menu-item chart-menu-radio${chartView === "chart" ? " selected" : ""}`}
+                    onClick={() => setChartView("chart")}
+                    type="button"
+                  >
+                    <LineChart size={14} aria-hidden="true" />
+                    <span className="chart-menu-radio-label">Chart</span>
+                    {chartView === "chart" ? <Check size={14} className="chart-menu-check" aria-hidden="true" /> : null}
+                  </button>
+                  <button
+                    aria-controls={chartPanelId}
+                    aria-pressed={chartView === "summary"}
+                    className={`chart-menu-item chart-menu-radio${chartView === "summary" ? " selected" : ""}`}
+                    onClick={() => setChartView("summary")}
+                    type="button"
+                  >
+                    <Table2 size={14} aria-hidden="true" />
+                    <span className="chart-menu-radio-label">Summary table</span>
+                    {chartView === "summary" ? <Check size={14} className="chart-menu-check" aria-hidden="true" /> : null}
+                  </button>
+                </div>
+                {menuHasYAxis || showSmoothing || menuHasExport ? <div className="chart-menu-divider" role="separator" /> : null}
+              </>
+            ) : null}
+            {menuHasYAxis ? (
+              <>
+                <button
+                  aria-pressed={yScale === "log"}
+                  className={`chart-menu-row chart-log-toggle${yScale === "log" ? " active" : ""}`}
+                  onClick={toggleYScale}
+                  title={yScale === "log"
+                    ? `Logarithmic y-axis${hiddenLogPoints ? ` — ${hiddenLogPoints} non-positive points hidden` : ""}. Click for linear.`
+                    : "Switch to a logarithmic y-axis (plots positive values only)"}
+                  type="button"
+                >
+                  <span className="chart-menu-row-label">Logarithmic y-axis</span>
+                  <span className="chart-menu-switch" aria-hidden="true" />
+                </button>
+                <div className="chart-menu-section">
+                  <span className="chart-menu-section-label">Y-axis range</span>
+                  <div className="chart-y-range-pop">
+                    <label className="chart-y-range-field">
+                      <span>Min</span>
+                      <input
+                        aria-label="Manual y-axis minimum"
+                        onChange={(event) => setYMinDraft(event.currentTarget.value)}
+                        onKeyDown={yRangeKeyDown}
+                        placeholder={domain ? formatAxisTick(domain.minY) : "min"}
+                        step="any"
+                        type="number"
+                        value={yMinDraft}
+                      />
+                    </label>
+                    <label className="chart-y-range-field">
+                      <span>Max</span>
+                      <input
+                        aria-label="Manual y-axis maximum"
+                        onChange={(event) => setYMaxDraft(event.currentTarget.value)}
+                        onKeyDown={yRangeKeyDown}
+                        placeholder={domain ? formatAxisTick(domain.maxY) : "max"}
+                        step="any"
+                        type="number"
+                        value={yMaxDraft}
+                      />
+                    </label>
+                    <div className="chart-y-range-actions">
+                      <button className="secondary compact-button" disabled={!yDraftDirty || !yDraftValid} onClick={applyYRangeDraft} type="button">Apply</button>
+                      <button className="secondary compact-button" onClick={clearYRange} type="button">Auto</button>
+                    </div>
+                    {yDraftDirty && !yDraftValid ? (
+                      <small className="chart-y-range-hint">{yScale === "log" ? "Log scale needs 0 < min < max." : "Needs min < max."}</small>
+                    ) : null}
+                  </div>
+                </div>
+              </>
+            ) : null}
+            {showSmoothing ? (
+              <label className="chart-menu-slider chart-smoothing-control" htmlFor={smoothingControlId} title={`Line smoothing (EMA): ${displaySmoothing ? displaySmoothing : "off"}`}>
+                <span className="chart-smoothing-label">Smoothing</span>
+                <span className="chart-smoothing-value" aria-hidden="true">{displaySmoothing ? `.${displaySmoothing}` : "off"}</span>
                 <input
-                  aria-label="Manual y-axis minimum"
-                  onChange={(event) => setYMinDraft(event.currentTarget.value)}
-                  onKeyDown={yRangeKeyDown}
-                  placeholder={domain ? formatAxisTick(domain.minY) : "min"}
-                  step="any"
-                  type="number"
-                  value={yMinDraft}
+                  aria-label={`Line smoothing for ${metricKey}`}
+                  aria-valuetext={displaySmoothing ? String(displaySmoothing) : "off"}
+                  className="chart-smoothing-slider"
+                  id={smoothingControlId}
+                  max={90}
+                  min={0}
+                  onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+                  onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
+                  step={10}
+                  type="range"
+                  value={displaySmoothing}
                 />
               </label>
-              <label className="chart-y-range-field">
-                <span>Max</span>
-                <input
-                  aria-label="Manual y-axis maximum"
-                  onChange={(event) => setYMaxDraft(event.currentTarget.value)}
-                  onKeyDown={yRangeKeyDown}
-                  placeholder={domain ? formatAxisTick(domain.maxY) : "max"}
-                  step="any"
-                  type="number"
-                  value={yMaxDraft}
-                />
-              </label>
-              <div className="chart-y-range-actions">
-                <button className="secondary compact-button" disabled={!yDraftDirty || !yDraftValid} onClick={applyYRangeDraft} type="button">Apply</button>
-                <button className="secondary compact-button" onClick={clearYRange} type="button">Auto</button>
-              </div>
-              {yDraftDirty && !yDraftValid ? (
-                <small className="chart-y-range-hint">{yScale === "log" ? "Log scale needs 0 < min < max." : "Needs min < max."}</small>
-              ) : null}
-            </div>
-          </details>
-        </>
-      ) : null}
-      {showSmoothing ? (
-        <label className="chart-smoothing-control" htmlFor={smoothingControlId} title={`Line smoothing (EMA): ${displaySmoothing ? displaySmoothing : "off"}`}>
-          <span className="chart-smoothing-label">Smooth</span>
-          <input
-            aria-label={`Line smoothing for ${metricKey}`}
-            aria-valuetext={displaySmoothing ? String(displaySmoothing) : "off"}
-            className="chart-smoothing-slider"
-            id={smoothingControlId}
-            max={90}
-            min={0}
-            onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
-            onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
-            step={10}
-            type="range"
-            value={displaySmoothing}
-          />
-        </label>
-      ) : null}
-      {showInlineControls && exportFilenameBase ? (
-        <>
-          <button
-            aria-label={`Download ${metricKey} plotted data CSV`}
-            aria-describedby={exportBlockedReason ? exportHelpId : undefined}
-            aria-disabled={Boolean(exportBlockedReason) || undefined}
-            className="icon-button chart-export-button"
-            onClick={downloadChartCsv}
-            title={exportBlockedReason || "Download plotted chart data as CSV"}
-            type="button"
-          >
-            <FileText size={14} />
-          </button>
-          <button
-            aria-label={`Download ${metricKey} chart image`}
-            aria-describedby={exportBlockedReason ? exportHelpId : undefined}
-            aria-disabled={Boolean(exportBlockedReason) || undefined}
-            className="icon-button chart-export-button"
-            onClick={downloadChartSvg}
-            title={exportBlockedReason || "Download chart image as SVG"}
-            type="button"
-          >
-            <ImageDown size={14} />
-          </button>
-          {exportBlockedReason ? <span className="chart-export-helper" id={exportHelpId}>{exportBlockedReason}</span> : null}
-        </>
+            ) : null}
+            {menuHasExport ? (
+              <>
+                <div className="chart-menu-divider" role="separator" />
+                <button
+                  aria-label={`Download ${metricKey} plotted data CSV`}
+                  aria-describedby={exportBlockedReason ? exportHelpId : undefined}
+                  aria-disabled={Boolean(exportBlockedReason) || undefined}
+                  className="chart-menu-item"
+                  onClick={downloadChartCsv}
+                  title={exportBlockedReason || "Download plotted chart data as CSV"}
+                  type="button"
+                >
+                  <FileText size={14} aria-hidden="true" /> Download data (CSV)
+                </button>
+                <button
+                  aria-label={`Download ${metricKey} chart image`}
+                  aria-describedby={exportBlockedReason ? exportHelpId : undefined}
+                  aria-disabled={Boolean(exportBlockedReason) || undefined}
+                  className="chart-menu-item"
+                  onClick={downloadChartSvg}
+                  title={exportBlockedReason || "Download chart image as SVG"}
+                  type="button"
+                >
+                  <ImageDown size={14} aria-hidden="true" /> Download image (SVG)
+                </button>
+                {exportBlockedReason ? <span className="chart-export-helper" id={exportHelpId}>{exportBlockedReason}</span> : null}
+              </>
+            ) : null}
+          </div>
+        </details>
       ) : null}
     </div>
   ) : null;

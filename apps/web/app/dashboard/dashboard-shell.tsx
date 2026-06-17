@@ -1372,7 +1372,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     dashboardRequestRef.current = requestId;
     if (!silent) {
       setDashboardLoading(true);
-      if (shouldSurfaceRunLoadMessage(activeTabRef.current)) setMessage("Loading runs...");
+      // Only surface the "Loading runs..." copy on the genuine first load. On
+      // subsequent reloads (sorting, filtering, paging) keep the prior status
+      // message stable so it doesn't flicker through transient loading text.
+      if (!initialLoadDone && shouldSurfaceRunLoadMessage(activeTabRef.current)) setMessage("Loading runs...");
     }
     let keepInitialRunsLoading = false;
     try {
