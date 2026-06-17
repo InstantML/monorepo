@@ -876,108 +876,269 @@ small {
   opacity: 0.45;
 }
 
-.chart-view-toggle {
+/* Animated icon switcher between the chart and the summary table. A single
+ * thumb slides under whichever icon is active; the buttons sit above it. */
+.chart-view-switch {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  overflow: hidden;
+  height: 28px;
+  padding: 3px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--surface);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
 }
 
-.chart-view-toggle button {
-  min-height: 26px;
+.chart-view-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 30px;
+  height: calc(100% - 6px);
+  border-radius: 999px;
+  background: var(--surface-selected);
+  box-shadow: 0 1px 2px rgba(23, 33, 43, 0.12);
+  transition: transform 240ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  pointer-events: none;
+}
+
+.chart-view-switch[data-view="summary"] .chart-view-switch-thumb {
+  transform: translateX(30px);
+}
+
+.chart-view-switch-btn {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 100%;
   border: 0;
-  border-radius: 0;
-  padding: 0 9px;
+  border-radius: 999px;
+  padding: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 760;
-  letter-spacing: 0;
-  white-space: nowrap;
   cursor: pointer;
+  transition: color 160ms ease;
 }
 
-.chart-view-toggle button + button {
-  border-left: 1px solid var(--line-soft);
-}
-
-.chart-view-toggle button.selected,
-.chart-view-toggle button[aria-pressed="true"] {
-  background: var(--surface-selected);
+.chart-view-switch-btn:hover {
   color: var(--text);
 }
 
-.chart-log-toggle {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--muted);
-  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.chart-log-toggle.active {
-  border-color: var(--accent);
-  background: var(--accent-soft, rgba(37, 99, 235, 0.12));
+.chart-view-switch-btn[aria-pressed="true"] {
   color: var(--accent);
 }
 
-.chart-y-range {
+@media (prefers-reduced-motion: reduce) {
+  .chart-view-switch-thumb {
+    transition: none;
+  }
+}
+
+/* Three-dot options menu. The trigger matches the switcher's pill height; the
+ * popover reuses the dropdown layer + shadow used elsewhere in the app. */
+.chart-menu {
   position: relative;
 }
 
-.chart-y-range > summary {
+.chart-menu > summary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 28px;
   height: 28px;
-  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
   color: var(--muted);
   box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
   list-style: none;
   cursor: pointer;
   user-select: none;
 }
 
-.chart-y-range > summary::-webkit-details-marker {
+.chart-menu > summary::-webkit-details-marker {
   display: none;
 }
 
-.chart-y-range[open] > summary {
+.chart-menu > summary:hover {
+  color: var(--text);
+}
+
+.chart-menu[open] > summary {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.chart-y-range-pop {
+.chart-menu-pop {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   /* Dropdown layer (tray 60 < dropdowns 80 < modals 120). */
   z-index: 80;
   display: grid;
-  gap: 8px;
-  width: 180px;
-  padding: 10px;
+  gap: 4px;
+  width: 224px;
+  padding: 6px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--surface);
   box-shadow: 0 14px 34px rgba(23, 33, 43, 0.16);
+}
+
+/* Full-width rows inside the menu: a label on the left, a control on the right. */
+.chart-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chart-menu-row:hover {
+  background: var(--surface-hover);
+}
+
+.chart-menu-row-label {
+  white-space: nowrap;
+}
+
+/* A pill switch that flips on for the active state (e.g. log scale). */
+.chart-menu-switch {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 160ms ease;
+}
+
+.chart-menu-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(23, 33, 43, 0.25);
+  transition: transform 180ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.chart-menu-row[aria-pressed="true"] .chart-menu-switch {
+  background: var(--accent);
+}
+
+.chart-menu-row[aria-pressed="true"] .chart-menu-switch::after {
+  transform: translateX(13px);
+}
+
+.chart-menu-row[aria-pressed="true"] .chart-menu-row-label {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-menu-switch,
+  .chart-menu-switch::after {
+    transition: none;
+  }
+}
+
+/* A titled sub-section (e.g. the manual y-axis range fields). */
+.chart-menu-section {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--surface-hover);
+}
+
+.chart-menu-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.chart-menu-slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  height: auto;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.chart-menu-slider:hover {
+  background: var(--surface-hover);
+}
+
+.chart-smoothing-value {
+  justify-self: end;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.chart-menu-divider {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--line-soft);
+}
+
+.chart-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chart-menu-item:hover {
+  background: var(--surface-hover);
+}
+
+.chart-menu-item svg {
+  flex: none;
+  color: var(--muted);
+}
+
+.chart-menu-item[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.chart-y-range-pop {
+  display: grid;
+  gap: 8px;
 }
 
 .chart-y-range-field {
@@ -1014,64 +1175,21 @@ small {
   line-height: 1.35;
 }
 
-.chart-smoothing-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 28px;
-  padding: 0 9px 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 6px 16px rgba(23, 33, 43, 0.08);
-  cursor: pointer;
-}
-
 .chart-smoothing-label {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text);
   user-select: none;
 }
 
 .chart-smoothing-slider {
-  width: 72px;
+  grid-column: 1 / -1;
+  width: 100%;
   height: 4px;
-  margin: 0;
+  margin: 2px 0 0;
   padding: 0;
   accent-color: var(--accent);
   cursor: pointer;
-}
-
-@media (max-width: 900px) {
-  .chart-smoothing-label {
-    display: none;
-  }
-
-  .chart-smoothing-slider {
-    width: 56px;
-  }
-}
-
-/* Grid panel toolbars are tight (csv + svg + slider); drop the word and keep the
-   slider. The fullscreen panel has room, so the "Smooth" label stays there. */
-.workspace-panel-card:not(.fullscreen-panel-card) .chart-smoothing-label {
-  display: none;
-}
-
-.workspace-panel-card:not(.fullscreen-panel-card) .chart-smoothing-slider {
-  width: 60px;
-}
-
-/* A manual range widens the Y pill ("Y 1.2e-4–3.4e-1"); cap it in tight grid
-   cards so the toolbar wraps less. The full label remains in the title. */
-.workspace-panel-card:not(.fullscreen-panel-card) .chart-y-range > summary {
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .chart-export-helper {
@@ -1246,11 +1364,6 @@ small {
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-summary-table {
   min-width: 680px;
 }
-
-.workspace-panel-card:not(.fullscreen-panel-card) .chart-view-toggle button {
-  padding: 0 7px;
-}
-
 
 .chart-legend {
   display: grid;
