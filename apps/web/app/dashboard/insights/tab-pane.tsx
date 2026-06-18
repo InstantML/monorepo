@@ -19,21 +19,63 @@ import { metricTitle } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
 import { AnalysisCard } from "../ui/analysis-card";
 import { CustomSelect, type SelectOption } from "../ui/select";
+import { SystemUsageInsightsPane } from "./system-usage-pane";
 
 const AUTO_AXIS = "__auto__";
 const MAX_AXIS_OPTIONS = 80;
 const MAX_PARALLEL_AXES = 5;
 
 type Props = {
+  api: { get: (path: string, options?: Record<string, unknown>) => Promise<any> };
   embedded?: boolean;
   metricKey: string;
   /** Optional: invoked with the run id when a scatter point or parallel line is clicked. */
   onSelectRun?: (runId: string) => void;
+  project?: string;
   selectedRunIds: string[];
   sortedRuns: RunSummary[];
 };
 
-export function InsightsTabPane({ embedded = false, metricKey, onSelectRun = () => {}, selectedRunIds, sortedRuns }: Props) {
+export function InsightsTabPane({ api, embedded = false, metricKey, onSelectRun = () => {}, project = "", selectedRunIds, sortedRuns }: Props) {
+  const [activeView, setActiveView] = useState<"usage" | "run-analysis">("usage");
+
+  return (
+    <div className={`analysis-page insights-page ${embedded ? "embedded-analysis" : ""}`}>
+      {!embedded ? (
+        <header className="analysis-header">
+          <div className="analysis-title-block">
+            <h2>Insights</h2>
+            <p>{activeView === "usage" ? "Observed GPU and system usage from logged telemetry" : "Run-level patterns across loaded experiments"}</p>
+          </div>
+          <div className="insights-view-switch" role="group" aria-label="Insights view">
+            <button type="button" aria-pressed={activeView === "usage"} onClick={() => setActiveView("usage")}>GPU & System</button>
+            <button type="button" aria-pressed={activeView === "run-analysis"} onClick={() => setActiveView("run-analysis")}>Run Analysis</button>
+          </div>
+        </header>
+      ) : null}
+
+      {!embedded && activeView === "usage" ? (
+        <SystemUsageInsightsPane api={api} project={project} selectedRunIds={selectedRunIds} sortedRuns={sortedRuns} onSelectRun={onSelectRun} />
+      ) : (
+        <RunAnalysisInsightsPane embedded={embedded} metricKey={metricKey} onSelectRun={onSelectRun} selectedRunIds={selectedRunIds} sortedRuns={sortedRuns} />
+      )}
+    </div>
+  );
+}
+
+function RunAnalysisInsightsPane({
+  embedded = false,
+  metricKey,
+  onSelectRun,
+  selectedRunIds,
+  sortedRuns,
+}: {
+  embedded?: boolean;
+  metricKey: string;
+  onSelectRun: (runId: string) => void;
+  selectedRunIds: string[];
+  sortedRuns: RunSummary[];
+}) {
   const universe = useMemo(() => insightsRunUniverse(selectedRunIds, sortedRuns), [selectedRunIds, sortedRuns]);
   const grouped = useMemo(() => groupedRunReducers(universe.runs, metricKey), [universe.runs, metricKey]);
   const groupingKey = useMemo(() => runGroupingKeyLabel(universe.runs), [universe.runs]);
@@ -56,23 +98,17 @@ export function InsightsTabPane({ embedded = false, metricKey, onSelectRun = () 
   const scope = insightsScopeLabel(universe);
 
   return (
-    <div className={`analysis-page insights-page ${embedded ? "embedded-analysis" : ""}`}>
+    <>
       {embedded ? (
         <div className="advanced-section-band">
           <span className="seg"><i className="dot" />Run-level insights</span>
           <span className="rule" />
           <span className="hint">{scope}</span>
         </div>
+      ) : null}
+      {!universe.runs.length ? (
+        <div className="empty">No loaded runs available for insights.</div>
       ) : (
-        <header className="analysis-header">
-          <div className="analysis-title-block">
-            <h2>Loaded run analysis</h2>
-            <p>{scope}</p>
-          </div>
-        </header>
-      )}
-
-      {!universe.runs.length ? <div className="empty">No loaded runs available for insights.</div> : (
         <>
           <section className="analysis-grid two">
             <GroupedReducersCard grouped={grouped} groupingKey={groupingKey} metricKey={metricKey} />
@@ -116,7 +152,7 @@ export function InsightsTabPane({ embedded = false, metricKey, onSelectRun = () 
           </section>
         </>
       )}
-    </div>
+    </>
   );
 }
 

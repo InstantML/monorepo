@@ -4633,7 +4633,10 @@ function dismissTopOverlay() {
         <section className={`tab-pane ${activeTab === "insights" ? "active" : ""}`} aria-label="Insights">
           {activeTab === "insights" ? (
             <InsightsTabPane
+              api={api}
               metricKey={metricKey}
+              onSelectRun={setPrimaryRunId}
+              project={project}
               selectedRunIds={selectedRunIds}
               sortedRuns={sortedRuns}
             />
