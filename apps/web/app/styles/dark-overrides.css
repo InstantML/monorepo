@@ -52,8 +52,7 @@
   border-color: var(--line-soft);
 }
 
-:root[data-theme="dark"] .preview-chip.good,
-:root[data-theme="dark"] .api-key-reveal {
+:root[data-theme="dark"] .preview-chip.good {
   border-color: rgba(85, 215, 153, 0.34);
   background: rgba(22, 138, 79, 0.18);
   color: var(--green);

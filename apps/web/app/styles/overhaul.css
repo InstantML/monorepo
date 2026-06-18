@@ -2017,13 +2017,36 @@ button.secondary.danger-action:hover:not(:disabled),
 /* Code / request-context blocks */
 .panel-body pre,
 .api-key-reveal {
-  background: var(--bg-soft);
+  background: var(--surface-soft);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 14px 16px;
   color: var(--text-2);
   font: 500 12px/1.6 var(--font-mono);
   overflow: auto;
+}
+
+.api-key-reveal {
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.api-key-reveal strong {
+  color: var(--text);
+  font: 600 12px/1.2 var(--font-sans);
+}
+
+.api-key-reveal code {
+  display: block;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--surface) 82%, var(--surface-2));
+  color: var(--text);
+  padding: 10px 12px;
+  white-space: pre;
 }
 
 /* Two-col secondary layout: align rails to mock proportion */
