@@ -71,7 +71,8 @@ Environment:
   STRIPE_STORAGE_OVERAGE_PRICE_ID        Optional Stripe metered storage overage price id.
   STRIPE_STORAGE_METER_ID                Optional Stripe Billing Meter id for storage overage.
   INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME Optional Stripe meter event name for retained-storage overage.
-  RESEND_API_KEY                         Optional Resend API key for organization invitation emails.
+  RESEND_API_KEY                         Resend API key for organization invitation emails.
+                                        Required for prod deploys; optional elsewhere.
   INSTANTML_EMAIL_FROM                   Verified invitation sender address. Required with Resend.
   INSTANTML_EMAIL_REPLY_TO               Optional invitation reply-to address.
   INSTANTML_CLOUD_RUN_STATIC_EGRESS=0  Disable static egress setup and manual ClickHouse allowlisting.
@@ -310,8 +311,15 @@ function emailProviderForDeployment() {
 }
 
 function validateInviteEmailConfig() {
-  if (emailProviderForDeployment() !== "resend") {
+  const provider = emailProviderForDeployment();
+  if (deploymentEnv === "prod" && provider !== "resend") {
+    fail("Production deploys require Resend-backed invitation email. Create/populate instantml-resend-api-key or set RESEND_API_KEY before deploying prod.");
+  }
+  if (provider !== "resend") {
     return;
+  }
+  if (!value("RESEND_API_KEY")) {
+    fail("Set RESEND_API_KEY before deploying Resend-backed invitation email.");
   }
   if (!value("INSTANTML_FRONTEND_BASE_URL")) {
     fail("Set INSTANTML_FRONTEND_BASE_URL to the hosted web app origin before deploying Resend-backed invitation email.");
