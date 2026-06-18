@@ -203,6 +203,139 @@ pub struct RunControlSummary {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct SystemUsagePeriod {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub range: String,
+    pub timezone: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageFilters {
+    pub group_by: String,
+    pub project: Option<String>,
+    pub actor: Option<String>,
+    pub gpu_model: Option<String>,
+    pub min_coverage_pct: f64,
+    pub limit: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageBucket {
+    pub bucket: String,
+    pub gpu_hours: f64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageSummary {
+    pub observed_gpu_hours: f64,
+    pub utilized_gpu_hours: f64,
+    pub low_utilization_gpu_hours: f64,
+    pub avg_gpu_utilization_percent: Option<f64>,
+    pub max_gpu_memory_percent: Option<f64>,
+    pub energy_kwh: f64,
+    pub sample_count: u64,
+    pub run_count: usize,
+    pub coverage_pct: Option<f64>,
+    pub utilization_buckets: Vec<SystemUsageBucket>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageCoverage {
+    pub runs_in_scope: usize,
+    pub runs_with_gpu_metrics: usize,
+    pub runs_missing_gpu_metrics: usize,
+    pub sample_count: u64,
+    pub coverage_pct: Option<f64>,
+    pub aggregate_truncated: bool,
+    pub low_confidence_attribution_rows: usize,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageBreakdownRow {
+    pub key: String,
+    pub label: String,
+    pub kind: String,
+    pub actor_source: Option<String>,
+    pub actor_confidence: Option<String>,
+    pub run_count: usize,
+    pub observed_gpu_hours: f64,
+    pub utilized_gpu_hours: f64,
+    pub low_utilization_gpu_hours: f64,
+    pub avg_gpu_utilization_percent: Option<f64>,
+    pub avg_gpu_memory_percent: Option<f64>,
+    pub max_gpu_memory_percent: Option<f64>,
+    pub energy_kwh: f64,
+    pub sample_count: u64,
+    pub coverage_pct: Option<f64>,
+    pub utilization_buckets: Vec<SystemUsageBucket>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageRunRow {
+    pub run_id: Uuid,
+    pub run_name: String,
+    pub project: String,
+    pub status: String,
+    pub actor_label: String,
+    pub actor_source: String,
+    pub actor_confidence: String,
+    pub gpu_model: String,
+    pub observed_gpu_hours: f64,
+    pub utilized_gpu_hours: f64,
+    pub low_utilization_gpu_hours: f64,
+    pub avg_gpu_utilization_percent: Option<f64>,
+    pub avg_gpu_memory_percent: Option<f64>,
+    pub max_gpu_memory_percent: Option<f64>,
+    pub avg_cpu_percent: Option<f64>,
+    pub energy_kwh: f64,
+    pub sample_count: u64,
+    pub coverage_pct: f64,
+    pub utilization_buckets: Vec<SystemUsageBucket>,
+    pub first_logged_at: Option<DateTime<Utc>>,
+    pub last_logged_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageAttentionCard {
+    pub id: String,
+    pub severity: String,
+    pub title: String,
+    pub message: String,
+    pub metric: String,
+    pub value: f64,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageFilterOption {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageAvailableFilters {
+    pub projects: Vec<SystemUsageFilterOption>,
+    pub actors: Vec<SystemUsageFilterOption>,
+    pub gpu_models: Vec<SystemUsageFilterOption>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SystemUsageInsightsEnvelope {
+    pub family: String,
+    pub generated_at: DateTime<Utc>,
+    pub is_invoice_grade: bool,
+    pub period: SystemUsagePeriod,
+    pub filters: SystemUsageFilters,
+    pub summary: SystemUsageSummary,
+    pub coverage: SystemUsageCoverage,
+    pub groups: Vec<SystemUsageBreakdownRow>,
+    pub top_runs: Vec<SystemUsageRunRow>,
+    pub attention: Vec<SystemUsageAttentionCard>,
+    pub available_filters: SystemUsageAvailableFilters,
+    pub notes: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct RunStopEnvelope {
     pub run_id: Uuid,
     pub ok: Option<bool>,
@@ -925,6 +1058,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::runs::overview,
         crate::http::handlers::runs::runs_summary,
         crate::http::handlers::runs::side_by_side,
+        crate::http::handlers::insights::system_usage_insights,
         // attributes / objects
         crate::http::handlers::runs::create_attributes,
         crate::http::handlers::runs::list_attributes,
@@ -993,6 +1127,17 @@ impl Modify for SecurityAddon {
         StopSignalEnvelope,
         RunMetricAggregate,
         RunSummaryRow,
+        SystemUsagePeriod,
+        SystemUsageFilters,
+        SystemUsageBucket,
+        SystemUsageSummary,
+        SystemUsageCoverage,
+        SystemUsageBreakdownRow,
+        SystemUsageRunRow,
+        SystemUsageAttentionCard,
+        SystemUsageFilterOption,
+        SystemUsageAvailableFilters,
+        SystemUsageInsightsEnvelope,
         RunForkContext,
         RunForkEnvelope,
         RunLineageEnvelope,

@@ -56,8 +56,8 @@ use handlers::{
     resolve_artifact_version, revoke_api_key, revoke_invitation,
     rotate_customer_clickhouse_credentials, rotate_report_share_token, run_artifact_edges,
     runs_summary, set_artifact_alias, side_by_side, stop_ack, stop_run, stop_runs, stop_signal,
-    update_artifact_retention, update_dashboard_preferences, update_report, update_run,
-    update_workspace_view, upload_artifact, usage_export, usage_summary,
+    system_usage_insights, update_artifact_retention, update_dashboard_preferences, update_report,
+    update_run, update_workspace_view, upload_artifact, usage_export, usage_summary,
     validate_customer_clickhouse_connection, workspace_view_data,
 };
 
@@ -271,6 +271,7 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/api/overview", get(overview))
         .route("/api/runs/summary", get(runs_summary))
         .route("/api/runs/side-by-side", get(side_by_side))
+        .route("/api/insights/system-usage", get(system_usage_insights))
         .route("/api/workspace-view-data", post(workspace_view_data))
         .route(
             "/api/runs/:run_id/attributes",

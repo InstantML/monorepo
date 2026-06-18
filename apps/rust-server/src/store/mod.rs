@@ -19,6 +19,7 @@ mod objects;
 mod reports;
 mod runs;
 mod summaries;
+mod system_usage;
 mod tenants;
 mod usage;
 mod validation;
@@ -38,6 +39,7 @@ pub use objects::*;
 pub use reports::*;
 pub use runs::*;
 use summaries::*;
+pub use system_usage::*;
 pub use tenants::TenantRouteRecord;
 pub use usage::*;
 use validation::*;
@@ -117,7 +119,7 @@ use crate::{
         ConsoleLogInsertRow, ConsoleLogReadRow, M4BucketRow, MetricPointRow as ChMetricPointRow,
         MetricStore, OperationalRecordRow, RankMetricCanonicalRow,
         RankMetricPointRow as ChRankMetricPointRow, RankMetricStepWindow, SeriesReadRow,
-        SeriesSortMode,
+        SeriesSortMode, SystemUsageAggregateRow,
     },
 };
 

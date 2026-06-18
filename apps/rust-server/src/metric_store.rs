@@ -195,6 +195,26 @@ pub struct MetricKeyReadRow {
     pub key: String,
 }
 
+#[derive(Row, Deserialize)]
+pub struct SystemUsageAggregateRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    pub key: String,
+    pub sample_count: u64,
+    pub avg_value: f64,
+    pub min_value: f64,
+    pub max_value: f64,
+    pub bucket_0_10: u64,
+    pub bucket_10_30: u64,
+    pub bucket_30_60: u64,
+    pub bucket_60_85: u64,
+    pub bucket_85_100: u64,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub first_logged_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub last_logged_at: DateTime<Utc>,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct RankMetricStepWindow {
     pub start_step: Option<f64>,
@@ -1018,6 +1038,64 @@ impl MetricStore {
             .await
             .map_err(clickhouse_read_error)?;
         Ok(rows.into_iter().map(|row| row.key).collect())
+    }
+
+    pub async fn query_system_usage_aggregates(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
+        limit: i64,
+    ) -> AppResult<Vec<SystemUsageAggregateRow>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.client
+            .query(
+                "SELECT \
+                   run_id, \
+                   key, \
+                   count() AS sample_count, \
+                   avg(value) AS avg_value, \
+                   min(value) AS min_value, \
+                   max(value) AS max_value, \
+                   countIf(value >= 0 AND value < 10) AS bucket_0_10, \
+                   countIf(value >= 10 AND value < 30) AS bucket_10_30, \
+                   countIf(value >= 30 AND value < 60) AS bucket_30_60, \
+                   countIf(value >= 60 AND value < 85) AS bucket_60_85, \
+                   countIf(value >= 85) AS bucket_85_100, \
+                   min(logged_at) AS first_logged_at, \
+                   max(logged_at) AS last_logged_at \
+                 FROM metric_points \
+                 WHERE org_id = ? \
+                   AND run_id IN ? \
+                   AND logged_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
+                   AND logged_at < parseDateTime64BestEffort(?, 6, 'UTC') \
+                   AND ( \
+                     startsWith(key, 'system/gpu/') \
+                     OR startsWith(key, 'gpu/') \
+                     OR key IN ( \
+                       'system/cpu_percent', \
+                       'system/gpu_util', \
+                       'system/gpu_utilization', \
+                       'system/memory_percent', \
+                       'system/memory_used_bytes', \
+                       'system/process_rss_bytes' \
+                     ) \
+                   ) \
+                 GROUP BY run_id, key \
+                 ORDER BY run_id, key \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(period_start.to_rfc3339())
+            .bind(period_end.to_rfc3339())
+            .bind(limit)
+            .fetch_all::<SystemUsageAggregateRow>()
+            .await
+            .map_err(clickhouse_read_error)
     }
 
     /// Count retained metric points for an org from the aggregate series table.
