@@ -691,6 +691,7 @@ function HistogramTimelinePanelChart({
           max={latestIndex}
           min={0}
           onChange={(event) => setSelectedIndex(Number(event.target.value))}
+          style={{ "--range-fill": `${latestIndex > 0 ? (boundedIndex / latestIndex) * 100 : 0}%` } as CSSProperties}
           type="range"
           value={boundedIndex}
         />

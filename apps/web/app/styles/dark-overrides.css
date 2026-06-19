@@ -544,8 +544,19 @@
 :root[data-theme="dark"] input:focus,
 :root[data-theme="dark"] select:focus,
 :root[data-theme="dark"] textarea:focus {
-  border-color: rgba(84, 240, 160, 0.58);
-  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.18);
+  border-color: rgba(84, 240, 160, 0.62);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.2);
+}
+
+/* Range sliders carry their focus glow on the thumb, so keep the control
+ * itself transparent and ringless in dark mode too (these dark `input`
+ * rules otherwise outrank the shared range styles). */
+:root[data-theme="dark"] input[type="range"] {
+  background: transparent;
+}
+:root[data-theme="dark"] input[type="range"]:focus,
+:root[data-theme="dark"] input[type="range"]:focus-visible {
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .status-message {

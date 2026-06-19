@@ -173,6 +173,10 @@
   font-size: 13px;
   font-weight: 520;
   text-align: left;
+  box-shadow: 0 0 0 0 rgba(43, 224, 130, 0);
+  transition: border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .select-trigger:hover {
@@ -181,8 +185,8 @@
 }
 
 .select-trigger:focus {
-  border-color: rgba(43, 224, 130, 0.48);
-  box-shadow: 0 0 0 2px rgba(43, 224, 130, 0.12);
+  border-color: rgba(43, 224, 130, 0.55);
+  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.14);
 }
 
 .select-trigger:disabled {
