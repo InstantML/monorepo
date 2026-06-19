@@ -70,7 +70,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   letter-spacing: var(--tracking-display);
   color: var(--text);
@@ -86,7 +86,7 @@
 .hp-stat { display: flex; flex-direction: column; gap: 2px; }
 .hp-stat-value {
   font-family: var(--font-mono);
-  font-size: 26px;
+  font-size: var(--fs-stat);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--text);
@@ -95,14 +95,14 @@
 }
 .hp-stat-value small {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   color: var(--muted);
   letter-spacing: 0;
 }
 .hp-stat-delta {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--fs-data);
   color: var(--muted);
 }
 .hp-stat-delta.down { color: var(--danger); }
@@ -126,7 +126,7 @@
   border: 0;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -149,13 +149,13 @@
   min-width: 0;
   border-collapse: collapse;
   table-layout: auto;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 .hp-dtable tr { height: 36px; }
 .hp-dtable th {
   position: static;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -209,7 +209,7 @@
   background: var(--bg-soft);
   border: 1px solid var(--line);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--faint);
   white-space: nowrap;
 }
@@ -232,7 +232,7 @@
 .hp-kv > div:last-child { border-bottom: 0; }
 .hp-kv dt {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   color: var(--muted);
 }
@@ -240,13 +240,13 @@
   margin: 0;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 15px;
+  font-size: var(--fs-title);
   color: var(--text);
 }
 .hp-note {
   margin: 10px 0 0;
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: var(--fs-data);
   color: var(--muted);
 }
 

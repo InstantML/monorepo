@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Instrument · InstantML Design System</title>
+  <meta name="description" content="The unified InstantML design system — one token vocabulary, two fonts, light + dark." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@300;400;500;600;700&family=Instrument+Serif:ital@1&display=swap"
+    rel="stylesheet"
+  />
+
+  <style>
+    /* ════════════════════════════════════════════════════════════════════
+       INSTRUMENT — unified design tokens
+       One vocabulary, two themes. Light is the current product default;
+       dark is the design-language origin. Every value below is a *role*,
+       not a place — components reference roles only.
+       ════════════════════════════════════════════════════════════════════ */
+
+    :root {
+      /* ---- Brand primitives (fixed across themes) ---------------------- */
+      --color-bolt: #2be082;   /* the signal green, as a brand constant     */
+      --color-mark: #1fb877;   /* logo-diagonal green (4×4 dot mark)         */
+
+      /* ---- Typography (shared) ---------------------------------------- */
+      --font-mono: "Spline Sans Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --font-display: "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+
+      --fs-micro: 10px;   /* uppercase micro-labels            */
+      --fs-label: 11px;   /* small controls, dense labels      */
+      --fs-data:  12px;   /* table cells, chips, data          */
+      --fs-body:  13px;   /* prose, descriptions               */
+      --fs-ui:    14px;   /* larger controls and labels        */
+      --fs-title: 15px;   /* panel-level titles                */
+      --fs-lead:  16px;   /* lead copy, dialog titles          */
+      --fs-page:  20px;   /* page titles                       */
+      --fs-stat:  26px;   /* big stat numerals                 */
+      --fs-display: 28px; /* report/display numerals           */
+      --tracking-eyebrow: 0.14em;
+
+      /* ---- Geometry (shared) ------------------------------------------ */
+      --radius: 6px;
+      --radius-pill: 999px;
+      --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;
+      --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+      --row-h: 36px;  --ticker-h: 38px;  --rail-w: 224px;
+
+      /* ---- Motion (shared) -------------------------------------------- */
+      --ease-snap: cubic-bezier(0.2, 0.9, 0.25, 1);
+
+      /* ═══ LIGHT THEME (product default) ══════════════════════════════ */
+      color-scheme: light;
+
+      --bg-soft:          #e9ebe1;
+      --bg:        #f6f7f3;
+      --surface:         #ffffff;
+      --surface-hover:  #eef0e9;
+      --surface-soft:         #f4f6f0;
+      --surface-selected:     #e6f7ec;
+
+      --line:        #e0e3d8;
+      --line-strong:      #c8ccbc;
+      --chart-grid:        #e7eadf;
+
+      --text:          #171a14;   /* values, names, headings   ~14:1 */
+      --text-2:         #3a3f33;   /* body, secondary cells     ~9:1  */
+      --muted:         #5d644f;   /* micro-labels, units       ~5:1  (info floor) */
+      --dim:       #8b9280;   /* decorative only                 */
+
+      --accent:           #16915c;   /* live / best / primary (legible on white) */
+      --accent-strong:    #0e6b43;
+      --accent-soft:       rgba(22, 145, 92, 0.12);
+      --accent-line:    rgba(22, 145, 92, 0.34);
+      --warm:             #9c6f10;  --warm-soft: rgba(156, 111, 16, 0.12);
+      --danger:             #d23b3b;  --danger-soft: rgba(210, 59, 59, 0.10);
+      --info:             #2d6fd1;  --info-dim: rgba(45, 111, 209, 0.12);
+
+      --series-1:#168a52; --series-2:#2d6fd1; --series-3:#a87613; --series-4:#b13fa4;
+      --series-5:#6b4fd8; --series-6:#cf5a2a; --series-7:#138a7e; --series-8:#7d8a16;
+
+      --glow-accent: none;                                   /* phosphor glow is dark-only */
+      --shadow-pop: 0 8px 24px rgba(23, 26, 20, 0.14);
+      --dot-grid: transparent;
+    }
+
+    :root[data-theme="dark"] {
+      /* ═══ DARK THEME (design-language origin) ════════════════════════ */
+      color-scheme: dark;
+
+      --bg-soft:          #080907;
+      --bg:        #0d0f0c;
+      --surface:         #121511;
+      --surface-hover:  #171a15;
+      --surface-soft:         #0a0c09;
+      --surface-selected:     #122419;
+
+      --line:        #20241d;
+      --line-strong:      #2e332a;
+      --chart-grid:        #1a1d17;
+
+      --text:          #e7eadf;   /* ~13:1 */
+      --text-2:         #aab0a0;   /* ~7:1  */
+      --muted:         #848c78;   /* ~4.6:1 (info floor) */
+      --dim:       #4d5345;
+
+      --accent:           #2be082;
+      --accent-strong:    #54f0a0;
+      --accent-soft:       rgba(43, 224, 130, 0.13);
+      --accent-line:    rgba(43, 224, 130, 0.35);
+      --warm:             #f0b43e;  --warm-soft: rgba(240, 180, 62, 0.13);
+      --danger:             #f25555;  --danger-soft: rgba(242, 85, 85, 0.13);
+      --info:             #4da3ff;  --info-dim: rgba(77, 163, 255, 0.13);
+
+      --series-1:#2be082; --series-2:#4da3ff; --series-3:#f0b43e; --series-4:#e36ad8;
+      --series-5:#9a7bff; --series-6:#ff8a5c; --series-7:#43d6c5; --series-8:#d4dc5a;
+
+      --glow-accent: drop-shadow(0 0 4px rgba(43, 224, 130, 0.55));
+      --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55);
+      --dot-grid: radial-gradient(circle at 1px 1px, rgba(231, 234, 223, 0.025) 1px, transparent 0);
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       Base
+       ════════════════════════════════════════════════════════════════════ */
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+    body {
+      margin: 0;
+      background:
+        var(--dot-grid) 0 0 / 26px 26px,
+        var(--bg);
+      color: var(--text-2);
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    h1, h2, h3, p { margin: 0; }
+    ::selection { background: var(--accent-soft); color: var(--accent-strong); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+    /* shared primitives reused by the guide */
+    .mono { font-family: var(--font-mono); }
+    .num  { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .serif-em {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 1.12em;
+      color: var(--text-2);
+      letter-spacing: 0;
+    }
+    .mlabel {
+      font-family: var(--font-mono);
+      font-size: var(--fs-micro);
+      font-weight: 500;
+      letter-spacing: var(--tracking-eyebrow);
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       Guide chrome — topbar, layout, sections
+       ════════════════════════════════════════════════════════════════════ */
+    .top {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; gap: var(--sp-3);
+      height: 56px; padding: 0 var(--sp-5);
+      background: color-mix(in srgb, var(--bg-soft) 86%, transparent);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    .top__brand { display: flex; align-items: center; gap: 10px; }
+    .top__brand svg { display: block; width: 22px; height: 22px; color: var(--text); }
+    .top__name { font-weight: 700; font-size: 14px; letter-spacing: 0.01em; color: var(--text); }
+    .top__name b { color: var(--color-mark); }
+    .top__sep { width: 1px; height: 22px; background: var(--line); }
+    .top__nav { display: flex; gap: 2px; margin-left: var(--sp-2); flex-wrap: wrap; }
+    .top__nav a {
+      padding: 5px 10px; border-radius: var(--radius);
+      font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+      transition: color 0.12s, background 0.12s;
+    }
+    .top__nav a:hover { color: var(--text); background: var(--surface-hover); }
+    .top__right { margin-left: auto; display: flex; align-items: center; gap: var(--sp-3); }
+    .ver { font-family: var(--font-mono); font-size: 11px; color: var(--dim); }
+
+    .theme-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 30px; padding: 0 12px;
+      background: var(--surface-soft); border: 1px solid var(--line-strong);
+      border-radius: var(--radius-pill);
+      font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--text-2); cursor: pointer;
+      transition: border-color 0.13s, color 0.13s;
+    }
+    .theme-toggle:hover { border-color: var(--muted); color: var(--text); }
+    .theme-toggle .ic { width: 14px; height: 14px; }
+
+    main { max-width: 1120px; margin: 0 auto; padding: var(--sp-6) var(--sp-5) 96px; }
+
+    .hero { padding: var(--sp-5) 0 var(--sp-6); border-bottom: 1px solid var(--line); }
+    .hero h1 {
+      font-size: clamp(30px, 5vw, 46px); font-weight: 700; letter-spacing: -0.02em;
+      color: var(--text); line-height: 1.05; margin-bottom: var(--sp-3);
+    }
+    .hero h1 .gx { color: var(--accent); }
+    .hero p { max-width: 64ch; font-size: 15px; color: var(--text-2); }
+
+    section { padding: var(--sp-6) 0; border-bottom: 1px solid var(--line); scroll-margin-top: 72px; }
+    .sec-head { margin-bottom: var(--sp-5); }
+    .sec-head .mlabel { display: block; margin-bottom: 6px; color: var(--accent); }
+    .sec-head h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
+    .sec-head p { max-width: 70ch; margin-top: 8px; color: var(--text-2); }
+
+    .sub { margin: var(--sp-5) 0 var(--sp-3); }
+    .sub .mlabel { color: var(--muted); }
+    .sub h3 { font-size: 15px; font-weight: 650; color: var(--text); margin-top: 2px; }
+    .note { font-size: var(--fs-data); color: var(--muted); max-width: 72ch; margin-top: 6px; }
+
+    /* rules / four laws */
+    .laws { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--sp-3); margin-top: var(--sp-3); }
+    .law { padding: var(--sp-4); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+    .law .n { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: var(--tracking-eyebrow); color: var(--accent); }
+    .law h4 { margin: 6px 0 4px; font-size: var(--fs-body); font-weight: 650; color: var(--text); }
+    .law p { font-size: var(--fs-data); color: var(--text-2); }
+
+    /* swatches */
+    .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: var(--sp-2); }
+    .sw { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+    .sw__chip { height: 64px; border-bottom: 1px solid var(--line); }
+    .sw__meta { padding: 8px 10px; }
+    .sw__name { font-family: var(--font-mono); font-size: var(--fs-data); color: var(--text); }
+    .sw__val { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); margin-top: 1px; }
+    .sw__use { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .sw__use b { color: var(--text-2); font-weight: 600; }
+
+    .series-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .series-row .s { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .series-row .s i { width: 46px; height: 46px; border-radius: var(--radius); display: block; }
+    .series-row .s span { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+
+    /* spec table */
+    .spec { width: 100%; border-collapse: collapse; font-size: var(--fs-data); }
+    .spec th {
+      font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 500;
+      letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted);
+      text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+    }
+    .spec td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .spec td.k { font-family: var(--font-mono); color: var(--accent); white-space: nowrap; }
+    .spec td.old { font-family: var(--font-mono); color: var(--muted); font-size: 11px; }
+    .spec td.hi { color: var(--text); }
+
+    /* type specimen */
+    .type-row { display: flex; align-items: baseline; gap: var(--sp-4); padding: 12px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    .type-row .tag { width: 130px; flex: none; }
+    .type-row .demo { color: var(--text); min-width: 0; }
+
+    /* spacing scale */
+    .space-row { display: flex; align-items: center; gap: var(--sp-3); padding: 6px 0; }
+    .space-row i { background: var(--accent-soft); border: 1px solid var(--accent-line); height: 18px; display: block; border-radius: 3px; }
+    .space-row .lab { font-family: var(--font-mono); font-size: 11px; color: var(--muted); width: 130px; }
+
+    /* component bench */
+    .bench { display: grid; gap: var(--sp-3); }
+    .bench-row { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); }
+    .bench-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--sp-3); }
+
+    /* do / don't */
+    .dd { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+    .dd .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .dd .card h4 { display: flex; align-items: center; gap: 8px; padding: 10px var(--sp-3); font-size: var(--fs-data);
+      font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 1px solid var(--line); }
+    .dd .do  h4 { color: var(--accent); }
+    .dd .dont h4 { color: var(--danger); }
+    .dd ul { margin: 0; padding: var(--sp-3) var(--sp-3) var(--sp-3) 30px; display: grid; gap: 8px; }
+    .dd li { font-size: var(--fs-data); color: var(--text-2); }
+
+    /* generic caption */
+    .cap { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.04em; color: var(--dim); margin-top: 8px; }
+
+    /* ════════════════════════════════════════════════════════════════════
+       COMPONENT LIBRARY  (faithful to apps/web — themed via tokens)
+       ════════════════════════════════════════════════════════════════════ */
+
+    /* Panel — the instrument bezel */
+    .panel { position: relative; background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); display: flex; flex-direction: column; min-width: 0; }
+    .panel::before, .panel::after { content: ""; position: absolute; width: 7px; height: 7px;
+      border-color: var(--line-strong); border-style: solid; transition: border-color 0.2s var(--ease-snap); pointer-events: none; }
+    .panel::before { top: 4px; left: 4px; border-width: 1px 0 0 1px; border-top-left-radius: 3px; }
+    .panel::after  { bottom: 4px; right: 4px; border-width: 0 1px 1px 0; border-bottom-right-radius: 3px; }
+    .panel:hover::before, .panel:hover::after { border-color: var(--accent); }
+    .panel__head { display: flex; align-items: center; gap: var(--sp-2); padding: 10px var(--sp-3);
+      border-bottom: 1px solid var(--line); min-height: 36px; }
+    .panel__head .mlabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .panel__unit { font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--dim); letter-spacing: var(--tracking-eyebrow); }
+    .panel__link { font-family: var(--font-mono); font-size: var(--fs-micro); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+    .panel__body { padding: var(--sp-3); flex: 1; min-height: 0; }
+    .panel__body--flush { padding: 0; }
+
+    /* Stat block */
+    .stat { display: flex; flex-direction: column; gap: 2px; }
+    .stat__value { font-family: var(--font-mono); font-size: var(--fs-stat); font-weight: 500;
+      font-variant-numeric: tabular-nums; color: var(--text); line-height: 1.1; letter-spacing: -0.02em; }
+    .stat__value small { font-size: 14px; color: var(--muted); font-weight: 400; }
+    .stat__delta { font-family: var(--font-mono); font-size: 11px; }
+    .stat__delta.up { color: var(--accent); } .stat__delta.down { color: var(--danger); } .stat__delta.flat { color: var(--muted); }
+    .kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .kpi-strip .stat { padding: var(--sp-3); border-right: 1px solid var(--line); }
+    .kpi-strip .stat:last-child { border-right: 0; }
+    .kpi-strip .mlabel { margin-bottom: 4px; }
+
+    /* Data table */
+    .dtable { width: 100%; border-collapse: collapse; font-size: var(--fs-data); }
+    .dtable th { font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 500; letter-spacing: var(--tracking-eyebrow);
+      text-transform: uppercase; color: var(--muted); text-align: left; padding: 8px var(--sp-3);
+      border-bottom: 1px solid var(--line-strong); white-space: nowrap; user-select: none; }
+    .dtable th.is-sorted { color: var(--text); } .dtable th .sort { color: var(--accent); }
+    .dtable th.r { text-align: right; }
+    .dtable td { padding: 0 var(--sp-3); height: var(--row-h); border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; }
+    .dtable tbody tr { transition: background 0.1s; cursor: pointer; }
+    .dtable tbody tr:hover { background: var(--surface-hover); }
+    .dtable tbody tr.is-selected { background: var(--surface-selected); box-shadow: inset 2px 0 0 var(--accent); }
+    .dtable .td-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--text-2); }
+    .dtable .td-num.is-best { color: var(--accent); font-weight: 600; }
+    .dtable .td-name { font-family: var(--font-mono); color: var(--text); font-weight: 500; }
+    .dtable .td-name .id { color: var(--muted); font-weight: 400; }
+    .dtable .td-dim { color: var(--muted); font-family: var(--font-mono); }
+    .group-row td { height: 28px; background: var(--surface-soft); font-family: var(--font-mono); font-size: var(--fs-micro);
+      letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted); }
+    .group-row b { color: var(--text-2); }
+
+    /* Chips / tags / dots */
+    .chip { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: var(--radius);
+      font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 500; letter-spacing: 0.08em;
+      text-transform: uppercase; border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
+    .chip--live { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+    .chip--done { background: transparent; color: var(--muted); }
+    .chip--warm { background: var(--warm-soft); border-color: color-mix(in srgb, var(--warm) 35%, transparent); color: var(--warm); }
+    .chip--danger { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 35%, transparent); color: var(--danger); }
+    .chip--info { background: var(--info-dim); border-color: color-mix(in srgb, var(--info) 35%, transparent); color: var(--info); }
+    .tag { display: inline-block; padding: 1px 6px; border-radius: var(--radius); background: var(--surface-soft);
+      border: 1px solid var(--line); font-family: var(--font-mono); font-size: var(--fs-micro); color: var(--muted); }
+
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; }
+    .dot--ok { background: var(--accent); } .dot--dim { background: var(--dim); }
+    .dot--warm { background: var(--warm); } .dot--danger { background: var(--danger); } .dot--info { background: var(--info); }
+    .dot--queued { background: transparent; border: 1.5px solid var(--dim); }
+    .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); position: relative; flex: none; display: inline-block; }
+    .pulse::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1px solid var(--accent);
+      animation: ping 2.2s var(--ease-snap) infinite; }
+    @keyframes ping { 0% { transform: scale(0.5); opacity: 0.9; } 70%,100% { transform: scale(1.6); opacity: 0; } }
+    .dotline { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+
+    /* Controls */
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 var(--sp-3); background: transparent;
+      border: 1px solid var(--line-strong); border-radius: var(--radius); font-family: var(--font-mono); font-size: 11px;
+      font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); cursor: pointer;
+      transition: all 0.13s var(--ease-snap); }
+    .btn:hover { border-color: var(--muted); color: var(--text); }
+    .btn--primary { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+    .btn--primary:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--accent-strong); }
+    .btn--ghost { border-color: transparent; color: var(--muted); }
+    .btn--ghost:hover { border-color: var(--line-strong); }
+    .btn--danger { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
+    .btn--danger:hover { border-color: var(--danger); background: var(--danger-soft); }
+    .btn--icon { width: 28px; padding: 0; justify-content: center; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .input { height: 28px; padding: 0 var(--sp-3); background: var(--surface-soft); border: 1px solid var(--line);
+      border-radius: var(--radius); font-family: var(--font-mono); font-size: var(--fs-data); color: var(--text); outline: none;
+      transition: border-color 0.13s, box-shadow 0.13s; }
+    .input::placeholder { color: var(--dim); }
+    .input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+    .query-bar { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--surface-soft);
+      border: 1px solid var(--line); border-radius: var(--radius); }
+    .query-token { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; background: var(--surface);
+      border: 1px solid var(--line-strong); border-radius: var(--radius); font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+    .query-token b { color: var(--accent); font-weight: 500; }
+    .query-token .x { color: var(--dim); cursor: pointer; }
+    .query-token .x:hover { color: var(--danger); }
+
+    .seg { display: inline-flex; background: var(--surface-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px; gap: 2px; }
+    .seg button { height: 22px; padding: 0 10px; background: transparent; border: 0; border-radius: 3px; font-family: var(--font-mono);
+      font-size: var(--fs-micro); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); cursor: pointer; transition: all 0.12s; }
+    .seg button:hover { color: var(--text-2); }
+    .seg button.is-active { background: var(--surface-hover); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+    .tabs { display: flex; gap: var(--sp-4); border-bottom: 1px solid var(--line); }
+    .tab { background: none; border: 0; padding: 8px 2px 9px; font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+      letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid transparent;
+      margin-bottom: -1px; cursor: pointer; transition: color 0.12s; }
+    .tab:hover { color: var(--text-2); }
+    .tab.is-active { color: var(--text); border-bottom-color: var(--accent); }
+    .tab__n { color: var(--dim); margin-left: 4px; }
+    .tab.is-active .tab__n { color: var(--accent); }
+
+    kbd { display: inline-block; padding: 1px 5px; background: var(--surface-soft); border: 1px solid var(--line-strong);
+      border-bottom-width: 2px; border-radius: var(--radius); font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+
+    /* Specialty data displays */
+    .meter { height: 4px; background: var(--surface-soft); border-radius: 2px; overflow: hidden; min-width: 64px; }
+    .meter > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+    .meter--warm > i { background: var(--warm); }
+
+    .heatmap { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+    .heatmap__cell { aspect-ratio: 1.6; border-radius: 2px; background: var(--surface-soft); transition: transform 0.1s var(--ease-snap); cursor: pointer; }
+    .heatmap__cell:hover { transform: scale(1.12); outline: 1px solid var(--muted); }
+
+    .feed-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px var(--sp-3); border-bottom: 1px solid var(--line);
+      transition: background 0.1s; cursor: pointer; }
+    .feed-row:last-child { border-bottom: 0; }
+    .feed-row:hover { background: var(--surface-hover); }
+    .feed-row__body { flex: 1; min-width: 0; }
+    .feed-row__title { font-family: var(--font-mono); font-size: var(--fs-data); color: var(--text); font-weight: 500; margin-bottom: 1px; }
+    .feed-row__meta { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+    .feed-row__time { font-family: var(--font-mono); font-size: 10px; color: var(--dim); flex: none; padding-top: 2px; }
+
+    .loglines, .codewell { font-family: var(--font-mono); white-space: pre; background: var(--surface-soft); padding: var(--sp-3);
+      overflow-x: auto; margin: 0; }
+    .loglines { font-size: 11px; line-height: 1.7; color: var(--text-2); border-radius: 0 0 var(--radius) var(--radius); }
+    .loglines .t { color: var(--dim); } .loglines .ok { color: var(--accent); }
+    .loglines .wr { color: var(--warm); } .loglines .er { color: var(--danger); }
+    .codewell { font-size: 11.5px; line-height: 1.75; color: var(--text-2); border-radius: 0 0 var(--radius) var(--radius); }
+    .codewell .k { color: var(--muted); } .codewell .v { color: var(--text); }
+    .codewell .s { color: var(--series-7); } .codewell .n { color: var(--series-3); } .codewell .c { color: var(--dim); font-style: italic; }
+
+    .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-2);
+      padding: var(--sp-6); color: var(--muted); text-align: center; }
+
+    /* Telemetry ticker (signature) */
+    .ticker { display: flex; align-items: center; gap: var(--sp-4); padding: 0 var(--sp-4); height: var(--ticker-h);
+      background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius);
+      font-family: var(--font-mono); font-size: 11px; white-space: nowrap; overflow: hidden; }
+    .ticker__live { display: flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 600; letter-spacing: var(--tracking-eyebrow); flex: none; }
+    .ticker__feed { display: flex; align-items: center; gap: var(--sp-4); overflow: hidden; flex: 1; min-width: 0; }
+    .tick-run { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--muted); flex: none; }
+    .tick-run b { color: var(--text-2); font-weight: 500; }
+    .tick-run .up { color: var(--accent); } .tick-run .down { color: var(--danger); }
+    .ticker__sys { display: flex; align-items: center; gap: var(--sp-4); padding-left: var(--sp-4); border-left: 1px solid var(--line); color: var(--muted); flex: none; }
+    .ticker__sys b { color: var(--text-2); font-weight: 500; }
+
+    /* nav rail item (shell sample) */
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 7px var(--sp-4); font-family: var(--font-mono); font-size: var(--fs-data);
+      color: var(--text-2); border-left: 2px solid transparent; }
+    .nav-item.is-active { color: var(--text); background: linear-gradient(90deg, var(--accent-soft), transparent 70%); border-left-color: var(--accent); }
+    .nav-item .ico { width: 8px; height: 8px; border-radius: 2px; background: var(--dim); }
+    .nav-item.is-active .ico { background: var(--accent); }
+    .nav-item__count { margin-left: auto; font-size: var(--fs-micro); color: var(--muted); }
+    .nav-item__count.is-alert { color: var(--danger); font-weight: 600; }
+
+    @media (max-width: 720px) {
+      .dd { grid-template-columns: 1fr; }
+      .kpi-strip { grid-template-columns: repeat(2, 1fr); }
+      .kpi-strip .stat:nth-child(2) { border-right: 0; }
+      .top__nav { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ───────────────────────── Topbar ───────────────────────── -->
+  <header class="top">
+    <div class="top__brand">
+      <!-- 4×4 dot mark: green diagonal, currentColor for the rest -->
+      <svg viewBox="0 0 96 96" aria-hidden="true">
+        <circle cx="12" cy="12" r="8" fill="var(--color-bolt)"/>
+        <circle cx="36" cy="12" r="5" fill="currentColor"/><circle cx="60" cy="12" r="5" fill="currentColor"/><circle cx="84" cy="12" r="5" fill="currentColor"/>
+        <circle cx="12" cy="36" r="5" fill="currentColor"/><circle cx="36" cy="36" r="8" fill="var(--color-bolt)"/><circle cx="60" cy="36" r="5" fill="currentColor"/><circle cx="84" cy="36" r="5" fill="currentColor"/>
+        <circle cx="12" cy="60" r="5" fill="currentColor"/><circle cx="36" cy="60" r="5" fill="currentColor"/><circle cx="60" cy="60" r="8" fill="var(--color-bolt)"/><circle cx="84" cy="60" r="5" fill="currentColor"/>
+        <circle cx="12" cy="84" r="5" fill="currentColor"/><circle cx="36" cy="84" r="5" fill="currentColor"/><circle cx="60" cy="84" r="5" fill="currentColor"/><circle cx="84" cy="84" r="8" fill="var(--color-bolt)"/>
+      </svg>
+      <span class="top__name">Instant<b>ML</b></span>
+    </div>
+    <div class="top__sep"></div>
+    <span class="mlabel">Instrument · Design System</span>
+    <nav class="top__nav">
+      <a href="#foundations">Foundations</a>
+      <a href="#type">Type</a>
+      <a href="#components">Components</a>
+      <a href="#patterns">Patterns</a>
+      <a href="#principles">Do / Don't</a>
+    </nav>
+    <div class="top__right">
+      <span class="ver">v1.1</span>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle light / dark theme">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>
+        </svg>
+        <span id="themeLabel">Light</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ───────────────────────── Hero ───────────────────────── -->
+    <div class="hero">
+      <h1>One vocabulary. Two fonts.<br>Green means <span class="gx">live</span>.</h1>
+      <p>
+        <span class="serif-em">Instrument</span> treats the product as a flight recorder for training runs —
+        a control room where every number is telemetry and every accent is a signal. This page is the readable
+        specimen for the system; the shipped token source is <code class="mono">apps/web/app/styles/tokens.css</code>.
+        It shows the tokens, type scale, and primitive components in both the light and dark themes.
+      </p>
+
+      <div class="laws">
+        <div class="law"><div class="n">01</div><h4>Mono carries data, Archivo carries prose</h4><p>If you can sort, filter, or paste it into a terminal, it's <b class="mono">Spline&nbsp;Sans&nbsp;Mono</b>. Titles and copy are Archivo. No third UI font.</p></div>
+        <div class="law"><div class="n">02</div><h4>Green means live</h4><p><code class="mono">--accent</code> is reserved for things happening <em>now</em>, best-yet values, and the one primary action. If everything is green, nothing is.</p></div>
+        <div class="law"><div class="n">03</div><h4>Hairlines, not shadows</h4><p>Structure comes from 1px borders and one-step surface changes. The only glow is phosphor on live chart series.</p></div>
+        <div class="law"><div class="n">04</div><h4>Dense, never cramped</h4><p>36px rows, a 4px spacing base, 12px gutters. Density is earned by removing chrome — data text never drops below 10px.</p></div>
+      </div>
+    </div>
+
+    <!-- ───────── The unification ───────── -->
+    <section id="unify">
+      <div class="sec-head">
+        <span class="mlabel">The proposal</span>
+        <h2>Collapse two token vocabularies into one</h2>
+        <p>
+          Today the codebase has been drifting between <b>the shipped app vocabulary</b>
+          (<code class="mono">--surface</code>, <code class="mono">--text</code>, <code class="mono">--accent</code>,
+          <code class="mono">--muted</code>, <code class="mono">--line</code>) and reference-only names from the
+          reimagine docs. The shipped app names are now the canonical names; the fix is to add the missing
+          type/spacing scales, keep roles semantic, and retire feature-local aliases.
+        </p>
+      </div>
+
+      <div class="panel">
+        <div class="panel__head"><span class="mlabel">token map — canonical app names</span><span class="panel__unit">role</span></div>
+        <div class="panel__body panel__body--flush">
+          <table class="spec">
+            <thead><tr><th>Canonical</th><th>Role</th><th>Retire / avoid</th><th>Light</th><th>Dark</th></tr></thead>
+            <tbody>
+              <tr><td class="k">--bg</td><td>main content backdrop</td><td class="old">--bg-canvas</td><td class="mono">#f6f7f3</td><td class="mono">#0d0f0c</td></tr>
+              <tr><td class="k">--surface</td><td>default panel surface</td><td class="old">--bg-panel</td><td class="mono">#ffffff</td><td class="mono">#121511</td></tr>
+              <tr><td class="k">--surface-hover</td><td>hover / raised rows</td><td class="old">--bg-panel-raised</td><td class="mono">#eef0e9</td><td class="mono">#171a15</td></tr>
+              <tr><td class="k">--surface-soft</td><td>wells: inputs, code, plots</td><td class="old">--bg-inset</td><td class="mono">#f1f3ec</td><td class="mono">#0a0c09</td></tr>
+              <tr><td class="k">--line</td><td>default 1px borders</td><td class="old">--line-hair</td><td class="mono">#e0e3d8</td><td class="mono">#20241d</td></tr>
+              <tr><td class="k">--line-strong</td><td>emphasis, header rules, ticks</td><td class="old">reference-only aliases</td><td class="mono">#c8ccbc</td><td class="mono">#2e332a</td></tr>
+              <tr><td class="k">--text</td><td>values, names, headings</td><td class="old">--text-hi</td><td class="mono">#171a14</td><td class="mono">#e7eadf</td></tr>
+              <tr><td class="k">--text-2</td><td>body, secondary cells</td><td class="old">--text-mid</td><td class="mono">#3a3f33</td><td class="mono">#aab0a0</td></tr>
+              <tr><td class="k">--muted</td><td>micro-labels, units</td><td class="old">--text-dim</td><td class="mono">#5d644f</td><td class="mono">#848c78</td></tr>
+              <tr><td class="k">--dim</td><td>decorative only — never meaning</td><td class="old">--text-faint</td><td class="mono">#8b9280</td><td class="mono">#4d5345</td></tr>
+              <tr><td class="k">--accent</td><td>live / best / primary action</td><td class="old">--signal</td><td class="mono">#16915c</td><td class="mono">#2be082</td></tr>
+              <tr><td class="k">--warm / --danger / --info</td><td>degraded / firing / informational</td><td class="old">--warn / --crit</td><td class="mono">#9c6f10 · #d23b3b · #2d6fd1</td><td class="mono">#f0b43e · #f25555 · #4da3ff</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p class="note">
+        Note the one honest exception to “green is green”: <code class="mono">--accent</code> is a <b>role</b>, so its value
+        shifts per theme (<span class="mono">#16915c</span> stays legible on white; <span class="mono">#2be082</span> glows on graphite).
+        The literal brand green lives apart as <code class="mono">--color-bolt</code> (#2be082) and the logo mark's
+        fixed green is <code class="mono">--color-mark</code> (#1fb877). Three greens, three clear jobs.
+      </p>
+    </section>
+
+    <!-- ───────────────────────── Foundations ───────────────────────── -->
+    <section id="foundations">
+      <div class="sec-head">
+        <span class="mlabel">Foundations</span>
+        <h2>Color</h2>
+        <p>A warm graphite ramp (green undertone, never blue-black) with a strict text ladder and five semantic signals. Depth is one step up the ramp — never stack two.</p>
+      </div>
+
+      <div class="sub"><span class="mlabel">Surfaces</span><h3>The graphite ramp</h3></div>
+      <div class="swatches">
+        <div class="sw"><div class="sw__chip" style="background:var(--bg-soft)"></div><div class="sw__meta"><div class="sw__name">--bg-soft</div><div class="sw__val" id="v-void"></div><div class="sw__use">Behind everything: <b>ticker, rail</b></div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--bg)"></div><div class="sw__meta"><div class="sw__name">--bg</div><div class="sw__val" id="v-canvas"></div><div class="sw__use"><b>Main canvas</b> (carries dot grid)</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--surface)"></div><div class="sw__meta"><div class="sw__name">--surface</div><div class="sw__val" id="v-panel"></div><div class="sw__use">Default <b>panel</b> surface</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--surface-hover)"></div><div class="sw__meta"><div class="sw__name">--surface-hover</div><div class="sw__val" id="v-raised"></div><div class="sw__use"><b>Hover</b> rows, raised surfaces</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--surface-soft)"></div><div class="sw__meta"><div class="sw__name">--surface-soft</div><div class="sw__val" id="v-inset"></div><div class="sw__use"><b>Wells:</b> inputs, code, plots</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--surface-selected)"></div><div class="sw__meta"><div class="sw__name">--surface-selected</div><div class="sw__val">signal · 5–8%</div><div class="sw__use"><b>Selected-row</b> wash</div></div></div>
+      </div>
+
+      <div class="sub"><span class="mlabel">Text ramp</span><h3>Four steps, contrast-graded</h3></div>
+      <div class="swatches">
+        <div class="sw"><div class="sw__chip" style="background:var(--surface);display:flex;align-items:center;justify-content:center"><span class="num" style="color:var(--text);font-size:18px">3.142</span></div><div class="sw__meta"><div class="sw__name">--text</div><div class="sw__use">Values, names, headings · <b>≈13–14:1</b></div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--surface);display:flex;align-items:center;justify-content:center"><span class="num" style="color:var(--text-2);font-size:18px">3.142</span></div><div class="sw__meta"><div class="sw__name">--text-2</div><div class="sw__use">Body, secondary cells · <b>≈7–9:1</b></div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--surface);display:flex;align-items:center;justify-content:center"><span class="mlabel" style="font-size:13px">STEP</span></div><div class="sw__meta"><div class="sw__name">--muted</div><div class="sw__use">Micro-labels, units · <b>info floor ≈4.6:1</b></div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--surface);display:flex;align-items:center;justify-content:center"><span class="num" style="color:var(--dim);font-size:18px">—</span></div><div class="sw__meta"><div class="sw__name">--dim</div><div class="sw__use"><b>Decorative only</b> — never carries meaning</div></div></div>
+      </div>
+
+      <div class="sub"><span class="mlabel">Signal colors</span><h3>Five meanings, used sparingly</h3>
+        <p class="note">The <code class="mono">*-dim</code> wash (≈13% alpha) is the <b>only</b> legal chip/badge background — solid semantic fills are reserved for dots and meters. A new semantic color is forbidden until a fifth <em>meaning</em> exists.</p>
+      </div>
+      <div class="swatches">
+        <div class="sw"><div class="sw__chip" style="background:var(--accent)"></div><div class="sw__meta"><div class="sw__name">--accent</div><div class="sw__use"><b>Live</b>, healthy, best-yet, primary</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--warm)"></div><div class="sw__meta"><div class="sw__name">--warm</div><div class="sw__use">Degraded, lagging, schema drift</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--danger)"></div><div class="sw__meta"><div class="sw__name">--danger</div><div class="sw__use">Firing, crashed, NaN, breach</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--info)"></div><div class="sw__meta"><div class="sw__name">--info</div><div class="sw__use">Informational events</div></div></div>
+        <div class="sw"><div class="sw__chip" style="background:var(--dim)"></div><div class="sw__meta"><div class="sw__name">--dim</div><div class="sw__use">Finished / neutral status</div></div></div>
+      </div>
+
+      <div class="sub"><span class="mlabel">Chart series</span><h3>Eight slots, positional &amp; stable</h3>
+        <p class="note"><code class="mono">--series-1</code> (signal green) always goes to <em>the run you care about</em> — focused, newest, or live. Comparison baselines use faint dashes, not a palette slot.</p>
+      </div>
+      <div class="series-row">
+        <div class="s"><i style="background:var(--series-1)"></i><span>--series-1</span></div>
+        <div class="s"><i style="background:var(--series-2)"></i><span>--series-2</span></div>
+        <div class="s"><i style="background:var(--series-3)"></i><span>--series-3</span></div>
+        <div class="s"><i style="background:var(--series-4)"></i><span>--series-4</span></div>
+        <div class="s"><i style="background:var(--series-5)"></i><span>--series-5</span></div>
+        <div class="s"><i style="background:var(--series-6)"></i><span>--series-6</span></div>
+        <div class="s"><i style="background:var(--series-7)"></i><span>--series-7</span></div>
+        <div class="s"><i style="background:var(--series-8)"></i><span>--series-8</span></div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── Type ───────────────────────── -->
+    <section id="type">
+      <div class="sec-head">
+        <span class="mlabel">Foundations</span>
+        <h2>Typography</h2>
+        <p>Two working faces and one accent. <b>Spline Sans Mono</b> for every value, label, and identifier; <b>Archivo</b> for titles and prose. <span class="serif-em">Instrument Serif</span> appears only as a rare italic emphasis. Numerals are tabular everywhere they can be compared.</p>
+      </div>
+
+      <div class="bench-grid" style="margin-bottom:var(--sp-5)">
+        <div class="panel"><div class="panel__head"><span class="mlabel">--font-mono · data</span></div><div class="panel__body"><div class="num" style="font-size:22px;color:var(--text)">0.0342 · 31,250 /40k</div><div class="mono" style="color:var(--muted);margin-top:6px;font-size:12px">Spline Sans Mono · 300–700</div></div></div>
+        <div class="panel"><div class="panel__head"><span class="mlabel">--font-display · prose</span></div><div class="panel__body"><div style="font-size:22px;font-weight:650;color:var(--text);letter-spacing:-0.01em">Training observability</div><div class="mono" style="color:var(--muted);margin-top:6px;font-size:12px">Archivo · 400–800</div></div></div>
+        <div class="panel"><div class="panel__head"><span class="mlabel">--font-serif · accent</span></div><div class="panel__body"><div class="serif-em" style="font-size:24px">keeps up with your loop</div><div class="mono" style="color:var(--muted);margin-top:6px;font-size:12px">Instrument Serif · 400 italic</div></div></div>
+      </div>
+
+      <div class="sub"><span class="mlabel">Scale</span><h3>A named scale replaces raw font sizes</h3></div>
+      <p class="note">The primary daily UI sits on 10/12/13/15/20/26. Transitional tokens preserve common shipped sizes while widgets are consolidated.</p>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-stat · 26</span></div><div class="demo num" style="font-size:26px;font-weight:500;letter-spacing:-0.02em">1.284</div></div>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-page · 20</span></div><div class="demo" style="font-size:20px;font-weight:650;letter-spacing:-0.01em">Run detail</div></div>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-title · 15</span></div><div class="demo" style="font-size:15px;font-weight:650">Panel title</div></div>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-ui · 14</span></div><div class="demo" style="font-size:14px;color:var(--text)">Dialog and larger control labels.</div></div>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-body · 13</span></div><div class="demo" style="font-size:13px;color:var(--text-2)">Body copy and descriptions live at thirteen pixels.</div></div>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-data · 12</span></div><div class="demo num" style="font-size:12px">eval/return_mean = 487.3</div></div>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-label · 11</span></div><div class="demo mono" style="font-size:11px">compact labels and control metadata</div></div>
+      <div class="type-row"><div class="tag"><span class="mlabel">--fs-micro · 10</span></div><div class="demo mlabel" style="font-size:10px">UPPERCASE · TRACKED 0.14EM</div></div>
+    </section>
+
+    <!-- ───────────────────────── Spacing / geometry ───────────────────────── -->
+    <section id="space">
+      <div class="sec-head">
+        <span class="mlabel">Foundations</span>
+        <h2>Space, radius &amp; motion</h2>
+        <p>A 4px base scale, a single radius, and one easing curve. Panel gutter and grid gap are both <code class="mono">--sp-3</code> (12px).</p>
+      </div>
+      <div class="bench-grid">
+        <div>
+          <div class="sub" style="margin-top:0"><span class="mlabel">Spacing · 4px base</span></div>
+          <div class="space-row"><span class="lab">--sp-1 · 4</span><i style="width:4px"></i></div>
+          <div class="space-row"><span class="lab">--sp-2 · 8</span><i style="width:8px"></i></div>
+          <div class="space-row"><span class="lab">--sp-3 · 12 (gutter)</span><i style="width:12px"></i></div>
+          <div class="space-row"><span class="lab">--sp-4 · 16</span><i style="width:16px"></i></div>
+          <div class="space-row"><span class="lab">--sp-5 · 24</span><i style="width:24px"></i></div>
+          <div class="space-row"><span class="lab">--sp-6 · 32</span><i style="width:32px"></i></div>
+        </div>
+        <div>
+          <div class="sub" style="margin-top:0"><span class="mlabel">Radius &amp; motion</span></div>
+          <div class="bench-row" style="margin-bottom:var(--sp-4)">
+            <div style="text-align:center"><div style="width:64px;height:44px;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius)"></div><div class="cap">--radius · 6px</div></div>
+            <div style="text-align:center"><div style="width:64px;height:44px;background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-pill)"></div><div class="cap">--radius-pill · capsule</div></div>
+          </div>
+          <p class="note"><code class="mono">--ease-snap</code> = <span class="mono">cubic-bezier(.2,.9,.25,1)</span>. Page load is a single staggered rise (450ms, 40ms stagger). Hover transitions 100–200ms. The <b>only</b> infinite animation is the live pulse ring (2.2s). Everything honors <code class="mono">prefers-reduced-motion</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────── Components ───────────────────────── -->
+    <section id="components">
+      <div class="sec-head">
+        <span class="mlabel">Components</span>
+        <h2>Primitives</h2>
+        <p>Every screen is assembled from these. When you need something new, pick the nearest primitive — panel, chip, table, or well — reuse its states, and route every value through a token.</p>
+      </div>
+
+      <!-- Micro-label + buttons -->
+      <div class="bench-grid">
+        <div class="panel"><div class="panel__head"><span class="mlabel">micro-label · .mlabel</span></div>
+          <div class="panel__body">
+            <span class="mlabel">eval/return_mean — active runs</span>
+            <p class="note" style="margin-top:10px">The most-used primitive: 10px mono, uppercase, 0.14em tracking, dim. Panel titles, table headers, axis furniture. Ellipsizes past ~40 chars.</p>
+          </div>
+        </div>
+        <div class="panel"><div class="panel__head"><span class="mlabel">buttons · .btn</span><span class="panel__unit">28px</span></div>
+          <div class="panel__body bench">
+            <div class="bench-row">
+              <button class="btn btn--primary">＋ New run</button>
+              <button class="btn">Compare</button>
+              <button class="btn btn--ghost">Cancel</button>
+              <button class="btn btn--danger">Stop</button>
+              <button class="btn btn--icon" aria-label="more">⋯</button>
+              <button class="btn" disabled>Disabled</button>
+            </div>
+            <p class="note">Mono uppercase 11px. One <code class="mono">--primary</code> (signal-dim fill) per view — it's the verb of the page. <code class="mono">--ghost</code> is borderless until hover; destructive reuses the base with crit border.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inputs / query / seg / tabs / kbd -->
+      <div class="bench-grid" style="margin-top:var(--sp-3)">
+        <div class="panel"><div class="panel__head"><span class="mlabel">inputs &amp; query tokens</span></div>
+          <div class="panel__body bench">
+            <input class="input" placeholder="Search runs…" style="width:100%" />
+            <div class="query-bar">
+              <span class="query-token"><b>status</b>: running <span class="x">×</span></span>
+              <span class="query-token"><b>lr</b>: &gt; 1e-4 <span class="x">×</span></span>
+              <span class="mono" style="color:var(--dim);font-size:11px">+ filter</span>
+            </div>
+            <p class="note">Inputs are 28px inset wells; focus = signal border + dim ring. Query tokens carry a green key and remove via <span class="mono">×</span>.</p>
+          </div>
+        </div>
+        <div class="panel"><div class="panel__head"><span class="mlabel">segmented · tabs · kbd</span></div>
+          <div class="panel__body bench">
+            <div class="seg" data-seg>
+              <button class="is-active">Step</button><button>Time</button><button>Wall</button>
+            </div>
+            <div class="seg" data-seg>
+              <button class="is-active">Lin</button><button>Log</button>
+            </div>
+            <div class="tabs" data-tabs style="margin-top:4px">
+              <button class="tab is-active">Overview</button>
+              <button class="tab">Metrics <span class="tab__n">12</span></button>
+              <button class="tab">System <span class="tab__n">4</span></button>
+            </div>
+            <div class="bench-row" style="margin-top:4px"><span class="note" style="margin:0">Jump to run</span> <kbd>G</kbd> <kbd>R</kbd> · <span class="note" style="margin:0">Palette</span> <kbd>⌘</kbd><kbd>K</kbd></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chips / dots -->
+      <div class="bench-grid" style="margin-top:var(--sp-3)">
+        <div class="panel"><div class="panel__head"><span class="mlabel">chips &amp; tags · .chip / .tag</span></div>
+          <div class="panel__body bench">
+            <div class="bench-row">
+              <span class="chip chip--live"><span class="pulse"></span>Live</span>
+              <span class="chip chip--done">Done</span>
+              <span class="chip chip--warm">Lagging</span>
+              <span class="chip chip--danger">Firing</span>
+              <span class="chip chip--info">Queued</span>
+            </div>
+            <div class="bench-row">
+              <span class="tag">baseline</span><span class="tag">sweep-7</span><span class="tag">fork:041</span>
+            </div>
+            <p class="note">Chips are uppercase 10px mono, 20px tall, <code class="mono">*-dim</code> background. Tags are quiet, never colored.</p>
+          </div>
+        </div>
+        <div class="panel"><div class="panel__head"><span class="mlabel">status dots · .dot / .pulse</span></div>
+          <div class="panel__body bench">
+            <div class="bench-row" style="gap:var(--sp-4)">
+              <span class="dotline"><span class="pulse"></span> running</span>
+              <span class="dotline"><span class="dot dot--ok"></span> ok</span>
+              <span class="dotline"><span class="dot dot--warm"></span> warn</span>
+              <span class="dotline"><span class="dot dot--danger"></span> crit</span>
+              <span class="dotline"><span class="dot dot--info"></span> info</span>
+              <span class="dotline"><span class="dot dot--dim"></span> idle</span>
+              <span class="dotline"><span class="dot dot--queued"></span> queued</span>
+            </div>
+            <p class="note">7px dots. <code class="mono">.pulse</code> adds the infinite ping ring — <b>only</b> for live things, a handful per screen. Color never travels alone: it always pairs with a dot, label, or glyph.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel anatomy + stat -->
+      <div class="bench-grid" style="margin-top:var(--sp-3)">
+        <div>
+          <div class="sub" style="margin-top:0"><span class="mlabel">Panel — the instrument bezel</span><h3>Corner ticks are its identity</h3></div>
+          <div class="panel">
+            <div class="panel__head">
+              <span class="mlabel">eval/return_mean</span>
+              <span class="chip chip--live"><span class="pulse"></span>Live</span>
+              <span class="panel__unit">step</span>
+            </div>
+            <div class="panel__body">
+              <p class="note" style="margin:0">Registration ticks (top-left + bottom-right) turn signal-green on hover — <b>hover this panel</b>. Head is 36px with exactly one mlabel plus optional furniture: a unit, a status chip, or a quiet green “View all →”.</p>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="sub" style="margin-top:0"><span class="mlabel">Stat block · .stat</span><h3>Arrow follows the number, color follows goodness</h3></div>
+          <div class="panel"><div class="panel__body">
+            <div class="bench-row" style="gap:var(--sp-6)">
+              <div class="stat"><span class="mlabel">return</span><span class="stat__value">487.3</span><span class="stat__delta up">▲ 12.4 vs best</span></div>
+              <div class="stat"><span class="mlabel">loss</span><span class="stat__value">0.034</span><span class="stat__delta up">▼ 18% lower</span></div>
+              <div class="stat"><span class="mlabel">mtta</span><span class="stat__value">2.1<small>m</small></span><span class="stat__delta down">▲ 38% slower</span></div>
+            </div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- KPI strip -->
+      <div class="sub"><span class="mlabel">KPI strip</span><h3>Stat blocks fused into one bordered row</h3></div>
+      <div class="kpi-strip">
+        <div class="stat"><span class="mlabel">steps</span><span class="stat__value">31,250<small>/40k</small></span></div>
+        <div class="stat"><span class="mlabel">throughput</span><span class="stat__value">1.2<small>k/s</small></span></div>
+        <div class="stat"><span class="mlabel">gpu util</span><span class="stat__value">94<small>%</small></span></div>
+        <div class="stat"><span class="mlabel">eta</span><span class="stat__value">11<small>m</small></span></div>
+      </div>
+
+      <!-- Data table -->
+      <div class="sub"><span class="mlabel">Data table · .dtable</span><h3>36px rows, hairline dividers, one best per column</h3></div>
+      <div class="panel"><div class="panel__body panel__body--flush">
+        <table class="dtable">
+          <thead><tr>
+            <th style="width:24px"></th><th>Run</th><th class="r">Steps</th>
+            <th class="r is-sorted">Return <span class="sort">▾</span></th><th class="r">Loss</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            <tr class="group-row"><td colspan="6"><b>ppo-humanoid</b> · 3 runs</td></tr>
+            <tr class="is-selected"><td><input type="checkbox" checked aria-label="select"></td><td class="td-name">brave-sweep-7 <span class="id">#0c41</span></td><td class="td-num">31,250</td><td class="td-num is-best">487.3</td><td class="td-num">0.034</td><td><span class="dotline"><span class="pulse"></span>running</span></td></tr>
+            <tr><td><input type="checkbox" aria-label="select"></td><td class="td-name">calm-field-5 <span class="id">#0c39</span></td><td class="td-num">40,000</td><td class="td-num">472.1</td><td class="td-num">0.041</td><td><span class="dotline"><span class="dot dot--dim"></span>done</span></td></tr>
+            <tr><td><input type="checkbox" aria-label="select"></td><td class="td-name">wild-haze-2 <span class="id">#0c12</span></td><td class="td-num">18,400</td><td class="td-num td-dim">—</td><td class="td-num">0.088</td><td><span class="dotline"><span class="dot dot--danger"></span>crashed</span></td></tr>
+          </tbody>
+        </table>
+      </div></div>
+      <p class="note">Numeric columns are always right-aligned and tabular. Best value per column is signal-green semibold (max one). Selected row gets the flood wash + inset signal edge; <code class="mono">—</code> is the universal “no data” mark.</p>
+
+      <!-- Specialty: meter / heatmap / feed / logs / code -->
+      <div class="bench-grid" style="margin-top:var(--sp-5)">
+        <div class="panel"><div class="panel__head"><span class="mlabel">meter · .meter</span></div><div class="panel__body bench">
+          <div class="bench-row"><span class="mono" style="width:64px;font-size:11px;color:var(--muted)">progress</span><div class="meter" style="flex:1"><i style="width:78%"></i></div></div>
+          <div class="bench-row"><span class="mono" style="width:64px;font-size:11px;color:var(--muted)">drift</span><div class="meter meter--warm" style="flex:1"><i style="width:46%"></i></div></div>
+        </div></div>
+        <div class="panel"><div class="panel__head"><span class="mlabel">heatmap · drift matrix</span></div><div class="panel__body">
+          <div class="heatmap" id="heatmap"></div>
+          <p class="note" style="margin-top:10px">Color flags <b>anomalies only</b> — quiet cells stay near-neutral, amber from PSI ≥ 0.2, red from ≥ 0.4.</p>
+        </div></div>
+      </div>
+
+      <div class="bench-grid" style="margin-top:var(--sp-3)">
+        <div class="panel"><div class="panel__head"><span class="mlabel">alert feed · .feed-row</span><span class="panel__link">View all →</span></div>
+          <div class="panel__body panel__body--flush">
+            <div class="feed-row"><span class="dot dot--danger" style="margin-top:4px"></span><div class="feed-row__body"><div class="feed-row__title">return collapsed below 0</div><div class="feed-row__meta">wild-haze-2 · <span class="tag">nan-guard</span></div></div><span class="feed-row__time">2m ago</span></div>
+            <div class="feed-row"><span class="dot dot--warm" style="margin-top:4px"></span><div class="feed-row__body"><div class="feed-row__title">gpu util &lt; 60% for 5m</div><div class="feed-row__meta">brave-sweep-7 · <span class="tag">util-floor</span></div></div><span class="feed-row__time">11m ago</span></div>
+          </div>
+        </div>
+        <div class="panel"><div class="panel__head"><span class="mlabel">config well · .codewell</span></div>
+          <div class="panel__body panel__body--flush"><pre class="codewell"><span class="k">optimizer</span>: <span class="v">adamw</span>
+<span class="k">lr</span>: <span class="n">3.0e-4</span>  <span class="c"># ↑ was 2.5e-4 in 041</span>
+<span class="k">batch_size</span>: <span class="n">512</span>
+<span class="k">env</span>: <span class="s">"Humanoid-v4"</span></pre></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:var(--sp-3)"><div class="panel__head"><span class="mlabel">log tail · .loglines</span></div>
+        <div class="panel__body panel__body--flush"><pre class="loglines"><span class="t">19:42:01</span> <span class="ok">INFO </span> step 31250 · return 487.3 · loss 0.034
+<span class="t">19:42:04</span> <span class="wr">WARN </span> grad norm 8.2 above soft cap
+<span class="t">19:42:09</span> <span class="er">ERROR</span> checkpoint upload retry 1/3</pre></div>
+      </div>
+
+      <!-- Empty state -->
+      <div class="sub"><span class="mlabel">Empty state · .empty</span></div>
+      <div class="panel"><div class="panel__body"><div class="empty">
+        <span class="dot dot--queued" style="width:14px;height:14px"></span>
+        <div style="color:var(--text-2);font-weight:600">No runs match these filters</div>
+        <div class="note" style="margin:0">Clear a query token or widen the time range.</div>
+        <button class="btn btn--ghost" style="margin-top:6px">Reset filters</button>
+      </div></div></div>
+    </section>
+
+    <!-- ───────────────────────── Patterns ───────────────────────── -->
+    <section id="patterns">
+      <div class="sec-head">
+        <span class="mlabel">Patterns</span>
+        <h2>Signature assemblies</h2>
+        <p>What makes a screen recognizably Instrument: the telemetry ticker pinned to the top, the nav rail's signal-green active edge, and panels carrying corner ticks.</p>
+      </div>
+
+      <div class="sub" style="margin-top:0"><span class="mlabel">Telemetry ticker</span><h3>Always present, top of every page</h3></div>
+      <div class="ticker">
+        <span class="ticker__live"><span class="pulse"></span> LIVE 3</span>
+        <div class="ticker__feed">
+          <span class="tick-run"><b>brave-sweep-7</b> <span class="up">▲ 487.3</span></span>
+          <span class="tick-run"><b>calm-field-5</b> <span class="up">▲ 472.1</span></span>
+          <span class="tick-run"><b>wild-haze-2</b> <span class="down">▼ NaN</span></span>
+        </div>
+        <span class="ticker__sys">ingest <b>1.2k/s</b> · lag <b>0.4s</b> · <b>19:42:11Z</b></span>
+      </div>
+
+      <div class="sub"><span class="mlabel">Nav rail</span><h3>Active item: 2px signal edge + green wash</h3></div>
+      <div class="panel" style="max-width:280px"><div class="panel__body panel__body--flush" style="padding:8px 0">
+        <div class="rail__section" style="padding:6px 16px"><span class="mlabel">Operate</span></div>
+        <div class="nav-item is-active"><span class="ico"></span> Runs <span class="nav-item__count">128</span></div>
+        <div class="nav-item"><span class="ico"></span> Compare</div>
+        <div class="nav-item"><span class="ico"></span> Alerts <span class="nav-item__count is-alert">2</span></div>
+        <div class="rail__section" style="padding:12px 16px 6px"><span class="mlabel">Data</span></div>
+        <div class="nav-item"><span class="ico"></span> Artifacts</div>
+        <div class="nav-item"><span class="ico"></span> Sweeps</div>
+      </div></div>
+    </section>
+
+    <!-- ───────────────────────── Do / Don't ───────────────────────── -->
+    <section id="principles" style="border-bottom:0">
+      <div class="sec-head">
+        <span class="mlabel">Principles</span>
+        <h2>Do / Don't</h2>
+        <p>When extending the system: reuse the nearest primitive, route every value through a token, and remember that if a screen seems to need a second font, the answer is no.</p>
+      </div>
+      <div class="dd">
+        <div class="card do">
+          <h4><span class="dot dot--ok"></span> Do</h4>
+          <ul>
+            <li>Reserve <code class="mono">--accent</code> for live / best / the one primary action.</li>
+            <li>Right-align every numeric column with tabular figures.</li>
+            <li>Use <code class="mono">*-dim</code> washes for chip fills.</li>
+            <li>Put exactly one <code class="mono">.mlabel</code> in each panel head.</li>
+            <li>Clamp non-negative metric axes at 0.</li>
+            <li>Pair color with a glyph, label, or position — never color alone.</li>
+          </ul>
+        </div>
+        <div class="card dont">
+          <h4><span class="dot dot--danger"></span> Don't</h4>
+          <ul>
+            <li>Use green as a general accent or success confetti.</li>
+            <li>Stack multiple filled buttons in a header.</li>
+            <li>Center or left-align numbers.</li>
+            <li>Put solid semantic fills behind text.</li>
+            <li>Let axis padding invent negative loss.</li>
+            <li>Add a new semantic color before a fifth <em>meaning</em> exists.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer style="padding:var(--sp-6) 0;color:var(--dim);font-family:var(--font-mono);font-size:11px;text-align:center">
+      Instrument · InstantML design system · sourced from <span style="color:var(--muted)">docs/design/reimagine/DESIGN-SYSTEM.md</span> &amp; <span style="color:var(--muted)">apps/web/app/styles/tokens.css</span>
+    </footer>
+  </main>
+
+  <script>
+    // ── Theme toggle (persisted) ─────────────────────────────────────────
+    (function () {
+      var root = document.documentElement;
+      var btn = document.getElementById("themeToggle");
+      var label = document.getElementById("themeLabel");
+      var KEY = "instrument:dsg:theme";
+      try {
+        var saved = localStorage.getItem(KEY);
+        if (saved === "dark" || saved === "light") root.dataset.theme = saved;
+      } catch (e) {}
+      function sync() {
+        var t = root.dataset.theme === "dark" ? "dark" : "light";
+        label.textContent = t === "dark" ? "Dark" : "Light";
+        refreshSwatchValues();
+      }
+      btn.addEventListener("click", function () {
+        var next = root.dataset.theme === "dark" ? "light" : "dark";
+        root.dataset.theme = next;
+        try { localStorage.setItem(KEY, next); } catch (e) {}
+        sync();
+      });
+
+      // Surface swatches print their resolved value, which changes per theme.
+      function refreshSwatchValues() {
+        var cs = getComputedStyle(root);
+        [["--bg-soft","v-void"],["--bg","v-canvas"],["--surface","v-panel"],
+         ["--surface-hover","v-raised"],["--surface-soft","v-inset"]].forEach(function (pair) {
+          var el = document.getElementById(pair[1]);
+          if (el) el.textContent = cs.getPropertyValue(pair[0]).trim();
+        });
+      }
+
+      // ── Drift heatmap: mostly quiet, a few flagged cells ───────────────
+      var hm = document.getElementById("heatmap");
+      if (hm) {
+        var anomalies = { 11: "warn", 19: "crit", 27: "warn", 44: "crit", 51: "warn" };
+        for (var i = 0; i < 56; i++) {
+          var c = document.createElement("div");
+          c.className = "heatmap__cell";
+          if (anomalies[i] === "crit") c.style.background = "color-mix(in srgb, var(--danger) 50%, var(--surface-soft))";
+          else if (anomalies[i] === "warn") c.style.background = "color-mix(in srgb, var(--warm) 38%, var(--surface-soft))";
+          else c.style.background = "color-mix(in srgb, var(--dim) " + (4 + (i % 4) * 2) + "%, var(--surface-soft))";
+          hm.appendChild(c);
+        }
+      }
+
+      // ── Demo interactivity: segmented controls + tabs ──────────────────
+      function wireGroup(sel, activeClass) {
+        document.querySelectorAll(sel).forEach(function (group) {
+          group.addEventListener("click", function (e) {
+            var b = e.target.closest("button");
+            if (!b || !group.contains(b)) return;
+            group.querySelectorAll("button").forEach(function (x) { x.classList.remove(activeClass); });
+            b.classList.add(activeClass);
+          });
+        });
+      }
+      wireGroup("[data-seg]", "is-active");
+      wireGroup("[data-tabs]", "is-active");
+
+      sync();
+    })();
+  </script>
+</body>
+</html>

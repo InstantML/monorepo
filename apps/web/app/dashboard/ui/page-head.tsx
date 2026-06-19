@@ -8,18 +8,23 @@ import type { ReactNode } from "react";
 export function PageHead({
   title,
   emphasis,
+  eyebrow,
   lede,
 }: {
   title: string;
   emphasis?: string;
+  eyebrow?: string;
   lede?: ReactNode;
 }) {
   return (
     <div className="page-head">
-      <h2 className="ph-title">
-        {title}
-        {emphasis ? <> <span className="serif-em">{emphasis}</span></> : null}
-      </h2>
+      <div className="ph-main">
+        {eyebrow ? <span className="ph-eyebrow">{eyebrow}</span> : null}
+        <h2 className="ph-title">
+          {title}
+          {emphasis ? <> <span className="serif-em">{emphasis}</span></> : null}
+        </h2>
+      </div>
       <span className="ph-spacer" />
       {lede ? <span className="ph-lede">{lede}</span> : null}
     </div>

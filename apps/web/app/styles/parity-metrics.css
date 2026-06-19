@@ -60,7 +60,7 @@
 /* ---- Micro-label + unit (mockup .mlabel / .panel__unit) ------------------- */
 .metrics-parity .mx-mlabel {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -76,7 +76,7 @@
 .metrics-parity .mx-chart-title { text-transform: none; letter-spacing: 0.08em; }
 .metrics-parity .mx-unit {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
   color: var(--dim);
@@ -95,7 +95,7 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   color: var(--text);
   outline: none;
   transition: border-color 0.13s;
@@ -109,14 +109,14 @@
   display: block;
   margin-top: 4px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--warm);
 }
 
 /* ---- Namespace tree (mockup .mtree) --------------------------------------- */
 .metrics-parity .mx-tree {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   padding-bottom: 4px;
 }
 .metrics-parity .mx-tree-ns {
@@ -130,7 +130,7 @@
   border-bottom: 1px solid var(--line);
   color: var(--faint);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
   text-align: left;
@@ -200,7 +200,7 @@
 }
 .metrics-parity .mx-mlabel-tight {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -237,7 +237,7 @@
 }
 .metrics-parity .mx-smooth-val {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   color: var(--faint);
   min-width: 20px;
 }
@@ -258,7 +258,7 @@
   border: 0;
   border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--faint);
@@ -283,7 +283,7 @@
   border: 1px solid transparent;
   border-radius: var(--radius);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -335,7 +335,7 @@
 .metrics-parity .mx-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--fs-data);
   /* charts.css sets a global `table { table-layout: fixed }`, which would collapse
      these width:1% numeric columns to ~10px and overlap the values. Restore auto
      layout so Last/Min/Max/Best/Points size to their content. */
@@ -343,7 +343,7 @@
 }
 .metrics-parity .mx-table th {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;
@@ -406,7 +406,7 @@
   border: 1px solid var(--accent-line);
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -415,7 +415,7 @@
   background: none;
   border: 0;
   padding: 2px 4px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1;
   color: var(--faint);
   cursor: pointer;
@@ -428,7 +428,7 @@
 .metrics-parity .mx-empty {
   padding: 24px 16px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
   color: var(--faint);
   text-align: center;
 }

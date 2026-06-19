@@ -713,7 +713,7 @@
 .eval-metric-strip strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--fs-title);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -721,7 +721,7 @@
 .eval-metric-strip small,
 .eval-empty {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 650;
 }
 
@@ -743,7 +743,7 @@
 
 .eval-sparkline strong {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 750;
 }
 
@@ -793,7 +793,7 @@
   border-right: 1px solid var(--line-soft);
   padding: 6px 7px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 700;
   text-align: center;
 }
@@ -831,7 +831,7 @@
   border-radius: 6px;
   background: var(--surface);
   padding: 6px 7px;
-  font-size: 11px;
+  font-size: var(--fs-label);
 }
 
 .eval-predictions b,
@@ -1216,7 +1216,7 @@
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
   gap: 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .evidence-quicklook span {
@@ -1241,7 +1241,7 @@
   background: var(--surface-soft);
   padding: 10px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--fs-label);
   line-height: 1.55;
 }
 

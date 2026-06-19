@@ -79,11 +79,11 @@
     flex: 1;
   }
   .brand-wordmark {
-    font-size: 13px;
+    font-size: var(--fs-body);
     flex: 0 0 auto;
   }
   .breadcrumb {
-    font-size: 12px;
+    font-size: var(--fs-data);
     gap: 4px;
     flex: 1;
     overflow: hidden;
@@ -358,7 +358,7 @@
     padding: 10px 12px;
     border-left: 0;
     border-bottom: 0;
-    font-size: 14px;
+    font-size: var(--fs-ui);
   }
   .tab-button.active {
     background: var(--accent-soft);
@@ -626,7 +626,7 @@
     width: min(100%, 480px);
     max-width: 100%;
   }
-  .quick-search-input { font-size: 16px; }
+  .quick-search-input { font-size: var(--fs-lead); }
   .chart-export-button,
   .chart-area-exportable .chart-export-button {
     width: 44px;
@@ -760,7 +760,7 @@
   }
   .panel-head h2,
   .panel-head h3 {
-    font-size: 15px;
+    font-size: var(--fs-title);
   }
 }
 
@@ -928,7 +928,7 @@
   .quick-search-input input,
   .org-switcher-search input,
   .column-popover input[type="search"] {
-    font-size: 16px !important;
+    font-size: var(--fs-lead) !important;
   }
 
   /* C4: select-menu is absolutely positioned by the custom select component.
@@ -966,7 +966,7 @@
   .chart-tooltip {
     min-width: 0;
     max-width: calc(100vw - 32px);
-    font-size: 11px;
+    font-size: var(--fs-label);
     padding: 7px 9px;
   }
   .chart-tooltip span { white-space: normal; }
@@ -1151,7 +1151,7 @@
     padding: 10px 12px;
     gap: 8px;
   }
-  .run-workspace-name { font-size: 16px; }
+  .run-workspace-name { font-size: var(--fs-lead); }
   .run-workspace-tabs {
     gap: 0;
     padding: 0 4px;

@@ -23,6 +23,23 @@ Split from the original `globals.css` (11,348 lines) as part of the
 | `landing-system.css` | Landing visual system + animations | `.landing-root`, `.bento-*`, `@keyframes` |
 | `docs.css` | First-party documentation route | `.docs-route-*` |
 
+## Canonical tokens
+
+Use `tokens.css` for shared typography, spacing, color, radius, shadow, and
+z-index values. The app's canonical vocabulary is the shipped token family:
+`--surface`, `--surface-2`, `--surface-hover`, `--text`, `--text-2`,
+`--muted`, `--faint`, `--accent`, `--line`, and related role tokens.
+
+Font sizes should use the named scale in `tokens.css`: `--fs-micro`,
+`--fs-label`, `--fs-data`, `--fs-body`, `--fs-ui`, `--fs-title`,
+`--fs-lead`, `--fs-page`, `--fs-stat`, and `--fs-display`. Use the spacing
+scale `--sp-0` through `--sp-8` for new margin, padding, and gap values. Keep
+raw pixel values only for measured component geometry, breakpoints, icon sizes,
+chart dimensions, and one-off fit fixes.
+
+Use `--font-sans`, `--font-mono`, and `--font-serif` directly. Do not add
+feature-local font aliases such as `--f-sans`, `--f-mono`, or `--mono`.
+
 ## Import order
 
 `globals.css` imports these files in this order. Order is load-bearing:
