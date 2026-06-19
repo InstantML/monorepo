@@ -5,6 +5,7 @@ pub mod billing;
 pub mod dashboard;
 pub(crate) mod helpers;
 pub mod imports;
+pub mod insights;
 pub mod invitations;
 pub mod metrics;
 pub mod orgs;
@@ -40,6 +41,7 @@ pub(super) use imports::{
     append_import_chunk, cancel_import_job, commit_import_job, create_import_job, get_import_job,
     import_mlflow, import_neptune, import_wandb, list_imports,
 };
+pub(super) use insights::system_usage_insights;
 pub(super) use invitations::{
     accept_invitation, create_invitation, list_invitations, preview_invitation, resend_invitation,
     revoke_invitation,
@@ -279,6 +281,7 @@ mod tests {
             "/api/overview",
             "/api/runs/summary",
             "/api/runs/side-by-side",
+            "/api/insights/system-usage",
             "/api/runs/{run_id}/rank-metrics/summary",
             // attributes / objects
             "/api/runs/{run_id}/attributes",
@@ -348,6 +351,7 @@ mod tests {
             "ProjectEnvelope",
             "RunSummaryEnvelope",
             "RunSummariesEnvelope",
+            "SystemUsageInsightsEnvelope",
             "RunsEnvelope",
             "InsertedEnvelope",
             "LogRankMetricsRequest",

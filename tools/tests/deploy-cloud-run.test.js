@@ -63,6 +63,7 @@ test("deploy helper rejects cleartext hosted public API bases", () => {
 test("deploy helper requires hosted frontend base for Resend invites", () => {
   const result = runDeploy(["--topology=split"], {
     RESEND_API_KEY: "re_test_key",
+    INSTANTML_FRONTEND_BASE_URL: "",
   });
 
   assert.equal(result.status, 1);
@@ -77,10 +78,39 @@ test("deploy helper requires a verified sender for Resend invites", () => {
   const result = runDeploy(["--topology=split"], {
     RESEND_API_KEY: "re_test_key",
     INSTANTML_FRONTEND_BASE_URL: "https://staging.instantml.ai",
+    INSTANTML_EMAIL_FROM: "",
   });
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Set INSTANTML_EMAIL_FROM/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper requires Resend-backed invites for prod", () => {
+  const result = runDeploy(["--topology=split"], {
+    RESEND_API_KEY: "",
+    INSTANTML_EMAIL_PROVIDER: "",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Production deploys require Resend-backed invitation email/);
+  assert.deepEqual(result.gcloudCalls, [
+    "config get-value project",
+    "--quiet --project instantml-test-project config get-value account",
+  ]);
+});
+
+test("deploy helper rejects explicit Resend without an API key", () => {
+  const result = runDeploy(["--topology=split", "--environment=staging"], {
+    INSTANTML_EMAIL_PROVIDER: "resend",
+    RESEND_API_KEY: "",
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Set RESEND_API_KEY/);
   assert.deepEqual(result.gcloudCalls, [
     "config get-value project",
     "--quiet --project instantml-test-project config get-value account",
@@ -468,6 +498,9 @@ process.exit(2);
     CI: "",
     GITHUB_ACTIONS: "",
     INSTANTML_FROM_SECRET_MANAGER: "",
+    INSTANTML_FRONTEND_BASE_URL: "https://instantml.ai",
+    INSTANTML_EMAIL_FROM: "InstantML <invites@mail.instantml.ai>",
+    RESEND_API_KEY: "re_test_default",
     ...env,
   };
   delete childEnv.NODE_V8_COVERAGE;
