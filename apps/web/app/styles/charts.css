@@ -911,6 +911,24 @@ small {
   color: var(--accent);
 }
 
+/* In the panel head the kebab sits in a lighter zone than the chart toolbar,
+ * so drop the floating-pill treatment for a quieter ghost button. */
+.panel-head-menu > summary {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.panel-head-menu > summary:hover,
+.panel-head-menu[open] > summary {
+  background: var(--surface-soft);
+}
+
+.panel-head-menu[open] > summary {
+  border-color: transparent;
+  color: var(--accent);
+}
+
 .chart-menu-pop {
   position: absolute;
   top: calc(100% + 6px);
@@ -1072,6 +1090,19 @@ small {
 .chart-menu-item[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+/* Destructive row (e.g. Remove panel) — tinted text + icon, danger-soft hover. */
+.chart-menu-item-danger {
+  color: var(--danger);
+}
+
+.chart-menu-item-danger svg {
+  color: currentColor;
+}
+
+.chart-menu-item-danger:hover {
+  background: var(--danger-soft);
 }
 
 /* Chart/table view picker: a radio-style group sharing the menu-item look,

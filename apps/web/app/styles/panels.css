@@ -486,6 +486,9 @@
   right: -2px;
   bottom: -2px;
   z-index: 12;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
   width: 36px;
   min-width: 36px;
   height: 36px;
@@ -496,26 +499,16 @@
   box-shadow: none;
   color: var(--faint);
   cursor: nwse-resize;
-  padding: 0;
+  padding: 0 5px 4px 0;
 }
 
-.panel-resize-handle::before,
-.panel-resize-handle::after {
-  position: absolute;
-  right: 9px;
-  bottom: 8px;
-  width: 14px;
-  height: 2px;
-  content: "";
-  background: currentColor;
-  transform: rotate(-45deg);
-  transform-origin: right center;
-}
-
-.panel-resize-handle::after {
-  right: 9px;
-  bottom: 15px;
-  width: 8px;
+/* Tapered diagonal grip — three rounded strokes that read clearly as a resize
+ * corner. The SVG never swallows pointer events, so the button stays the hit
+ * target for the drag. */
+.panel-resize-grip {
+  pointer-events: none;
+  opacity: 0.7;
+  transition: color 140ms ease, opacity 140ms ease, transform 140ms ease;
 }
 
 .panel-resize-handle:hover,
@@ -525,6 +518,18 @@
   color: var(--accent-strong);
   outline: 0;
   box-shadow: none;
+}
+
+.panel-resize-handle:hover .panel-resize-grip,
+.panel-resize-handle:focus-visible .panel-resize-grip {
+  opacity: 1;
+  transform: translate(1px, 1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-resize-grip {
+    transition: none;
+  }
 }
 
 .workspace-panel-grid > .empty {
