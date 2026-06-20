@@ -1246,7 +1246,9 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabFromPath("/dashboard/integrations?x=1"), "runs");
   // The Imports tab was removed; old links fall back to Runs.
   assert.equal(tabFromPath("/dashboard/imports?x=1"), "runs");
-  assert.equal(tabFromPath("/dashboard/compare?x=1"), "compare");
+  // The standalone Compare page collapsed into the Runs → Table view, so the
+  // old slug canonicalizes to runs (like checkpoints/models → detail).
+  assert.equal(tabFromPath("/dashboard/compare?x=1"), "runs");
   assert.equal(tabFromPath("/dashboard/reports/report_123"), "reports");
   assert.equal(tabFromPath("/dashboard/not-real"), "runs");
   assert.equal(canonicalDashboardPath("/dashboard"), "/dashboard/runs");

@@ -23,6 +23,10 @@ const DASHBOARD_TAB_ALIASES = new Map([
   // download/resume/fork and the lineage rows). Old links keep working.
   ["models", "detail"],
   ["checkpoints", "detail"],
+  // The standalone Compare page collapsed into the Runs → Table view: select a
+  // set of runs and the comparison renders inline. Old /dashboard/compare links
+  // (and the run-detail "Compare" action) canonicalize to the Runs tab.
+  ["compare", "runs"],
   // The Alerts tab is labelled "Run Health" in the rail, so the friendly slug
   // a user would guess from that label resolves to the same page.
   ["run-health", "alerts"],

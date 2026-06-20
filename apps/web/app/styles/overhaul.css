@@ -3139,50 +3139,6 @@ button.compare-row-head.active {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Persistent run-selection tray: renders only while a selection exists, so it
- * never reserves dead space. Fixed above page content, below modals. */
-.selection-tray {
-  position: fixed;
-  right: 16px;
-  bottom: 14px;
-  left: calc(var(--sidebar-width, 56px) + 16px);
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--accent-line);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
-  padding: 9px 14px;
-  pointer-events: none;
-}
-
-.selection-tray button,
-.selection-tray a,
-.selection-tray-names {
-  pointer-events: auto;
-}
-
-.selection-tray-count {
-  color: var(--accent);
-  font-size: var(--fs-body);
-  white-space: nowrap;
-}
-
-.selection-tray-names {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--fs-data);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.selection-tray-spacer {
-  flex: 1;
-}
-
 .upload-health-chip {
   justify-self: start;
   width: max-content;
