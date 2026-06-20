@@ -2789,6 +2789,158 @@
         ]
       }
     },
+    "/api/insights/system-usage": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "system_usage_insights",
+        "parameters": [
+          {
+            "name": "family",
+            "in": "query",
+            "description": "Usage family. `gpu` is the default; `system` keeps the response shape extensible.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "description": "Preset UTC window: 7d, 14d, or 30d. Ignored when start/end are supplied.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "description": "RFC3339 inclusive period start. Windows are capped to 31 days.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "description": "RFC3339 exclusive period end.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group_by",
+            "in": "query",
+            "description": "Breakdown dimension: actor, project, gpu_model, or run.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Project name filter.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Actor label filter.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "gpu_model",
+            "in": "query",
+            "description": "GPU model label filter.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "min_coverage_pct",
+            "in": "query",
+            "description": "Minimum telemetry coverage percentage.",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum grouped rows to return, capped at 500.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Observed GPU and system usage insights",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemUsageInsightsEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing usage:read scope, admin session role, or org-scoped key access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/invitations/accept": {
       "post": {
         "tags": [
@@ -15667,6 +15819,556 @@
               "null"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "SystemUsageAttentionCard": {
+        "type": "object",
+        "required": [
+          "id",
+          "severity",
+          "title",
+          "message",
+          "metric",
+          "value"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SystemUsageAvailableFilters": {
+        "type": "object",
+        "required": [
+          "projects",
+          "actors",
+          "gpu_models"
+        ],
+        "properties": {
+          "actors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageFilterOption"
+            }
+          },
+          "gpu_models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageFilterOption"
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageFilterOption"
+            }
+          }
+        }
+      },
+      "SystemUsageBreakdownRow": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "kind",
+          "run_count",
+          "observed_gpu_hours",
+          "utilized_gpu_hours",
+          "low_utilization_gpu_hours",
+          "energy_kwh",
+          "sample_count",
+          "utilization_buckets"
+        ],
+        "properties": {
+          "actor_confidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor_source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "avg_gpu_memory_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "avg_gpu_utilization_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "coverage_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "energy_kwh": {
+            "type": "number",
+            "format": "double"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "low_utilization_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          },
+          "max_gpu_memory_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "observed_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          },
+          "run_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sample_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "utilization_buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageBucket"
+            }
+          },
+          "utilized_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SystemUsageBucket": {
+        "type": "object",
+        "required": [
+          "bucket",
+          "gpu_hours"
+        ],
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "gpu_hours": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SystemUsageCoverage": {
+        "type": "object",
+        "required": [
+          "runs_in_scope",
+          "runs_with_gpu_metrics",
+          "runs_missing_gpu_metrics",
+          "sample_count",
+          "aggregate_truncated",
+          "low_confidence_attribution_rows"
+        ],
+        "properties": {
+          "aggregate_truncated": {
+            "type": "boolean"
+          },
+          "coverage_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "low_confidence_attribution_rows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "runs_in_scope": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "runs_missing_gpu_metrics": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "runs_with_gpu_metrics": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sample_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "SystemUsageFilterOption": {
+        "type": "object",
+        "required": [
+          "label",
+          "value"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "SystemUsageFilters": {
+        "type": "object",
+        "required": [
+          "group_by",
+          "min_coverage_pct",
+          "limit"
+        ],
+        "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gpu_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "group_by": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "min_coverage_pct": {
+            "type": "number",
+            "format": "double"
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SystemUsageInsightsEnvelope": {
+        "type": "object",
+        "required": [
+          "family",
+          "generated_at",
+          "is_invoice_grade",
+          "period",
+          "filters",
+          "summary",
+          "coverage",
+          "groups",
+          "top_runs",
+          "attention",
+          "available_filters",
+          "notes"
+        ],
+        "properties": {
+          "attention": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageAttentionCard"
+            }
+          },
+          "available_filters": {
+            "$ref": "#/components/schemas/SystemUsageAvailableFilters"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/SystemUsageCoverage"
+          },
+          "family": {
+            "type": "string"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/SystemUsageFilters"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageBreakdownRow"
+            }
+          },
+          "is_invoice_grade": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "period": {
+            "$ref": "#/components/schemas/SystemUsagePeriod"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SystemUsageSummary"
+          },
+          "top_runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageRunRow"
+            }
+          }
+        }
+      },
+      "SystemUsagePeriod": {
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "range",
+          "timezone"
+        ],
+        "properties": {
+          "end": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "range": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timezone": {
+            "type": "string"
+          }
+        }
+      },
+      "SystemUsageRunRow": {
+        "type": "object",
+        "required": [
+          "run_id",
+          "run_name",
+          "project",
+          "status",
+          "actor_label",
+          "actor_source",
+          "actor_confidence",
+          "gpu_model",
+          "observed_gpu_hours",
+          "utilized_gpu_hours",
+          "low_utilization_gpu_hours",
+          "energy_kwh",
+          "sample_count",
+          "coverage_pct",
+          "utilization_buckets"
+        ],
+        "properties": {
+          "actor_confidence": {
+            "type": "string"
+          },
+          "actor_label": {
+            "type": "string"
+          },
+          "actor_source": {
+            "type": "string"
+          },
+          "avg_cpu_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "avg_gpu_memory_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "avg_gpu_utilization_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "coverage_pct": {
+            "type": "number",
+            "format": "double"
+          },
+          "energy_kwh": {
+            "type": "number",
+            "format": "double"
+          },
+          "first_logged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "gpu_model": {
+            "type": "string"
+          },
+          "last_logged_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "low_utilization_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          },
+          "max_gpu_memory_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "observed_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          },
+          "project": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_name": {
+            "type": "string"
+          },
+          "sample_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          },
+          "utilization_buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageBucket"
+            }
+          },
+          "utilized_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "SystemUsageSummary": {
+        "type": "object",
+        "required": [
+          "observed_gpu_hours",
+          "utilized_gpu_hours",
+          "low_utilization_gpu_hours",
+          "energy_kwh",
+          "sample_count",
+          "run_count",
+          "utilization_buckets"
+        ],
+        "properties": {
+          "avg_gpu_utilization_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "coverage_pct": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "energy_kwh": {
+            "type": "number",
+            "format": "double"
+          },
+          "low_utilization_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          },
+          "max_gpu_memory_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "observed_gpu_hours": {
+            "type": "number",
+            "format": "double"
+          },
+          "run_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sample_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "utilization_buckets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemUsageBucket"
+            }
+          },
+          "utilized_gpu_hours": {
+            "type": "number",
+            "format": "double"
           }
         }
       },

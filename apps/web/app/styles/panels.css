@@ -42,7 +42,7 @@
   background: transparent;
   color: var(--faint);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-data);
   padding: 2px 6px;
 }
 
@@ -57,7 +57,7 @@
   background: transparent;
   color: var(--text);
   padding: 0;
-  font-size: 14px;
+  font-size: var(--fs-ui);
 }
 
 .section-title-button:hover {
@@ -72,7 +72,7 @@
   background: var(--surface-soft);
   color: var(--muted);
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-align: center;
 }
 
@@ -177,7 +177,7 @@
   white-space: normal;
   line-height: 1.25;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 620;
 }
 
@@ -209,7 +209,7 @@
   background: transparent;
   color: var(--muted);
   padding: 1px 0;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 620;
 }
 
@@ -275,11 +275,11 @@
 
 .workspace-panel-card:not(.fullscreen-panel-card) .axis-label {
   opacity: 0.86;
-  font-size: 10px;
+  font-size: var(--fs-micro);
 }
 
 .workspace-panel-card:not(.fullscreen-panel-card) .tick-label {
-  font-size: 10px;
+  font-size: var(--fs-micro);
 }
 
 .workspace-panel-card .chart-range-row {
@@ -387,7 +387,7 @@
   align-items: center;
   min-height: 24px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 650;
 }
 
@@ -452,7 +452,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 750;
 }
 
@@ -462,7 +462,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-style: normal;
   font-weight: 650;
 }
@@ -486,6 +486,9 @@
   right: -2px;
   bottom: -2px;
   z-index: 12;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
   width: 36px;
   min-width: 36px;
   height: 36px;
@@ -496,26 +499,16 @@
   box-shadow: none;
   color: var(--faint);
   cursor: nwse-resize;
-  padding: 0;
+  padding: 0 5px 4px 0;
 }
 
-.panel-resize-handle::before,
-.panel-resize-handle::after {
-  position: absolute;
-  right: 9px;
-  bottom: 8px;
-  width: 14px;
-  height: 2px;
-  content: "";
-  background: currentColor;
-  transform: rotate(-45deg);
-  transform-origin: right center;
-}
-
-.panel-resize-handle::after {
-  right: 9px;
-  bottom: 15px;
-  width: 8px;
+/* Tapered diagonal grip — three rounded strokes that read clearly as a resize
+ * corner. The SVG never swallows pointer events, so the button stays the hit
+ * target for the drag. */
+.panel-resize-grip {
+  pointer-events: none;
+  opacity: 0.7;
+  transition: color 140ms ease, opacity 140ms ease, transform 140ms ease;
 }
 
 .panel-resize-handle:hover,
@@ -525,6 +518,18 @@
   color: var(--accent-strong);
   outline: 0;
   box-shadow: none;
+}
+
+.panel-resize-handle:hover .panel-resize-grip,
+.panel-resize-handle:focus-visible .panel-resize-grip {
+  opacity: 1;
+  transform: translate(1px, 1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-resize-grip {
+    transition: none;
+  }
 }
 
 .workspace-panel-grid > .empty {
@@ -544,7 +549,7 @@
   border: 1px dashed transparent;
   border-radius: var(--control-radius);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   opacity: 0;
   transition: opacity 140ms ease, border-color 120ms ease, background 120ms ease, color 120ms ease;
 }
@@ -732,7 +737,7 @@
   border: 1px solid var(--line-soft);
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 800;
   line-height: 1.15;
   overflow-wrap: anywhere;
@@ -754,7 +759,7 @@
 
 .drawer-group h3 {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -859,7 +864,7 @@
   margin-top: 3px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -891,7 +896,7 @@
 
 .command-card .drawer-head small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .shortcut-groups {
@@ -910,7 +915,7 @@
 
 .shortcut-group h3 {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -940,14 +945,14 @@
 .shortcut-row strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .shortcut-row small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 kbd {
@@ -960,7 +965,7 @@ kbd {
   background: var(--surface);
   color: var(--muted);
   padding: 2px 7px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 750;
   white-space: nowrap;
 }
@@ -1034,13 +1039,13 @@ kbd {
 }
 
 .quick-search-row strong {
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .quick-search-row small,
 .quick-search-row em {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-style: normal;
   font-weight: 650;
 }

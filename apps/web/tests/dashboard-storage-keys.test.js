@@ -561,16 +561,23 @@ test("workspace view API paths are redacted before telemetry logging", () => {
 test("API key UI does not expose admin controls to read-only members", () => {
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
   const apiPane = readFileSync(`${root}app/dashboard/api/tab-pane.tsx`, "utf8");
+  const css = readFileSync(`${root}app/styles/overhaul.css`, "utf8");
+  const darkCss = readFileSync(`${root}app/styles/dark-overrides.css`, "utf8");
 
   assert.match(shell, /!activeOrgId \|\| !canManageOrg/, "dashboard should skip API-key loads for non-admin members");
   assert.match(shell, /if \(!activeOrgId \|\| !canManageOrg\) \{[\s\S]*?API key management is available to workspace admins\.[\s\S]*?return;[\s\S]*?\}[\s\S]*setAdminBusy\(true\);[\s\S]*Creating API key/, "API-key create handler should reject non-admin invocation");
   assert.match(shell, /if \(!activeOrgId \|\| !keyId \|\| !canManageOrg\) \{[\s\S]*?API key management is available to workspace admins\.[\s\S]*?return;[\s\S]*?\}[\s\S]*setAdminBusy\(true\);[\s\S]*Revoking API key/, "API-key revoke handler should reject non-admin invocation");
+  assert.match(shell, /async function copyTextToClipboard/, "copy-once API keys should use an explicit clipboard helper");
+  assert.match(shell, /document\.execCommand\("copy"\)/, "copy-once API keys should fall back when the async clipboard API is unavailable");
+  assert.doesNotMatch(shell, /navigator\.clipboard\?\.\s*writeText\(newApiKey\)/, "optional chaining must not make missing clipboard support look successful");
   assert.match(shell, /canManageOrg=\{canManageOrg\}/, "API tab should receive membership capabilities");
   assert.match(apiPane, /const visibleApiKeys = canManageOrg \? apiKeys : \[\];/, "API tab should hide stale key rows from read-only members");
   assert.match(apiPane, /const visibleNewApiKey = canManageOrg \? newApiKey : "";/, "API tab should hide stale copy-once keys from read-only members");
   assert.match(apiPane, /\{canManageOrg \? \(/, "API-key creation controls should be gated");
   assert.match(apiPane, /disabled=\{adminBusy \|\| !canManageOrg\}/, "manual API-key refresh should be disabled for read-only members");
   assert.match(apiPane, /\{canManageOrg \? \([\s\S]*?onRevokeApiKey/, "API-key revoke controls should be gated");
+  assert.match(css, /\.api-key-reveal code[\s\S]*background: color-mix\(in srgb, var\(--surface\) 82%, var\(--surface-2\)\)/, "copy-once key reveal should use theme surfaces instead of a hard black code well");
+  assert.doesNotMatch(darkCss, /preview-chip\.good,[\s\S]*?api-key-reveal/, "dark mode should not force API key reveals into the green preview-chip treatment");
 });
 
 test("dashboard plan usage surfaces API request usage", () => {

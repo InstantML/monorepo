@@ -47,7 +47,7 @@
 
 .analysis-eyebrow {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -58,7 +58,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 20px;
+  font-size: var(--fs-page);
   font-weight: 820;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -69,7 +69,7 @@
 .run-detail-note {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
 }
 
@@ -93,7 +93,7 @@
 
 .analysis-stat span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -102,7 +102,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--fs-lead);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -374,7 +374,7 @@
   align-items: center;
   gap: 8px;
   color: #121511;
-  font-size: 14px;
+  font-size: var(--fs-ui);
   font-weight: 760;
 }
 
@@ -404,7 +404,7 @@ table {
   width: 100%;
   min-width: 960px;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--fs-data);
   table-layout: fixed;
 }
 
@@ -422,7 +422,7 @@ th {
   z-index: 1;
   background: var(--surface);
   color: #687584;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 750;
 }
 
@@ -511,7 +511,7 @@ tr.selected.inspected {
   border: 0;
   background: transparent;
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   line-height: 1.2;
   padding: 0;
@@ -560,7 +560,7 @@ tr.selected.inspected {
   max-width: 100%;
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -569,7 +569,7 @@ tr.selected.inspected {
 .subtle,
 small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .pill {
@@ -579,7 +579,7 @@ small {
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
   padding: 1px 7px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 720;
   text-transform: capitalize;
 }
@@ -622,7 +622,7 @@ small {
   border-radius: var(--tight-radius);
   background: #ffffff;
   color: #495766;
-  font-size: 12px;
+  font-size: var(--fs-data);
   padding: 2px 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -636,7 +636,7 @@ small {
   min-height: 52px;
   border-top: 1px solid var(--line-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   padding: 8px 12px;
 }
 
@@ -665,7 +665,7 @@ small {
   background: #fff;
   color: #3a3f33;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .table-footer .select-trigger {
@@ -674,7 +674,7 @@ small {
   height: 30px;
   padding: 4px 8px;
   color: #3a3f33;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .table-empty {
@@ -688,7 +688,7 @@ small {
 
 .table-empty strong {
   color: #1d211b;
-  font-size: 14px;
+  font-size: var(--fs-ui);
 }
 
 .chart-card {
@@ -723,13 +723,13 @@ small {
 .smoothing-control span,
 .toggle-control span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 650;
 }
 
 .smoothing-control strong {
   color: #555b4c;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 650;
 }
 
@@ -812,7 +812,7 @@ small {
   background: var(--surface);
   color: #3a3f33;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 700;
 }
 
@@ -911,6 +911,24 @@ small {
   color: var(--accent);
 }
 
+/* In the panel head the kebab sits in a lighter zone than the chart toolbar,
+ * so drop the floating-pill treatment for a quieter ghost button. */
+.panel-head-menu > summary {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.panel-head-menu > summary:hover,
+.panel-head-menu[open] > summary {
+  background: var(--surface-soft);
+}
+
+.panel-head-menu[open] > summary {
+  border-color: transparent;
+  color: var(--accent);
+}
+
 .chart-menu-pop {
   position: absolute;
   top: calc(100% + 6px);
@@ -940,7 +958,7 @@ small {
   border-radius: 8px;
   background: transparent;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--fs-data);
   font-weight: 650;
   text-align: left;
   cursor: pointer;
@@ -1007,7 +1025,7 @@ small {
 }
 
 .chart-menu-section-label {
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1031,7 +1049,7 @@ small {
 
 .chart-smoothing-value {
   justify-self: end;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
@@ -1054,7 +1072,7 @@ small {
   border-radius: 8px;
   background: transparent;
   color: var(--text);
-  font-size: 12.5px;
+  font-size: var(--fs-data);
   font-weight: 650;
   text-align: left;
   cursor: pointer;
@@ -1072,6 +1090,19 @@ small {
 .chart-menu-item[aria-disabled="true"] {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+/* Destructive row (e.g. Remove panel) — tinted text + icon, danger-soft hover. */
+.chart-menu-item-danger {
+  color: var(--danger);
+}
+
+.chart-menu-item-danger svg {
+  color: currentColor;
+}
+
+.chart-menu-item-danger:hover {
+  background: var(--danger-soft);
 }
 
 /* Chart/table view picker: a radio-style group sharing the menu-item look,
@@ -1102,7 +1133,7 @@ small {
 .chart-y-range-field {
   display: grid;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1118,7 +1149,7 @@ small {
   border-radius: 7px;
   background: var(--surface);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .chart-y-range-actions {
@@ -1134,7 +1165,7 @@ small {
 }
 
 .chart-smoothing-label {
-  font-size: 12.5px;
+  font-size: var(--fs-data);
   font-weight: 650;
   color: var(--text);
   user-select: none;
@@ -1143,10 +1174,9 @@ small {
 .chart-smoothing-slider {
   grid-column: 1 / -1;
   width: 100%;
-  height: 4px;
+  height: 16px;
   margin: 2px 0 0;
   padding: 0;
-  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -1157,7 +1187,7 @@ small {
   background: rgba(255, 248, 235, 0.96);
   color: #7a4d12;
   box-shadow: 0 6px 18px rgba(23, 33, 43, 0.08);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 700;
   line-height: 1.35;
   padding: 5px 7px;
@@ -1192,7 +1222,7 @@ small {
 .metric-panel-head h3 {
   overflow: hidden;
   color: #121511;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1244,7 +1274,7 @@ small {
   background: var(--surface-soft);
   color: var(--text);
   padding: 9px 11px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 680;
   line-height: 1.45;
 }
@@ -1262,7 +1292,7 @@ small {
   min-width: 760px;
   border-collapse: collapse;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   line-height: 1.35;
 }
 
@@ -1314,7 +1344,7 @@ small {
 .workspace-panel-card:not(.fullscreen-panel-card) .chart-summary-takeaway {
   display: -webkit-box;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--fs-data);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1341,7 +1371,7 @@ small {
   border-radius: var(--tight-radius);
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   padding: 3px 6px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1482,7 +1512,7 @@ button.legend-chip {
 
 .axis-label {
   fill: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
 }
 
@@ -1689,7 +1719,7 @@ button.legend-chip {
   color: var(--chart-tooltip-text, #1e2218);
   box-shadow: 0 14px 34px rgba(23, 26, 20, 0.16);
   padding: 9px 11px 8px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   backdrop-filter: blur(6px);
   pointer-events: none;
 }
@@ -1737,7 +1767,7 @@ button.legend-chip {
 
 .chart-tooltip-head {
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--fs-data);
   letter-spacing: 0.01em;
   padding-bottom: 5px;
 }
@@ -1749,7 +1779,7 @@ button.legend-chip {
   padding: 3px 0 4px;
   margin-bottom: 2px;
   border-bottom: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.08));
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -1805,7 +1835,7 @@ button.legend-chip {
   padding-top: 6px;
   border-top: 1px solid var(--chart-tooltip-border, rgba(23, 26, 20, 0.08));
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 650;
   letter-spacing: 0.01em;
 }
@@ -1890,7 +1920,7 @@ button.legend-chip {
   background: var(--surface);
   color: var(--muted);
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
 }
 
@@ -1919,7 +1949,7 @@ button.legend-chip {
   grid-column: 1 / -1;
   max-width: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
   text-align: left;
 }
@@ -1968,7 +1998,7 @@ button.legend-chip {
 
 .compare-metric-strip > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -1999,7 +2029,7 @@ button.legend-chip {
   color: var(--text);
   box-shadow: none;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   cursor: pointer;
 }
@@ -2011,7 +2041,7 @@ button.legend-chip {
   max-width: 190px;
   overflow: hidden;
   padding: 6px 9px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2056,7 +2086,7 @@ button.legend-chip {
   padding: 10px 12px;
   color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   list-style: none;
 }
@@ -2115,7 +2145,7 @@ button.legend-chip {
 
 .compare-summary small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -2132,7 +2162,7 @@ button.legend-chip {
 .compare-summary span,
 .compare-summary li {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
 }
 
@@ -2208,7 +2238,7 @@ button.legend-chip {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2219,7 +2249,7 @@ button.legend-chip {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2229,7 +2259,7 @@ button.legend-chip {
 .run-timeline-row b {
   align-self: center;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2277,13 +2307,13 @@ button.legend-chip {
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
 }
 
 .subsection-title {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -2329,7 +2359,7 @@ button.legend-chip {
 
 .failure-card > strong {
   color: #9f2f28;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .failure-card div {
@@ -2337,7 +2367,7 @@ button.legend-chip {
   justify-content: space-between;
   gap: 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .failure-card b {

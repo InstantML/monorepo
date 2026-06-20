@@ -2525,6 +2525,48 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     return () => controller.abort();
   }, [activeOrgId, activeTab, canManageOrg, dashboardAuthorized, loadApiKeys]);
 
+  async function copyTextToClipboard(value: string) {
+    if (!value) return false;
+    if (typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function") {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {
+        // Fall through to the selection-based path for browsers that deny the async clipboard API.
+      }
+    }
+    if (typeof document === "undefined") return false;
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const selection = window.getSelection();
+    const selectedRanges = selection ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange()) : [];
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.readOnly = true;
+    textarea.setAttribute("aria-hidden", "true");
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, value.length);
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    } finally {
+      document.body.removeChild(textarea);
+      if (selection) {
+        selection.removeAllRanges();
+        selectedRanges.forEach((range) => selection.addRange(range));
+      }
+      activeElement?.focus();
+    }
+    return copied;
+  }
+
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
     if (!canManageOrg) {
@@ -2611,7 +2653,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       return;
     }
     try {
-      await navigator.clipboard.writeText(safeLink);
+      if (!await copyTextToClipboard(safeLink)) throw new Error("copy failed");
       setMessage("Invitation link copied.");
     } catch {
       setMessage("Copy failed. Select and copy the invitation link manually.");
@@ -2753,7 +2795,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   async function copyNewApiKey() {
     if (!newApiKey) return;
     try {
-      await navigator.clipboard?.writeText(newApiKey);
+      if (!await copyTextToClipboard(newApiKey)) throw new Error("copy failed");
       setApiAdminTone("status");
       setApiAdminMessage("API key copied.");
       setMessage("API key copied.");
@@ -4569,7 +4611,10 @@ function dismissTopOverlay() {
         <section className={`tab-pane ${activeTab === "insights" ? "active" : ""}`} aria-label="Insights">
           {activeTab === "insights" ? (
             <InsightsTabPane
+              api={api}
               metricKey={metricKey}
+              onSelectRun={setPrimaryRunId}
+              project={project}
               selectedRunIds={selectedRunIds}
               sortedRuns={sortedRuns}
             />

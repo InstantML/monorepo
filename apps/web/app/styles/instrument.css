@@ -185,7 +185,7 @@ button:focus-visible,
 /* 9b — Run-rail status chips match .pill casing: uppercase mono. */
 .workspace-run-status {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -206,7 +206,7 @@ button:focus-visible,
  *      Mono is reserved for data (values, ids, units); a nav label is neither. */
 .tab-button {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -251,7 +251,7 @@ button:focus-visible,
   background: var(--surface-soft);
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .status-strip::before {
@@ -306,12 +306,12 @@ button:focus-visible,
 
 .artifact-empty-state strong {
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--fs-title);
 }
 
 .artifact-empty-state span {
   max-width: 440px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .artifact-empty-state code {
@@ -322,7 +322,7 @@ button:focus-visible,
   background: var(--bg-soft);
   color: var(--text-2);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 /* 18 — Warnings are amber, in both themes. Severity is never green. */
@@ -516,7 +516,7 @@ button:disabled,
 }
 .compact-head span {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: var(--tracking-eyebrow);
   text-transform: uppercase;

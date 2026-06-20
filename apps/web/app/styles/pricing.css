@@ -26,7 +26,7 @@
   .pricing-h1 { font-size: 46px; }
   .pricing-root .landing-cta-primary--sm {
     padding-inline: 10px;
-    font-size: 12px;
+    font-size: var(--fs-data);
   }
   .pricing-header-chips > * {
     white-space: normal;
@@ -71,7 +71,7 @@
   position: absolute; top: 0; left: 0; right: 0;
   background: var(--accent); color: #00150B;
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  font-size: var(--fs-data); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
   padding: 8px 16px; text-align: center;
   border-top-left-radius: 8px; border-top-right-radius: 8px;
 }
@@ -79,27 +79,27 @@
 .pricing-tier-card__head { display: flex; flex-direction: column; gap: 8px; }
 .pricing-tier-card__name {
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 12px; letter-spacing: 0.14em; color: var(--faint); text-transform: uppercase;
+  font-size: var(--fs-data); letter-spacing: 0.14em; color: var(--faint); text-transform: uppercase;
 }
 .pricing-tier-card__price-row { display: flex; align-items: baseline; gap: 6px; }
 .pricing-tier-card__price {
   font-size: 40px; font-weight: 600; line-height: 1;
   letter-spacing: -0.02em; color: var(--text);
 }
-.pricing-tier-card__cadence { font-size: 14px; color: var(--faint); }
-.pricing-tier-card__blurb { font-size: 13px; color: var(--faint); line-height: 1.5; margin: 6px 0 0; }
+.pricing-tier-card__cadence { font-size: var(--fs-ui); color: var(--faint); }
+.pricing-tier-card__blurb { font-size: var(--fs-body); color: var(--faint); line-height: 1.5; margin: 6px 0 0; }
 
 .pricing-tier-card__fit {
   display: flex; flex-direction: column; gap: 4px;
   padding: 12px; background: var(--accent-soft);
   border: 1px solid var(--accent-line); border-radius: 8px; margin-top: 8px;
 }
-.pricing-tier-card__fit-value { font-size: 13px; color: var(--text); font-weight: 500; }
+.pricing-tier-card__fit-value { font-size: var(--fs-body); color: var(--text); font-weight: 500; }
 
 .pricing-tier-card__lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
 .pricing-tier-card__lines li {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
-  font-size: 13px; border-top: 1px dashed var(--line); padding-top: 12px;
+  font-size: var(--fs-body); border-top: 1px dashed var(--line); padding-top: 12px;
 }
 .pricing-tier-card__lines li:first-child { border-top: none; padding-top: 0; }
 .pricing-tier-card__line-key { color: var(--faint); flex: 0 0 auto; }
@@ -111,7 +111,7 @@
 .pricing-tier-card__line-val--accent { color: var(--accent); font-weight: 500; }
 .pricing-tier-card__line-sub {
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 12px; color: var(--dim);
+  font-size: var(--fs-data); color: var(--dim);
 }
 @media (max-width: 420px) {
   .pricing-tier-card__lines li { flex-direction: column; gap: 4px; }
@@ -124,7 +124,7 @@
 }
 .pricing-tier-card__features li {
   display: flex; gap: 10px; align-items: flex-start;
-  font-size: 13px; color: var(--text); line-height: 1.5;
+  font-size: var(--fs-body); color: var(--text); line-height: 1.5;
 }
 .pricing-tier-card__feature-check {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
@@ -134,7 +134,7 @@
 
 .pricing-tier-card__cta { margin-top: 8px; width: 100%; justify-content: center; }
 
-.pricing-fine-print { margin-top: 32px; font-size: 12px; color: var(--dim); max-width: 68ch; line-height: 1.6; }
+.pricing-fine-print { margin-top: 32px; font-size: var(--fs-data); color: var(--dim); max-width: 68ch; line-height: 1.6; }
 .pricing-fine-print--note { margin-top: 20px; }
 
 /* W&B comparison */
@@ -146,7 +146,7 @@
 .pricing-compare-col { padding: 24px; display: flex; flex-direction: column; gap: 14px; }
 .pricing-compare-col__label {
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 12px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--faint);
+  font-size: var(--fs-data); text-transform: uppercase; letter-spacing: 0.12em; color: var(--faint);
 }
 .pricing-compare-col--old .pricing-compare-col__label,
 .pricing-compare-col--alt .pricing-compare-col__label { color: #f0b43e; }
@@ -156,7 +156,7 @@
 }
 .pricing-compare-col--new .pricing-compare-col__label { color: var(--accent); }
 
-.pricing-compare-col__lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.pricing-compare-col__lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: var(--fs-body); }
 .pricing-compare-col__lines li {
   display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   color: var(--faint); border-bottom: 1px dashed var(--line); padding-bottom: 10px;
@@ -165,7 +165,7 @@
 .pricing-compare-col__line-val {
   color: var(--text);
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .pricing-compare-col__total-row {
@@ -174,15 +174,15 @@
 }
 .pricing-compare-col__total-label {
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+  font-size: var(--fs-data); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
 }
 .pricing-compare-col__total { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; color: var(--text); }
 .pricing-compare-col--new .pricing-compare-col__total { color: var(--accent); }
 .pricing-compare-col__annual {
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 12px; color: var(--dim);
+  font-size: var(--fs-data); color: var(--dim);
 }
-.pricing-compare-col__note { font-size: 12px; color: var(--dim); line-height: 1.55; margin: 4px 0 0; }
+.pricing-compare-col__note { font-size: var(--fs-data); color: var(--dim); line-height: 1.55; margin: 4px 0 0; }
 
 .pricing-compare-savings {
   margin-top: 28px; display: grid; grid-template-columns: 1fr; gap: 16px;
@@ -193,8 +193,8 @@
   .pricing-compare-savings { grid-template-columns: auto 1fr; gap: 32px; align-items: center; }
 }
 .pricing-compare-savings .mono-label { display: block; margin-bottom: 4px; }
-.pricing-compare-savings__value { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; color: var(--accent); }
-.pricing-compare-savings__sub { font-size: 14px; color: var(--text); }
+.pricing-compare-savings__value { font-size: var(--fs-display); font-weight: 600; letter-spacing: -0.01em; color: var(--accent); }
+.pricing-compare-savings__sub { font-size: var(--fs-ui); color: var(--text); }
 
 /* Surprise costs */
 .pricing-surprises-section { padding-top: 56px; }
@@ -210,7 +210,7 @@
   display: flex; flex-direction: column; gap: 8px;
   padding: 16px; border-radius: 10px; border: 1px solid var(--line);
 }
-.pricing-surprise__col p { margin: 0; font-size: 13px; color: var(--faint); line-height: 1.55; }
+.pricing-surprise__col p { margin: 0; font-size: var(--fs-body); color: var(--faint); line-height: 1.55; }
 .pricing-surprise__col--old { background: rgba(224, 176, 122, 0.04); }
 .pricing-surprise__col--new { background: var(--accent-soft); border-color: var(--accent-line); }
 .pricing-surprise__col--new p { color: var(--text); }
@@ -218,7 +218,7 @@
 .pricing-surprise__col-label {
   display: flex; align-items: center; gap: 8px;
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+  font-size: var(--fs-data); letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
 }
 .pricing-surprise__col--new .pricing-surprise__col-label { color: var(--accent); }
 .pricing-surprise__col--old .pricing-surprise__col-label { color: #f0b43e; }
@@ -230,4 +230,4 @@
 .pricing-surprise__icon--bad { background: rgba(224, 176, 122, 0.16); color: #f0b43e; }
 .pricing-surprise__icon--good { background: var(--accent-soft); color: var(--accent); }
 
-.pricing-surprise__evidence { margin-top: 4px; font-size: 12px; }
+.pricing-surprise__evidence { margin-top: 4px; font-size: var(--fs-data); }

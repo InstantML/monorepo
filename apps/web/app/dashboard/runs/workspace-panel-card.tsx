@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronDown, CopyPlus, GripVertical, Maximize2, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, CopyPlus, GripVertical, Maximize2, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import { averageGroupedSeries, axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, smoothSeries } from "../../../src/charts.js";
 import { chartColor, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
@@ -20,6 +20,7 @@ import {
 } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { CustomSelect } from "../ui/select";
+import { useDetailsDismiss } from "../ui/use-details-dismiss";
 import { normalizedPanelLayout, resolveWorkspaceSettings } from "./panel-settings";
 import type { HistogramTimelineState, HoverPoint, MetricSeries, RunSummary, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceSection, WorkspaceView } from "../../dashboard-types";
 
@@ -691,6 +692,7 @@ function HistogramTimelinePanelChart({
           max={latestIndex}
           min={0}
           onChange={(event) => setSelectedIndex(Number(event.target.value))}
+          style={{ "--range-fill": `${latestIndex > 0 ? (boundedIndex / latestIndex) * 100 : 0}%` } as CSSProperties}
           type="range"
           value={boundedIndex}
         />
@@ -720,6 +722,55 @@ function AltChartTooltip({ height, hover, width }: { height: number; hover: AltC
       <span>{hover.value}</span>
       {hover.detail ? <em>{hover.detail}</em> : null}
     </div>
+  );
+}
+
+function closeEnclosingMenu(event: MouseEvent<HTMLButtonElement>) {
+  const details = event.currentTarget.closest("details");
+  if (details instanceof HTMLDetailsElement) details.open = false;
+}
+
+// The panel's lifecycle actions, rendered as a single set of menu rows. They
+// live inside the chart's three-dot menu for line panels and a head kebab for
+// the other panel types, so a panel never sprouts a separate row of icons.
+function panelActionMenuItems({
+  onDuplicate,
+  onEdit,
+  onFullscreen,
+  onRemove,
+  title,
+}: {
+  onDuplicate?: () => void;
+  onEdit?: () => void;
+  onFullscreen?: () => void;
+  onRemove?: () => void;
+  title: string;
+}): ReactNode {
+  if (!onEdit && !onDuplicate && !onFullscreen && !onRemove) return null;
+  return (
+    <>
+      {onEdit ? <button className="chart-menu-item" type="button" aria-label={`Edit ${title}`} onClick={(event) => { closeEnclosingMenu(event); onEdit(); }}><Pencil size={14} aria-hidden="true" /> Edit panel</button> : null}
+      {onDuplicate ? <button className="chart-menu-item" type="button" aria-label={`Duplicate ${title}`} onClick={(event) => { closeEnclosingMenu(event); onDuplicate(); }}><CopyPlus size={14} aria-hidden="true" /> Duplicate panel</button> : null}
+      {onFullscreen ? <button className="chart-menu-item" type="button" aria-label={`Fullscreen ${title}`} onClick={(event) => { closeEnclosingMenu(event); onFullscreen(); }}><Maximize2 size={14} aria-hidden="true" /> Open fullscreen</button> : null}
+      {onRemove ? <button className="chart-menu-item chart-menu-item-danger" type="button" aria-label={`Remove ${title}`} onClick={(event) => { closeEnclosingMenu(event); onRemove(); }}><Trash2 size={14} aria-hidden="true" /> Remove panel</button> : null}
+    </>
+  );
+}
+
+// Standalone kebab for panel types without a chart toolbar (scatter,
+// distribution, histogram timeline) to hang their actions off.
+function PanelHeadMenu({ items, label }: { items: ReactNode; label: string }) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  useDetailsDismiss(detailsRef);
+  return (
+    <details className="chart-menu panel-head-menu" ref={detailsRef}>
+      <summary aria-label={label} title="Panel options">
+        <MoreVertical size={16} aria-hidden="true" />
+      </summary>
+      <div className="chart-menu-pop" aria-label={label}>
+        {items}
+      </div>
+    </details>
   );
 }
 
@@ -946,6 +997,7 @@ export function WorkspacePanelCard({
     window.addEventListener("pointerup", handlePointerUp, { once: true });
     window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
+  const panelActionItems = panelActionMenuItems({ onDuplicate, onEdit, onFullscreen, onRemove, title: panel.title });
   return (
     <article
       className={`workspace-panel-card ${className}`}
@@ -994,7 +1046,7 @@ export function WorkspacePanelCard({
             <span className="panel-title-text">{panel.title}</span>
           </h3>
           <small title={scatterPanel ? scatterPairLabel : distributionPanel ? `${distributionValueLabel} grouped by ${distributionGroupLabel}` : histogramTimelinePanel ? histogramObjectKey : panel.metricKey}>
-            {workspacePanelTypeLabel(panel.type)} · {
+            {
               scatterPanel
                 ? truncateMiddle(scatterPairLabel, 84)
                 : distributionPanel
@@ -1002,15 +1054,16 @@ export function WorkspacePanelCard({
                   : histogramTimelinePanel
                       ? truncateMiddle(histogramObjectKey, 84)
                       : panel.metricKey
-            } · {plottedRunLabel}
+            }
           </small>
         </div>
-        <div className="panel-card-actions">
-          {onEdit ? <button className="icon-button" type="button" aria-label={`Edit ${panel.title}`} title="Edit panel" onClick={onEdit}><Pencil size={15} /></button> : null}
-          {onDuplicate ? <button className="icon-button" type="button" aria-label={`Duplicate ${panel.title}`} title="Duplicate panel" onClick={onDuplicate}><CopyPlus size={15} /></button> : null}
-          {onFullscreen ? <button className="icon-button" type="button" aria-label={`Fullscreen ${panel.title}`} title="Open fullscreen" onClick={onFullscreen}><Maximize2 size={15} /></button> : null}
-          {onRemove ? <button className="icon-button" type="button" aria-label={`Remove ${panel.title}`} title="Remove panel" onClick={onRemove}><Trash2 size={15} /></button> : null}
-        </div>
+        {/* Line panels fold these actions into the chart's three-dot menu; the
+            other panel types have no chart toolbar, so they get a head kebab. */}
+        {!linePanel && panelActionItems ? (
+          <div className="panel-card-actions">
+            <PanelHeadMenu items={panelActionItems} label={`${panel.title} panel options`} />
+          </div>
+        ) : null}
       </div>
       <div className="workspace-panel-meta">
         {scatterPanel ? (
@@ -1032,13 +1085,15 @@ export function WorkspacePanelCard({
             <span>Latest frames</span>
           </>
         ) : (
+          // Only surface line settings that deviate from the default (step axis,
+          // ungrouped, full fidelity) — the defaults are just noise.
           <>
-            <span>{settings.xMode === "time" ? "Logged time" : "Step"}</span>
-            <span>{settings.groupBy ? `Grouped by ${settings.groupBy}` : "Ungrouped"}</span>
-            <span>{settings.smoothing ? `Smooth ${settings.smoothing}` : "Full fidelity"}</span>
+            {settings.xMode === "time" ? <span>Logged time</span> : null}
+            {settings.groupBy ? <span>Grouped by {settings.groupBy}</span> : null}
+            {settings.smoothing ? <span>Smooth {settings.smoothing}</span> : null}
           </>
         )}
-        <span>{cappedPanelScopeLabel}</span>
+        <span>{plottedRunLabel}</span>
         {missingSeriesCount && !loadingSeries ? <span className="panel-data-gap">{scatterPanel || distributionPanel ? `${missingSeriesCount} missing field values` : `${missingSeriesCount} no data for metric`}</span> : null}
       </div>
       {loadingSeries ? (
@@ -1068,6 +1123,7 @@ export function WorkspacePanelCard({
             }}
             onZoomRangeChange={setPanelZoomRange}
             padding={panelChartPadding}
+            panelMenuItems={panelActionItems}
             series={preparedSeries}
             smoothing={settings.smoothing}
             onSmoothingChange={onSmoothingChange}
@@ -1131,7 +1187,11 @@ export function WorkspacePanelCard({
           onPointerDown={handleResizeStart}
           title="Drag to resize panel"
           type="button"
-        />
+        >
+          <svg className="panel-resize-grip" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
+            <path d="M14.5 5.5 5.5 14.5M14.5 9.5 9.5 14.5M14.5 13.5 13.5 14.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+        </button>
       ) : null}
     </article>
   );

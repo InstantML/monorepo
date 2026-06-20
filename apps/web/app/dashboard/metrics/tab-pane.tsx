@@ -1,6 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChartControls } from "./chart-controls";
@@ -173,6 +174,7 @@ export function MetricsTabPane({
                   onChange={(event) => onSmoothing(Number(event.currentTarget.value))}
                   onInput={(event) => onSmoothing(Number(event.currentTarget.value))}
                   step={10}
+                  style={{ "--range-fill": `${(smoothing / 90) * 100}%` } as CSSProperties}
                   type="range"
                   value={smoothing}
                 />

@@ -58,6 +58,8 @@
   --series-4: #b13fa4;
   --series-5: #6b4fd8;
   --series-6: #1f9d8f;
+  --series-7: #cf5a2a;
+  --series-8: #7d8a16;
   --chart-card-bg: #ffffff;
   --chart-grid: #e7eadf;
   --chart-axis: #c8ccbc;
@@ -76,6 +78,7 @@
   --workbar-height: 44px;
   --tracking-eyebrow: 0.14em;
   --tracking-display: -0.01em;
+  --ease-snap: cubic-bezier(0.2, 0.9, 0.25, 1);
   --scrollbar-size: 10px;
   --scrollbar-track: transparent;
   --scrollbar-thumb: rgba(23, 26, 20, 0.18);
@@ -89,6 +92,30 @@
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono-next, "Spline Sans Mono"), ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-serif: var(--font-serif-next, "Instrument Serif"), Georgia, "Times New Roman", serif;
+  --fs-micro: 10px;
+  --fs-label: 11px;
+  --fs-data: 12px;
+  --fs-body: 13px;
+  --fs-ui: 14px;
+  --fs-title: 15px;
+  --fs-lead: 16px;
+  --fs-page: 20px;
+  --fs-stat: 26px;
+  --fs-display: 28px;
+  --sp-0: 0;
+  --sp-0-5: 2px;
+  --sp-1: 4px;
+  --sp-1-5: 6px;
+  --sp-2: 8px;
+  --sp-2-5: 10px;
+  --sp-3: 12px;
+  --sp-3-5: 14px;
+  --sp-4: 16px;
+  --sp-4-5: 18px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 28px;
+  --sp-8: 32px;
   --bg-grid: var(--bg);
   --bg-grid-size: auto;
 }
@@ -131,6 +158,8 @@
   --series-4: #e36ad8;
   --series-5: #9a7bff;
   --series-6: #43d6c5;
+  --series-7: #ff8a5c;
+  --series-8: #d4dc5a;
   --chart-card-bg: #111410;
   --chart-grid: #1a1d17;
   --chart-axis: rgba(231, 234, 223, 0.18);

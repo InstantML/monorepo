@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useLayoutEffect, useState } from "react";
 import { X } from "lucide-react";
 
@@ -237,7 +238,7 @@ export function PanelEditDrawer({
         <>
           <label className="control full">
             Smoothing
-            <input aria-label="Panel smoothing" type="range" min="0" max="90" step="10" value={settings.smoothing} onChange={(event) => onUpdate({ settings: { smoothing: Number(event.target.value) } })} />
+            <input aria-label="Panel smoothing" type="range" min="0" max="90" step="10" value={settings.smoothing} style={{ "--range-fill": `${(settings.smoothing / 90) * 100}%` } as CSSProperties} onChange={(event) => onUpdate({ settings: { smoothing: Number(event.target.value) } })} />
           </label>
           <label className="toggle-control drawer-toggle">
             <span>Show group average</span>

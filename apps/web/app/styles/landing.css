@@ -37,7 +37,7 @@
 .landing-brand {
   gap: 10px;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--fs-ui);
   font-weight: 760;
   text-decoration: none;
 }
@@ -73,7 +73,7 @@
   background: transparent;
   color: var(--muted);
   padding: 7px 9px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 700;
   text-decoration: none;
   cursor: pointer;
@@ -104,7 +104,7 @@
 
 .eyebrow {
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 820;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -148,7 +148,7 @@
   background: var(--accent);
   color: #fff;
   padding: 7px 11px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 740;
   text-decoration: none;
   white-space: nowrap;
@@ -178,7 +178,7 @@
   background: rgba(255, 255, 255, 0.72);
   padding: 8px 10px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 650;
 }
 
@@ -208,7 +208,7 @@
 .auth-form small,
 .onboarding-summary span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
@@ -241,7 +241,7 @@
 
 .preview-topbar strong {
   margin-right: auto;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .preview-chip {
@@ -250,7 +250,7 @@
   background: var(--surface-soft);
   color: var(--muted);
   padding: 4px 7px;
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 760;
 }
 
@@ -286,14 +286,14 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-body);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .preview-head small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -305,7 +305,7 @@
   border-top: 1px solid var(--line-soft);
   padding: 8px 0 0;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .preview-row span {
@@ -362,7 +362,7 @@
   padding-top: 9px;
   margin-top: 9px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .compare-preview-row svg {
@@ -378,7 +378,7 @@
   gap: 8px;
   grid-column: span 2;
   color: #22261d;
-  font-size: 12px;
+  font-size: var(--fs-data);
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -460,14 +460,14 @@
   display: grid;
   gap: 6px;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
 }
 
 .auth-form input,
 .auth-form textarea {
   width: 100%;
-  font-size: 14px;
+  font-size: var(--fs-ui);
   font-weight: 560;
 }
 
@@ -552,7 +552,7 @@
   background: #171a14;
   color: #d8f5f8;
   padding: 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   line-height: 1.5;
   white-space: pre;
 }

@@ -2,7 +2,7 @@
 
 import { Check, FileText, ImageDown, LineChart, MoreVertical, RefreshCw, Table2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import { axisTicks, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
 import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
@@ -10,6 +10,7 @@ import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadT
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
 import { chartHeight, chartPadding, chartWidth, metricTitle } from "../../dashboard-models";
+import { useDetailsDismiss } from "../ui/use-details-dismiss";
 import { useMeasuredSize } from "../ui/use-measured-size";
 import type { HoverPoint } from "../../dashboard-types";
 
@@ -190,7 +191,7 @@ function MiniRange({
   xMode: string;
   zoomRange?: ChartZoomRange;
 }) {
-  const [dragAnchor, setDragAnchor] = useState<number | null>(null);
+  const dragAnchorRef = useRef<number | null>(null);
   const [draftRange, setDraftRange] = useState<ChartZoomRange>(null);
   const miniWidth = width;
   const miniHeight = 46;
@@ -222,7 +223,7 @@ function MiniRange({
     if (!onZoomRangeChange) return;
     event.preventDefault();
     const value = valueFromPointer(event);
-    setDragAnchor(value);
+    dragAnchorRef.current = value;
     setDraftRange({ min: value, max: value });
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -232,14 +233,16 @@ function MiniRange({
   }
 
   function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (dragAnchor === null) return;
     setDraftRange({ min: dragAnchor, max: valueFromPointer(event) });
   }
 
   function finishPointerRange(event: ReactPointerEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (!onZoomRangeChange || dragAnchor === null) return;
     const next = sanitizeRange({ min: dragAnchor, max: valueFromPointer(event) }, domain);
-    setDragAnchor(null);
+    dragAnchorRef.current = null;
     setDraftRange(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (!next || (next.max - next.min) < Math.max(Number.EPSILON, (domain.maxX - domain.minX) * 0.03)) {
@@ -253,19 +256,21 @@ function MiniRange({
     if (!onZoomRangeChange) return;
     event.preventDefault();
     const value = valueFromClient(event.currentTarget, event.clientX, event.clientY);
-    setDragAnchor(value);
+    dragAnchorRef.current = value;
     setDraftRange({ min: value, max: value });
   }
 
   function handleMouseMove(event: MouseEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (dragAnchor === null) return;
     setDraftRange({ min: dragAnchor, max: valueFromClient(event.currentTarget, event.clientX, event.clientY) });
   }
 
   function finishMouseRange(event: MouseEvent<SVGSVGElement>) {
+    const dragAnchor = dragAnchorRef.current;
     if (!onZoomRangeChange || dragAnchor === null) return;
     const next = sanitizeRange({ min: dragAnchor, max: valueFromClient(event.currentTarget, event.clientX, event.clientY) }, domain);
-    setDragAnchor(null);
+    dragAnchorRef.current = null;
     setDraftRange(null);
     if (!next || (next.max - next.min) < Math.max(Number.EPSILON, (domain.maxX - domain.minX) * 0.03)) {
       onZoomRangeChange(null);
@@ -331,6 +336,7 @@ export function MetricChart({
   onZoomRangeChange,
   onSmoothingChange,
   padding = chartPadding,
+  panelMenuItems,
   series,
   showExportActions = true,
   showLegend = true,
@@ -355,6 +361,10 @@ export function MetricChart({
   onZoomRangeChange?: (range: ChartZoomRange) => void;
   onSmoothingChange?: (smoothing: number) => void;
   padding?: number;
+  /** Owner-supplied actions pinned to the top of the options (three-dot) menu —
+   *  e.g. a workspace panel folds its edit/duplicate/remove actions in here so
+   *  the chart carries a single menu instead of a separate toolbar. */
+  panelMenuItems?: ReactNode;
   /** Display series — smoothing already applied by the owner. */
   series: any[];
   /** Hide the in-chart actions row when the owner renders its own controls. */
@@ -393,27 +403,7 @@ export function MetricChart({
 
   // The options menu dismisses like every other dropdown in the app:
   // click-away closes it, Escape closes it and returns focus to its trigger.
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      const details = menuDetailsRef.current;
-      if (!details?.open) return;
-      if (event.target instanceof Node && details.contains(event.target)) return;
-      details.open = false;
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      const details = menuDetailsRef.current;
-      if (event.key !== "Escape" || !details?.open) return;
-      details.open = false;
-      const summary = details.querySelector("summary");
-      if (summary instanceof HTMLElement) summary.focus();
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, []);
+  useDetailsDismiss(menuDetailsRef);
 
   const normalizedSeries: any[] = useMemo(
     () => normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, zoomRange, yAxisOptions),
@@ -598,7 +588,10 @@ export function MetricChart({
   const menuHasViewToggle = showViewToggle;
   const menuHasYAxis = showInlineControls && showYAxisControls;
   const menuHasExport = showInlineControls && Boolean(exportFilenameBase);
-  const hasMenu = menuHasViewToggle || menuHasYAxis || showSmoothing || menuHasExport;
+  // Panel actions stay reachable in either view (chart or summary table), so they
+  // keep the menu alive even when the chart-only options below are hidden.
+  const menuHasChartOptions = menuHasViewToggle || menuHasYAxis || showSmoothing || menuHasExport;
+  const hasMenu = menuHasChartOptions || Boolean(panelMenuItems);
   const showActions = showViewToggle || hasMenu;
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -750,6 +743,12 @@ export function MetricChart({
             <MoreVertical size={16} aria-hidden="true" />
           </summary>
           <div className="chart-menu-pop" aria-label={`${metricKey} chart options`}>
+            {panelMenuItems ? (
+              <>
+                {panelMenuItems}
+                {menuHasChartOptions ? <div className="chart-menu-divider" role="separator" /> : null}
+              </>
+            ) : null}
             {menuHasViewToggle ? (
               <>
                 <div className="chart-menu-radiogroup" role="group" aria-label={`${metricKey} view`}>
@@ -845,6 +844,7 @@ export function MetricChart({
                   onChange={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
                   onInput={(event) => onSmoothingChange?.(Number(event.currentTarget.value))}
                   step={10}
+                  style={{ "--range-fill": `${(displaySmoothing / 90) * 100}%` } as CSSProperties}
                   type="range"
                   value={displaySmoothing}
                 />

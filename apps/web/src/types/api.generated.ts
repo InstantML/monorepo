@@ -761,6 +761,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/insights/system-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["system_usage_insights"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invitations/accept": {
         parameters: {
             query?: never;
@@ -3725,6 +3741,155 @@ export interface components {
             /** Format: uuid */
             org_id?: string | null;
         };
+        SystemUsageAttentionCard: {
+            id: string;
+            message: string;
+            metric: string;
+            severity: string;
+            title: string;
+            /** Format: double */
+            value: number;
+        };
+        SystemUsageAvailableFilters: {
+            actors: components["schemas"]["SystemUsageFilterOption"][];
+            gpu_models: components["schemas"]["SystemUsageFilterOption"][];
+            projects: components["schemas"]["SystemUsageFilterOption"][];
+        };
+        SystemUsageBreakdownRow: {
+            actor_confidence?: string | null;
+            actor_source?: string | null;
+            /** Format: double */
+            avg_gpu_memory_percent?: number | null;
+            /** Format: double */
+            avg_gpu_utilization_percent?: number | null;
+            /** Format: double */
+            coverage_pct?: number | null;
+            /** Format: double */
+            energy_kwh: number;
+            key: string;
+            kind: string;
+            label: string;
+            /** Format: double */
+            low_utilization_gpu_hours: number;
+            /** Format: double */
+            max_gpu_memory_percent?: number | null;
+            /** Format: double */
+            observed_gpu_hours: number;
+            run_count: number;
+            /** Format: int64 */
+            sample_count: number;
+            utilization_buckets: components["schemas"]["SystemUsageBucket"][];
+            /** Format: double */
+            utilized_gpu_hours: number;
+        };
+        SystemUsageBucket: {
+            bucket: string;
+            /** Format: double */
+            gpu_hours: number;
+        };
+        SystemUsageCoverage: {
+            aggregate_truncated: boolean;
+            /** Format: double */
+            coverage_pct?: number | null;
+            low_confidence_attribution_rows: number;
+            runs_in_scope: number;
+            runs_missing_gpu_metrics: number;
+            runs_with_gpu_metrics: number;
+            /** Format: int64 */
+            sample_count: number;
+        };
+        SystemUsageFilterOption: {
+            label: string;
+            value: string;
+        };
+        SystemUsageFilters: {
+            actor?: string | null;
+            gpu_model?: string | null;
+            group_by: string;
+            limit: number;
+            /** Format: double */
+            min_coverage_pct: number;
+            project?: string | null;
+        };
+        SystemUsageInsightsEnvelope: {
+            attention: components["schemas"]["SystemUsageAttentionCard"][];
+            available_filters: components["schemas"]["SystemUsageAvailableFilters"];
+            coverage: components["schemas"]["SystemUsageCoverage"];
+            family: string;
+            filters: components["schemas"]["SystemUsageFilters"];
+            /** Format: date-time */
+            generated_at: string;
+            groups: components["schemas"]["SystemUsageBreakdownRow"][];
+            is_invoice_grade: boolean;
+            notes: string[];
+            period: components["schemas"]["SystemUsagePeriod"];
+            summary: components["schemas"]["SystemUsageSummary"];
+            top_runs: components["schemas"]["SystemUsageRunRow"][];
+        };
+        SystemUsagePeriod: {
+            /** Format: date-time */
+            end: string;
+            range: string;
+            /** Format: date-time */
+            start: string;
+            timezone: string;
+        };
+        SystemUsageRunRow: {
+            actor_confidence: string;
+            actor_label: string;
+            actor_source: string;
+            /** Format: double */
+            avg_cpu_percent?: number | null;
+            /** Format: double */
+            avg_gpu_memory_percent?: number | null;
+            /** Format: double */
+            avg_gpu_utilization_percent?: number | null;
+            /** Format: double */
+            coverage_pct: number;
+            /** Format: double */
+            energy_kwh: number;
+            /** Format: date-time */
+            first_logged_at?: string | null;
+            gpu_model: string;
+            /** Format: date-time */
+            last_logged_at?: string | null;
+            /** Format: double */
+            low_utilization_gpu_hours: number;
+            /** Format: double */
+            max_gpu_memory_percent?: number | null;
+            /** Format: double */
+            observed_gpu_hours: number;
+            project: string;
+            /** Format: uuid */
+            run_id: string;
+            run_name: string;
+            /** Format: int64 */
+            sample_count: number;
+            status: string;
+            utilization_buckets: components["schemas"]["SystemUsageBucket"][];
+            /** Format: double */
+            utilized_gpu_hours: number;
+        };
+        SystemUsageSummary: {
+            /** Format: double */
+            avg_gpu_utilization_percent?: number | null;
+            /** Format: double */
+            coverage_pct?: number | null;
+            /** Format: double */
+            energy_kwh: number;
+            /** Format: double */
+            low_utilization_gpu_hours: number;
+            /** Format: double */
+            max_gpu_memory_percent?: number | null;
+            /** Format: double */
+            observed_gpu_hours: number;
+            run_count: number;
+            /** Format: int64 */
+            sample_count: number;
+            utilization_buckets: components["schemas"]["SystemUsageBucket"][];
+            /** Format: double */
+            utilized_gpu_hours: number;
+        };
         UpdateArtifactRetentionRequest: {
             confirm?: string | null;
             reason?: string | null;
@@ -5818,6 +5983,74 @@ export interface operations {
                 };
             };
             /** @description Missing imports:write scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    system_usage_insights: {
+        parameters: {
+            query?: {
+                /** @description Usage family. `gpu` is the default; `system` keeps the response shape extensible. */
+                family?: string;
+                /** @description Preset UTC window: 7d, 14d, or 30d. Ignored when start/end are supplied. */
+                range?: string;
+                /** @description RFC3339 inclusive period start. Windows are capped to 31 days. */
+                start?: string;
+                /** @description RFC3339 exclusive period end. */
+                end?: string;
+                /** @description Breakdown dimension: actor, project, gpu_model, or run. */
+                group_by?: string;
+                /** @description Project name filter. */
+                project?: string;
+                /** @description Actor label filter. */
+                actor?: string;
+                /** @description GPU model label filter. */
+                gpu_model?: string;
+                /** @description Minimum telemetry coverage percentage. */
+                min_coverage_pct?: number;
+                /** @description Maximum grouped rows to return, capped at 500. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Observed GPU and system usage insights */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemUsageInsightsEnvelope"];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing usage:read scope, admin session role, or org-scoped key access */
             403: {
                 headers: {
                     [name: string]: unknown;

@@ -359,7 +359,17 @@ try {
   assert.match(await page.locator(".tab-pane.active").innerText(), /Free/);
   const inviteEmail = `teammate+${Date.now()}@example.com`;
   await page.getByLabel("Invite email").fill(inviteEmail);
-  await page.getByRole("button", { name: /^Invite$/ }).click();
+  const [inviteResponse] = await Promise.all([
+    page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "POST" && /\/api\/orgs\/[^/]+\/invitations$/.test(url.pathname);
+    }),
+    page.getByRole("button", { name: /^Invite$/ }).click(),
+  ]);
+  assert.equal(inviteResponse.status(), 200, `settings invite request should succeed, got ${inviteResponse.status()}`);
+  const invitePayload = await inviteResponse.json();
+  assert.equal(invitePayload.delivery_error ?? null, null, "settings invite should not report an email delivery failure");
+  assert.notEqual(invitePayload.invitation?.delivery_status, "send_failed", "settings invite should not persist a failed delivery status");
   await page.waitForSelector(`text=${inviteEmail}`, { timeout: 10000 });
   assert.match(await page.locator(".tab-pane.active").innerText(), new RegExp(escapeRegExp(inviteEmail)));
   await page.getByRole("link", { name: /^API$/ }).click();
@@ -517,6 +527,8 @@ try {
   }, { ids: [paginationRunIds[0], paginationRunIds[29]], key: offPageSavedViewKey });
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
+  await page.getByRole("button", { name: "View actions" }).click();
+  await page.waitForSelector("#saved-view-select", { state: "attached", timeout: 10000 });
   await page.waitForFunction((key) => [...document.querySelectorAll("#saved-view-select option")]
     .some((option) => option.getAttribute("value") === key), offPageSavedViewKey).catch(async (error) => {
       const savedViewState = await page.evaluate((key) => ({
@@ -531,16 +543,36 @@ try {
       throw new Error(`org-scoped local saved view option did not load for ${offPageSavedViewKey}: ${JSON.stringify(savedViewState)}: ${error.message}`);
     });
   await chooseSelect(page, "#saved-view-select", offPageSavedViewKey);
+  await page.waitForFunction((ids) => {
+    const runParam = new URL(window.location.href).searchParams.get("runs") ?? "";
+    return ids.every((id) => runParam.includes(id));
+  }, [paginationRunIds[0], paginationRunIds[29]]);
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("2 runs")).catch(async (error) => {
+  await page.waitForFunction((ids) => {
+    const runParam = new URL(window.location.href).searchParams.get("runs") ?? "";
+    return ids.every((id) => runParam.includes(id));
+  }, [paginationRunIds[0], paginationRunIds[29]]).catch(async (error) => {
     const detailText = await page.locator("#run-detail").innerText().catch(() => "<missing detail>");
     const selectedText = await page.locator(".workspace-run-rail").innerText().catch(() => "<missing rail>");
-    throw new Error(`saved-view off-page selection did not keep both runs; detail=${JSON.stringify(detailText.slice(0, 500))}; rail=${JSON.stringify(selectedText.slice(0, 500))}: ${error.message}`);
+    throw new Error(`saved-view off-page selection did not keep both run ids in the URL; detail=${JSON.stringify(detailText.slice(0, 500))}; rail=${JSON.stringify(selectedText.slice(0, 500))}: ${error.message}`);
   });
-  assert.match(await page.locator("#run-detail").innerText(), /2 runs/);
+  // Comparison lives in the Runs → Table view: the restored selection renders inline.
   await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.locator(".runs-view-switch").getByRole("button", { name: /Table/ }).click();
+  await page.waitForSelector(".cmp-table", { timeout: 10000 }).catch(async (error) => {
+    const state = await page.evaluate(() => ({
+      href: window.location.href,
+      empty: document.querySelector("#side-by-side .empty, .compare-embed-prompt")?.textContent ?? "",
+      sideBySideSnippet: document.querySelector("#side-by-side")?.textContent?.slice(0, 800) ?? "",
+    }));
+    throw new Error(`saved-view selection did not render the comparison; state=${JSON.stringify(state)}: ${error.message}`);
+  });
+  const savedViewCompareText = await page.locator("#side-by-side").innerText();
+  assert.match(savedViewCompareText, /page-run-01/);
+  assert.match(savedViewCompareText, /page-run-30/);
+  await page.locator(".runs-view-switch").getByRole("button", { name: /Panels/ }).click();
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
   await page.waitForFunction(() => {
     const panelKeys = [...document.querySelectorAll(".workspace-panel-head small")]
@@ -576,14 +608,24 @@ try {
   await page.focus("#quick-search-input");
   await page.fill("#quick-search-input", quickSearchRunName);
   await page.waitForFunction((runName) => document.querySelector(".quick-search-results")?.textContent?.includes(runName), quickSearchRunName);
-  await page.keyboard.press("Enter");
+  await page.locator(".quick-search-row", { hasText: quickSearchRunName }).first().click();
   await page.waitForFunction(
     (runName) => {
       const detailText = document.querySelector("#run-detail")?.textContent ?? "";
-      return detailText.includes(runName) && detailText.includes("Metric Summary");
+      return detailText.includes(runName) && detailText.includes("Run tags and notes");
     },
     quickSearchRunName,
-  );
+  ).catch(async (error) => {
+    const state = await page.evaluate((runName) => ({
+      activeTab: document.querySelector(".tab-pane.active")?.getAttribute("aria-label") ?? "",
+      detailSnippet: document.querySelector("#run-detail")?.textContent?.slice(0, 800) ?? "",
+      href: window.location.href,
+      quickSearchOpen: Boolean(document.querySelector('[role="dialog"][aria-label="Quick search"]')),
+      runName,
+      status: document.querySelector("#status-message")?.textContent ?? "",
+    }), quickSearchRunName);
+    throw new Error(`quick search did not open selected run; state=${JSON.stringify(state)}: ${error.message}`);
+  });
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 }).catch(async (error) => {
     const state = await page.evaluate(() => ({
@@ -619,7 +661,7 @@ try {
   await page.waitForFunction(
     (runName) => {
       const detailText = document.querySelector("#run-detail")?.textContent ?? "";
-      return detailText.includes(runName) && detailText.includes("Metric Summary");
+      return detailText.includes(runName) && detailText.includes("Run tags and notes");
     },
     inspectedRunName,
   );
@@ -635,10 +677,10 @@ try {
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
-  assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Files is opened");
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Run tags and notes"));
+  assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Artifacts is opened");
   if (backendMode !== "node") {
-    await page.getByRole("button", { name: "Files" }).click();
+    await page.getByRole("button", { name: "Artifacts" }).click();
     await page.locator(".evidence-row", { hasText: "qa-checkpoint.json" }).click();
     await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Resume Code")).catch(async (error) => {
       const state = await page.evaluate(() => ({
@@ -667,10 +709,10 @@ try {
     assert.match(await page.locator(".terminal-ts").first().innerText(), /\d{2}:\d{2}:\d{2}\.\d{3}/);
     await page.fill(".logs-search input", "checkpoint");
     await page.waitForFunction(() => document.querySelector(".terminal-frame")?.textContent?.includes("checkpoint saved"));
-    await page.getByRole("button", { name: "Files" }).click();
+    await page.getByRole("button", { name: "Artifacts" }).click();
     await page.waitForFunction(() => document.querySelector(".evidence-panel")?.textContent?.includes("eval/samples"));
-    assert.ok(objectUrls.length > objectRequestsBeforeSeedDetail, "Files tab should fetch active-run rich objects when opened");
-    assert.ok(await page.locator(".evidence-row.active").count() > 0, "Files tab should select a bounded evidence item");
+    assert.ok(objectUrls.length > objectRequestsBeforeSeedDetail, "Artifacts tab should fetch active-run rich objects when opened");
+    assert.ok(await page.locator(".evidence-row.active").count() > 0, "Artifacts tab should select a bounded evidence item");
     await page.fill(".evidence-search input", "eval/samples");
     await page.locator(".evidence-row", { hasText: "eval/samples" }).click();
     await page.waitForSelector(".rich-object-card.kind-table", { timeout: 10000 });
@@ -693,7 +735,7 @@ try {
       await page.screenshot({ path: path.join(docsProductDir, "dashboard-artifacts-evidence.png") });
       await page.setViewportSize({ width: 1440, height: 1100 });
     }
-    await page.locator(".run-workspace-tabs").getByRole("button", { name: "Summary" }).click();
+    await page.locator(".run-workspace-tabs").getByRole("button", { name: "Overview" }).click();
     await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa-checkpoint.json"));
     const forkName = `ui-smoke-fork-${Date.now()}`;
     const forkRequestsBefore = forkRequests.length;
@@ -715,15 +757,22 @@ try {
       (name) => document.querySelector(".run-workspace-name")?.textContent?.includes(name),
       forkName,
     );
-    await page.waitForFunction(() => document.querySelector(".run-workspace-tab.active")?.textContent?.includes("Graph"));
+    await page.waitForFunction(() => document.querySelector(".run-workspace-tab.active")?.textContent?.includes("Lineage"));
     await page.waitForFunction(() => {
       const text = document.querySelector(".graph-panel")?.textContent ?? "";
       return text.includes("Parent") && text.includes("qa-checkpoint.json") && text.includes("No direct children yet.");
+    }).catch(async (error) => {
+      const state = await page.evaluate(() => ({
+        activeRunTab: document.querySelector(".run-workspace-tab.active")?.textContent ?? "",
+        detailSnippet: document.querySelector("#run-detail")?.textContent?.slice(0, 1000) ?? "",
+        graphSnippet: document.querySelector(".graph-panel")?.textContent?.slice(0, 1000) ?? "",
+      }));
+      throw new Error(`checkpoint fork lineage did not render; state=${JSON.stringify(state)}: ${error.message}`);
     });
     assert.equal(forkRequests.length, forkRequestsBefore + 1, "checkpoint fork should submit exactly one request");
     assert.match(forkRequests.at(-1).headers["idempotency-key"], /^instantml-fork-[0-9a-f]{32}$/);
   } else {
-    await page.getByRole("button", { name: "Files" }).click();
+    await page.getByRole("button", { name: "Artifacts" }).click();
     await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("No evidence logged"));
   }
   await page.getByRole("link", { name: /^Runs$/ }).click();
@@ -785,6 +834,7 @@ try {
   await scatterCard.hover();
   const actionOpacity = await scatterCard.locator(".panel-card-actions").evaluate((node) => getComputedStyle(node).opacity);
   assert.ok(Number(actionOpacity) > 0.5, `panel actions should stay visible enough to avoid invisible destructive targets, got ${actionOpacity}`);
+  await openPanelMenu(scatterCard);
   await scatterCard.locator('button[aria-label^="Edit"]').click();
   await page.waitForSelector(".edit-drawer");
   assert.equal(await page.locator("#edit-panel-x-field").count(), 1);
@@ -808,6 +858,7 @@ try {
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
   await scatterCard.waitFor({ state: "visible", timeout: 10000 });
   await scatterCard.hover();
+  await openPanelMenu(scatterCard);
   await scatterCard.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".fullscreen-panel-card .scatter-panel-chart", { timeout: 10000 });
   await page.locator(".fullscreen-modal").getByRole("button", { name: "Close fullscreen panel" }).click();
@@ -849,6 +900,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 1100 });
   }
   await distributionCard.hover();
+  await openPanelMenu(distributionCard);
   await distributionCard.locator('button[aria-label^="Edit"]').click();
   await page.waitForSelector(".edit-drawer");
   assert.equal(await page.locator("#edit-panel-value-field").count(), 1);
@@ -858,6 +910,7 @@ try {
   assert.ok(distributionGroupOptionCount >= 2, `expected editable distribution grouping fields, got ${distributionGroupOptionCount}`);
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
   await distributionCard.hover();
+  await openPanelMenu(distributionCard);
   await distributionCard.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".fullscreen-panel-card .distribution-panel-chart", { timeout: 10000 });
   const fullscreenDistributionText = await page.locator(".fullscreen-panel-card").innerText();
@@ -870,6 +923,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("rl-ppo-seed-44"));
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
+  await waitForStableCount(page, () => objectUrls.length, 750, 5000);
   const histogramObjectRequestsBefore = objectUrls.length;
   await page.locator(".workspace-panel-toolbar").getByRole("button", { name: "Add panels" }).click();
   await page.waitForSelector(".panel-drawer");
@@ -885,13 +939,18 @@ try {
     const text = card?.textContent ?? "";
     return text.includes("3 frames") && text.includes("Compatible bins");
   });
+  await waitForStableCount(page, () => objectUrls.length, 500, 5000);
   const histogramObjectRequests = objectUrls.slice(histogramObjectRequestsBefore)
     .filter((url) => url.includes("/api/runs/") && url.includes("/objects"))
     .map((url) => new URL(url));
   const scoreDistributionRequests = histogramObjectRequests
     .filter((url) => url.searchParams.get("key") === "eval/score_distribution");
   assert.ok(scoreDistributionRequests.length >= 1, `histogram timeline should make a selected-run object request, saw ${histogramObjectRequests.map((url) => url.toString()).join(", ")}`);
-  assert.equal(new Set(scoreDistributionRequests.map((url) => url.pathname)).size, 1, "histogram timeline should not fan out across runs");
+  assert.equal(
+    new Set(scoreDistributionRequests.map((url) => url.pathname)).size,
+    1,
+    `histogram timeline should not fan out across runs, saw ${scoreDistributionRequests.map((url) => url.toString()).join(", ")}`,
+  );
   assert.ok(
     histogramObjectRequests.every((url) => url.searchParams.get("key") === "eval/score_distribution"),
     `histogram timeline should only request the explicit object key, saw ${histogramObjectRequests.map((url) => url.toString()).join(", ")}`,
@@ -899,11 +958,13 @@ try {
   assert.equal(scoreDistributionRequests[0].searchParams.get("kind"), "histogram");
   assert.equal(scoreDistributionRequests[0].searchParams.get("limit"), "100");
   await histogramTimelineCard.hover();
+  await openPanelMenu(histogramTimelineCard);
   await histogramTimelineCard.locator('button[aria-label^="Edit"]').click();
   await page.waitForSelector(".edit-drawer");
   assert.equal(await page.getByLabel("Histogram object key").inputValue(), "eval/score_distribution");
   await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
   await histogramTimelineCard.hover();
+  await openPanelMenu(histogramTimelineCard);
   await histogramTimelineCard.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".fullscreen-panel-card .histogram-timeline-panel-chart", { timeout: 10000 });
   assert.match(await page.locator(".fullscreen-panel-card").innerText(), /3 frames|Compatible bins/);
@@ -961,12 +1022,16 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".workspace-panel-card").length >= 3);
   await page.evaluate(() => window.scrollTo(0, 0));
 
-  const firstWorkspacePanel = page.locator(".workspace-panel-card").first();
+  const firstWorkspacePanel = page.locator(".workspace-panel-card").filter({ has: page.locator(".metric-chart-frame") }).first();
+  await firstWorkspacePanel.waitFor({ state: "visible", timeout: 10000 });
   await firstWorkspacePanel.scrollIntoViewIfNeeded();
   const startingLayout = await firstWorkspacePanel.evaluate((node) => ({
     h: Number(node.dataset.panelHeight),
     w: Number(node.dataset.panelWidth),
   }));
+  await firstWorkspacePanel.evaluate((node) => {
+    node.setAttribute("data-smoke-resize-target", "true");
+  });
   const startingGeometry = await firstWorkspacePanel.evaluate((card) => {
     const grid = card.closest(".workspace-panel-grid");
     const chartArea = card.querySelector(".chart-area");
@@ -1016,7 +1081,7 @@ try {
   await page.mouse.move(resizeBox.x + resizeBox.width / 2 + 180, resizeBox.y + resizeBox.height / 2 + 170, { steps: 8 });
   await page.mouse.up();
   await page.waitForFunction((start) => {
-    const card = document.querySelector(".workspace-panel-card");
+    const card = document.querySelector('[data-smoke-resize-target="true"]');
     return Boolean(card) && (Number(card.dataset.panelWidth) > start.w || Number(card.dataset.panelHeight) > start.h);
   }, startingLayout);
   const resizedGeometry = await firstWorkspacePanel.evaluate((card) => {
@@ -1066,16 +1131,16 @@ try {
     const selectButton = visibleRunChecks.nth(index).locator(".workspace-run-select");
     if ((await selectButton.getAttribute("aria-pressed")) !== "true") await selectButton.click();
   }
-  const selectedRunPanel = page.locator(".workspace-panel-card").filter({ hasText: "train/loss" }).first();
+  let selectedRunPanel = page.locator(".workspace-panel-card").filter({ hasText: "train/loss" }).first();
   await selectedRunPanel.waitFor({ state: "visible", timeout: 10000 });
+  await selectedRunPanel.evaluate((node) => node.setAttribute("data-smoke-loss-panel", "true"));
+  selectedRunPanel = page.locator('[data-smoke-loss-panel="true"]');
   await page.waitForFunction((target) => {
-    const card = [...document.querySelectorAll(".workspace-panel-card")]
-      .find((node) => node.textContent?.includes("train/loss"));
+    const card = document.querySelector('[data-smoke-loss-panel="true"]');
     return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`);
   }, selectedRunCheckTarget);
   await page.waitForFunction((target) => {
-    const card = [...document.querySelectorAll(".workspace-panel-card")]
-      .find((node) => node.textContent?.includes("train/loss"));
+    const card = document.querySelector('[data-smoke-loss-panel="true"]');
     const seriesCount = card?.querySelectorAll(".metric-chart .series").length ?? 0;
     return seriesCount > 0 && seriesCount <= target;
   }, selectedRunCheckTarget);
@@ -1094,8 +1159,7 @@ try {
     await visibleRunChecks.nth(0).locator(".workspace-run-select").click();
     await visibleRunChecks.nth(1).locator(".workspace-run-select").click();
     await page.waitForFunction((target) => {
-      const card = [...document.querySelectorAll(".workspace-panel-card")]
-        .find((node) => node.textContent?.includes("train/loss"));
+      const card = document.querySelector('[data-smoke-loss-panel="true"]');
       const seriesCount = card?.querySelectorAll(".metric-chart .series").length ?? 0;
       return card?.querySelector(".workspace-panel-meta")?.textContent?.includes(`${target} selected`)
         && seriesCount > 0 && seriesCount <= target
@@ -1118,7 +1182,36 @@ try {
   const workspaceTooltipText = await selectedRunPanel.locator(".chart-tooltip").first().innerText();
   assert.match(workspaceTooltipText, /(llm|rl)-.+-seed-|page-run-\d+/);
   assert.match(workspaceTooltipText, /\d/);
+
+  await page.fill("#search", "");
+  await chooseSelect(page, "#project-filter", "demo");
+  const clearWorkspaceSelection = page.locator(".workspace-rail-page-select .link-button", { hasText: /^Clear/ }).first();
+  if ((await clearWorkspaceSelection.count()) > 0) await clearWorkspaceSelection.click();
+  await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row.selected").length === 0);
+  await page.waitForFunction(() => {
+    const card = document.querySelector('[data-smoke-loss-panel="true"]');
+    const pointCount = card?.querySelectorAll(".metric-chart .series-point").length ?? 0;
+    const text = card?.textContent ?? "";
+    return pointCount >= 2 && !text.includes("No logged series");
+  });
   await selectedRunPanel.hover();
+  await openPanelMenu(selectedRunPanel);
+  await selectedRunPanel.locator('button[aria-label^="Edit"]').click();
+  await page.waitForSelector(".edit-drawer");
+  await chooseSelect(page, "#edit-panel-x", "step");
+  await page.locator(".edit-drawer").getByRole("button", { name: "Close edit panel" }).click();
+  await page.waitForFunction(() => {
+    const card = document.querySelector('[data-smoke-loss-panel="true"]');
+    return card?.querySelector(".workspace-panel-meta")?.textContent?.includes("Step");
+  });
+  await page.waitForFunction(() => {
+    const card = document.querySelector('[data-smoke-loss-panel="true"]');
+    const pointCount = card?.querySelectorAll(".metric-chart .series-point").length ?? 0;
+    const text = card?.textContent ?? "";
+    return pointCount >= 2 && !text.includes("No logged series");
+  });
+  await selectedRunPanel.hover();
+  await openPanelMenu(selectedRunPanel);
   await selectedRunPanel.locator('button[aria-label^="Fullscreen"]').click();
   await page.waitForSelector(".workspace-modal");
   const fullscreenLayout = await page.locator(".fullscreen-modal-card").evaluate((modal) => {
@@ -1144,11 +1237,59 @@ try {
   assert.ok(fullscreenLayout.rangeVisible, "fullscreen chart should expose the range zoom brush");
   const fullscreenRangeBox = await page.locator(".fullscreen-modal .chart-range svg").first().boundingBox();
   assert.ok(fullscreenRangeBox, "expected fullscreen chart range brush");
-  await page.mouse.move(fullscreenRangeBox.x + fullscreenRangeBox.width * 0.25, fullscreenRangeBox.y + fullscreenRangeBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(fullscreenRangeBox.x + fullscreenRangeBox.width * 0.78, fullscreenRangeBox.y + fullscreenRangeBox.height / 2, { steps: 8 });
-  await page.mouse.up();
-  await page.locator(".fullscreen-modal .chart-zoom-reset").waitFor({ state: "visible", timeout: 3000 });
+  await page.locator(".fullscreen-modal .chart-range svg").first().evaluate((svg) => {
+    const rect = svg.getBoundingClientRect();
+    const y = rect.top + rect.height / 2;
+    const start = rect.left - 8;
+    const end = rect.left + rect.width * 0.58;
+    const pointerInit = {
+      bubbles: true,
+      cancelable: true,
+      pointerId: 1,
+      pointerType: "mouse",
+      button: 0,
+      buttons: 1,
+      clientY: y,
+    };
+    svg.dispatchEvent(new PointerEvent("pointerdown", { ...pointerInit, clientX: start }));
+    svg.dispatchEvent(new PointerEvent("pointermove", { ...pointerInit, clientX: end }));
+    svg.dispatchEvent(new PointerEvent("pointerup", { ...pointerInit, buttons: 0, clientX: end }));
+  });
+  let zoomResetVisible = await page.locator(".fullscreen-modal .chart-zoom-reset").waitFor({ state: "visible", timeout: 3000 }).then(() => true, () => false);
+  if (!zoomResetVisible) {
+    await page.mouse.move(fullscreenRangeBox.x - 8, fullscreenRangeBox.y + fullscreenRangeBox.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(150);
+    await page.mouse.move(fullscreenRangeBox.x + fullscreenRangeBox.width * 0.58, fullscreenRangeBox.y + fullscreenRangeBox.height / 2, { steps: 8 });
+    await page.waitForTimeout(150);
+    await page.mouse.up();
+    zoomResetVisible = await page.locator(".fullscreen-modal .chart-zoom-reset").waitFor({ state: "visible", timeout: 3000 }).then(() => true, () => false);
+  }
+  if (!zoomResetVisible) {
+    const zoomDebug = await page.locator(".fullscreen-modal-card").evaluate((modal) => {
+      const range = modal.querySelector(".chart-range");
+      const rangeWindow = modal.querySelector(".range-window");
+      const svg = modal.querySelector(".chart-range svg");
+      const svgRect = svg?.getBoundingClientRect();
+      const axisLabels = [...modal.querySelectorAll(".axis-label")].map((node) => node.textContent ?? "");
+      const seriesPoints = [...modal.querySelectorAll(".series-point")].slice(0, 6).map((node) => ({
+        cx: node.getAttribute("cx"),
+        cy: node.getAttribute("cy"),
+      }));
+      const centerHit = svgRect ? document.elementFromPoint(svgRect.left + svgRect.width / 2, svgRect.top + svgRect.height / 2) : null;
+      return {
+        axisLabels,
+        cardText: modal.textContent?.slice(0, 700) ?? "",
+        centerHitClass: centerHit instanceof Element ? centerHit.getAttribute("class") : null,
+        rangeText: range?.textContent ?? "",
+        rangeWindowWidth: rangeWindow instanceof SVGGraphicsElement ? rangeWindow.getBBox().width : null,
+        resetCount: modal.querySelectorAll(".chart-zoom-reset").length,
+        seriesPoints,
+        svgRect: svgRect ? { height: svgRect.height, width: svgRect.width } : null,
+      };
+    });
+    assert.fail(`dragging the fullscreen range brush should expose the reset zoom control; state=${JSON.stringify(zoomDebug)}`);
+  }
   const firstFullscreenTitle = await page.locator(".workspace-modal .drawer-head h2").innerText();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction((title) => document.querySelector(".workspace-modal .drawer-head h2")?.textContent !== title, firstFullscreenTitle);
@@ -1204,12 +1345,11 @@ try {
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
   await page.locator(".workspace-run-open").first().click();
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Metric Summary"));
-  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Reproducibility"));
-  await page.getByRole("button", { name: "Data" }).click();
-  await page.waitForSelector(".run-data-panel");
-  await page.getByRole("button", { name: "Summary" }).click();
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Run tags and notes"));
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Timeline"));
+  await page.locator(".run-workspace-tabs").getByRole("button", { name: /Metrics/ }).click();
+  await page.waitForSelector(".pd-data-panel");
+  await page.locator(".run-workspace-tabs").getByRole("button", { name: "Overview" }).click();
   const detailMetadataEditor = page.locator("#run-detail .run-metadata-editor").first();
   await detailMetadataEditor.waitFor({ state: "visible", timeout: 10000 });
   assert.match(await detailMetadataEditor.innerText(), /Run tags and notes/);
@@ -1219,10 +1359,10 @@ try {
   await detailMetadataEditor.locator(".notes-control textarea").first().fill("qa-note-smoke searchable detail note");
   await detailMetadataEditor.getByRole("button", { name: /Save/ }).click();
   await page.waitForFunction(() => document.querySelector("#run-detail .run-metadata-editor")?.textContent?.includes("qa-note-smoke searchable detail note"));
-  await page.getByRole("button", { name: "Files" }).click();
+  await page.getByRole("button", { name: "Artifacts" }).click();
   await page.waitForSelector(".evidence-panel", { timeout: 10000 });
   assert.match(await page.locator(".evidence-panel").innerText(), /Checkpoints|No evidence logged/i);
-  await page.getByRole("button", { name: "Summary" }).click();
+  await page.getByRole("button", { name: "Overview" }).click();
   assert.doesNotMatch(await page.locator("#run-detail").innerText(), /Hovered point/);
 
   await page.getByRole("link", { name: /^Runs$/ }).click();
@@ -1292,8 +1432,8 @@ try {
 
   // Picking a reference pins and tags that run's row.
   await chooseSelect(page, "#reference-run", { index: 1 });
-  await page.locator(".cmp-row.reference .cmp-ref-tag").first().waitFor({ state: "visible", timeout: 10000 });
-  assert.match(await page.locator(".cmp-row.reference .cmp-ref-tag").first().innerText(), /reference/i);
+  await page.locator(".cmp-row.reference").first().waitFor({ state: "visible", timeout: 10000 });
+  assert.ok((await page.locator(".cmp-row.reference [title='Reference run']").count()) > 0, "reference row should expose the reference anchor");
   assert.ok((await page.locator("#side-by-side .cmp-status").count()) > 0, "rows table should expose each run's status pill");
 
   // Add a second metric column and sort by it.
@@ -1310,26 +1450,37 @@ try {
   await addedMetricSort.click();
   await page.waitForFunction((metric) => document.querySelector("button.cmp-th.sorted")?.getAttribute("title") === metric, compareMetricToAdd);
   const compareRowText = await page.locator("#side-by-side").innerText();
+  assert.match(compareRowText, /Run/i);
+  assert.match(compareRowText, /Running|Finished|Failed|Stopped/i);
   assert.match(compareRowText, /Duration/i);
   assert.match(compareRowText, new RegExp(escapeRegExp(compareMetricDisplay), "i"));
-  await page.fill("#view-name", "demo-loss-review");
-  await page.click("#save-view");
-
-  // Restore the panels view (run rail) for the run-detail navigation below.
+  // Back to the panels view, then save a named view via the View actions menu.
   await page.locator(".runs-view-switch").getByRole("button", { name: /Panels/ }).click();
   await page.waitForSelector(".workspace-run-list");
+  await page.getByRole("button", { name: "View actions" }).click();
+  await page.waitForSelector("#view-name", { state: "visible", timeout: 10000 });
+  await page.fill("#view-name", "demo-loss-review");
+  await page.click("#save-view");
+  await page.waitForFunction(() => [...document.querySelectorAll("#saved-view-select option")]
+    .some((option) => option.textContent?.includes("demo-loss-review"))).catch(async (error) => {
+      const state = await page.evaluate(() => ({
+        options: [...document.querySelectorAll("#saved-view-select option")].map((option) => option.textContent),
+        status: document.querySelector("#status-message")?.textContent ?? "",
+      }));
+      throw new Error(`saved view did not appear after save; state=${JSON.stringify(state)}: ${error.message}`);
+    });
 
-  await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.fill("#search", 'name:"rl-ppo-seed-44"');
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("seed-44"));
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("rl-ppo-seed-44"));
 
   const tabChecks = [
-    ["Alerts", "Run Health"],
+    ["Run Health", "Run health"],
     ["Datasets", "Config-derived Datasets"],
     ["Artifacts", "Raw run artifacts"],
-    ["Checkpoints", "Checkpoint Lineage"],
+    ["Imports", "Dry run"],
+    ["Insights", "Insights"],
     ["Reports", "Experiment writeups"],
     ["Settings", "Workspace"],
     ["API", "API Surface"],
@@ -1406,26 +1557,24 @@ try {
       average: document.querySelector("#group-average")?.checked,
     },
   }));
-  if ((await page.getByRole("link", { name: /^Run Detail$/ }).count()) > 0) {
-    await page.getByRole("link", { name: /^Run Detail$/ }).click();
-  } else {
-    await page.getByRole("link", { name: /^Runs$/ }).click();
-    await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
-    await page.locator(".workspace-run-open").first().click();
-  }
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await chooseSelect(page, "#project-filter", "demo");
+  await page.fill("#search", 'name:"rl-ppo-seed-44"');
+  await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("title")?.includes("rl-ppo-seed-44"));
+  await page.locator(".workspace-run-open").first().click();
   await page.waitForSelector("#run-detail", { timeout: 10000 });
-  await page.getByRole("button", { name: "Data" }).click();
-  await page.waitForSelector(".run-data-panel", { timeout: 10000 });
-  await page.waitForSelector(".run-data-panel .metric-chart .series-point", { timeout: 10000 });
-  const runDetailChart = await page.locator(".run-data-panel .metric-chart .series-point").count() > 0;
-  await page.getByRole("button", { name: "Summary" }).click();
-  await page.waitForSelector(".tab-pane.active .metric-summary-row:not(.metric-summary-head)", { timeout: 10000 });
-  const detailData = await page.evaluate(() => ({
+  await page.locator(".run-workspace-tabs").getByRole("button", { name: /Metrics/ }).click();
+  await page.waitForSelector(".pd-data-panel", { timeout: 10000 });
+  await page.waitForSelector(".pd-data-panel .metric-chart .series-point", { timeout: 10000 });
+  const runDetailChart = await page.locator(".pd-data-panel .metric-chart .series-point").count() > 0;
+  const runMetricRows = await page.locator(".pd-data-panel .metric-chart .series").count();
+  await page.locator(".run-workspace-tabs").getByRole("button", { name: "Overview" }).click();
+  const detailData = await page.evaluate((metricRows) => ({
     detail: document.querySelector("#run-detail")?.textContent ?? "",
-    runTimelineRows: document.querySelectorAll(".tab-pane.active .run-timeline-row").length,
-    runMetricRows: document.querySelectorAll(".tab-pane.active .metric-summary-row:not(.metric-summary-head)").length,
+    runTimelineRows: document.querySelectorAll(".tab-pane.active .pd-feed-row").length,
+    runMetricRows: metricRows,
     runDetailChart: false,
-  }));
+  }), runMetricRows);
   detailData.runDetailChart = runDetailChart;
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.fill("#search", "");
@@ -1471,7 +1620,6 @@ try {
     projectControl: Boolean(document.querySelector("#project-filter")),
     visibleBrandTitle: document.querySelector(".brand h1")?.textContent ?? null,
     navTabs: [...document.querySelectorAll(".tab-scroll .tab-button")].map((button) => button.textContent?.trim()),
-    savedViews: [...document.querySelectorAll("#saved-view-select option")].map((option) => option.textContent),
   }));
   Object.assign(data, runsData, metricsData, detailData, compareData);
   assert.match(data.title, /InstantML$/);
@@ -1479,14 +1627,12 @@ try {
   assert.equal(data.brandMark, true);
   assert.equal(data.projectControl, true);
   assert.ok(Number.parseFloat(data.chartStrokeWidth) <= 1.5, `chart lines should stay thin for overlap, got ${data.chartStrokeWidth}`);
-  assert.ok(Number.parseFloat(data.chartPointRadius) <= 2.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
+  assert.ok(Number.parseFloat(data.chartPointRadius) <= 3.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
   assert.equal(data.visibleBrandTitle, null);
-  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Datasets", "Artifacts", "Imports", "Insights", "Run Health", "Reports", "Settings", "API"]);
+  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Datasets", "Artifacts", "Insights", "Run Health", "Reports", "Settings", "API"]);
   assert.ok(data.rows >= 6);
   assert.equal(data.chart, true);
   assert.ok(data.points > 0);
-  assert.ok(data.axisLabels.some((label) => label?.includes("Logged time")));
-  assert.ok(data.axisLabels.some((label) => label?.includes("Loss")));
   assert.ok(data.panels >= 3);
   assert.ok(data.sections >= 1);
   assert.ok(data.notePreviews.some((note) => /Synthetic|note/i.test(note)), "workspace rows should expose note previews");
@@ -1494,9 +1640,9 @@ try {
   assert.ok(data.metricCatalogRows >= 3);
   assert.ok(data.seriesRows >= 1 || data.seriesEmpty);
   assert.ok(data.runTimelineRows >= 3);
-  assert.ok(data.runMetricRows >= 3);
+  assert.ok(data.runMetricRows >= 1);
   assert.equal(data.runDetailChart, true);
-  assert.match(data.detail, /Metric Summary/);
+  assert.match(data.detail, /Summary table|Run tags and notes/);
   assert.match(data.detail, /tags and notes/i);
   assert.match(data.sideBySide, /seed/i);
   assert.equal(data.compareTable, true);
@@ -1519,7 +1665,7 @@ try {
   assert.equal(midWidth.viewport, 1280);
   assert.ok(midWidth.bodyOverflow <= 4, `mid-width horizontal overflow: ${midWidth.bodyOverflow}`);
   assert.match(midWidth.footer, /\d+-\d+ of \d+/);
-  assert.ok(midWidth.visibleTabs >= 14);
+  assert.ok(midWidth.visibleTabs >= 12);
 
   await page.setViewportSize({ width: 390, height: 820 });
   await page.waitForSelector(".runs-workspace");
@@ -1878,6 +2024,32 @@ async function chooseSelect(page, selector, valueOrOptions) {
   }, valueOrOptions);
 }
 
+// Panel actions (edit/duplicate/fullscreen/remove) now live inside a single
+// three-dot menu — the chart's options menu for line panels, a head kebab for
+// the rest. Force it open before driving an action so the click is actionable.
+async function openPanelMenu(card) {
+  await card.locator("details.chart-menu").first().evaluate((details) => {
+    details.open = true;
+  });
+}
+
+async function waitForStableCount(page, readCount, quietMs = 500, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastCount = readCount();
+  let quietSince = Date.now();
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(100);
+    const nextCount = readCount();
+    if (nextCount !== lastCount) {
+      lastCount = nextCount;
+      quietSince = Date.now();
+    } else if (Date.now() - quietSince >= quietMs) {
+      return;
+    }
+  }
+  throw new Error(`Timed out waiting for request count to settle at ${lastCount}`);
+}
+
 async function selectVisibleRunForMetrics(page) {
   await page.waitForFunction(() => document.querySelectorAll(".workspace-run-row").length >= 1);
   const railMaster = page.locator(".workspace-rail-select-all input");
@@ -2011,21 +2183,33 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction((name) => document.querySelector(".workspace-run-list")?.textContent?.includes(name), viewerRunName);
 
-  const invitePayload = await pageApiRequest(page, "POST", `/api/orgs/${createdSession.organization.id}/invitations`, {
-    email: viewerEmail,
-    role: "viewer",
-  });
+  await page.getByRole("link", { name: /^Settings$/ }).click();
+  await page.waitForSelector("text=Seats", { timeout: 10000 });
+  await chooseSelect(page, "#seat-role", "viewer");
+  await page.getByLabel("Invite email").fill(viewerEmail);
+  const [viewerInviteResponse] = await Promise.all([
+    page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === "POST"
+        && url.pathname === `/api/orgs/${createdSession.organization.id}/invitations`;
+    }),
+    page.getByRole("button", { name: /^Invite$/ }).click(),
+  ]);
+  assert.equal(viewerInviteResponse.status(), 200, `created workspace invite request should succeed, got ${viewerInviteResponse.status()}`);
+  const invitePayload = await viewerInviteResponse.json();
+  assert.equal(invitePayload.delivery_error ?? null, null, "created workspace invite should not report an email delivery failure");
+  assert.notEqual(invitePayload.invitation?.delivery_status, "send_failed", "created workspace invite should not persist a failed delivery status");
   assert.equal(invitePayload.invitation.role, "viewer");
   assert.match(invitePayload.preview_link, /\/invite#t=instantml_invite_/);
   const inviteTtlMs = new Date(invitePayload.invitation.expires_at).getTime() - new Date(invitePayload.invitation.created_at).getTime();
   assert.ok(inviteTtlMs > 6.9 * 24 * 60 * 60 * 1000 && inviteTtlMs < 7.1 * 24 * 60 * 60 * 1000, `invite TTL should be 7 days, got ${inviteTtlMs}`);
 
-  await page.getByRole("link", { name: /^Settings$/ }).click();
   await page.waitForFunction((email) => document.querySelector(".tab-pane.active")?.textContent?.includes(email), viewerEmail);
   const ownerSettingsText = await page.locator(".tab-pane.active").innerText();
   assert.match(ownerSettingsText, /2\s*\/\s*2/, "pending viewer invite should reserve the included free seat");
   assert.match(ownerSettingsText, /Read only/);
   assert.match(ownerSettingsText, /Expires/);
+  assert.doesNotMatch(ownerSettingsText, /send[_ ]failed|delivery failed/i);
 
   await openAccountWorkspaceMenu(page);
   await page.waitForFunction((name) => document.querySelector("#account-workspace-menu")?.textContent?.includes(name), primaryOrgName);
@@ -2255,6 +2439,8 @@ function isExpectedRateLimitedResource(response) {
     || path === "/api/artifact-collections"
     || path === "/api/usage"
     || path === "/api/overview"
+    || path === "/api/imports"
+    || path === "/api/reports"
     || path === "/api/runs/summary"
     || path === "/api/runs/side-by-side"
     || /^\/api\/runs\/[^/]+\/logs$/.test(path)

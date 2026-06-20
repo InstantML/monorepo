@@ -140,19 +140,24 @@ today (`gcloud secrets list`):
 - `instantml-cloudflare-r2-access-key-id`
 - `instantml-cloudflare-r2-secret-access-key`
 - `instantml-stripe-webhook-secret`
-- `instantml-resend-api-key`
 - `instantml-clerk-publishable-key` (from `nonSecretValidationEnvSpecs()`)
 
 These are all flagged `required: false` in the spec, so the deploy succeeds
 without them. Several should be created and populated before the next deploy
 to keep the GH-Actions deploy in PR #80 from silently degrading features
-(transactional email, signed webhooks, R2 S3 creds). Tracked in the PR
-description that introduced this doc, not fixed here.
+(signed webhooks, R2 S3 creds, and optional publishable-key validation).
+Tracked in the PR description that introduced this doc, not fixed here.
 
-**Staging mirror coverage:** staging has all eight prod-aligned secrets plus
+Production invite email is no longer allowed to degrade silently: prod deploys
+now fail unless `RESEND_API_KEY` is present, which means
+`instantml-resend-api-key` must be created and populated before the next prod
+deploy. The 2026-06-16 production invite failures came from the control service
+running without this secret binding.
+
+**Staging mirror coverage:** staging has the prod-aligned secret set plus
 `instantml-staging-resend-api-key` and `instantml-staging-stripe-secret-key`.
-Prod is missing the matching resend secret; staging is presumably ahead of
-prod here.
+Prod was missing the matching resend secret when this inventory was audited;
+create `instantml-resend-api-key` before redeploying prod.
 
 ## How to refresh this page
 

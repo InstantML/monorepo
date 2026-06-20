@@ -44,7 +44,7 @@
 .detail-section-note {
   margin-left: 8px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-weight: 500;
 }
 
@@ -54,7 +54,7 @@
   background: none;
   color: var(--accent);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 600;
 }
 
@@ -70,7 +70,7 @@
   border-radius: var(--control-radius);
   padding: 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .repro-empty p {
@@ -108,7 +108,7 @@
   background: var(--warm-soft);
   padding: 10px 14px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .run-data-banner.bad {
@@ -150,14 +150,14 @@
 
 .run-metadata-head strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .run-metadata-head small,
 .metadata-read p,
 .form-error {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 680;
 }
 
@@ -285,7 +285,7 @@
   gap: 8px;
   color: var(--text);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 760;
 }
 
@@ -321,7 +321,7 @@
   background: var(--surface-soft);
   color: var(--muted);
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 720;
 }
 
@@ -335,7 +335,7 @@
 .workspace-summary-selection strong {
   margin-left: auto;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 780;
   text-transform: uppercase;
 }
@@ -373,7 +373,7 @@
   min-width: 520px;
   border-bottom: 1px solid var(--line-soft);
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .metric-summary-row:last-child {
@@ -397,7 +397,7 @@
 .metric-summary-head {
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -430,7 +430,7 @@
   align-items: center;
   gap: 8px;
   color: #22261d;
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 760;
 }
 
@@ -449,7 +449,7 @@
   border-radius: var(--tight-radius);
   background: var(--surface-soft);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-style: normal;
   font-weight: 760;
   padding: 4px 8px;
@@ -473,7 +473,7 @@ pre {
   background: #fdfdfb;
   color: #22261d;
   padding: 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -491,25 +491,25 @@ pre {
 }
 
 .inspector .detail-row span {
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .inspector .detail-row strong {
   max-width: 62%;
   overflow: hidden;
   color: #22261d;
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .inspector .detail-row .pill {
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .inspector pre {
   background: #fdfdfb;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .inspector .artifact-mini {
@@ -567,7 +567,7 @@ pre {
 
 .artifact-actions span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .artifact-card strong,
@@ -585,7 +585,7 @@ pre {
   border-radius: var(--control-radius);
   background: #ffffff;
   padding: 7px 8px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .checkpoint-list {
@@ -620,12 +620,12 @@ pre {
 
 .checkpoint-main strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .checkpoint-main small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .checkpoint-actions {
@@ -657,7 +657,7 @@ pre {
   background: #f7fbff;
   color: var(--text);
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .checkpoint-fork-grid {
@@ -678,14 +678,14 @@ pre {
 .checkpoint-fork-grid span,
 .checkpoint-fork-field span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .checkpoint-fork-grid strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .stop-request-grid {
@@ -705,7 +705,7 @@ pre {
   border: 1px solid var(--line-soft);
   border-radius: 4px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--fs-label);
   font-style: normal;
   font-weight: 680;
   padding: 4px 7px;
@@ -734,7 +734,7 @@ pre {
   align-items: center;
   gap: 8px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .checkpoint-fork-error {
@@ -743,7 +743,7 @@ pre {
   background: #fff7f7;
   color: #b42318;
   padding: 9px 10px;
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .checkpoint-fork-actions {
@@ -779,7 +779,7 @@ pre {
 .lineage-node span,
 .lineage-children-head span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .lineage-node strong {
@@ -787,7 +787,7 @@ pre {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .lineage-node small {
@@ -811,7 +811,7 @@ pre {
 
 .lineage-children-head h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 
 .lineage-table td,
@@ -822,7 +822,7 @@ pre {
 .lineage-truncated {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
 }
 
 .empty {
@@ -838,7 +838,7 @@ pre {
 
 .panel-drawer .empty {
   min-height: 96px;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.35;
 }
 
@@ -902,7 +902,7 @@ pre {
   overflow: hidden;
   background: #fdfdfb;
   color: #555b4c;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
 }
 
@@ -926,7 +926,7 @@ pre {
 
 .compare-head small {
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -958,7 +958,7 @@ pre {
 .compare-more,
 .compare-empty {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 700;
 }
 
@@ -977,7 +977,7 @@ pre {
 
 .compare-attribute small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
   text-transform: uppercase;
 }
@@ -986,7 +986,7 @@ pre {
   min-width: 0;
   overflow: hidden;
   color: #22261d;
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1001,7 +1001,7 @@ pre {
   gap: 4px;
   overflow: hidden;
   color: #3a3f33;
-  font-size: 12px;
+  font-size: var(--fs-data);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1014,7 +1014,7 @@ pre {
 .compare-cell small {
   flex: 0 0 auto;
   color: #5b6875;
-  font-size: 12px;
+  font-size: var(--fs-data);
   font-weight: 760;
 }
 
