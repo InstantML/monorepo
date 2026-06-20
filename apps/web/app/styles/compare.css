@@ -613,10 +613,6 @@ button.compare-row-head.active {
   align-items: start;
 }
 
-.artifact-stat-strip {
-  margin-bottom: 12px;
-}
-
 .artifact-catalog-panel {
   position: sticky;
   top: calc(var(--topbar-height) + 12px);

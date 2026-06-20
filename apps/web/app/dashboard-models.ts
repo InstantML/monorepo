@@ -740,17 +740,6 @@ function datasetNameForRun(run: RunSummary) {
   return typeof value === "string" ? value : null;
 }
 
-export function artifactTotalsForRuns(runs: RunSummary[]) {
-  return runs.reduce(
-    (totals, run) => ({
-      checkpoint: totals.checkpoint + (run.artifact_counts?.checkpoint ?? 0),
-      rollout: totals.rollout + (run.artifact_counts?.rollout ?? 0),
-      file: totals.file + (run.artifact_counts?.file ?? 0),
-    }),
-    { checkpoint: 0, rollout: 0, file: 0 },
-  );
-}
-
 export function artifactTotalForRun(run: RunSummary) {
   return (run.artifact_counts?.checkpoint ?? 0) + (run.artifact_counts?.rollout ?? 0) + (run.artifact_counts?.file ?? 0);
 }
