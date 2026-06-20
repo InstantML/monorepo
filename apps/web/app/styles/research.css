@@ -26,8 +26,7 @@
  * as the other dashboard pages, with run selection treated as the primary
  * control instead of a small header accessory. */
 .distributed-control-band {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.8fr);
+  display: flex;
   align-items: end;
   gap: 14px;
   min-width: 0;
@@ -36,51 +35,23 @@
   background: var(--surface);
   padding: 12px;
 }
-.distributed-run-summary {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-}
-.distributed-run-summary span {
-  color: var(--muted);
-  font: 600 10.5px/1 var(--font-mono);
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
-}
-.distributed-run-summary strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  font: 650 14px/1.2 var(--font-sans);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.distributed-run-summary small {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--faint);
-  font: 500 11px/1 var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .distributed-toolbar {
   display: flex;
+  flex: 1;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
   min-width: 0;
-  justify-content: flex-end;
 }
 .distributed-toolbar .custom-select-control {
   flex: 1 1 220px;
-  max-width: 360px;
+  min-width: 0;
 }
 .distributed-toolbar .select-trigger {
   width: 100%;
 }
 .distributed-toolbar .distributed-run-select {
-  flex-basis: 320px;
-  max-width: 460px;
+  flex: 1.4 1 320px;
 }
 .distributed-toolbar .select-trigger-value {
   display: grid;
@@ -1152,9 +1123,6 @@
 @media (max-width: 900px) {
   .analysis-grid.two,
   .analysis-grid.four { grid-template-columns: minmax(0, 1fr); }
-  .distributed-control-band {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .insights-page .analysis-header {
     align-items: stretch;
     flex-direction: column;

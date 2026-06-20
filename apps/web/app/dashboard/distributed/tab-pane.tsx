@@ -123,10 +123,6 @@ export function DistributedTabPane({ api, availableRuns = [], embedded = false, 
     label: run.name,
     description: [run.project, run.status].filter(Boolean).join(" / "),
   }));
-  const selectedRunMeta = primaryRun
-    ? [primaryRun.project, primaryRun.status].filter(Boolean).join(" / ")
-    : "No run selected";
-
   const keySelect = (
     <CustomSelect
       id="rank-key"
@@ -149,16 +145,8 @@ export function DistributedTabPane({ api, availableRuns = [], embedded = false, 
         </div>
       ) : (
         <>
-          <PageHead
-            title="Rank reducers"
-            lede={primaryRun ? primaryRun.name : "Select a run"}
-          />
+          <PageHead title="Rank reducers" />
           <section className="distributed-control-band" aria-label="Distributed analysis controls">
-            <div className="distributed-run-summary">
-              <span>Selected run</span>
-              <strong>{primaryRun?.name ?? "Choose a run"}</strong>
-              <small>{selectedRunMeta}</small>
-            </div>
             <div className="distributed-toolbar">
               {onSelectRun && availableRuns.length ? (
                 <CustomSelect
