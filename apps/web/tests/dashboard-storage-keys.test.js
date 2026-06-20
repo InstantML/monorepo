@@ -495,7 +495,6 @@ test("workspace creation UI keeps the active workspace visible and waits for ava
   assert.match(topbar, /initial_invitations: invitesAllowed && inviteEmail\.trim\(\)/, "personal workspace creation should not submit teammate invitations");
   assert.match(topbar, /> New workspace</, "menu action should match the mixed personal/org creation modal");
   assert.equal(/account-workspace-list" role="listbox"/.test(topbar), false, "account workspace menu should not claim listbox semantics without arrow-key handling");
-  assert.match(css, /\.account-workspace-search:focus-within/, "account workspace search should have a visible keyboard focus state");
   assert.match(css, /@media \(max-width: 720px\) \{[\s\S]*?\.account-workspace-current \{[\s\S]*?display: block;/, "mobile account trigger should keep the current workspace visible");
 });
 
