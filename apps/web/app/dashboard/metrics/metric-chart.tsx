@@ -2,6 +2,7 @@
 
 import { Check, FileText, ImageDown, LineChart, MoreVertical, RefreshCw, Table2 } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import { axisTicks, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
@@ -325,6 +326,7 @@ function MiniRange({
  * size; hover hit-testing is internal and surfaced via `onPointHover`.
  */
 export function MetricChart({
+  actionsSlot,
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
   exportApiRef,
   exportFilenameBase,
@@ -347,6 +349,10 @@ export function MetricChart({
   yScale: yScaleProp,
   zoomRange = null,
 }: {
+  /** When set, the three-dot options toolbar is portaled into this node (e.g.
+   *  a workspace panel head) so its trigger sits at the card's top-right corner
+   *  instead of floating over the plot. */
+  actionsSlot?: HTMLElement | null;
   emptyMessage?: string;
   /** Imperative export handle for owners that render their own export UI. */
   exportApiRef?: { current: { downloadSvg: () => void; downloadCsv: () => void } | null };
@@ -883,6 +889,9 @@ export function MetricChart({
       ) : null}
     </div>
   ) : null;
+  // The owner can hoist the toolbar into its own header (workspace panel head);
+  // the portal keeps the menu's state/handlers in this component's tree.
+  const renderedActions = actionsSlot && actionsRow ? createPortal(actionsRow, actionsSlot) : actionsRow;
 
   if (!domain || normalizedSeries.every((item) => !item.normalizedPoints?.length)) {
     // Log scale can legitimately blank a chart whose data is all <= 0 — keep
@@ -892,7 +901,7 @@ export function MetricChart({
     const logHidEverything = yScale === "log" && normalizedSeries.some((item) => (item.hiddenNonPositive ?? 0) > 0);
     return (
       <div id={chartPanelId} className={`chart-area${showActions ? " chart-area-exportable" : ""}`} onMouseLeave={handleLeave}>
-        {actionsRow}
+        {renderedActions}
         <span className="visually-hidden" role="status" aria-live="polite">{chartView === "summary" ? `${metricKey} summary table selected.` : `${metricKey} chart selected.`}</span>
         {chartView === "summary" ? (
           <ChartSummaryTable metricKey={metricKey} rows={summaryRows} tableId={`${chartInstanceId}-summary-table`} takeaway={summaryTakeaway} />
@@ -939,7 +948,7 @@ export function MetricChart({
       className={`chart-area${showActions ? " chart-area-exportable" : ""}`}
       onMouseLeave={handleLeave}
     >
-      {actionsRow}
+      {renderedActions}
       <span className="visually-hidden" role="status" aria-live="polite">{chartView === "summary" ? `${metricKey} summary table selected.` : `${metricKey} chart selected.`}</span>
       {chartView === "summary" ? (
         <ChartSummaryTable metricKey={metricKey} rows={summaryRows} tableId={`${chartInstanceId}-summary-table`} takeaway={summaryTakeaway} />

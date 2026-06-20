@@ -264,8 +264,39 @@
   order: 4;
 }
 
+/* Line panels portal their options toolbar into the panel head, so the chart
+ * area no longer reserves a top strip for a floating button. */
 .workspace-panel-card .chart-area-exportable {
-  padding-top: 44px;
+  padding-top: 0;
+}
+
+/* The portaled toolbar anchors to the card (its head slot is unpositioned), so
+ * pin it to the card's top-right corner. Span it down to the card floor so the
+ * tall line-panel menu can use the full card height and scroll within it rather
+ * than spill past the clipped card edge. */
+.workspace-panel-card .chart-export-actions {
+  top: 10px;
+  right: 12px;
+  bottom: 12px;
+  align-items: flex-start;
+}
+
+.workspace-panel-card .chart-actions-slot {
+  opacity: 1;
+}
+
+.workspace-panel-card .chart-menu {
+  position: static;
+}
+
+.workspace-panel-card .chart-menu-pop {
+  top: 38px;
+  right: 0;
+  /* Containing block is the card-tall actions box, so cap to its height (minus
+   * the trigger + gap) and scroll — no option ever clips at the card edge. */
+  max-height: calc(100% - 44px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .workspace-panel-card .metric-chart {
