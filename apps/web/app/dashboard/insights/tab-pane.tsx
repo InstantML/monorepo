@@ -37,7 +37,7 @@ type Props = {
 };
 
 export function InsightsTabPane({ api, embedded = false, metricKey, onSelectRun = () => {}, project = "", selectedRunIds, sortedRuns }: Props) {
-  const [activeView, setActiveView] = useState<"usage" | "run-analysis">("usage");
+  const [activeView, setActiveView] = useState<"usage" | "run-analysis">("run-analysis");
 
   return (
     <div className={`analysis-page insights-page ${embedded ? "embedded-analysis" : ""}`}>
