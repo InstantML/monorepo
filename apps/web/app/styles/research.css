@@ -499,8 +499,18 @@
   min-height: 88px;
   border-radius: var(--radius);
   background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+  background-size: 200% 100%;
+  animation: usage-skeleton-shift 1.4s ease-in-out infinite;
 }
 .usage-skeleton-panel { min-height: 240px; }
+@keyframes usage-skeleton-shift {
+  0%, 100% { background-position: 140% 0; }
+  50% { background-position: -40% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .usage-skeleton-tile,
+  .usage-skeleton-panel { animation: none; }
+}
 
 /* ── Cards — match the canonical .panel surface ─────────────────────────────── */
 .analysis-card {

@@ -9,6 +9,7 @@ import type { RunSummary } from "../../dashboard-types";
 import { AnalysisCard } from "../ui/analysis-card";
 import { PageHead } from "../ui/page-head";
 import { CustomSelect } from "../ui/select";
+import { AnalysisSkeleton } from "../ui/skeleton";
 
 type RankReducerPoint = {
   step: number;
@@ -178,7 +179,7 @@ export function DistributedTabPane({ api, availableRuns = [], embedded = false, 
 
       {error ? <div className="banner error">{error}</div> : null}
       {!primaryRun ? <RankMetricsEmptyState selected={false} /> : null}
-      {primaryRun && loading && !summary ? <div className="empty">Loading rank metrics...</div> : null}
+      {primaryRun && loading && !summary ? <AnalysisSkeleton label="Loading rank metrics" /> : null}
       {primaryRun && summary && !summary.keys.length ? <RankMetricsEmptyState selected /> : null}
 
       {hasData ? (

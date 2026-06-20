@@ -1,6 +1,7 @@
 import { Plus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
+import { CompareSkeleton } from "../ui/skeleton";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
 import { SideBySide } from "./side-by-side";
 import { metricTitle, COMPARE_RUN_LIMIT } from "../../dashboard-models";
@@ -227,9 +228,7 @@ export function CompareTabPane({
         </div>
         {!compareRuns.length ? (
           selectedRunIds.length ? (
-            <div className="empty compare-empty-state">
-              <p>Loading the {selectedRunIds.length} selected runs…</p>
-            </div>
+            <CompareSkeleton runCount={selectedRunIds.length} />
           ) : (
             <div className="empty compare-empty-state">
               <p>No runs selected yet. Add runs with the picker above, or select them from the Runs workspace. Selections are saved to the link, so a compare view can be shared or reopened later.</p>
