@@ -823,6 +823,9 @@ export function WorkspacePanelCard({
 }) {
   const [panelHover, setPanelHover] = useState<HoverPoint>(null);
   const [panelZoomRange, setPanelZoomRange] = useState<{ min: number; max: number } | null>(null);
+  // Line panels portal the chart's options menu into this head slot so its
+  // trigger sits at the card's top-right corner instead of over the plot.
+  const [chartActionsSlot, setChartActionsSlot] = useState<HTMLDivElement | null>(null);
   const [resizePreview, setResizePreview] = useState<WorkspacePanelLayout | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
   const pendingHoverRef = useRef<{ x: number; y: number } | null>(null);
@@ -1057,9 +1060,12 @@ export function WorkspacePanelCard({
             }
           </small>
         </div>
-        {/* Line panels fold these actions into the chart's three-dot menu; the
-            other panel types have no chart toolbar, so they get a head kebab. */}
-        {!linePanel && panelActionItems ? (
+        {/* Line panels portal the chart's three-dot menu into this slot so its
+            trigger lands at the card's top-right corner; the other panel types
+            have no chart toolbar, so they get a head kebab. */}
+        {linePanel ? (
+          <div className="panel-card-actions chart-actions-slot" ref={setChartActionsSlot} />
+        ) : panelActionItems ? (
           <div className="panel-card-actions">
             <PanelHeadMenu items={panelActionItems} label={`${panel.title} panel options`} />
           </div>
@@ -1108,6 +1114,7 @@ export function WorkspacePanelCard({
       ) : (
         linePanel ? (
           <MetricChart
+            actionsSlot={chartActionsSlot}
             emptyMessage={panelRuns.length ? "No logged series for this metric in the current run set." : undefined}
             exportFilenameBase={`instantml-${panel.metricKey}`}
             height={panelChartHeight}
