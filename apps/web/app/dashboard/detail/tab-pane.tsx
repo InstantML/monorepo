@@ -622,8 +622,16 @@ export function DetailTabPane({
     onRequestStop([run.id]);
   }
 
+  // Comparison now lives in the Runs → Table view. Make sure this run is in the
+  // selection, open that view, and land on the Runs tab.
   function openCompare() {
-    window.location.assign(`/dashboard/compare${window.location.search}`);
+    try { localStorage.setItem("instantml:next:runs-view", "table"); } catch { /* storage may be unavailable */ }
+    const params = new URLSearchParams(window.location.search);
+    const selected = (params.get("runs") ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+    if (run && !selected.includes(run.id)) selected.unshift(run.id);
+    if (selected.length) params.set("runs", selected.join(","));
+    const query = params.toString();
+    window.location.assign(`/dashboard/runs${query ? `?${query}` : ""}`);
   }
 
   const metricsCount = userRows.length;

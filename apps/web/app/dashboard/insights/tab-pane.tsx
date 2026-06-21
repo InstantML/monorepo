@@ -37,7 +37,7 @@ type Props = {
 };
 
 export function InsightsTabPane({ api, embedded = false, metricKey, onSelectRun = () => {}, project = "", selectedRunIds, sortedRuns }: Props) {
-  const [activeView, setActiveView] = useState<"usage" | "run-analysis">("usage");
+  const [activeView, setActiveView] = useState<"usage" | "run-analysis">("run-analysis");
 
   return (
     <div className={`analysis-page insights-page ${embedded ? "embedded-analysis" : ""}`}>
@@ -45,7 +45,6 @@ export function InsightsTabPane({ api, embedded = false, metricKey, onSelectRun 
         <header className="analysis-header">
           <div className="analysis-title-block">
             <h2>Insights</h2>
-            <p>{activeView === "usage" ? "Observed GPU and system usage from logged telemetry" : "Run-level patterns across loaded experiments"}</p>
           </div>
           <div className="insights-view-switch" role="group" aria-label="Insights view">
             <button type="button" aria-pressed={activeView === "usage"} onClick={() => setActiveView("usage")}>GPU & System</button>

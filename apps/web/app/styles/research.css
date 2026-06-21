@@ -105,12 +105,6 @@
 .analysis-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .analysis-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-.insights-page .analysis-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-}
 .insights-view-switch {
   display: inline-flex;
   align-items: center;

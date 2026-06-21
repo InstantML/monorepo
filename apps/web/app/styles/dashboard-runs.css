@@ -308,8 +308,11 @@
   color: var(--accent-strong);
 }
 
+/* Span the full content width so the comparison panel and runs table line up
+ * with the sticky filter/command bar above (and the Panels workspace), instead
+ * of sitting inset and visibly narrower. */
 .runs-table-view {
-  padding: 0 14px 16px;
+  padding: 0 0 16px;
 }
 
 .workspace-rail-head,

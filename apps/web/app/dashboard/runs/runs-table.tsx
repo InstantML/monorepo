@@ -338,8 +338,8 @@ export function RunsTable({
         </span>
       </div>
 
-      {/* Selection actions live in the global SelectionTray (bottom), which
-          works across both Panels and Table views without reflowing the table. */}
+      {/* Selecting runs here drives the comparison panel above (CompareView):
+          pick a set with the checkboxes and they render side by side inline. */}
       <div className="runs-dtable-scroll">
         <table className="runs-dtable">
           <thead>

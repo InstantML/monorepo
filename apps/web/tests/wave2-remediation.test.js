@@ -18,19 +18,24 @@ test("alert rows dedupe same-kind warnings into grouped findings", () => {
   assert.doesNotMatch(alertsSrc, /emphasis="worth watching"/);
 });
 
-// Section 3 — selection tray renders only with a selection and derives
-// everything from the shell's selection state.
-test("selection tray is selection-driven chrome with compare/export/clear", () => {
-  const traySrc = read("app/dashboard/chrome/selection-tray.tsx");
-  assert.match(traySrc, /if \(count <= 0\) return null/);
-  assert.match(traySrc, /Compare/);
-  assert.match(traySrc, /Export CSV/);
-  assert.match(traySrc, /Clear/);
+// The standalone Compare page + bottom selection toast collapsed into the
+// Runs → Table view: selecting runs renders the comparison inline, so the
+// floating tray (and its separate Compare destination) is gone.
+test("comparison is embedded in the runs table view, not a floating toast", () => {
   const shellSrc = read("app/dashboard/dashboard-shell.tsx");
-  assert.match(shellSrc, /<SelectionTray/);
-  assert.match(shellSrc, /onExport=\{exportSelectedRunsCsv\}/);
-  const css = read("app/styles/overhaul.css");
-  assert.match(css, /\.selection-tray \{/);
+  assert.doesNotMatch(shellSrc, /<SelectionTray/);
+  assert.doesNotMatch(shellSrc, /selectTab\("compare"\)/);
+  // The slim comparison is passed into the runs table view as a slot.
+  assert.match(shellSrc, /<CompareView/);
+  assert.match(shellSrc, /compareSlot=\{/);
+  const paneSrc = read("app/dashboard/runs/tab-pane.tsx");
+  assert.match(paneSrc, /\{compareSlot\}/);
+  const compareSrc = read("app/dashboard/compare/tab-pane.tsx");
+  assert.match(compareSrc, /Comparing /);
+  assert.match(compareSrc, /Export CSV/);
+  assert.match(compareSrc, /Clear/);
+  // The removed tray's styles are gone too.
+  assert.doesNotMatch(read("app/styles/overhaul.css"), /\.selection-tray \{/);
 });
 
 // Section 3 — number keys jump tabs, guarded against editable elements (the
@@ -55,15 +60,19 @@ test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", ()
   assert.match(configSrc, /id: "system"/);
   assert.doesNotMatch(configSrc, /id: "overview"/);
   assert.match(configSrc, /id: "alerts", label: "Run Health"/);
-  for (const id of ["runs", "metrics", "distributed", "compare", "insights", "artifacts", "reports", "alerts", "datasets", "settings", "api"]) {
+  for (const id of ["runs", "metrics", "distributed", "insights", "artifacts", "reports", "alerts", "datasets", "settings", "api"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
   // CK2: the Checkpoints tab merged into Run Detail; its nav slot is gone but
   // old /dashboard/checkpoints (and /dashboard/models) links canonicalize.
   assert.doesNotMatch(configSrc, /id: "checkpoints"/);
+  // The standalone Compare page collapsed into the Runs → Table view; its nav
+  // slot is gone but old /dashboard/compare links canonicalize to runs.
+  assert.doesNotMatch(configSrc, /id: "compare"/);
   const routesSrc = read("src/routes.js");
   assert.match(routesSrc, /\["checkpoints", "detail"\]/);
   assert.match(routesSrc, /\["models", "detail"\]/);
+  assert.match(routesSrc, /\["compare", "runs"\]/);
   const runDetailSrc = read("app/dashboard/detail/run-detail.tsx");
   assert.match(runDetailSrc, /checkpoint-uri/);
   assert.match(runDetailSrc, /eval_return/);
@@ -77,14 +86,6 @@ test("runs tab offers a persisted panels/table view toggle", () => {
   assert.match(paneSrc, /<RunsTable/);
   assert.match(paneSrc, /instantml:next:runs-view/);
   assert.match(commandbarSrc, /aria-pressed=\{viewMode === "table"\}/);
-});
-
-// C4 — compare artifact strips group duplicate filenames into version chips.
-test("compare artifact strip groups versions by name", () => {
-  const src = read("app/dashboard/compare/side-by-side.tsx");
-  assert.match(src, /export function groupCompareArtifacts/);
-  assert.match(src, /versions/);
-  assert.match(src, /cmp-table-shell/);
 });
 
 // V2 — superseded by main's header simplification (#189): the serif flourish

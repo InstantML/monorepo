@@ -19,10 +19,9 @@ import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, c
 import { AlertsTabPane } from "./alerts/tab-pane";
 import { ApiTabPane } from "./api/tab-pane";
 import { ArtifactsTabPane } from "./artifacts/tab-pane";
-import { CompareTabPane } from "./compare/tab-pane";
+import { CompareView } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
-import { SelectionTray } from "./chrome/selection-tray";
 import { AccountWorkspaceMenu, DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { DatasetsTabPane } from "./datasets/tab-pane";
@@ -40,7 +39,6 @@ import { useFocusTrap } from "./ui/use-focus-trap";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
 import {
-  artifactTotalsForRuns,
   buildAlertRows,
   buildApiRows,
   buildDatasetRows,
@@ -672,7 +670,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const [compareTableMetrics, setCompareTableMetrics] = useState<string[]>([]);
   const [compareSearch, setCompareSearch] = useState("");
   const [compareConfigSortKey, setCompareConfigSortKey] = useState("");
-  const [compareEditRunId, setCompareEditRunId] = useState("");
   const [runMetadataVersion, setRunMetadataVersion] = useState(0);
   const [pageSize, setPageSize] = useState(DEFAULT_SELECTED_RUNS);
   const [pageOffset, setPageOffset] = useState(0);
@@ -708,6 +705,11 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const [runWorkspaceTab, setRunWorkspaceTab] = useState<RunWorkspaceTabId>("summary");
   const [compareArtifactsByRun, setCompareArtifactsByRun] = useState<Record<string, Artifact[]>>({});
   const [sideBySide, setSideBySide] = useState<any>(null);
+  // The comparison surface now lives inside the Runs → Table view (the Table
+  // toggle owns its own panels/table state and mirrors it here), so compare
+  // data only loads while that view is actually on screen.
+  const [runsViewIsTable, setRunsViewIsTable] = useState(false);
+  const compareSurfaceActive = activeTab === "runs" && runsViewIsTable;
   const [hover, setHover] = useState<HoverPoint>(null);
   const [hoverMetricKey, setHoverMetricKey] = useState(metricKey);
   const [message, setMessage] = useState("Loading runs...");
@@ -876,7 +878,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   ), [compareRunIds, selectedRunDetails, sortedRuns]);
   const compareOverflowCount = Math.max(0, selectedRuns.length - compareRunIds.length);
   const referenceRun = compareRuns.find((run) => run.id === referenceRunId) ?? compareRuns[0] ?? null;
-  const compareEditRun = compareRuns.find((run) => run.id === compareEditRunId) ?? referenceRun ?? compareRuns[0] ?? null;
   const compareConfigKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const run of compareRuns) {
@@ -954,8 +955,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
-  // Rail count badges: total runs on Runs, open-alert count on Run Health.
-  const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const apiStatusParams = useMemo(() => dashboardStatusQueryParams(status, status), [status]);
@@ -2269,7 +2268,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     const runIds = compareRunKey ? compareRunKey.split(",").filter(Boolean) : [];
     const cacheVersion = compareArtifactCacheVersionRef.current;
     async function loadCompareArtifacts() {
-      if (activeTab !== "compare" || !runIds.length) {
+      if (!compareSurfaceActive || !runIds.length) {
         setCompareArtifactsByRun({});
         return;
       }
@@ -2322,13 +2321,13 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, compareRunKey, runMetadataVersion]);
+  }, [compareSurfaceActive, api, compareRunKey, runMetadataVersion]);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
     async function loadSideBySide() {
-      if (activeTab !== "compare" || !compareRunIds.length) {
+      if (!compareSurfaceActive || compareRunIds.length < 2) {
         setSideBySide(null);
         return;
       }
@@ -2345,17 +2344,12 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, compareRunIds.length, compareRunKey, diffOnly, referenceRun?.id, runMetadataVersion]);
+  }, [compareSurfaceActive, api, compareRunIds.length, compareRunKey, diffOnly, referenceRun?.id, runMetadataVersion]);
 
   useEffect(() => {
     if (compareRuns.length && !compareRuns.some((run) => run.id === referenceRunId)) setReferenceRunId(compareRuns[0].id);
     if (!compareRuns.length && referenceRunId) setReferenceRunId("");
   }, [compareRuns, referenceRunId]);
-
-  useEffect(() => {
-    if (compareRuns.length && !compareRuns.some((run) => run.id === compareEditRunId)) setCompareEditRunId(referenceRun?.id ?? compareRuns[0].id);
-    if (!compareRuns.length && compareEditRunId) setCompareEditRunId("");
-  }, [compareEditRunId, compareRuns, referenceRun?.id]);
 
   const goToNextRunPage = useCallback(() => {
     if (!hasNextPage || dashboardLoading || pageNavigationPendingRef.current) return;
@@ -4386,6 +4380,38 @@ function dismissTopOverlay() {
                   tone={currentMessageTone}
                 />
               )}
+              compareSlot={(
+                <CompareView
+                  addAllCompareTableMetrics={addAllCompareTableMetrics}
+                  addCompareTableMetric={addCompareTableMetric}
+                  compareAddMetricOptions={compareAddMetricOptions}
+                  compareArtifactsByRun={compareArtifactsByRun}
+                  compareOverflowCount={compareOverflowCount}
+                  compareRuns={compareRuns}
+                  compareTableMetricKeys={compareTableMetricKeys}
+                  exportSelectedBusy={exportSelectedBusy}
+                  MAX_COMPARE_TABLE_METRICS={MAX_COMPARE_TABLE_METRICS}
+                  metricKey={metricKey}
+                  metricOptionsForControls={metricOptionsForControls}
+                  onChangeMetricKeyAndSortKey={(value) => { changeMetricKey(value); setCompareSortMetricKey(value); }}
+                  onClearSelection={() => {
+                    defaultSelectionInitializedRef.current = true;
+                    selectionUrlSyncRef.current = true;
+                    selectionAnchorRunIdRef.current = "";
+                    setSelectedRunIds([]);
+                  }}
+                  onExportSelectedRuns={exportSelectedRunsCsv}
+                  onOpenRunArtifacts={(runId) => { setPrimaryRunId(runId); selectTab("artifacts"); }}
+                  onReferenceRunId={setReferenceRunId}
+                  onResetCompareTableMetrics={resetCompareTableMetrics}
+                  referenceRun={referenceRun}
+                  removeCompareTableMetric={removeCompareTableMetric}
+                  selectedRunExportDisabled={selectedRunExportDisabled}
+                  selectedRunExportTitle={selectedRunExportTitle}
+                  sideBySide={sideBySide}
+                />
+              )}
+              onRunsViewChange={(view) => setRunsViewIsTable(view === "table")}
               metricKey={metricKey}
               metricOptionsForControls={metricOptionsForControls}
               onAddPanel={addWorkspacePanel}
@@ -4566,57 +4592,6 @@ function dismissTopOverlay() {
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "compare" ? "active" : ""}`} aria-label="Compare">
-          {activeTab === "compare" ? (
-            <CompareTabPane
-              addAllCompareTableMetrics={addAllCompareTableMetrics}
-              addCompareTableMetric={addCompareTableMetric}
-              availableRuns={sortedRuns}
-              onAddCompareRun={(runId) => {
-                selectionUrlSyncRef.current = true;
-                defaultSelectionInitializedRef.current = true;
-                setSelectedRunIds((current) => current.includes(runId) ? current : [...current, runId].slice(-MAX_SELECTED_RUNS));
-              }}
-              onOpenRunsTab={() => selectTab("runs")}
-              compareAddMetricOptions={compareAddMetricOptions}
-              compareArtifactsByRun={compareArtifactsByRun}
-              compareConfigKeys={compareConfigKeys}
-              compareConfigSortKey={compareConfigSortKey}
-              compareEditRun={compareEditRun}
-              compareLayout={compareLayout}
-              compareOverflowCount={compareOverflowCount}
-              compareRowSort={compareRowSort}
-              compareRunIds={compareRunIds}
-              compareRunSort={compareRunSort}
-              compareRuns={compareRuns}
-              compareSearch={compareSearch}
-              compareSortMetricKey={compareSortMetricKey}
-              compareTableMetricKeys={compareTableMetricKeys}
-              diffOnly={diffOnly}
-              MAX_COMPARE_TABLE_METRICS={MAX_COMPARE_TABLE_METRICS}
-              metricKey={metricKey}
-              metricOptionsForControls={metricOptionsForControls}
-              onChangeCompareSearch={setCompareSearch}
-              onChangeMetricKeyAndSortKey={(value) => { changeMetricKey(value); setCompareSortMetricKey(value); }}
-              onCompareConfigSortKey={setCompareConfigSortKey}
-              onCompareEditRunId={setCompareEditRunId}
-              onCompareLayout={(value) => setCompareLayout(value === "columns" ? "columns" : "rows")}
-              onCompareRowSort={(value) => setCompareRowSort(compareRowSorts.has(value as CompareRowSort) ? value as CompareRowSort : "signal")}
-              onCompareRunSort={(value) => setCompareRunSort(compareRunSorts.has(value as CompareRunSort) ? value as CompareRunSort : "metric-best")}
-              onDiffOnly={setDiffOnly}
-              onOpenRunArtifacts={(runId) => { setPrimaryRunId(runId); selectTab("artifacts"); }}
-              onReferenceRunId={setReferenceRunId}
-              onResetCompareTableMetrics={resetCompareTableMetrics}
-              onRunSortMetricKey={setCompareSortMetricKey}
-              onRunSort={setCompareRunSort}
-              onUpdateRunTagsAndNotes={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
-              referenceRun={referenceRun}
-              removeCompareTableMetric={removeCompareTableMetric}
-              selectedRunIds={selectedRunIds}
-              sideBySide={sideBySide}
-            />
-          ) : null}
-        </section>
 
         <section className={`tab-pane ${activeTab === "alerts" ? "active" : ""}`} aria-label="Alerts">
           {activeTab === "alerts" ? (
@@ -4647,7 +4622,6 @@ function dismissTopOverlay() {
           {activeTab === "artifacts" ? (
             <ArtifactsTabPane
               api={api}
-              artifactTotals={artifactTotals}
               canManageArtifacts={canManageOrg}
               loggedObjects={loggedObjects}
               objectRowsById={objectRowsById}
@@ -4742,22 +4716,6 @@ function dismissTopOverlay() {
           ) : null}
         </section>
       </section>
-      <SelectionTray
-        count={selectedRunIds.length}
-        exportDisabled={selectedRunExportDisabled}
-        exportTitle={selectedRunExportTitle}
-        onClear={() => {
-          // Mark the default as initialized so the page auto-select doesn't
-          // immediately refill the selection the user just cleared.
-          defaultSelectionInitializedRef.current = true;
-          selectionUrlSyncRef.current = true;
-          setSelectedRunIds([]);
-          selectionAnchorRunIdRef.current = "";
-        }}
-        onCompare={() => selectTab("compare")}
-        onExport={exportSelectedRunsCsv}
-        sampleNames={selectedRuns.slice(0, 3).map((run) => run.name)}
-      />
       {quickSearchOpen ? (
         <QuickSearchModal
           activeIndex={quickSearchActiveIndex}

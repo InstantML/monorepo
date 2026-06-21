@@ -422,22 +422,16 @@ export function AccountWorkspaceMenu({
   variant?: "topbar" | "rail";
 }) {
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const displayName = accountDisplayLabel(accountUser?.display_name ?? "", accountUser?.primary_email ?? "");
   const currentMembership = memberships.find((membership) => membership.is_current) ?? memberships.find((membership) => membership.org_id === current?.id) ?? null;
   const currentName = current?.name || currentMembership?.name || "Workspace";
   const currentCapabilities = membershipCapabilities(currentMembership);
-  const filterToken = filter.trim().toLowerCase();
-  const visible = filterToken
-    ? memberships.filter((membership) => membership.name.toLowerCase().includes(filterToken) || membership.slug.toLowerCase().includes(filterToken))
-    : memberships;
-  const personal = visible.filter((membership) => membership.is_personal || membership.account_type === "personal");
-  const organizations = visible.filter((membership) => !(membership.is_personal || membership.account_type === "personal"));
+  const personal = memberships.filter((membership) => membership.is_personal || membership.account_type === "personal");
+  const organizations = memberships.filter((membership) => !(membership.is_personal || membership.account_type === "personal"));
 
   useEffect(() => {
     if (!open) return undefined;
@@ -475,14 +469,6 @@ export function AccountWorkspaceMenu({
       document.removeEventListener("pointerdown", closeFromOutside);
       document.removeEventListener("keydown", handleKeydown);
     };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) setFilter("");
-  }, [open]);
-
-  useEffect(() => {
-    if (open) window.setTimeout(() => searchRef.current?.focus(), 0);
   }, [open]);
 
   function renderMembership(membership: OrgMembershipSummary) {
@@ -554,16 +540,11 @@ export function AccountWorkspaceMenu({
               <small>{membershipRoleLabel(currentMembership)} · {planName(currentMembership.plan_tier)} · {currentMembership.member_count} {currentMembership.member_count === 1 ? "member" : "members"}</small>
             </div>
           ) : null}
-          <label className="account-workspace-search">
-            <Search size={13} aria-hidden="true" />
-            <input aria-label="Search workspaces" onChange={(event) => setFilter(event.target.value)} placeholder="Search workspaces" ref={searchRef} type="search" value={filter} />
-          </label>
           <div className="account-workspace-list" aria-label="Switch workspace">
             {personal.length ? <span className="account-workspace-section">Personal</span> : null}
             {personal.map(renderMembership)}
             {organizations.length ? <span className="account-workspace-section">Organizations</span> : null}
             {organizations.map(renderMembership)}
-            {!visible.length ? <div className="org-switcher-empty">No matches.</div> : null}
           </div>
           {error ? <div className="org-switcher-error" role="alert">{error}</div> : null}
           <div className="account-workspace-actions">
