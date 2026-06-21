@@ -1,0 +1,149 @@
+/* Shared dashboard loading skeletons.
+ *
+ * One shimmer treatment (.dash-skeleton) so every tab's loading state reads as
+ * the same family. Building blocks and page-shaped layouts live in
+ * apps/web/app/dashboard/ui/skeleton.tsx.
+ */
+
+/* ── Base block ─────────────────────────────────────────────────────────── */
+.dash-skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.dash-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: dash-skeleton-sheen 1.25s ease-in-out infinite;
+}
+
+:root[data-theme="dark"] .dash-skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+}
+
+@keyframes dash-skeleton-sheen {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-skeleton::after {
+    animation: none;
+  }
+}
+
+/* ── Page shell ─────────────────────────────────────────────────────────── */
+.dash-skel {
+  display: grid;
+  gap: 14px;
+  padding: 14px 0 0;
+}
+
+/* ── Stat tiles ─────────────────────────────────────────────────────────── */
+.dash-skel-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.dash-skel-tile {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dash-skel-tile__label {
+  height: 10px;
+  width: 58%;
+}
+
+.dash-skel-tile__value {
+  height: 22px;
+  width: 46%;
+}
+
+.dash-skel-tile__sub {
+  height: 10px;
+  width: 72%;
+}
+
+/* ── Chart cards ────────────────────────────────────────────────────────── */
+.dash-skel-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.dash-skel-grid.is-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dash-skel-grid.is-one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.dash-skel-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dash-skel-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dash-skel-card__title {
+  height: 13px;
+  width: 42%;
+}
+
+.dash-skel-card__meta {
+  height: 13px;
+  width: 64px;
+}
+
+.dash-skel-chart {
+  position: relative;
+  min-height: 190px;
+  overflow: hidden;
+  border-radius: var(--control-radius);
+  border: 1px solid var(--line-soft);
+  background:
+    linear-gradient(var(--chart-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
+    var(--chart-card-bg);
+  background-size: 100% 38px, 60px 100%, 100% 100%;
+}
+
+.dash-skel-chart.is-tall {
+  min-height: 280px;
+}
+
+.dash-skel-chart__bars {
+  position: absolute;
+  inset: auto 16px 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 62%;
+}
+
+.dash-skel-chart__bars .dash-skeleton {
+  flex: 1 1 0;
+}
