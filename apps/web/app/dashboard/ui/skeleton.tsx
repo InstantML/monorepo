@@ -92,31 +92,3 @@ export function AnalysisSkeleton({ label }: { label: string }) {
     </div>
   );
 }
-
-// Compare page: a side-by-side matrix — one column per selected run, with a
-// header band and metric rows of jittered widths so it reads as real content.
-export function CompareSkeleton({ runCount }: { runCount: number }) {
-  const columns = Math.min(Math.max(runCount, 2), 5);
-  const template = `minmax(180px, 0.85fr) repeat(${columns}, minmax(150px, 1fr))`;
-  return (
-    <div className="dash-skel-compare" role="status" aria-label="Loading selected runs">
-      <div className="dash-skel-compare__head" style={{ gridTemplateColumns: template }}>
-        <Skeleton className="dash-skel-line is-sub" />
-        {Array.from({ length: columns }, (_, index) => (
-          <div className="dash-skel-compare__run" key={index}>
-            <Skeleton className="dash-skel-line is-title" />
-            <Skeleton className="dash-skel-line is-sub" />
-          </div>
-        ))}
-      </div>
-      {Array.from({ length: 8 }, (_, row) => (
-        <div className="dash-skel-compare__row" key={row} style={{ gridTemplateColumns: template }}>
-          <Skeleton className="dash-skel-line" width={`${50 + ((row * 7) % 34)}%`} />
-          {Array.from({ length: columns }, (_, col) => (
-            <Skeleton className="dash-skel-line" key={col} width={`${40 + (((row + col) * 11) % 48)}%`} />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}

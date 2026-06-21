@@ -8,17 +8,14 @@ import { formatMetricValue } from "../../../src/charts.js";
 import { identityColor } from "../../../src/chart-colors.js";
 import { displayStatusForRun, formatNumber, metricGoal, metricGoalLabel, statusTone } from "../../../src/state.js";
 import {
-  artifactHasStoredBytes,
   artifactTotalForRun,
   compactValue,
   compareCategory,
   comparePathLabel,
   compareRowRank,
-  formatBytes,
   metricNamespace,
   metricTitle,
   runNoteText,
-  safeArtifactMediaKind,
   shortValue,
 } from "../../dashboard-models";
 import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, RunSummary } from "../../dashboard-types";
@@ -64,19 +61,6 @@ function compareRunSearchText(run: RunSummary, artifactsByRun: Record<string, Ar
     ...Object.entries(run.config ?? {}).map(([key, value]) => `${key} ${compactValue(value)}`),
     ...(artifactsByRun[run.id] ?? []).map((artifact) => `${artifact.name} ${artifact.type}`),
   ].filter(Boolean).join(" ").toLowerCase();
-}
-
-function compareNumbersDesc(left: unknown, right: unknown) {
-  const leftNumber = typeof left === "number" && Number.isFinite(left) ? left : null;
-  const rightNumber = typeof right === "number" && Number.isFinite(right) ? right : null;
-  if (leftNumber === null && rightNumber === null) return 0;
-  if (leftNumber === null) return 1;
-  if (rightNumber === null) return -1;
-  return rightNumber - leftNumber;
-}
-
-function compareNumbersAsc(left: unknown, right: unknown) {
-  return -compareNumbersDesc(left, right);
 }
 
 // Numeric column sort that always pushes missing values (null/NaN) to the bottom,
@@ -173,15 +157,6 @@ function buildMetricLookup(rawRows: any[], runs: RunSummary[]): MetricLookup {
       return typeof latest === "number" && Number.isFinite(latest) ? latest : null;
     },
   };
-}
-
-function bestRunByMetric(runs: RunSummary[], metricKey: string, lookup: MetricLookup) {
-  const goal = metricGoal(metricKey);
-  return [...runs].sort((left, right) => {
-    const lv = lookup.best(left.id, metricKey);
-    const rv = lookup.best(right.id, metricKey);
-    return goal === "minimize" ? compareNumbersAsc(lv, rv) : compareNumbersDesc(lv, rv);
-  })[0] ?? null;
 }
 
 function uniqueMetricKeys(keys: string[]) {
@@ -291,23 +266,6 @@ function buildCompareRows(rawRows: any[], runs: RunSummary[]): CompareRowView[] 
     });
 }
 
-function artifactDownloadUrl(artifact: Artifact) {
-  return `/api/artifacts/${encodeURIComponent(artifact.id)}/download`;
-}
-
-function ArtifactMediaPreview({ artifact, compact = false, fallback = false }: { artifact: Artifact; compact?: boolean; fallback?: boolean }) {
-  const kind = safeArtifactMediaKind(artifact);
-  if (!kind) return fallback ? <small className="artifact-media-fallback">Preview unavailable.</small> : null;
-  if (!artifactHasStoredBytes(artifact)) return <small className="artifact-media-fallback">{compact ? "Preview unavailable" : "Media preview unavailable; download or copy ID."}</small>;
-  const src = artifactDownloadUrl(artifact);
-  if (kind === "image") return <img alt={artifact.name} className="artifact-media artifact-image" loading="lazy" src={src} />;
-  return kind === "audio" ? (
-    <audio aria-label={`Audio preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
-  ) : (
-    <video aria-label={`Video preview for ${artifact.name}`} className="artifact-media" controls preload="metadata" src={src} />
-  );
-}
-
 function TagList({ tags }: { tags: string[] }) {
   if (!tags?.length) return <span className="compare-empty">No tags</span>;
   return (
@@ -315,49 +273,6 @@ function TagList({ tags }: { tags: string[] }) {
       {tags.slice(0, 4).map((tag) => <span className="chip" key={tag}>{tag}</span>)}
       {tags.length > 4 ? <span className="chip">+{tags.length - 4}</span> : null}
     </div>
-  );
-}
-
-// Duplicate filenames are versions of the same artifact: show the latest once
-// with a version-count chip instead of listing identical names side by side.
-export function groupCompareArtifacts(artifacts: Artifact[]) {
-  const byName = new Map<string, Artifact[]>();
-  for (const artifact of artifacts) {
-    const list = byName.get(artifact.name) ?? [];
-    list.push(artifact);
-    byName.set(artifact.name, list);
-  }
-  return [...byName.values()].map((versions) => {
-    const sorted = [...versions].sort((a, b) => (b.step ?? -1) - (a.step ?? -1));
-    return { latest: sorted[0], versionCount: sorted.length };
-  });
-}
-
-function CompareArtifactStrip({ artifactsByRun, runs }: { artifactsByRun: Record<string, Artifact[]>; runs: RunSummary[] }) {
-  const runArtifacts = runs.map((run) => ({
-    run,
-    groups: groupCompareArtifacts(artifactsByRun[run.id] ?? []).slice(0, 3),
-    expected: Boolean(artifactsByRun[run.id]),
-  }));
-  if (!runArtifacts.some((item) => item.groups.length || !item.expected)) return null;
-  return (
-    <section className="compare-artifact-strip">
-      {runArtifacts.map(({ run, groups, expected }) => (
-        <article className="compare-artifact-run" key={run.id}>
-          <strong title={run.name}>{run.name}</strong>
-          {groups.length ? groups.map(({ latest, versionCount }) => (
-            <div className="compare-artifact-card" key={latest.id}>
-              <strong>{latest.name}</strong>
-              <small>
-                {latest.step === null ? "no step" : `step ${latest.step}`} · {formatBytes(latest.size_bytes)}
-                {versionCount > 1 ? ` · ${versionCount} versions` : ""}
-              </small>
-              <ArtifactMediaPreview artifact={latest} compact />
-            </div>
-          )) : <small>{expected ? "Loading metadata..." : "No artifacts"}</small>}
-        </article>
-      ))}
-    </section>
   );
 }
 
@@ -519,7 +434,7 @@ function CompareRunTable({
                   <span className="cmp-run-name" title={run.name}>{run.name}</span>
                   <span className="cmp-identity-sub">
                     <span className={`pill cmp-status ${statusTone(displayStatus)}`}>{displayStatus}</span>
-                    {isReference ? <span className="cmp-ref-tag">Reference</span> : <span className="cmp-proj">{run.project}</span>}
+                    {!isReference ? <span className="cmp-proj">{run.project}</span> : null}
                   </span>
                 </span>
                 {onReference ? (
@@ -594,29 +509,6 @@ function CompareRunTable({
         })}
       </div>
     </div>
-    </div>
-  );
-}
-
-function CompareSummary({ metricKey, referenceRunId, runs, color, lookup }: { metricKey: string; referenceRunId: string; runs: RunSummary[]; color: string; lookup: MetricLookup }) {
-  const bestRun = bestRunByMetric(runs, metricKey, lookup);
-  const bestValue = bestRun ? lookup.best(bestRun.id, metricKey) : null;
-  const referenceValue = lookup.best(referenceRunId, metricKey);
-  const delta = bestRun && bestRun.id !== referenceRunId ? metricDelta(bestValue, referenceValue, metricGoal(metricKey)) : null;
-  if (!bestRun) return null;
-  return (
-    <div className="cmp-best-banner">
-      <span className="cmp-swatch lg" style={{ background: color }} aria-hidden />
-      <div className="cmp-best-meta">
-        <span className="analysis-eyebrow">{metricGoalLabel(metricKey)} run · {metricTitle(metricKey)}</span>
-        <strong title={bestRun.name}>{bestRun.name}</strong>
-      </div>
-      <span className="cmp-best-val">{bestValue === null ? "—" : formatMetricValue(bestValue)}</span>
-      {bestRun.id === referenceRunId ? (
-        <span className="cmp-best-delta">reference</span>
-      ) : delta ? (
-        <span className={`cmp-best-delta cmp-delta ${delta.tone}`} title={delta.title}>{delta.text} vs reference</span>
-      ) : null}
     </div>
   );
 }
@@ -702,7 +594,7 @@ export function SideBySide({
   // back to the default sort so the row order is never silently ambiguous.
   const sortColValid = sort.col === "identity" || columns.some((column) => column.key === sort.col);
   const effectiveSort: SortState = sortColValid ? sort : { col: defaultSortCol, dir: metricGoal(metricKey) === "minimize" ? "asc" : "desc" };
-  const sortedRuns = sortRunsForTable(visibleRuns, effectiveSort, referenceRunId, lookup);
+  const sortedRuns = sortRunsForTable(visibleRuns, effectiveSort, lookup);
 
   const onSortColumn = (col: string, preferAsc: boolean) => {
     setSort((current) => current.col === col ? { col, dir: current.dir === "asc" ? "desc" : "asc" } : { col, dir: preferAsc ? "asc" : "desc" });
@@ -724,7 +616,6 @@ export function SideBySide({
       })()
     : [];
 
-  const referenceColor = colorByRunId.get(bestRunByMetric(visibleRuns, metricKey, lookup)?.id ?? "") ?? "var(--accent)";
   const hasRuns = visibleRuns.length > 0;
 
   return (
@@ -736,7 +627,6 @@ export function SideBySide({
       ) : null}
       {hasRuns ? (
         <>
-          <CompareSummary metricKey={metricKey} referenceRunId={referenceRunId} runs={visibleRuns} color={referenceColor} lookup={lookup} />
           {resolvedLayout === "rows" ? (
             <CompareRunTable
               columns={columns}
@@ -753,7 +643,6 @@ export function SideBySide({
           ) : (
             <CompareMatrix referenceRunId={referenceRunId} rows={matrixRows} runs={visibleRuns} colorByRunId={colorByRunId} />
           )}
-          <CompareArtifactStrip artifactsByRun={artifactsByRun} runs={visibleRuns} />
         </>
       ) : (
         <div className="empty">No compared runs match the current search.</div>
@@ -762,9 +651,9 @@ export function SideBySide({
   );
 }
 
-// Sort the visible runs by the active column, then pin the reference run to the top
-// so deltas always read against a fixed anchor row.
-function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: string, lookup: MetricLookup) {
+// Sort the visible runs by the active column. The reference run remains marked
+// in-place so header sorting always changes the row order users are inspecting.
+function sortRunsForTable(runs: RunSummary[], sort: SortState, lookup: MetricLookup) {
   const selectedOrder = new Map(runs.map((run, index) => [run.id, index]));
   const tie = (left: RunSummary, right: RunSummary) => (selectedOrder.get(left.id) ?? 0) - (selectedOrder.get(right.id) ?? 0);
   const dir = sort.dir === "asc" ? 1 : -1;
@@ -782,6 +671,5 @@ function sortRunsForTable(runs: RunSummary[], sort: SortState, referenceRunId: s
     else if (sort.col === "artifacts") result = numericNullsLast(artifactTotalForRun(left), artifactTotalForRun(right), dir);
     return result || tie(left, right);
   });
-  const reference = sorted.find((run) => run.id === referenceRunId);
-  return reference ? [reference, ...sorted.filter((run) => run.id !== referenceRunId)] : sorted;
+  return sorted;
 }

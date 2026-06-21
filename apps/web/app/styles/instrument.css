@@ -268,15 +268,10 @@ button:focus-visible,
 }
 
 /* 16 — Analysis stat strips fill the space their row gives them (never
- *      overlap a sibling title); values are data → mono. The artifacts page
- *      strip sits alone on its row, so it spans fully. */
+ *      overlap a sibling title); values are data → mono. */
 .analysis-stat-strip {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.artifact-stat-strip {
-  width: 100%;
 }
 
 .analysis-stat-strip .analysis-stat {

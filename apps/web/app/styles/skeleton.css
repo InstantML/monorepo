@@ -46,22 +46,6 @@
   padding: 14px 0 0;
 }
 
-.dash-skel-line {
-  height: 12px;
-  width: 100%;
-  border-radius: 5px;
-}
-
-.dash-skel-line.is-title {
-  height: 16px;
-  width: 60%;
-}
-
-.dash-skel-line.is-sub {
-  height: 11px;
-  width: 38%;
-}
-
 /* ── Stat tiles ─────────────────────────────────────────────────────────── */
 .dash-skel-tiles {
   display: grid;
@@ -162,42 +146,4 @@
 
 .dash-skel-chart__bars .dash-skeleton {
   flex: 1 1 0;
-}
-
-/* ── Compare matrix ─────────────────────────────────────────────────────── */
-.dash-skel-compare {
-  display: grid;
-  gap: 0;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.dash-skel-compare__head,
-.dash-skel-compare__row {
-  display: grid;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.dash-skel-compare__head {
-  padding: 14px;
-  background: var(--surface-2);
-}
-
-/* Header sits on --surface-2, so its skeletons need a touch more contrast. */
-.dash-skel-compare__head .dash-skeleton {
-  background: var(--surface-3);
-}
-
-.dash-skel-compare__row:last-child {
-  border-bottom: 0;
-}
-
-.dash-skel-compare__run {
-  display: grid;
-  gap: 8px;
 }
