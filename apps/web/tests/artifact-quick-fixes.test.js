@@ -45,12 +45,17 @@ test("raw artifacts sharing a name collapse into one row with a version chip", (
   assert.match(browserSrc, /olderVersion/);
 });
 
-test("artifacts page demotes totals into a stat strip and folds empty panels", () => {
+test("artifacts page drops the topline totals strip and folds empty panels", () => {
   const paneSrc = read("app/dashboard/artifacts/tab-pane.tsx");
-  // AR6: totals live in a compact strip at the top, not a dedicated right-rail panel.
-  assert.match(paneSrc, /analysis-stat-strip artifact-stat-strip/);
+  // AR6: the topline totals strip (files/checkpoints/rollouts/inspected run) is
+  // gone — it implied the whole catalog was run-scoped when only raw artifacts are.
+  assert.doesNotMatch(paneSrc, /analysis-stat-strip artifact-stat-strip/);
+  assert.doesNotMatch(paneSrc, /Inspected run/);
   assert.doesNotMatch(paneSrc, /Selected page totals/);
   assert.doesNotMatch(paneSrc, /artifact-totals-panel/);
+  // The raw-artifacts panel names the inspected run, since it is the only
+  // run-scoped section of the page.
+  assert.match(paneSrc, /Raw run artifacts <span>\{primaryRun\?\.name/);
   // AR1-lite: empty collections collapse to a one-line note; empty detail panels
   // fold into a single hint panel.
   assert.match(paneSrc, /collectionsCollapsed/);

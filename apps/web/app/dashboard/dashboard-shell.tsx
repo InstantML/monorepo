@@ -39,7 +39,6 @@ import { useFocusTrap } from "./ui/use-focus-trap";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
 import {
-  artifactTotalsForRuns,
   buildAlertRows,
   buildApiRows,
   buildDatasetRows,
@@ -956,8 +955,6 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
-  // Rail count badges: total runs on Runs, open-alert count on Run Health.
-  const artifactTotals = useMemo(() => artifactTotalsForRuns(sortedRuns), [sortedRuns]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const apiStatusParams = useMemo(() => dashboardStatusQueryParams(status, status), [status]);
@@ -4625,7 +4622,6 @@ function dismissTopOverlay() {
           {activeTab === "artifacts" ? (
             <ArtifactsTabPane
               api={api}
-              artifactTotals={artifactTotals}
               canManageArtifacts={canManageOrg}
               loggedObjects={loggedObjects}
               objectRowsById={objectRowsById}

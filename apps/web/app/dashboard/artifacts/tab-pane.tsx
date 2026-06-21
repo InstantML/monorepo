@@ -25,8 +25,6 @@ import type {
   RunSummary,
 } from "../../dashboard-types";
 
-type ArtifactTotals = { file: number; checkpoint: number; rollout: number };
-
 type Props = {
   api: {
     get: <T = unknown>(path: string, options?: { signal?: AbortSignal }) => Promise<T>;
@@ -34,7 +32,6 @@ type Props = {
     patch: <T = unknown>(path: string, body: Record<string, unknown>) => Promise<T>;
     delete: <T = unknown>(path: string, body?: Record<string, unknown>) => Promise<T>;
   };
-  artifactTotals: ArtifactTotals;
   canManageArtifacts: boolean;
   loggedObjects: LoggedObject[];
   objectRowsById: Record<number, LoggedObjectRow[]>;
@@ -86,7 +83,6 @@ function replaceArtifactUrl(collectionId: string, versionId: string) {
 
 export function ArtifactsTabPane({
   api,
-  artifactTotals,
   canManageArtifacts,
   loggedObjects,
   objectRowsById,
@@ -486,12 +482,6 @@ export function ArtifactsTabPane({
       {error ? <div className="failure-card" role="alert"><strong>{error}</strong></div> : null}
       {loading ? <div className="status-strip loading" aria-live="polite">{loading}</div> : null}
       {versionedUnsupported ? <div className="status-strip" aria-live="polite">Versioned artifact catalog unavailable on this backend. Showing raw run artifacts.</div> : null}
-      <div className="analysis-stat-strip artifact-stat-strip">
-        <div className="analysis-stat"><span>Files</span><strong>{formatNumber(artifactTotals.file, 0)}</strong></div>
-        <div className="analysis-stat"><span>Checkpoints</span><strong>{formatNumber(artifactTotals.checkpoint, 0)}</strong></div>
-        <div className="analysis-stat"><span>Rollouts</span><strong>{formatNumber(artifactTotals.rollout, 0)}</strong></div>
-        <div className="analysis-stat"><span>Inspected run</span><strong>{primaryRun?.name ?? "-"}</strong></div>
-      </div>
       {/* Hold the empty state until the legacy fetch settles — otherwise it
           flashes "No artifacts yet" while raw artifacts are still loading. */}
       {collectionsCollapsed && !hasRawArtifacts && !legacyLoading ? (
@@ -635,7 +625,7 @@ export function ArtifactsTabPane({
         )}
 
         <details className="panel artifact-raw-panel" open={rawPanelOpen}>
-          <summary className="panel-head"><h2><Package size={15} /> Raw run artifacts <span>({rawArtifacts.length})</span></h2></summary>
+          <summary className="panel-head"><h2><Package size={15} /> Raw run artifacts <span>{primaryRun?.name ? `· ${primaryRun.name} ` : ""}({rawArtifacts.length})</span></h2></summary>
           <div className="panel-body">
             {legacyLoading ? <div className="status-strip loading" aria-live="polite">{legacyLoading}</div> : null}
             <RichObjectPanel objects={loggedObjects} rowsByObjectId={objectRowsById} title="Logged Objects" />
