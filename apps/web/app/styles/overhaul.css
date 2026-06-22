@@ -3189,28 +3189,36 @@ button.compare-row-head.active {
 .runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary {
   display: grid;
   justify-items: center;
-  gap: 3px;
-  padding: 8px 4px;
-  border-bottom: 1px solid var(--line-soft);
+  gap: 10px;
+  padding: 14px 4px;
+  border-top: 1px solid var(--line-soft);
   color: var(--muted);
   text-align: center;
 }
 .runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary strong {
-  color: var(--text);
-  font: 700 13px/1 var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font: 700 12px/1 var(--font-mono);
 }
 .runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary span {
   writing-mode: vertical-rl;
   text-transform: uppercase;
+  letter-spacing: 0.08em;
   font: 650 9.5px/1 var(--font-mono);
 }
 .runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary em {
-  max-width: 44px;
-  overflow: hidden;
+  writing-mode: vertical-rl;
   color: var(--text-2);
-  font: 600 10px/1.15 var(--font-mono);
+  font: 600 10px/1 var(--font-mono);
   font-style: normal;
-  text-overflow: ellipsis;
+  letter-spacing: 0.04em;
 }
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }
