@@ -319,11 +319,6 @@ export function RunsWorkspace({
   const showSelectAllMatching = matchingOverflow && selectedRunIds.length > 0;
   const selectAllMatchingTarget = Math.min(summaryTotal, BULK_SELECT_MATCHING_LIMIT);
   const initialRunsLoading = !initialLoadDone && workspaceRuns.length === 0;
-  const railPageLabel = initialRunsLoading
-    ? "Loading runs"
-    : summaryTotal > 0
-      ? `${pageStart}-${pageEnd} of ${summaryTotal}`
-      : "No runs";
 
   useEffect(() => {
     if (!selectedRunIds.length) setBulkPromptEnabled(false);
@@ -351,7 +346,9 @@ export function RunsWorkspace({
             <h2>Runs {initialRunsLoading ? <span>loading</span> : <span>({summaryTotal})</span>}</h2>
           </label>
           <div className="workspace-rail-actions">
-            <button className="icon-button" type="button" aria-label="Refresh runs" title="Refresh runs" onClick={onRefresh}><RefreshCw size={15} /></button>
+            {!runRailCollapsed ? (
+              <button className="icon-button" type="button" aria-label="Refresh runs" title="Refresh runs" onClick={onRefresh}><RefreshCw size={15} /></button>
+            ) : null}
             <button
               aria-label={runRailCollapsed ? "Restore runs selector" : "Collapse runs selector"}
               aria-pressed={runRailCollapsed}
@@ -391,11 +388,6 @@ export function RunsWorkspace({
             ) : null}
           </div>
         ) : null}
-        <div className="workspace-rail-collapsed-summary" aria-label={`Runs rail summary: ${selectedRunIds.length} selected, ${railPageLabel}`}>
-          <strong>{selectedRunIds.length}</strong>
-          <span>selected</span>
-          <em>{railPageLabel}</em>
-        </div>
         {showSelectAllMatching && !initialRunsLoading ? (
           <div className={`workspace-rail-select-banner ${bulkPromptEnabled ? "" : "quiet"}`} role="status" aria-live="polite">
             <span>{bulkPromptEnabled ? `${selectedRunIds.length} of ${summaryTotal} selected.` : "More runs match the current filters."}</span>
