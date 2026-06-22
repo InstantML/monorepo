@@ -139,15 +139,17 @@ test("distributed visuals avoid red/green-only and signed z coloring", () => {
   assert.match(css, /var\(--blue\), var\(--surface-2\), var\(--amber\)/);
 });
 
-test("distributed standalone page uses a full-width selector band", () => {
+test("distributed standalone page shows the run once via the selector band", () => {
   const src = read("app/dashboard/distributed/tab-pane.tsx");
-  assert.match(src, /<PageHead[\s\S]*title="Rank reducers"/);
+  assert.match(src, /<PageHead title="Rank reducers" \/>/);
   assert.match(src, /className="distributed-control-band"/);
-  assert.match(src, /className="distributed-run-summary"/);
+  // The run name/meta is shown only by the Run selector — no separate summary
+  // block and no PageHead lede duplicating it.
+  assert.doesNotMatch(src, /className="distributed-run-summary"/);
+  assert.doesNotMatch(src, /lede=/);
   assert.match(src, /description: \[run\.project, run\.status\]/);
   const css = read("app/styles/research.css");
-  assert.match(css, /\.distributed-control-band \{[\s\S]*grid-template-columns: minmax\(220px, 0\.9fr\) minmax\(0, 1\.8fr\)/);
-  assert.match(css, /\.distributed-toolbar \.distributed-run-select \{[\s\S]*flex-basis: 320px/);
+  assert.match(css, /\.distributed-toolbar \.distributed-run-select \{[\s\S]*flex: 1\.4 1 320px/);
   const helpTriggerRule = css.match(/\.chart-help-trigger \{[^}]+\}/)?.[0] ?? "";
   assert.match(helpTriggerRule, /background: transparent/);
   assert.match(helpTriggerRule, /border: 0/);
