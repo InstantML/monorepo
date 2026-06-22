@@ -3181,45 +3181,6 @@ button.compare-row-head.active {
 .workspace-run-tags em {
   font-size: var(--fs-data);
 }
-/* dashboard-runs.css owns the base collapsed summary. This later layer mirrors
- * it so the current overhaul rail keeps the same visible collapsed context. */
-.workspace-rail-collapsed-summary {
-  display: none;
-}
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary {
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  padding: 14px 4px;
-  border-top: 1px solid var(--line-soft);
-  color: var(--muted);
-  text-align: center;
-}
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary strong {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font: 700 12px/1 var(--font-mono);
-}
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary span {
-  writing-mode: vertical-rl;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font: 650 9.5px/1 var(--font-mono);
-}
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary em {
-  writing-mode: vertical-rl;
-  color: var(--text-2);
-  font: 600 10px/1 var(--font-mono);
-  font-style: normal;
-  letter-spacing: 0.04em;
-}
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }
 

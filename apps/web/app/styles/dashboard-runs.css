@@ -413,61 +413,6 @@
   font-weight: 600;
 }
 
-.runs-workspace.run-rail-collapsed .workspace-rail-page-select {
-  display: none;
-}
-
-.runs-workspace.run-rail-collapsed .workspace-rail-select-all {
-  flex-direction: column;
-  gap: 6px;
-}
-
-.runs-workspace.run-rail-collapsed .workspace-rail-select-banner {
-  display: none;
-}
-
-.workspace-rail-collapsed-summary {
-  display: none;
-}
-
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary {
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  padding: 14px 4px;
-  border-top: 1px solid var(--line-soft);
-  color: var(--muted);
-  text-align: center;
-}
-
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary strong {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-strong);
-  font: 700 12px/1 var(--font-mono);
-}
-
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary span {
-  writing-mode: vertical-rl;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font: 650 9.5px/1 var(--font-mono);
-}
-
-.runs-workspace.run-rail-collapsed .workspace-rail-collapsed-summary em {
-  writing-mode: vertical-rl;
-  color: var(--text-2);
-  font: 600 10px/1 var(--font-mono);
-  font-style: normal;
-  letter-spacing: 0.04em;
-}
-
 .workspace-rail-actions,
 .fullscreen-nav-actions {
   display: inline-flex;
@@ -485,8 +430,14 @@
   height: 38px;
 }
 
+/* ── Collapsed runs rail ───────────────────────────────────────────────
+ * When collapsed the rail is just a thin spine: an expand control plus a
+ * vertical "Runs" wordmark. The selection count, page range, select-all,
+ * and refresh are all redundant when the list is hidden (the count lives
+ * in the filter bar, the selection shows on each panel card), so they are
+ * dropped rather than rotated into an unreadable stack. */
 .runs-workspace.run-rail-collapsed {
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr);
 }
 
 .runs-workspace.run-rail-collapsed .workspace-run-rail {
@@ -497,34 +448,42 @@
   display: grid;
   justify-items: center;
   align-content: start;
-  gap: 14px;
+  gap: 16px;
   height: auto;
   min-height: 0;
-  padding: 14px 4px;
+  padding: 12px 4px;
+  border-bottom: 0;
+}
+
+/* Expand control sits at the top as the primary affordance. */
+.runs-workspace.run-rail-collapsed .workspace-rail-actions {
+  order: -1;
 }
 
 .runs-workspace.run-rail-collapsed .workspace-rail-select-all {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
+  cursor: default;
+}
+
+.runs-workspace.run-rail-collapsed .workspace-rail-select-all input {
+  display: none;
 }
 
 .runs-workspace.run-rail-collapsed .workspace-rail-head h2 {
   writing-mode: vertical-rl;
-  transform: rotate(180deg);
   white-space: nowrap;
-  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--muted);
 }
 
 .runs-workspace.run-rail-collapsed .workspace-rail-head h2 span {
-  display: inline;
+  display: none;
 }
 
-.runs-workspace.run-rail-collapsed .workspace-rail-actions {
-  display: grid;
-  gap: 6px;
-}
-
+.runs-workspace.run-rail-collapsed .workspace-rail-page-select,
+.runs-workspace.run-rail-collapsed .workspace-rail-select-banner,
 .runs-workspace.run-rail-collapsed .workspace-run-list,
 .runs-workspace.run-rail-collapsed .workspace-run-footer {
   display: none;
