@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { shortMetricName } from "../../dashboard-models";
+import { SegmentedToggle } from "../components/segmented-toggle";
 import { CustomSelect } from "../ui/select";
 import type { TableColumns } from "../../dashboard-types";
 
@@ -139,26 +140,16 @@ export function RunsCommandbar({
         value={metricOptions.length ? metricKey : ""}
       />
       <div className="command-spacer" />
-      <div className="runs-view-switch" role="group" aria-label="Runs view">
-        <button
-          aria-pressed={viewMode === "panels"}
-          className={viewMode === "panels" ? "active" : ""}
-          onClick={() => onViewMode("panels")}
-          title="Run selector with chart panels"
-          type="button"
-        >
-          <LayoutGrid size={14} /> Panels
-        </button>
-        <button
-          aria-pressed={viewMode === "table"}
-          className={viewMode === "table" ? "active" : ""}
-          onClick={() => onViewMode("table")}
-          title="Flat sortable runs table"
-          type="button"
-        >
-          <Table2 size={14} /> Table
-        </button>
-      </div>
+      <SegmentedToggle
+        ariaLabel="Runs view"
+        className="runs-view-switch"
+        onChange={onViewMode}
+        options={[
+          { value: "panels", label: "Panels", icon: LayoutGrid, title: "Run selector with chart panels" },
+          { value: "table", label: "Table", icon: Table2, title: "Flat sortable runs table" },
+        ]}
+        value={viewMode}
+      />
       <div className="runs-actions-menu" ref={actionsMenuRef}>
         <button
           aria-controls="runs-actions-popover"

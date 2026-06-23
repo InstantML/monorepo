@@ -105,34 +105,8 @@
 .analysis-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .analysis-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-.insights-view-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 34px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: var(--control-radius);
-  background: var(--surface-2);
-}
-.insights-view-switch button {
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--tight-radius);
-  background: transparent;
-  color: var(--muted);
-  font: 650 11px/1 var(--font-sans);
-}
-.insights-view-switch button[aria-pressed="true"] {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-.insights-view-switch button:focus-visible {
-  outline: 0;
-  box-shadow: 0 0 0 2px var(--accent-soft);
-}
+/* The Insights view switch now renders as the shared .iml-segmented control
+ * (segmented.css); no surface-specific overrides needed here. */
 
 /* ── GPU & System usage insights ─────────────────────────────────────────── */
 .usage-insights {

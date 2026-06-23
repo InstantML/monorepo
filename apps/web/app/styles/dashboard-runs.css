@@ -257,55 +257,12 @@
   overflow-anchor: none;
 }
 
-/* Panels ⇄ Table view switch, docked in the command bar above the content. */
+/* Panels ⇄ Table view switch, docked in the command bar above the content.
+ * The look + sliding highlight come from the shared .iml-segmented control
+ * (segmented.css); only the command-bar placement is set here. */
 .runs-view-switch {
-  display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-self: end;
   min-width: 162px;
-  height: 32px;
-  border: 1px solid var(--line);
-  border-radius: var(--control-radius);
-  background: var(--surface-2);
-  overflow: hidden;
-}
-
-.runs-view-switch button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: var(--fs-data);
-  font-weight: 680;
-  line-height: 1;
-  padding: 0 10px;
-  white-space: nowrap;
-}
-
-.runs-view-switch button + button {
-  border-left: 1px solid var(--line-soft);
-}
-
-.runs-view-switch button:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
-
-.runs-view-switch button:focus-visible {
-  position: relative;
-  z-index: 1;
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
-  outline: none;
-}
-
-.runs-view-switch button.active {
-  background: var(--surface-selected);
-  color: var(--accent-strong);
 }
 
 /* Span the full content width so the comparison panel and runs table line up
@@ -313,6 +270,31 @@
  * of sitting inset and visibly narrower. */
 .runs-table-view {
   padding: 0 0 16px;
+}
+
+/* Each view mounts fresh when the Panels ⇄ Table switch flips, so a plain
+ * fade-in here gives the swap a soft transition instead of an instant cut.
+ * Opacity only (no transform) keeps the sticky run rail / table header from
+ * detaching during the animation. */
+@keyframes runs-view-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.runs-table-view,
+.runs-workspace {
+  animation: runs-view-fade-in 220ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runs-table-view,
+  .runs-workspace {
+    animation: none;
+  }
 }
 
 .workspace-rail-head,

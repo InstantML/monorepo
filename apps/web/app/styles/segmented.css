@@ -1,0 +1,80 @@
+/*
+ * Shared segmented toggle (.iml-segmented), driven by the <SegmentedToggle>
+ * component in app/dashboard/components/segmented-toggle.tsx.
+ *
+ * Equal-width columns so the sliding highlight (::before) lines up: the thumb
+ * is 1/count of the track and is translated by the active index. Both values
+ * come in as the --seg-count / --seg-active custom properties the component
+ * sets, so this same block handles a 2-, 3-, or N-way switch.
+ */
+.iml-segmented {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: stretch;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.iml-segmented::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  width: calc(100% / var(--seg-count, 2));
+  background: var(--surface-selected);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateX(calc(var(--seg-active, 0) * 100%));
+  transition: transform 240ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  pointer-events: none;
+}
+
+.iml-segmented__option {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--fs-data);
+  font-weight: 680;
+  line-height: 1;
+  padding: 0 12px;
+  white-space: nowrap;
+  transition: color 200ms ease;
+}
+
+.iml-segmented__option + .iml-segmented__option {
+  border-left: 1px solid var(--line-soft);
+}
+
+.iml-segmented__option:hover {
+  color: var(--text);
+}
+
+.iml-segmented__option:focus-visible {
+  z-index: 2;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
+  outline: none;
+}
+
+.iml-segmented__option[aria-pressed="true"] {
+  color: var(--accent-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iml-segmented::before {
+    transition: none;
+  }
+}

@@ -85,7 +85,13 @@ test("runs tab offers a persisted panels/table view toggle", () => {
   assert.match(commandbarSrc, /runs-view-switch/);
   assert.match(paneSrc, /<RunsTable/);
   assert.match(paneSrc, /instantml:next:runs-view/);
-  assert.match(commandbarSrc, /aria-pressed=\{viewMode === "table"\}/);
+  // The toggle is the shared SegmentedToggle, wired to viewMode with a "table"
+  // option; the aria-pressed state binding now lives in that component.
+  assert.match(commandbarSrc, /<SegmentedToggle/);
+  assert.match(commandbarSrc, /value=\{viewMode\}/);
+  assert.match(commandbarSrc, /value: "table"/);
+  const toggleSrc = read("app/dashboard/components/segmented-toggle.tsx");
+  assert.match(toggleSrc, /aria-pressed=\{value === optionValue\}/);
 });
 
 // V2 — superseded by main's header simplification (#189): the serif flourish

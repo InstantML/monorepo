@@ -17,6 +17,7 @@ import {
 import { formatNumber, metricGoal, metricGoalValue } from "../../../src/state.js";
 import { metricTitle } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
+import { SegmentedToggle } from "../components/segmented-toggle";
 import { AnalysisCard } from "../ui/analysis-card";
 import { CustomSelect, type SelectOption } from "../ui/select";
 import { SystemUsageInsightsPane } from "./system-usage-pane";
@@ -46,10 +47,16 @@ export function InsightsTabPane({ api, embedded = false, metricKey, onSelectRun 
           <div className="analysis-title-block">
             <h2>Insights</h2>
           </div>
-          <div className="insights-view-switch" role="group" aria-label="Insights view">
-            <button type="button" aria-pressed={activeView === "usage"} onClick={() => setActiveView("usage")}>GPU & System</button>
-            <button type="button" aria-pressed={activeView === "run-analysis"} onClick={() => setActiveView("run-analysis")}>Run Analysis</button>
-          </div>
+          <SegmentedToggle
+            ariaLabel="Insights view"
+            className="insights-view-switch"
+            onChange={setActiveView}
+            options={[
+              { value: "usage", label: "GPU & System" },
+              { value: "run-analysis", label: "Run Analysis" },
+            ]}
+            value={activeView}
+          />
         </header>
       ) : null}
 
