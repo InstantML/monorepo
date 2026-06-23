@@ -538,7 +538,7 @@ export function RunsWorkspace({
             <span><Search size={14} /> Search panels</span>
             <input aria-label="Search panels" id="panel-search" type="search" value={panelSearch} onChange={(event) => onPanelSearch(event.target.value)} placeholder="Search panels" />
           </label>
-          <button className="secondary compact-button" type="button" onClick={onResetWorkspace}><RefreshCw size={15} /> Rebuild layout</button>
+          {view.mode === "manual" ? <button className="icon-button framed" type="button" onClick={onResetWorkspace} aria-label="Rebuild layout" title="Rebuild layout from logged metrics"><RefreshCw size={15} /></button> : null}
           {!showAddPanelDrawer ? <button className="primary-button" data-add-panel-trigger="true" type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
         </div>
 
