@@ -618,6 +618,93 @@ button.compare-row-head.active {
   top: calc(var(--topbar-height) + 12px);
 }
 
+/* Loading skeleton — mirrors the populated workspace grid so the page reserves
+   layout space and settles in place instead of flashing empty panels. */
+.artifact-skeleton .panel-head h2 {
+  color: var(--muted);
+}
+
+.artifact-skeleton-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: var(--surface-soft);
+  padding: 10px;
+}
+
+.artifact-skeleton-row.is-version {
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+}
+
+.artifact-skeleton-line {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-sm, 4px);
+  background: linear-gradient(90deg, var(--surface-2, #eef0e8), var(--surface-3, #e7eadf), var(--surface-2, #eef0e8));
+  background-size: 220% 100%;
+  animation: workspace-skeleton-sheen 1.55s ease-in-out infinite;
+}
+
+.artifact-skeleton-line.is-chip {
+  width: 56px;
+  height: 16px;
+  border-radius: 999px;
+}
+
+.artifact-skeleton-line.is-title {
+  width: 72%;
+  height: 12px;
+}
+
+.artifact-skeleton-line.is-meta {
+  width: 52%;
+}
+
+.artifact-skeleton-line.is-box {
+  grid-row: span 2;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--control-radius);
+}
+
+.artifact-skeleton-line.is-block {
+  height: 56px;
+  border-radius: var(--control-radius);
+}
+
+:root[data-theme="dark"] .artifact-skeleton-line {
+  background: linear-gradient(90deg, #171a15, #1d211b, #171a15);
+  background-size: 220% 100%;
+}
+
+.artifact-settle-in {
+  animation: artifact-settle-in 0.18s ease-out;
+}
+
+@keyframes artifact-settle-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-skeleton-line {
+    animation: none;
+  }
+
+  .artifact-settle-in {
+    animation: none;
+  }
+}
+
 .artifact-version-panel,
 .artifact-manifest-panel,
 .artifact-raw-panel {
