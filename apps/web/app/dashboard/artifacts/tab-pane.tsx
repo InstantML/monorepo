@@ -475,17 +475,23 @@ export function ArtifactsTabPane({
   const hasRawArtifacts = rawArtifacts.length > 0 || loggedObjects.length > 0;
   const rawPanelOpen = versionedUnsupported || (!collections.length && hasRawArtifacts);
   const collectionsCollapsed = !loading && !collections.length && !collectionQuery && !typeFilter;
+  // First load (or a load that starts from an empty catalog) shows a skeleton
+  // that reserves the workspace layout, so the page settles in place instead of
+  // flashing empty panels and then snapping to the populated grid.
+  const initialLoading = Boolean(loading) && !collections.length && !versionedUnsupported;
 
   return (
     <>
       <PageHead title="Artifacts" />
       {error ? <div className="failure-card" role="alert"><strong>{error}</strong></div> : null}
-      {loading ? <div className="status-strip loading" aria-live="polite">{loading}</div> : null}
+      {loading && !initialLoading ? <div className="status-strip loading" aria-live="polite">{loading}</div> : null}
       {versionedUnsupported ? <div className="status-strip" aria-live="polite">Versioned artifact catalog unavailable on this backend. Showing raw run artifacts.</div> : null}
-      {/* Hold the empty state until the legacy fetch settles — otherwise it
-          flashes "No artifacts yet" while raw artifacts are still loading. */}
-      {collectionsCollapsed && !hasRawArtifacts && !legacyLoading ? (
-        <section className="panel artifact-empty-panel">
+      {initialLoading ? (
+        <ArtifactsWorkspaceSkeleton />
+      ) : /* Hold the empty state until the legacy fetch settles — otherwise it
+          flashes "No artifacts yet" while raw artifacts are still loading. */
+      collectionsCollapsed && !hasRawArtifacts && !legacyLoading ? (
+        <section className="panel artifact-empty-panel artifact-settle-in">
           <div className="panel-body artifact-empty-state">
             <Package size={22} aria-hidden />
             <strong>No artifacts yet</strong>
@@ -497,7 +503,7 @@ export function ArtifactsTabPane({
           </div>
         </section>
       ) : (
-      <div className="artifact-workspace">
+      <div className="artifact-workspace artifact-settle-in">
         {collectionsCollapsed ? (
           <section className="panel artifact-catalog-panel artifact-note-panel">
             <div className="panel-body artifact-inline-note">
@@ -635,6 +641,45 @@ export function ArtifactsTabPane({
       </div>
       )}
     </>
+  );
+}
+
+function ArtifactsWorkspaceSkeleton() {
+  return (
+    <div className="artifact-workspace artifact-skeleton" aria-busy="true" aria-live="polite" aria-label="Loading artifacts">
+      <section className="panel artifact-catalog-panel">
+        <div className="panel-head"><h2><Package size={15} /> Collections</h2></div>
+        <div className="panel-body artifact-collection-list">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div className="artifact-skeleton-row" key={index}>
+              <span className="artifact-skeleton-line is-chip" />
+              <span className="artifact-skeleton-line is-title" />
+              <span className="artifact-skeleton-line is-meta" />
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="panel artifact-version-panel">
+        <div className="panel-head"><h2><Archive size={15} /> Versions</h2></div>
+        <div className="panel-body artifact-collection-list">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div className="artifact-skeleton-row is-version" key={index}>
+              <span className="artifact-skeleton-line is-box" />
+              <span className="artifact-skeleton-line is-title" />
+              <span className="artifact-skeleton-line is-meta" />
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="panel artifact-lineage-panel">
+        <div className="panel-head"><h2><GitBranch size={15} /> Lineage</h2></div>
+        <div className="panel-body artifact-collection-list">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <span className="artifact-skeleton-line is-block" key={index} />
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
