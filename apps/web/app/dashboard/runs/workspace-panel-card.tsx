@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, CopyPlus, GripVertical, Maximize2, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, CopyPlus, GripVertical, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
@@ -736,22 +736,19 @@ function closeEnclosingMenu(event: MouseEvent<HTMLButtonElement>) {
 function panelActionMenuItems({
   onDuplicate,
   onEdit,
-  onFullscreen,
   onRemove,
   title,
 }: {
   onDuplicate?: () => void;
   onEdit?: () => void;
-  onFullscreen?: () => void;
   onRemove?: () => void;
   title: string;
 }): ReactNode {
-  if (!onEdit && !onDuplicate && !onFullscreen && !onRemove) return null;
+  if (!onEdit && !onDuplicate && !onRemove) return null;
   return (
     <>
       {onEdit ? <button className="chart-menu-item" type="button" aria-label={`Edit ${title}`} onClick={(event) => { closeEnclosingMenu(event); onEdit(); }}><Pencil size={14} aria-hidden="true" /> Edit panel</button> : null}
       {onDuplicate ? <button className="chart-menu-item" type="button" aria-label={`Duplicate ${title}`} onClick={(event) => { closeEnclosingMenu(event); onDuplicate(); }}><CopyPlus size={14} aria-hidden="true" /> Duplicate panel</button> : null}
-      {onFullscreen ? <button className="chart-menu-item" type="button" aria-label={`Fullscreen ${title}`} onClick={(event) => { closeEnclosingMenu(event); onFullscreen(); }}><Maximize2 size={14} aria-hidden="true" /> Open fullscreen</button> : null}
       {onRemove ? <button className="chart-menu-item chart-menu-item-danger" type="button" aria-label={`Remove ${title}`} onClick={(event) => { closeEnclosingMenu(event); onRemove(); }}><Trash2 size={14} aria-hidden="true" /> Remove panel</button> : null}
     </>
   );
@@ -1000,13 +997,25 @@ export function WorkspacePanelCard({
     window.addEventListener("pointerup", handlePointerUp, { once: true });
     window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
-  const panelActionItems = panelActionMenuItems({ onDuplicate, onEdit, onFullscreen, onRemove, title: panel.title });
+  const panelActionItems = panelActionMenuItems({ onDuplicate, onEdit, onRemove, title: panel.title });
+  // Clicking the card chrome (header, meta, padding) opens the panel
+  // fullscreen, but interactive regions keep their own behavior: the chart and
+  // its legend (the runs), the three-dot menu, and the drag/resize handles.
+  function handleCardClick(event: MouseEvent<HTMLElement>) {
+    if (!onFullscreen) return;
+    const target = event.target as HTMLElement;
+    if (target.closest(".chart-area, .panel-card-actions, .panel-resize-handle, .panel-drag-handle, button, a, summary, input, select")) {
+      return;
+    }
+    onFullscreen();
+  }
   return (
     <article
-      className={`workspace-panel-card ${className}`}
+      className={`workspace-panel-card${onFullscreen ? " workspace-panel-card-zoomable" : ""} ${className}`}
       data-panel-id={panel.id}
       data-panel-width={layout.w}
       data-panel-height={layout.h}
+      onClick={handleCardClick}
       onDragOver={(event) => {
         if (onDropBefore) event.preventDefault();
       }}
