@@ -3038,6 +3038,11 @@ button.compare-row-head.active {
 .page-head { padding: 4px 2px 16px; }
 .analysis-header { padding: 4px 2px 16px; }
 .tab-pane.active > .page-head { margin-bottom: 0; }
+/* On analysis pages the header sits in a flex/grid column whose own 16px gap
+ * already provides the head→content rhythm, so drop the header's bottom padding
+ * to avoid double-spacing (32px) versus the 16px gap on block-layout tabs. */
+.analysis-page > .page-head,
+.analysis-page > .analysis-header { padding-bottom: 0; }
 
 /* Headline scale matches the mocks: page titles 20/700, segmented stat
    values 16/700; metric tiles keep their larger 20px figure. */
