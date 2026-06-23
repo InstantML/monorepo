@@ -115,6 +115,17 @@
   grid-column: 1 / -1;
 }
 
+/* Clicking the card chrome opens the panel fullscreen, so hint at it over the
+   header and meta rows; the chart, legend, and controls keep their own cursor. */
+.workspace-panel-card-zoomable > .workspace-panel-head,
+.workspace-panel-card-zoomable > .workspace-panel-meta {
+  cursor: zoom-in;
+}
+
+.workspace-panel-card-zoomable .panel-drag-handle {
+  cursor: grab;
+}
+
 .workspace-panel-head {
   display: flex;
   align-items: flex-start;
