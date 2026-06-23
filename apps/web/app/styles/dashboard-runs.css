@@ -259,6 +259,7 @@
 
 /* Panels ⇄ Table view switch, docked in the command bar above the content. */
 .runs-view-switch {
+  position: relative;
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-self: end;
@@ -270,7 +271,31 @@
   overflow: hidden;
 }
 
+/* Sliding highlight that glides between the two options instead of the active
+ * background snapping on. Positioned over the left half and translated to the
+ * right half when the Table view is active. */
+.runs-view-switch::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+  z-index: 0;
+  background: var(--surface-selected);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateX(0);
+  transition: transform 240ms cubic-bezier(0.34, 1.4, 0.64, 1);
+  pointer-events: none;
+}
+
+.runs-view-switch[data-active="table"]::before {
+  transform: translateX(100%);
+}
+
 .runs-view-switch button {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -285,6 +310,7 @@
   line-height: 1;
   padding: 0 10px;
   white-space: nowrap;
+  transition: color 200ms ease;
 }
 
 .runs-view-switch button + button {
@@ -292,20 +318,23 @@
 }
 
 .runs-view-switch button:hover {
-  background: var(--surface-hover);
   color: var(--text);
 }
 
 .runs-view-switch button:focus-visible {
-  position: relative;
-  z-index: 1;
+  z-index: 2;
   box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
   outline: none;
 }
 
 .runs-view-switch button.active {
-  background: var(--surface-selected);
   color: var(--accent-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runs-view-switch::before {
+    transition: none;
+  }
 }
 
 /* Span the full content width so the comparison panel and runs table line up
@@ -313,6 +342,31 @@
  * of sitting inset and visibly narrower. */
 .runs-table-view {
   padding: 0 0 16px;
+}
+
+/* Each view mounts fresh when the Panels ⇄ Table switch flips, so a plain
+ * fade-in here gives the swap a soft transition instead of an instant cut.
+ * Opacity only (no transform) keeps the sticky run rail / table header from
+ * detaching during the animation. */
+@keyframes runs-view-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.runs-table-view,
+.runs-workspace {
+  animation: runs-view-fade-in 220ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runs-table-view,
+  .runs-workspace {
+    animation: none;
+  }
 }
 
 .workspace-rail-head,

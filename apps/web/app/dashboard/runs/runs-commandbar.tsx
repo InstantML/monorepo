@@ -139,7 +139,7 @@ export function RunsCommandbar({
         value={metricOptions.length ? metricKey : ""}
       />
       <div className="command-spacer" />
-      <div className="runs-view-switch" role="group" aria-label="Runs view">
+      <div className="runs-view-switch" data-active={viewMode} role="group" aria-label="Runs view">
         <button
           aria-pressed={viewMode === "panels"}
           className={viewMode === "panels" ? "active" : ""}
