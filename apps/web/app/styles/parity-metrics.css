@@ -366,6 +366,9 @@
 }
 .metrics-parity .mx-table tbody tr { transition: background 0.1s; }
 .metrics-parity .mx-table tbody tr:hover { background: var(--surface-hover); }
+/* The table is flush against the panel's rounded bottom edge; drop the last
+   row's rule so it doesn't double with the panel border at the corner. */
+.metrics-parity .mx-table tbody tr:last-child td { border-bottom: 0; }
 .metrics-parity .mx-table tbody tr.is-hidden td { opacity: 0.45; }
 .metrics-parity .mx-tick {
   display: inline-block;
