@@ -24,6 +24,7 @@ import { buildEvidenceSections, firstEvidenceItem } from "../../../src/evidence.
 import { ansiTokens, terminalWindow } from "../../../src/terminal.js";
 import { displayStatusForRun, formatNumber, statusTone } from "../../../src/state.js";
 import { ArtifactBrowser } from "../artifacts/artifact-browser";
+import { SegmentedToggle } from "./segmented-toggle";
 import { MetricCard } from "../ui/metric-card";
 import { MetricChart } from "../metrics/metric-chart";
 import { RichObjectPanel } from "../detail/rich-object-panel";
@@ -307,13 +308,15 @@ export function RunLogsPanel({ api, run }: { api: ApiLike; run: RunSummary }) {
   return (
     <section className="run-workspace-panel logs-panel">
       <div className="logs-toolbar">
-        <div className="segmented-control" aria-label="Log stream">
-          {(["stdout", "stderr"] as const).map((item) => (
-            <button className={`segment-button ${stream === item ? "active" : ""}`} key={item} onClick={() => setStream(item)} type="button">
-              <Terminal size={14} /> {item}
-            </button>
-          ))}
-        </div>
+        <SegmentedToggle
+          ariaLabel="Log stream"
+          onChange={setStream}
+          options={[
+            { value: "stdout", label: "stdout", icon: Terminal },
+            { value: "stderr", label: "stderr", icon: Terminal },
+          ]}
+          value={stream}
+        />
         <label className="logs-search">
           <Search size={14} />
           <input aria-label="Filter logs" value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="Filter logs" />

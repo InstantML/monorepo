@@ -83,7 +83,11 @@ test("GPU usage pane wires accessible loading, errors, tables, and controls", ()
   assert.match(paneSource, /aria-label="Refresh GPU usage insights"/);
   assert.match(paneSource, /id="usage-project"/);
   assert.match(paneSource, /state === "ready" \|\| state === "partial"/);
-  assert.match(tabSource, /aria-pressed=\{activeView === "usage"\}/);
+  // The usage/run-analysis switch is the shared SegmentedToggle, wired to
+  // activeView with a "usage" option (aria-pressed lives in that component).
+  assert.match(tabSource, /<SegmentedToggle/);
+  assert.match(tabSource, /value=\{activeView\}/);
+  assert.match(tabSource, /value: "usage"/);
   assert.match(tabSource, /SystemUsageInsightsPane/);
   assert.match(tabSource, /RunAnalysisInsightsPane/);
   assert.match(styles, /\.usage-kpi-strip/);

@@ -40,6 +40,7 @@
 @import "./styles/skeleton.css";
 @import "./styles/dark-overrides.css";
 @import "./styles/overhaul.css";
+@import "./styles/segmented.css";
 @import "./styles/mobile.css";
 @import "./styles/landing-system.css";
 @import "./styles/pricing.css";
