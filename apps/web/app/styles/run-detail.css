@@ -725,8 +725,16 @@ pre {
   border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text);
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--fs-body);
+  line-height: 1.4;
   padding: 9px 10px;
+}
+
+.checkpoint-fork-field input::placeholder,
+.checkpoint-fork-field textarea::placeholder {
+  color: var(--muted);
+  font-size: var(--fs-data);
 }
 
 .checkpoint-fork-toggle {
