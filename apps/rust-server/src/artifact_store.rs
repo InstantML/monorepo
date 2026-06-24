@@ -1044,6 +1044,7 @@ impl R2ArtifactStore {
             canonical_uri: &canonical_uri,
             canonical_query: request.query.unwrap_or(""),
             content_type: request.content_type,
+            range: request.range,
             payload_hash: &request.payload_hash,
             credentials: &credentials,
             now,
@@ -1292,6 +1293,7 @@ struct R2SigningRequest<'a> {
     canonical_uri: &'a str,
     canonical_query: &'a str,
     content_type: Option<&'a str>,
+    range: Option<&'a str>,
     payload_hash: &'a str,
     credentials: &'a R2Credentials,
     now: DateTime<Utc>,
@@ -1307,9 +1309,14 @@ fn sign_r2_request(input: R2SigningRequest<'_>) -> SignedRequest {
         signed_headers.push("content-type");
     }
     canonical_headers.push_str(&format!("host:{}\n", input.host));
+    signed_headers.push("host");
+    if let Some(range) = input.range {
+        canonical_headers.push_str(&format!("range:{}\n", range.trim()));
+        signed_headers.push("range");
+    }
     canonical_headers.push_str(&format!("x-amz-content-sha256:{}\n", input.payload_hash));
     canonical_headers.push_str(&format!("x-amz-date:{amz_date}\n"));
-    signed_headers.extend(["host", "x-amz-content-sha256", "x-amz-date"]);
+    signed_headers.extend(["x-amz-content-sha256", "x-amz-date"]);
     let signed_headers = signed_headers.join(";");
     let canonical_request = format!(
         "{}\n{}\n{}\n{canonical_headers}\n{signed_headers}\n{}",
@@ -1645,6 +1652,7 @@ mod tests {
             canonical_uri: "/bucket/runs/1/file.txt",
             canonical_query: "",
             content_type: Some("text/plain"),
+            range: None,
             payload_hash: &payload_hash,
             credentials: &credentials,
             now: Utc
@@ -1659,6 +1667,34 @@ mod tests {
         assert!(signed
             .authorization
             .contains("SignedHeaders=content-type;host;x-amz-content-sha256;x-amz-date"));
+        assert!(signed.authorization.contains("Signature="));
+    }
+
+    #[test]
+    fn r2_signing_includes_range_when_forwarding_download_ranges() {
+        let credentials = R2Credentials {
+            access_key_id: "token-id".to_string(),
+            secret_access_key: "secret".to_string(),
+        };
+        let payload_hash = hex_sha256(&[]);
+        let signed = sign_r2_request(R2SigningRequest {
+            method: "GET",
+            host: "example.r2.cloudflarestorage.com",
+            canonical_uri: "/bucket/runs/1/file.txt",
+            canonical_query: "",
+            content_type: None,
+            range: Some("bytes=0-16383"),
+            payload_hash: &payload_hash,
+            credentials: &credentials,
+            now: Utc
+                .with_ymd_and_hms(2026, 5, 21, 12, 0, 0)
+                .single()
+                .unwrap(),
+        });
+
+        assert!(signed
+            .authorization
+            .contains("SignedHeaders=host;range;x-amz-content-sha256;x-amz-date"));
         assert!(signed.authorization.contains("Signature="));
     }
 
