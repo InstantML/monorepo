@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/orgs/{org_id}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["admin_change_plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/overview": {
         parameters: {
             query?: never;
@@ -1875,6 +1891,12 @@ export interface components {
             storage_unconfigured_orgs: number;
             users: number;
         };
+        /** @description Operator-initiated plan change from the admin console. Unlike
+         *     `BillingPlanChangeRequest`, the target plan is required because the operator
+         *     is explicitly setting the workspace's tier on the customer's behalf. */
+        AdminPlanChangeRequest: {
+            plan_tier: string;
+        };
         AdminRiskItem: {
             category: string;
             id: string;
@@ -1941,6 +1963,7 @@ export interface components {
             /** Format: uuid */
             org_id: string;
             org_name: string;
+            plan_tier: string;
             role: string;
             status: string;
         };
@@ -4134,6 +4157,60 @@ export interface operations {
             };
             /** @description Bootstrap token required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    admin_change_plan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Organization to re-plan */
+                org_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPlanChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Refreshed organization summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOrganizationSummary"];
+                };
+            };
+            /** @description Invalid plan tier */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Bootstrap token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Organization not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

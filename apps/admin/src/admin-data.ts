@@ -110,6 +110,95 @@ export async function fetchAdminOverview({ q }: FetchArgs): Promise<AdminLoadRes
   }
 }
 
+type PlanChangeArgs = {
+  orgId: string;
+  planTier: string;
+};
+
+export type PlanChangeResult =
+  | { ok: true; org: AdminOrganization }
+  | { ok: false; status: number; message: string };
+
+export async function changeOrgPlan({ orgId, planTier }: PlanChangeArgs): Promise<PlanChangeResult> {
+  const apiBase = normalizeApiBase(
+    process.env.INSTANTML_ADMIN_API_BASE ?? process.env.INSTANTML_API_BASE ?? DEFAULT_API_BASE,
+  );
+  const token = process.env.INSTANTML_ADMIN_BOOTSTRAP_TOKEN ?? process.env.INSTANTML_BOOTSTRAP_TOKEN;
+  if (!token) {
+    return {
+      ok: false,
+      status: 500,
+      message:
+        "Set INSTANTML_ADMIN_BOOTSTRAP_TOKEN or INSTANTML_BOOTSTRAP_TOKEN before starting the admin app.",
+    };
+  }
+
+  const requestId = adminRequestId();
+  const path = `/api/admin/orgs/${encodeURIComponent(orgId)}/plan`;
+  const url = new URL(path, apiBase);
+  const startedAt = Date.now();
+  let responseStatus = 0;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "content-type": "application/json",
+        "x-instantml-bootstrap-token": token,
+        "x-request-id": requestId,
+      },
+      body: JSON.stringify({ plan_tier: planTier }),
+    });
+    responseStatus = response.status;
+    const finalRequestId = responseRequestId(response, requestId);
+    if (!response.ok) {
+      logAdminApiRequest("failure", {
+        requestId: finalRequestId,
+        method: "POST",
+        path,
+        status: response.status,
+        durationMs: elapsedMs(startedAt),
+        code: `http_${response.status}`,
+        retryable: response.status === 429 || response.status >= 500,
+      });
+      return {
+        ok: false,
+        status: response.status,
+        message: `Rust admin API returned ${response.status}. Request ${finalRequestId}.`,
+      };
+    }
+    const org = (await response.json()) as AdminOrganization;
+    logAdminApiRequest("success", {
+      requestId: finalRequestId,
+      method: "POST",
+      path,
+      status: response.status,
+      durationMs: elapsedMs(startedAt),
+      code: "ok",
+      retryable: false,
+    });
+    return { ok: true, org };
+  } catch (error) {
+    logAdminApiRequest("failure", {
+      requestId,
+      method: "POST",
+      path,
+      status: responseStatus,
+      durationMs: elapsedMs(startedAt),
+      code: "network_or_parse_error",
+      retryable: responseStatus === 0 || responseStatus >= 500,
+    });
+    const message = responseStatus > 0
+      ? "Rust admin API returned malformed JSON."
+      : "Could not reach the Rust admin API.";
+    return {
+      ok: false,
+      status: responseStatus || 502,
+      message: `${error instanceof Error && responseStatus === 0 ? error.message : message} Request ${requestId}.`,
+    };
+  }
+}
+
 function normalizeApiBase(raw: string): string {
   const url = new URL(raw);
   if (!["http:", "https:"].includes(url.protocol)) {
@@ -159,6 +248,8 @@ function logAdminApiRequest(
   outcome: "success" | "failure",
   detail: {
     requestId: string;
+    method?: string;
+    path?: string;
     status: number;
     durationMs: number;
     code: string;
@@ -170,8 +261,8 @@ function logAdminApiRequest(
     outcome,
     requestId: detail.requestId,
     traceId: detail.requestId,
-    method: "GET",
-    path: "/api/admin/overview",
+    method: detail.method ?? "GET",
+    path: detail.path ?? "/api/admin/overview",
     status: detail.status,
     durationMs: detail.durationMs,
     code: detail.code,

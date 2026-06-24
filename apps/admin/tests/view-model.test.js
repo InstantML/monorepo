@@ -125,7 +125,7 @@ test("admin API fetch carries request-id instrumentation without logging secrets
 
   assert.match(source, /"x-request-id"/);
   assert.match(source, /instantml_admin_api_request/);
-  assert(source.includes('path: "/api/admin/overview"'));
+  assert.match(source, /path: detail\.path \?\? "\/api\/admin\/overview"/);
   assert.match(source, /lower\.startsWith\("instantml_"\)/);
   assert.match(source, /lower\.startsWith\("sk_test_"\)/);
   assert.match(source, /lower\.startsWith\("whsec_"\)/);

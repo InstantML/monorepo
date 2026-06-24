@@ -1300,6 +1300,56 @@ async fn persist_billing_checkout_intent(
     Ok(())
 }
 
+/// Operator override: directly set an organization's plan tier without going
+/// through Stripe checkout. Used by the admin console to upgrade or downgrade a
+/// workspace on a customer's behalf. Existing Stripe linkage on the billing
+/// account (customer/subscription ids) is preserved so a later self-serve
+/// change can still reconcile, but the plan is treated as active immediately.
+pub async fn operator_set_org_plan(
+    store: &Store,
+    org_id: Uuid,
+    plan_tier_input: Option<&str>,
+) -> AppResult<()> {
+    let target = validate_plan_tier(plan_tier_input)?;
+    let plan = plan_tier(&target);
+    let (mut org, existing) = {
+        let data = store.data.lock().await;
+        let org = data
+            .organizations
+            .get(&org_id)
+            .cloned()
+            .ok_or_else(|| AppError::not_found("organization not found"))?;
+        (org, data.billing_accounts.get(&org_id).cloned())
+    };
+    let paid_extra_seats = existing
+        .as_ref()
+        .map(|account| account.paid_extra_seats)
+        .unwrap_or(0);
+    org.plan_tier = target.clone();
+    org.seat_limit = billing_seat_limit_for_org(&org, plan, paid_extra_seats);
+    {
+        let mut data = store.data.lock().await;
+        store
+            .persist_locked("organization", org.id, &org.id.to_string(), &org)
+            .await?;
+        data.insert_org(org.clone());
+    }
+    let mut account = existing.unwrap_or_else(|| default_billing_account(&org));
+    account.access_state = if target == PLAN_FREE.id {
+        BILLING_FREE_ACTIVE.to_string()
+    } else {
+        BILLING_PAID_ACTIVE.to_string()
+    };
+    account.plan_tier = target.clone();
+    account.effective_plan_tier = target;
+    account.requested_plan_tier = None;
+    account.cancel_at_period_end = false;
+    account.message = Some("Plan set by an InstantML operator.".to_string());
+    account.updated_at = Utc::now();
+    persist_billing_account(store, account).await?;
+    Ok(())
+}
+
 async fn apply_local_free_plan(
     store: &Store,
     mut org: OrganizationRow,
@@ -1581,6 +1631,72 @@ mod tests {
             last_control_refresh_error: Arc::new(Mutex::new(None)),
             last_control_refresh: Arc::new(Mutex::new(None)),
         }
+    }
+
+    #[tokio::test]
+    async fn operator_set_org_plan_upgrades_org_and_billing_account() {
+        let mut org = org_fixture("Acme", "acme");
+        org.created_by_user_id = Some(Uuid::new_v4());
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        let store = store_with_data(data);
+
+        operator_set_org_plan(&store, org.id, Some("pro"))
+            .await
+            .unwrap();
+
+        let data = store.data.lock().await;
+        let stored_org = data.organizations.get(&org.id).unwrap();
+        assert_eq!(stored_org.plan_tier, "pro");
+        assert_eq!(stored_org.seat_limit, PLAN_PRO.included_seats);
+        let account = data.billing_accounts.get(&org.id).unwrap();
+        assert_eq!(account.access_state, BILLING_PAID_ACTIVE);
+        assert_eq!(account.plan_tier, "pro");
+        assert_eq!(account.effective_plan_tier, "pro");
+        assert!(account.requested_plan_tier.is_none());
+    }
+
+    #[tokio::test]
+    async fn operator_set_org_plan_downgrade_to_free_marks_free_active() {
+        let mut org = org_fixture("Acme", "acme");
+        org.plan_tier = "pro".to_string();
+        org.seat_limit = PLAN_PRO.included_seats;
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        let store = store_with_data(data);
+
+        operator_set_org_plan(&store, org.id, Some("free"))
+            .await
+            .unwrap();
+
+        let data = store.data.lock().await;
+        let stored_org = data.organizations.get(&org.id).unwrap();
+        assert_eq!(stored_org.plan_tier, "free");
+        assert_eq!(stored_org.seat_limit, PLAN_FREE.included_seats);
+        let account = data.billing_accounts.get(&org.id).unwrap();
+        assert_eq!(account.access_state, BILLING_FREE_ACTIVE);
+        assert_eq!(account.plan_tier, "free");
+        assert_eq!(account.effective_plan_tier, "free");
+    }
+
+    #[tokio::test]
+    async fn operator_set_org_plan_rejects_unknown_plan() {
+        let org = org_fixture("Acme", "acme");
+        let mut data = StoreData::default();
+        data.insert_org(org.clone());
+        let store = store_with_data(data);
+
+        assert!(operator_set_org_plan(&store, org.id, Some("enterprise"))
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn operator_set_org_plan_requires_existing_org() {
+        let store = store_with_data(StoreData::default());
+        assert!(operator_set_org_plan(&store, Uuid::new_v4(), Some("pro"))
+            .await
+            .is_err());
     }
 
     #[test]

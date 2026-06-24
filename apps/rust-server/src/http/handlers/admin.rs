@@ -2,18 +2,21 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State},
+    body::Bytes,
+    extract::{Path, Query, State},
     http::HeaderMap,
     Json,
 };
+use uuid::Uuid;
 
 use crate::{
+    domain::AdminPlanChangeRequest,
     errors::{AppError, AppResult},
     store::{self, AdminOverviewOptions, ADMIN_OVERVIEW_DEFAULT_LIMIT, ADMIN_OVERVIEW_MAX_LIMIT},
 };
 
 use super::super::AppState;
-use super::helpers::require_strict_bootstrap;
+use super::helpers::{read_json, require_strict_bootstrap};
 
 #[utoipa::path(
     get,
@@ -72,4 +75,37 @@ pub async fn admin_data_cells(
 ) -> AppResult<Json<crate::domain::AdminDataCellsResponse>> {
     require_strict_bootstrap(&state, &headers)?;
     Ok(Json(store::admin_data_cells(&state.store).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/orgs/{org_id}/plan",
+    tag = "admin",
+    params(("org_id" = Uuid, Path, description = "Organization to re-plan")),
+    request_body = crate::domain::AdminPlanChangeRequest,
+    security(("bootstrapToken" = [])),
+    responses(
+        (status = 200, description = "Refreshed organization summary", body = crate::domain::AdminOrganizationSummary),
+        (status = 400, description = "Invalid plan tier", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Bootstrap token required", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Organization not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn admin_change_plan(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(org_id): Path<Uuid>,
+    bytes: Bytes,
+) -> AppResult<Json<crate::domain::AdminOrganizationSummary>> {
+    require_strict_bootstrap(&state, &headers)?;
+    let request =
+        read_json::<AdminPlanChangeRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let summary = store::admin_change_org_plan(
+        &state.store,
+        org_id,
+        Some(request.plan_tier.as_str()),
+        state.config.service_plane.includes_data(),
+    )
+    .await?;
+    Ok(Json(summary))
 }
