@@ -215,11 +215,30 @@
   border-radius: 2px;
   outline: none;
 }
+/* Pin the runnable track to this control's slim 2px groove. Without this the
+   global base.css track (5px) leaks in and the thumb's centering math breaks. */
+.metrics-parity .mx-smooth input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--range-fill, 0%),
+    var(--line-strong) var(--range-fill, 0%)
+  );
+}
+.metrics-parity .mx-smooth input[type="range"]::-moz-range-track {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
 .metrics-parity .mx-smooth input[type="range"]::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 10px;
   height: 10px;
+  /* Centre the 10px thumb on the 2px track: (2 - 10) / 2. Required because the
+     global thumb's margin-top is tuned for base.css's taller 5px track. */
+  margin-top: -4px;
   border-radius: 50%;
   border: 0;
   background: var(--accent);
