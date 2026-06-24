@@ -107,6 +107,16 @@ first slice and add the custom domain `admin.instantml.ai`. Set
 `NEXT_PUBLIC_CLERK_DOMAIN=instantml.ai`, or rely on the app default, so Clerk
 loads the production Frontend API at `clerk.instantml.ai`.
 
+`INSTANTML_ADMIN_API_BASE` must point at the **control-plane** Rust service,
+not the public `https://api.instantml.ai` router. In the split production
+topology, `/api/admin/*` is mounted only on the control service, and the public
+router deliberately does not route admin paths (see
+`tools/tests/deploy-cloud-run.test.js`, "keeps admin routes off the public
+router") — they fall through to the data backend and return 404. Use the
+`instantml-control` Cloud Run URL (the deploy helper's `INSTANTML_CONTROL_API_BASE`).
+The control service is deployed `--allow-unauthenticated`, so the admin Next
+server reaches it directly, and `/api/admin/*` stays gated by the bootstrap token.
+
 ## Testing Commands
 
 Admin-specific helper tests are included in the root Node test suite:
