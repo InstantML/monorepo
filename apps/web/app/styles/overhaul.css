@@ -1064,19 +1064,49 @@ button.secondary.danger-action:hover:not(:disabled),
 }
 .empty-workspace-snippet__term {
   margin: 0;
+  border-radius: calc(var(--radius) - 2px);
+  overflow: hidden;
 }
+/* The shared `.iml-term-*` rules live in auth.css and resolve `var(--f-mono)`,
+   a font token only defined under `.iml-auth`/`.iml-landing`. On the dashboard
+   that token is missing, so those `font:` shorthands are dropped — which left
+   the title at the default ~16px (too large) and the copy button unstyled.
+   Re-declare both with the dashboard's `--font-*` tokens, matching the eyebrow
+   styling of steps 1 & 2. */
 .empty-workspace-snippet__term .iml-term-bar .tl {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font: 700 11px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.empty-workspace-snippet__term .iml-copy {
+  font: 600 11px/1 var(--font-mono);
 }
 .empty-workspace-snippet__code {
   padding: 14px 16px;
-  font: 500 12.5px/1.65 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  color: #e0e3d8;
+  font: 500 12.5px/1.65 var(--font-mono);
+  color: var(--text-2);
   white-space: pre;
   overflow-x: auto;
   margin: 0;
+  /* Syntax palette — light defaults; dark overridden below. */
+  --syn-kw: #8839ef;
+  --syn-str: #0e7a4b;
+  --syn-num: #9c6f10;
+  --syn-fn: #1f6feb;
+  --syn-bi: #0a7d6b;
+  --syn-com: var(--faint);
+  --syn-punct: var(--muted);
+}
+:root[data-theme="dark"] .empty-workspace-snippet__code {
+  --syn-kw: #c792ea;
+  --syn-str: #7fd692;
+  --syn-num: #f0b86e;
+  --syn-fn: #82aaff;
+  --syn-bi: #5ccfb0;
 }
 .empty-workspace-snippet__code code {
   font: inherit;
@@ -1084,6 +1114,13 @@ button.secondary.danger-action:hover:not(:disabled),
   background: transparent;
   padding: 0;
 }
+.empty-workspace-snippet__code .tok-kw { color: var(--syn-kw); }
+.empty-workspace-snippet__code .tok-str { color: var(--syn-str); }
+.empty-workspace-snippet__code .tok-num { color: var(--syn-num); }
+.empty-workspace-snippet__code .tok-fn { color: var(--syn-fn); }
+.empty-workspace-snippet__code .tok-bi { color: var(--syn-bi); }
+.empty-workspace-snippet__code .tok-com { color: var(--syn-com); font-style: italic; }
+.empty-workspace-snippet__code .tok-punct { color: var(--syn-punct); }
 .empty-workspace-snippet__copy-key:disabled {
   opacity: 0.55;
   cursor: not-allowed;
