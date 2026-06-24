@@ -182,12 +182,14 @@ button:focus-visible,
   color: var(--danger);
 }
 
-/* 9b — Run-rail status chips match .pill casing: uppercase mono. */
+/* 9b — Run-rail status chips match .pill casing: uppercase mono. Kept small
+ * (9px, tight tracking) so the uppercase label doesn't read heavier than the
+ * metric value beside it. */
 .workspace-run-status {
   font-family: var(--font-mono);
-  font-size: var(--fs-micro);
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 

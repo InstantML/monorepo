@@ -221,8 +221,11 @@
 }
 
 .runs-workspace {
+  position: relative;
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
+  /* Rail width is user-draggable (see .rail-resize-handle); 270px is the floor
+   * and the default. The collapsed + responsive rules below override this. */
+  grid-template-columns: var(--rail-width, 270px) minmax(0, 1fr);
   align-items: start;
   gap: 0;
   min-height: calc(100vh - var(--topbar-height) - 132px);
@@ -233,6 +236,48 @@
   box-shadow: var(--shadow);
   overflow-anchor: none;
   overflow: visible;
+}
+
+/* Drag handle sitting on the seam between the run rail and the canvas. Lets the
+ * rail expand past its 270px floor so long names/tags/configs read in full. */
+.rail-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rail-width, 270px);
+  width: 10px;
+  transform: translateX(-5px);
+  z-index: 8;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+.rail-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 5px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.rail-resize-handle:hover::after,
+.rail-resize-handle:focus-visible::after,
+.rail-resize-handle:active::after {
+  background: var(--accent);
+}
+.rail-resize-handle:focus-visible {
+  outline: none;
+}
+/* No room to drag once the rail is collapsed or the layout has gone responsive
+ * (the breakpoints below pin the rail to a fixed width / stack it). */
+.runs-workspace.run-rail-collapsed .rail-resize-handle {
+  display: none;
+}
+@media (max-width: 1240px) {
+  .rail-resize-handle { display: none; }
 }
 
 /* The add-panels drawer floats over the content as a fixed overlay (see
@@ -751,6 +796,47 @@
   border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+/* Custom hover card for a rail run (portalled to <body>, see RunRailTooltip).
+ * Replaces the browser-native title tooltip: a styled, pinned card that shows
+ * the full name (bold) plus the tags/note lines, instead of an unstyleable OS
+ * bubble that overlapped the row. */
+.run-rail-tooltip {
+  position: fixed;
+  z-index: 1000;
+  display: grid;
+  gap: 3px;
+  max-width: 280px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: #1d2620;
+  color: #eef2ef;
+  box-shadow: 0 10px 30px rgba(12, 18, 14, 0.32);
+  font: 500 12px/1.45 var(--font-mono);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: run-rail-tip-in 0.1s ease both;
+}
+
+.run-rail-tooltip strong {
+  font-weight: 680;
+  color: #fff;
+}
+
+.run-rail-tooltip span {
+  color: rgba(238, 242, 239, 0.74);
+  font-size: 11.5px;
+}
+
+@keyframes run-rail-tip-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-rail-tooltip { animation: none; }
 }
 
 .workspace-run-main {

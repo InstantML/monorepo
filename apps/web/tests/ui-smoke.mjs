@@ -671,7 +671,7 @@ try {
   await page.waitForFunction(() => document.querySelector("#status-message")?.textContent?.includes("matching runs"));
   await page.fill("#search", "seed-44");
   await page.waitForFunction(() => document.querySelector(".workspace-run-list")?.textContent?.includes("seed-44"));
-  await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("title")?.includes("seed-44"));
+  await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("aria-label")?.includes("seed-44"));
   assert.doesNotMatch(await page.locator(".workspace-run-list").innerText(), /No runs match/);
   const objectRequestsBeforeSeedDetail = objectUrls.length;
   await page.getByRole("link", { name: /^Runs$/ }).click();
@@ -881,10 +881,10 @@ try {
     await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
     await chooseSelect(page, "#sort-select", "metric-best");
     await page.waitForFunction(() => {
-      const firstRun = document.querySelector(".workspace-run-open")?.getAttribute("title") ?? "";
+      const firstRun = document.querySelector(".workspace-run-open")?.getAttribute("aria-label") ?? "";
       const status = document.querySelector("#status-message")?.textContent ?? "";
       return document.querySelector("#sort-select")?.value === "metric-best"
-        && firstRun.startsWith("rl-ppo")
+        && firstRun.startsWith("Open rl-ppo")
         && !/loading/i.test(status);
     });
     const clearSelected = page.locator(".workspace-run-rail").getByText(/^Clear \d+/);
@@ -1560,7 +1560,7 @@ try {
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await chooseSelect(page, "#project-filter", "demo");
   await page.fill("#search", 'name:"rl-ppo-seed-44"');
-  await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("title")?.includes("rl-ppo-seed-44"));
+  await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("aria-label")?.includes("rl-ppo-seed-44"));
   await page.locator(".workspace-run-open").first().click();
   await page.waitForSelector("#run-detail", { timeout: 10000 });
   await page.locator(".run-workspace-tabs").getByRole("button", { name: /Metrics/ }).click();

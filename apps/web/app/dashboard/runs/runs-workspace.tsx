@@ -1,8 +1,9 @@
 "use client";
 
-import { Activity, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, Square, X } from "lucide-react";
+import { Activity, ChevronDown, CircleStop, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { DragEvent, PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
+import type { CSSProperties, DragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels.js";
@@ -62,6 +63,39 @@ function runStatusClass(status: string) {
   if (normalized === "stopping" || normalized === "stopped" || normalized === "killed") return "warn";
   if (normalized === "finished" || normalized === "completed" || normalized === "succeeded") return "finished";
   return "neutral";
+}
+
+// The run rail is draggable wider than its 270px floor so long names, configs,
+// and tags can read in full; the width persists across visits.
+const RAIL_MIN_WIDTH = 270;
+const RAIL_MAX_WIDTH = 600;
+const RAIL_WIDTH_STORAGE_KEY = "instantml:next:runs-rail-width";
+
+type RunRailTip = { text: string; rect: DOMRect };
+
+// A styled hover card for a rail run, portalled to <body> and pinned just to the
+// right of the rail so it never overlaps the row it describes (the native title
+// tooltip it replaces sat on top of the card and could not be styled). It shows
+// the full untruncated name, every tag, and the note — the bits the bounded row
+// has to abbreviate.
+function RunRailTooltip({ tip }: { tip: RunRailTip | null }) {
+  if (!tip || typeof document === "undefined") return null;
+  const [name, ...details] = tip.text.split("\n");
+  const margin = 10;
+  const width = 280;
+  const { rect } = tip;
+  let left = rect.right + margin;
+  if (left + width > window.innerWidth - 8) {
+    left = Math.max(8, rect.left - width - margin);
+  }
+  const top = Math.max(8, Math.min(rect.top, window.innerHeight - 180));
+  return createPortal(
+    <div className="run-rail-tooltip" role="tooltip" style={{ left, top, maxWidth: width }}>
+      <strong>{name}</strong>
+      {details.map((line, index) => <span key={index}>{line}</span>)}
+    </div>,
+    document.body,
+  );
 }
 
 function visibleTagsForSearch(tags: string[], search: string, limit: number) {
@@ -223,6 +257,8 @@ export function RunsWorkspace({
   // R6 cross-highlight: hovering a rail run isolates its series in every line
   // panel; hovering a chart series lights up the matching rail run.
   const [highlightRunId, setHighlightRunId] = useState<string | null>(null);
+  const [railTip, setRailTip] = useState<RunRailTip | null>(null);
+  const [railWidth, setRailWidth] = useState(RAIL_MIN_WIDTH);
   const [addPanelType, setAddPanelType] = useState<WorkspacePanelType>("line");
   const [addHistogramObjectKey, setAddHistogramObjectKey] = useState("");
   const [bulkPromptEnabled, setBulkPromptEnabled] = useState(false);
@@ -234,6 +270,69 @@ export function RunsWorkspace({
   useEffect(() => () => {
     pointerDragCleanupRef.current();
   }, []);
+  useEffect(() => {
+    try {
+      const saved = Number(window.localStorage.getItem(RAIL_WIDTH_STORAGE_KEY));
+      if (Number.isFinite(saved) && saved > RAIL_MIN_WIDTH) {
+        setRailWidth(Math.min(RAIL_MAX_WIDTH, Math.round(saved)));
+      }
+    } catch {
+      // localStorage can be unavailable (privacy mode); fall back to the default.
+    }
+  }, []);
+  function persistRailWidth(width: number) {
+    try {
+      window.localStorage.setItem(RAIL_WIDTH_STORAGE_KEY, String(Math.round(width)));
+    } catch {
+      // Ignore storage failures — the width still applies for this session.
+    }
+  }
+  function handleRailResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = railWidth;
+    const target = event.currentTarget;
+    let nextWidth = startWidth;
+    try {
+      target.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic pointer events in tests may not support capture.
+    }
+    function handleMove(moveEvent: globalThis.PointerEvent) {
+      nextWidth = Math.max(RAIL_MIN_WIDTH, Math.min(RAIL_MAX_WIDTH, startWidth + (moveEvent.clientX - startX)));
+      setRailWidth(nextWidth);
+    }
+    function handleUp() {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      try {
+        if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+      } catch {
+        // The handle may have unmounted mid-drag.
+      }
+      persistRailWidth(nextWidth);
+    }
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp, { once: true });
+  }
+  function handleRailResizeKey(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const step = event.key === "ArrowLeft" ? -16 : event.key === "ArrowRight" ? 16 : 0;
+    if (!step) return;
+    event.preventDefault();
+    setRailWidth((current) => {
+      const next = Math.max(RAIL_MIN_WIDTH, Math.min(RAIL_MAX_WIDTH, current + step));
+      persistRailWidth(next);
+      return next;
+    });
+  }
+  function resetRailWidth() {
+    setRailWidth(RAIL_MIN_WIDTH);
+    try {
+      window.localStorage.removeItem(RAIL_WIDTH_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
+  }
   function handlePanelDragStart(event: DragEvent<HTMLElement>, sectionId: string, panelId: string) {
     const payload = { sectionId, panelId };
     draggedPanelRef.current = payload;
@@ -330,7 +429,10 @@ export function RunsWorkspace({
   }
 
   return (
-    <div className={`runs-workspace ${showAddPanelDrawer ? "drawer-open" : ""} ${runRailCollapsed ? "run-rail-collapsed" : ""}`}>
+    <div
+      className={`runs-workspace ${showAddPanelDrawer ? "drawer-open" : ""} ${runRailCollapsed ? "run-rail-collapsed" : ""}`}
+      style={{ "--rail-width": `${railWidth}px` } as CSSProperties}
+    >
       <aside className="workspace-run-rail">
         <div className="workspace-rail-head">
           <label className="workspace-rail-select-all" title={railSelectionLabel}>
@@ -432,8 +534,14 @@ export function RunsWorkspace({
               <div
                 className={`workspace-run-row ${selected ? "selected" : ""}${run.id === highlightRunId ? " is-highlighted" : ""}`}
                 key={run.id}
-                onMouseEnter={() => setHighlightRunId(run.id)}
-                onMouseLeave={() => setHighlightRunId((current) => (current === run.id ? null : current))}
+                onMouseEnter={(event) => {
+                  setHighlightRunId(run.id);
+                  setRailTip({ text: runRailTooltip(run), rect: event.currentTarget.getBoundingClientRect() });
+                }}
+                onMouseLeave={() => {
+                  setHighlightRunId((current) => (current === run.id ? null : current));
+                  setRailTip(null);
+                }}
               >
                 <button
                   aria-label={compareLabel}
@@ -452,7 +560,6 @@ export function RunsWorkspace({
                   aria-label={`Open ${run.name}`}
                   className="workspace-run-open"
                   onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
-                  title={runRailTooltip(run)}
                   type="button"
                 >
                   <i className="legend-dot" style={{ backgroundColor: runColor }} aria-hidden="true" />
@@ -478,7 +585,6 @@ export function RunsWorkspace({
                     </span>
                     {note ? <small className="workspace-run-note" title={note}>{note}</small> : null}
                   </span>
-                  <span className="workspace-run-open-hint" aria-hidden="true">Open <ChevronRight size={12} /></span>
                 </button>
                 {canStop ? (
                   <button
@@ -491,7 +597,7 @@ export function RunsWorkspace({
                     title="Review stop request"
                     type="button"
                   >
-                    <Square size={12} />
+                    <CircleStop size={15} />
                   </button>
                 ) : null}
               </div>
@@ -504,6 +610,7 @@ export function RunsWorkspace({
             </div>
           )}
         </div>
+        <RunRailTooltip tip={railTip} />
         <div className="workspace-run-footer">
           <CustomSelect
             className="table-footer-select"
@@ -531,6 +638,21 @@ export function RunsWorkspace({
           </div>
         </div>
       </aside>
+
+      <div
+        aria-label="Drag to resize the runs panel"
+        aria-orientation="vertical"
+        aria-valuemin={RAIL_MIN_WIDTH}
+        aria-valuemax={RAIL_MAX_WIDTH}
+        aria-valuenow={railWidth}
+        className="rail-resize-handle"
+        onDoubleClick={resetRailWidth}
+        onKeyDown={handleRailResizeKey}
+        onPointerDown={handleRailResizeStart}
+        role="separator"
+        tabIndex={0}
+        title="Drag to resize · double-click to reset"
+      />
 
       <section className="workspace-canvas">
         <div className="workspace-panel-toolbar">

@@ -20,7 +20,10 @@ test("run rail hover surfaces tags and notes, not just the name", () => {
   assert.match(helper, /Note:/);
 
   const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
-  assert.match(workspaceSrc, /title=\{runRailTooltip\(run\)\}/);
+  // The hover text now feeds a styled custom tooltip (RunRailTooltip) instead of
+  // the unstyleable native title attribute, but still flows through the helper.
+  assert.match(workspaceSrc, /setRailTip\(\{ text: runRailTooltip\(run\)/);
+  assert.match(workspaceSrc, /<RunRailTooltip tip=\{railTip\} \/>/);
 });
 
 test("run rail identity dots use the shared chart palette", () => {
