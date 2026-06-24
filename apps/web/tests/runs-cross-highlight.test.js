@@ -22,7 +22,8 @@ test("R6: MetricChart accepts an external highlight and exposes legend hover", (
 test("R6: rail rows and line panels share one highlight channel", () => {
   const workspace = readSource("app/dashboard/runs/runs-workspace.tsx");
   assert.match(workspace, /const \[highlightRunId, setHighlightRunId\] = useState<string \| null>\(null\)/);
-  assert.match(workspace, /onMouseEnter=\{\(\) => setHighlightRunId\(run\.id\)\}/);
+  // Rail-row hover drives the shared highlight (and now also the hover tooltip).
+  assert.match(workspace, /onMouseEnter=\{\(event\) => \{\s*setHighlightRunId\(run\.id\)/);
   assert.match(workspace, /is-highlighted/);
   assert.match(workspace, /highlightRunId=\{highlightRunId\}/);
   assert.match(workspace, /onHighlightRun=\{setHighlightRunId\}/);

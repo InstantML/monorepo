@@ -3246,42 +3246,6 @@ button.compare-row-head.active {
 .system-metrics-card .table-wrap { max-height: 60vh; overflow: auto; }
 @media (max-width: 1100px) { .system-identity { grid-template-columns: repeat(2, 1fr); } }
 
-/* Open affordance — appears on hover so it's clear the body opens the run */
-.workspace-run-open { position: relative; }
-.workspace-run-open-hint {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin: auto 0;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font: 600 10px/1 var(--font-mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0;
-  transform: translateX(4px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  pointer-events: none;
-}
-.workspace-run-open:hover .workspace-run-open-hint,
-.workspace-run-open:focus-visible .workspace-run-open-hint {
-  opacity: 1;
-  transform: translateX(0);
-}
-/* The hint is absolutely positioned over the right of the row; without
- * this it sits on top of the run name/project text. Reserve its width on
- * the body (only while it's shown) so the name ellipsis-truncates clear
- * of it instead of running underneath. */
-.workspace-run-open:hover .workspace-run-body,
-.workspace-run-open:focus-visible .workspace-run-body {
-  padding-inline-end: 70px;
-}
 
 /* ── Compare metric-columns strip: add-all / reset affordances ─────────── */
 .compare-metric-strip-actions {
@@ -3347,4 +3311,105 @@ button.crumb-project {
 
 .admin-hint code {
   font-size: 11.5px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Run rail card — readability pass (2026-06-24)
+ * The 270px rail crammed the name, status, metric, tags, and note onto rigid
+ * nowrap lines: the metric label collapsed to "retu…", tags were clipped
+ * mid-word, the select dot floated detached in the vertical middle, and a lit
+ * row read as a flat gray overlay. These are all zero-height-cost fixes — the
+ * row's bounded min/max height (kept readable for the rail) is unchanged.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Line the select dot up with the title row instead of centering it down the
+ * full card height (where it looked detached from the content above it). */
+.workspace-run-select {
+  align-items: start;
+  padding-top: 10px;
+}
+
+/* Shrink the card text a step so more of each field fits on the rail's narrow
+ * line — the name, the metric label + value, and the tags all read instead of
+ * collapsing to truncated stubs. */
+.workspace-run-body strong { font-size: 12px; }
+.workspace-run-body small,
+.workspace-run-note { font-size: var(--fs-label); }
+.workspace-run-tags b,
+.workspace-run-tags em { font-size: var(--fs-micro); }
+
+/* Evidence row: the status chip and the metric chip share one line. The metric
+ * label stays (so a bare number isn't context-free) but yields first when space
+ * is tight; the value is protected and uses tabular figures. */
+.workspace-run-evidence { gap: 5px; margin-top: 1px; overflow: visible; }
+.workspace-run-status,
+.workspace-run-metric-chip { font-size: 10px; height: 18px; padding: 2px 6px; }
+/* Center the status label within the chip (its line-height:1 otherwise sits
+ * the glyphs high in the fixed-height pill). */
+.workspace-run-status {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.workspace-run-metric-chip {
+  flex: 0 1 auto;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.workspace-run-metric-chip .wrm-name { color: var(--muted); }
+
+/* Tags stay on a single line (the rail's bounded row height has no room to
+ * wrap once a note is shown). Leading tags show in full; when the strip is
+ * wider than the card the overflow fades out at the right edge instead of
+ * being hard-clipped mid-word, so it reads as "there's more" rather than
+ * broken. */
+.workspace-run-tags {
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+          mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+.workspace-run-tags b,
+.workspace-run-tags em { max-width: 120px; padding: 2px 6px; }
+.workspace-run-tags em { flex: 0 0 auto; }
+
+/* A lit row reads as an intentional, branded tint with a soft accent edge —
+ * not a flat gray wash. Hover is the lightest; the chart cross-highlight is a
+ * touch stronger with a solid edge; selected stays the strongest state and
+ * keeps its own accent bar (so hovering a selected row doesn't wash it out). */
+.workspace-run-row:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  box-shadow: inset 2px 0 0 var(--accent-line);
+}
+.workspace-run-row.is-highlighted {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.workspace-run-row.selected:hover {
+  background: var(--surface-selected);
+  box-shadow: none;
+}
+
+/* Stopping a run is rare, so the control stays quiet — a small, faint icon
+ * (no permanent red box) that only resolves to danger red on hover/focus. */
+.workspace-run-stop {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 4px 0 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--faint);
+  opacity: 0.5;
+  transition: color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+.workspace-run-row:hover .workspace-run-stop { opacity: 0.8; }
+.workspace-run-stop:hover,
+.workspace-run-stop:focus-visible {
+  color: var(--danger);
+  background: var(--danger-soft);
+  opacity: 1;
 }
