@@ -182,7 +182,7 @@
   border-radius:var(--r);color:var(--text);font:500 14px/1 var(--f-sans);outline:none;
   width:100%;transition:border-color .14s,box-shadow .14s}
 .iml-input::placeholder{color:var(--faint)}
-.iml-input:focus{border-color:var(--accent-line);box-shadow:0 0 0 3px rgba(43, 224, 130,.13)}
+.iml-input:focus{border-color:var(--accent-line);box-shadow:0 0 0 1px rgba(43, 224, 130,.13)}
 textarea.iml-input{height:auto;min-height:74px;padding:10px 12px;line-height:1.5;
   resize:vertical;font-family:var(--f-mono);font-size:12px}
 .iml-hint{font:500 11px/1.4 var(--f-mono);color:var(--muted);letter-spacing:.01em}

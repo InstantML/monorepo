@@ -544,8 +544,8 @@
 :root[data-theme="dark"] input:focus,
 :root[data-theme="dark"] select:focus,
 :root[data-theme="dark"] textarea:focus {
-  border-color: rgba(84, 240, 160, 0.62);
-  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.2);
+  border-color: rgba(84, 240, 160, 0.45);
+  box-shadow: 0 0 0 1px rgba(43, 224, 130, 0.16);
 }
 
 /* Range sliders carry their focus glow on the thumb, so keep the control
