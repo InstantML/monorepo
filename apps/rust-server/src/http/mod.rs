@@ -30,7 +30,7 @@ pub(crate) mod rate_limit;
 pub(crate) mod writer_lease;
 
 use handlers::{
-    abort_artifact_upload, accept_invitation, admin_data_cells, admin_overview,
+    abort_artifact_upload, accept_invitation, admin_change_plan, admin_data_cells, admin_overview,
     append_import_chunk, artifact_version_lineage, auth_clerk, auth_config, auth_dev_google,
     auth_logout, auth_session, auth_switch_organization, billing_add_seat, billing_cancel,
     billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
@@ -163,6 +163,7 @@ fn control_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/admin/overview", get(admin_overview))
         .route("/api/admin/data-cells", get(admin_data_cells))
+        .route("/api/admin/orgs/:org_id/plan", post(admin_change_plan))
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))

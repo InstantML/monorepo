@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -34,6 +34,22 @@ import { LogoMark } from "./logo-mark";
 
 type Section = "overview" | "users" | "orgs" | "storage" | "apiKeys" | "risk";
 
+type AdminUserOrg = AdminUser["orgs"][number];
+
+const PLAN_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: "free", label: "Free" },
+  { id: "pro", label: "Pro" },
+  { id: "premium", label: "Premium" },
+];
+
+// Older orgs may store legacy plan aliases; map them to the selectable tiers.
+function planOptionValue(planTier: string): string {
+  const normalized = planTier.trim().toLowerCase();
+  if (normalized === "pro" || normalized === "lab" || normalized === "startup") return "pro";
+  if (normalized === "premium" || normalized === "growth") return "premium";
+  return "free";
+}
+
 type AdminConsoleProps = {
   overview: AdminOverview;
   environment: string;
@@ -55,17 +71,57 @@ const navItems: Array<{ id: Section; label: string; icon: typeof Activity }> = [
 ];
 
 export function AdminConsole({ overview, environment, apiBase, query, viewer }: AdminConsoleProps) {
+  const [data, setData] = useState<AdminOverview>(overview);
   const [section, setSection] = useState<Section>("overview");
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(
     overview.organizations[0]?.id ?? null,
   );
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const selectedOrg = useMemo(
     () =>
-      overview.organizations.find((org) => org.id === selectedOrgId) ??
-      overview.organizations[0] ??
+      data.organizations.find((org) => org.id === selectedOrgId) ??
+      data.organizations[0] ??
       null,
-    [overview.organizations, selectedOrgId],
+    [data.organizations, selectedOrgId],
   );
+  const selectedUser = useMemo(
+    () => data.users.find((user) => user.id === selectedUserId) ?? null,
+    [data.users, selectedUserId],
+  );
+
+  const selectOrg = (id: string) => {
+    setSelectedOrgId(id);
+    setSelectedUserId(null);
+  };
+
+  // Apply an operator plan change, then patch the affected org into local state
+  // so the org table, detail panels, and every user's membership stay in sync.
+  const applyPlan = async (orgId: string, planTier: string) => {
+    const response = await fetch(`/api/orgs/${encodeURIComponent(orgId)}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ plan_tier: planTier }),
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | { org?: AdminOrganization; message?: string }
+      | null;
+    if (!response.ok || !payload?.org) {
+      throw new Error(payload?.message ?? `Plan change failed (${response.status}).`);
+    }
+    const updated = payload.org;
+    setData((prev) => ({
+      ...prev,
+      organizations: prev.organizations.map((org) => (org.id === updated.id ? updated : org)),
+      users: prev.users.map((user) => ({
+        ...user,
+        orgs: user.orgs.map((membership) =>
+          membership.org_id === updated.id
+            ? { ...membership, plan_tier: updated.plan_tier }
+            : membership,
+        ),
+      })),
+    }));
+  };
 
   return (
     <main className="admin-shell">
@@ -120,42 +176,57 @@ export function AdminConsole({ overview, environment, apiBase, query, viewer }: 
 
         <div className="meta-row">
           <span>API {apiBase}</span>
-          <span>Generated {formatDate(overview.generated_at)}</span>
-          <span>{overview.data_counts_available ? "Data counts live" : "Control plane only"}</span>
-          <span>Read-only operator {viewer.email}</span>
+          <span>Generated {formatDate(data.generated_at)}</span>
+          <span>{data.data_counts_available ? "Data counts live" : "Control plane only"}</span>
+          <span>Operator {viewer.email}</span>
         </div>
 
-        <KpiStrip overview={overview} />
+        <KpiStrip overview={data} />
 
         <div className="content-grid">
           <section className="work-area">
             {section === "overview" && (
               <>
                 <OrgTable
-                  organizations={overview.organizations}
+                  organizations={data.organizations}
                   selectedOrg={selectedOrg}
-                  onSelect={setSelectedOrgId}
+                  onSelect={selectOrg}
                 />
-                <UserTable users={overview.users.slice(0, 6)} compact />
+                <UserTable
+                  users={data.users.slice(0, 6)}
+                  selectedUserId={selectedUserId}
+                  onSelect={setSelectedUserId}
+                  compact
+                />
               </>
             )}
-            {section === "users" && <UserTable users={overview.users} />}
+            {section === "users" && (
+              <UserTable
+                users={data.users}
+                selectedUserId={selectedUserId}
+                onSelect={setSelectedUserId}
+              />
+            )}
             {section === "orgs" && (
               <OrgTable
-                organizations={overview.organizations}
+                organizations={data.organizations}
                 selectedOrg={selectedOrg}
-                onSelect={setSelectedOrgId}
+                onSelect={selectOrg}
                 expanded
               />
             )}
             {section === "storage" && (
-              <StorageQueue organizations={overview.organizations} onSelect={setSelectedOrgId} />
+              <StorageQueue organizations={data.organizations} onSelect={selectOrg} />
             )}
-            {section === "apiKeys" && <ApiKeyTable keys={overview.api_keys} />}
-            {section === "risk" && <RiskQueue risks={overview.risks} onSelect={setSelectedOrgId} />}
+            {section === "apiKeys" && <ApiKeyTable keys={data.api_keys} />}
+            {section === "risk" && <RiskQueue risks={data.risks} onSelect={selectOrg} />}
           </section>
 
-          <OrgDetail org={selectedOrg} />
+          {selectedUser ? (
+            <UserDetail user={selectedUser} onApplyPlan={applyPlan} />
+          ) : (
+            <OrgDetail org={selectedOrg} />
+          )}
         </div>
       </section>
     </main>
@@ -276,7 +347,17 @@ function OrgTable({
   );
 }
 
-function UserTable({ users, compact = false }: { users: AdminUser[]; compact?: boolean }) {
+function UserTable({
+  users,
+  selectedUserId,
+  onSelect,
+  compact = false,
+}: {
+  users: AdminUser[];
+  selectedUserId: string | null;
+  onSelect: (id: string) => void;
+  compact?: boolean;
+}) {
   return (
     <section className="panel">
       <div className="panel-heading">
@@ -296,10 +377,16 @@ function UserTable({ users, compact = false }: { users: AdminUser[]; compact?: b
           </thead>
           <tbody>
             {users.map((user) => (
-              <tr key={user.id}>
+              <tr
+                key={user.id}
+                className={selectedUserId === user.id ? "selected-row" : ""}
+                onClick={() => onSelect(user.id)}
+              >
                 <td>
-                  <strong>{user.display_name ?? user.primary_email}</strong>
-                  <span>{user.primary_email}</span>
+                  <button type="button" className="row-button" onClick={() => onSelect(user.id)}>
+                    <strong>{user.display_name ?? user.primary_email}</strong>
+                    <span>{user.primary_email}</span>
+                  </button>
                 </td>
                 <td>
                   <StatusDot status={user.status} />
@@ -313,6 +400,139 @@ function UserTable({ users, compact = false }: { users: AdminUser[]; compact?: b
         </table>
       </div>
     </section>
+  );
+}
+
+function UserDetail({
+  user,
+  onApplyPlan,
+}: {
+  user: AdminUser;
+  onApplyPlan: (orgId: string, planTier: string) => Promise<void>;
+}) {
+  return (
+    <aside className="detail-panel">
+      <div className="detail-heading">
+        <div>
+          <p>{user.primary_email}</p>
+          <h2>{user.display_name ?? user.primary_email}</h2>
+        </div>
+        <StatusDot status={user.status} />
+      </div>
+
+      <dl className="detail-list">
+        <div>
+          <dt>Status</dt>
+          <dd>{statusLabel(user.status)}</dd>
+        </div>
+        <div>
+          <dt>Memberships</dt>
+          <dd>
+            {formatNumber(user.active_memberships)} active, {formatNumber(user.invited_memberships)}{" "}
+            invited
+          </dd>
+        </div>
+        <div>
+          <dt>Last seen</dt>
+          <dd>{formatRelativeTime(user.last_seen_at)}</dd>
+        </div>
+        <div>
+          <dt>Created</dt>
+          <dd>{formatDate(user.created_at)}</dd>
+        </div>
+        <div>
+          <dt>User ID</dt>
+          <dd>{user.id}</dd>
+        </div>
+      </dl>
+
+      <section className="detail-block">
+        <h3>Plans</h3>
+        {user.orgs.length ? (
+          <div className="plan-list">
+            {user.orgs.map((membership) => (
+              <PlanMembershipRow
+                key={membership.org_id}
+                membership={membership}
+                onApply={onApplyPlan}
+              />
+            ))}
+          </div>
+        ) : (
+          <p>No organization memberships.</p>
+        )}
+      </section>
+    </aside>
+  );
+}
+
+function PlanMembershipRow({
+  membership,
+  onApply,
+}: {
+  membership: AdminUserOrg;
+  onApply: (orgId: string, planTier: string) => Promise<void>;
+}) {
+  const currentPlan = planOptionValue(membership.plan_tier);
+  const [plan, setPlan] = useState(currentPlan);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{ tone: string; text: string } | null>(null);
+
+  // Re-sync the selector after a successful apply updates the membership prop,
+  // or when switching between users in the detail panel.
+  useEffect(() => {
+    setPlan(planOptionValue(membership.plan_tier));
+    setStatus(null);
+  }, [membership.plan_tier, membership.org_id]);
+
+  const dirty = plan !== currentPlan;
+
+  const submit = async () => {
+    setBusy(true);
+    setStatus(null);
+    try {
+      await onApply(membership.org_id, plan);
+      setStatus({ tone: "good", text: "Plan updated." });
+    } catch (error) {
+      setStatus({
+        tone: "danger",
+        text: error instanceof Error ? error.message : "Plan change failed.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="plan-row">
+      <div className="plan-row-head">
+        <span>
+          <strong>{membership.org_name}</strong>
+          <small>
+            {statusLabel(membership.role)} · {statusLabel(membership.status)}
+          </small>
+        </span>
+        <span className="plan-badge">{statusLabel(membership.plan_tier)}</span>
+      </div>
+      <div className="plan-row-controls">
+        <select
+          value={plan}
+          onChange={(event) => setPlan(event.target.value)}
+          disabled={busy}
+          aria-label={`Plan for ${membership.org_name}`}
+        >
+          {PLAN_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <button type="button" onClick={submit} disabled={busy || !dirty}>
+          {busy ? "Applying…" : "Apply"}
+        </button>
+      </div>
+      {status && <p className={`plan-row-status tone-${status.tone}`}>{status.text}</p>}
+    </div>
   );
 }
 

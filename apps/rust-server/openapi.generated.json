@@ -44,6 +44,83 @@
         ]
       }
     },
+    "/api/admin/orgs/{org_id}/plan": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "operationId": "admin_change_plan",
+        "parameters": [
+          {
+            "name": "org_id",
+            "in": "path",
+            "description": "Organization to re-plan",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPlanChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Refreshed organization summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrganizationSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid plan tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Bootstrap token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organization not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bootstrapToken": []
+          }
+        ]
+      }
+    },
     "/api/admin/overview": {
       "get": {
         "tags": [
@@ -8880,6 +8957,18 @@
           }
         }
       },
+      "AdminPlanChangeRequest": {
+        "type": "object",
+        "description": "Operator-initiated plan change from the admin console. Unlike\n`BillingPlanChangeRequest`, the target plan is required because the operator\nis explicitly setting the workspace's tier on the customer's behalf.",
+        "required": [
+          "plan_tier"
+        ],
+        "properties": {
+          "plan_tier": {
+            "type": "string"
+          }
+        }
+      },
       "AdminRiskItem": {
         "type": "object",
         "required": [
@@ -9133,6 +9222,7 @@
         "required": [
           "org_id",
           "org_name",
+          "plan_tier",
           "role",
           "status"
         ],
@@ -9142,6 +9232,9 @@
             "format": "uuid"
           },
           "org_name": {
+            "type": "string"
+          },
+          "plan_tier": {
             "type": "string"
           },
           "role": {

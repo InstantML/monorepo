@@ -512,6 +512,14 @@ pub struct BillingPlanChangeRequest {
     pub plan_tier: Option<String>,
 }
 
+/// Operator-initiated plan change from the admin console. Unlike
+/// `BillingPlanChangeRequest`, the target plan is required because the operator
+/// is explicitly setting the workspace's tier on the customer's behalf.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AdminPlanChangeRequest {
+    pub plan_tier: String,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct BillingSeatChangeRequest {
     pub email: Option<String>,
@@ -914,6 +922,7 @@ pub struct AdminUserIdentity {
 pub struct AdminUserOrgMembership {
     pub org_id: Uuid,
     pub org_name: String,
+    pub plan_tier: String,
     pub role: String,
     pub status: String,
 }
