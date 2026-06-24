@@ -778,8 +778,9 @@ try {
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-row", { timeout: 10000 });
   await page.fill("#search", "reward stability");
-  await page.waitForFunction(() => document.querySelector(".workspace-run-note")?.textContent?.includes("reward stability"));
-  assert.match(await page.locator(".workspace-run-list").innerText(), /reward stability/i);
+  // Notes live in the rail row's hover tooltip (data-rail-tooltip), not inline.
+  await page.waitForFunction(() => [...document.querySelectorAll(".workspace-run-open")].some((node) => (node.getAttribute("data-rail-tooltip") ?? "").includes("reward stability")));
+  assert.doesNotMatch(await page.locator(".workspace-run-list").innerText(), /No runs match/);
   await page.fill("#search", "");
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
@@ -1518,8 +1519,8 @@ try {
     panels: document.querySelectorAll(".workspace-panel-card").length,
     sections: document.querySelectorAll(".workspace-section").length,
     sort: document.querySelector("#sort-select")?.value,
-    notePreviews: [...document.querySelectorAll(".workspace-run-note")].map((node) => node.textContent ?? ""),
-    tagPreviews: [...document.querySelectorAll(".workspace-run-tags")].map((node) => node.textContent ?? ""),
+    notePreviews: [...document.querySelectorAll(".workspace-run-open")].map((node) => node.getAttribute("data-rail-tooltip") ?? ""),
+    tagPreviews: [...document.querySelectorAll(".workspace-run-open")].map((node) => node.getAttribute("data-rail-tooltip") ?? ""),
     tallRows: [...document.querySelectorAll(".workspace-run-row")].filter((row) => row.getBoundingClientRect().height > 120).length,
   }));
   await selectVisibleRunForMetrics(page);
@@ -1584,8 +1585,8 @@ try {
     panels: document.querySelectorAll(".workspace-panel-card").length,
     sections: document.querySelectorAll(".workspace-section").length,
     sort: document.querySelector("#sort-select")?.value,
-    notePreviews: [...document.querySelectorAll(".workspace-run-note")].map((node) => node.textContent ?? ""),
-    tagPreviews: [...document.querySelectorAll(".workspace-run-tags")].map((node) => node.textContent ?? ""),
+    notePreviews: [...document.querySelectorAll(".workspace-run-open")].map((node) => node.getAttribute("data-rail-tooltip") ?? ""),
+    tagPreviews: [...document.querySelectorAll(".workspace-run-open")].map((node) => node.getAttribute("data-rail-tooltip") ?? ""),
     tallRows: [...document.querySelectorAll(".workspace-run-row")].filter((row) => row.getBoundingClientRect().height > 120).length,
   }));
   for (let index = 0; index < 4; index += 1) {

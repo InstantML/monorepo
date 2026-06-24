@@ -442,7 +442,6 @@ export function RunsTabPane({
         pageSize={pageSize}
         pageStart={pageStart}
         panelSearch={panelSearch}
-        runSearch={queryInput}
         runRailCollapsed={runsRailCollapsed}
         selectedRunIds={selectedRunIds}
         showAddPanelDrawer={Boolean(addPanelSectionId)}

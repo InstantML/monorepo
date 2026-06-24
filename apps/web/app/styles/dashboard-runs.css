@@ -418,7 +418,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  /* When the rail is narrow the "Select all…" link and the "N selected · Clear"
+   * status can't share a line; let the status drop to its own line (left
+   * aligned) instead of squeezing the two into a misaligned tangle. */
+  flex-wrap: wrap;
+  gap: 4px 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line-soft);
   font-size: var(--fs-data);
@@ -438,6 +442,9 @@
 .workspace-rail-page-count {
   color: var(--muted);
   font-weight: 600;
+  /* Keep "N selected · Clear" together so "Clear" never drops onto its own
+   * line under the count. */
+  white-space: nowrap;
 }
 
 .workspace-rail-actions,
@@ -531,10 +538,11 @@
 .workspace-run-list {
   flex: 1 1 auto;
   display: grid;
-  /* Floor matches .workspace-run-row min-height so collapsed rows get a
-   * real track (no overlap); max-content lets selected/hovered rows grow
-   * to fit the revealed tags + note. */
-  grid-auto-rows: minmax(76px, max-content);
+  /* Rows are a fixed size — name + project/config + status/metric; tags and the
+   * note live in the hover tooltip, so rows never grow or reflow. Content-based
+   * track (min-content min, not a fixed px) keeps every row the same height and
+   * avoids the scroll-container collapse a fixed min would cause. */
+  grid-auto-rows: minmax(min-content, max-content);
   align-content: start;
   gap: 2px;
   min-height: 0;
@@ -553,7 +561,7 @@
   grid-template-columns: 25px minmax(0, 1fr);
   align-items: start;
   gap: 8px;
-  min-height: 86px;
+  min-height: 70px;
   padding: 8px;
 }
 
@@ -571,11 +579,6 @@
   gap: 8px;
   min-width: 0;
   padding-top: 2px;
-}
-
-.workspace-run-skeleton-tags {
-  display: flex;
-  gap: 5px;
 }
 
 .workspace-skeleton-line {
@@ -596,14 +599,10 @@
   width: 64%;
 }
 
-.workspace-skeleton-line.is-tag {
-  width: 54px;
-  height: 16px;
+.workspace-skeleton-line.is-evidence {
+  width: 58%;
+  height: 18px;
   border-radius: 4px;
-}
-
-.workspace-skeleton-line.is-tag.is-short {
-  width: 38px;
 }
 
 .workspace-run-row {
@@ -645,37 +644,6 @@
   border-color: var(--line);
   background: #f0f7f4;
   box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.workspace-run-tags {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.workspace-run-tags b,
-.workspace-run-tags em {
-  max-width: 72px;
-  overflow: hidden;
-  border: 1px solid var(--line-soft);
-  border-radius: 4px;
-  color: var(--accent-strong);
-  font-size: var(--fs-data);
-  font-style: normal;
-  font-weight: 760;
-  line-height: 1.1;
-  padding: 2px 5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspace-run-note {
-  display: block;
-  overflow: hidden;
-  max-width: 100%;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .workspace-run-evidence {

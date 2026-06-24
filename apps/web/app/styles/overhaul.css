@@ -285,35 +285,6 @@
   font: 500 11px/1.25 var(--font-mono);
   color: var(--faint);
 }
-/* Tags + note are reveal-on-attention to keep rows dense while scanning. */
-.workspace-run-tags,
-.workspace-run-note {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition: opacity 0.14s ease;
-  margin: 0;
-}
-.workspace-run-row:hover .workspace-run-tags,
-.workspace-run-row:focus-visible .workspace-run-tags,
-.workspace-run-row.selected .workspace-run-tags,
-.workspace-run-row:hover .workspace-run-note,
-.workspace-run-row:focus-visible .workspace-run-note,
-.workspace-run-row.selected .workspace-run-note {
-  max-height: 60px;
-  opacity: 1;
-  margin-top: 5px;
-}
-.workspace-run-tags b {
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  color: var(--text-2);
-  font: 500 10.5px/1 var(--font-mono);
-  padding: 3px 6px;
-}
-.workspace-run-note { font: 500 11px/1.35 var(--font-sans); color: var(--muted); }
-
 .workspace-run-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--line-soft);
@@ -2349,37 +2320,6 @@ button.secondary.danger-action:hover:not(:disabled),
   background: radial-gradient(circle at center, var(--accent) 0 42%, transparent 46%);
 }
 
-/* Tags + note: reveal on attention only (dense scanning) */
-.workspace-run-tags,
-.workspace-run-note {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  margin: 0;
-  transition: opacity 0.14s ease;
-}
-.workspace-run-row:hover .workspace-run-tags,
-.workspace-run-row:focus-within .workspace-run-tags,
-.workspace-run-row.selected .workspace-run-tags,
-.workspace-run-row:hover .workspace-run-note,
-.workspace-run-row:focus-within .workspace-run-note,
-.workspace-run-row.selected .workspace-run-note {
-  max-height: 48px;
-  opacity: 1;
-  margin-top: 5px;
-}
-.workspace-run-tags b,
-.workspace-run-tags em {
-  max-width: none;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text-2);
-  font: 500 10.5px/1 var(--font-mono);
-  font-style: normal;
-  padding: 3px 6px;
-}
-.workspace-run-note { color: var(--muted); font: 500 11px/1.35 var(--font-sans); }
 .workspace-run-main strong { font: 600 12.5px/1.2 var(--font-mono); letter-spacing: -0.01em; color: var(--text); }
 .workspace-run-main small { font: 500 11px/1.25 var(--font-mono); color: var(--faint); }
 
@@ -2989,13 +2929,6 @@ button.compare-row-head.active {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  /* keep reveal end-states usable without the transition */
-  .workspace-run-row:hover .workspace-run-tags,
-  .workspace-run-row:focus-within .workspace-run-tags,
-  .workspace-run-row.selected .workspace-run-tags,
-  .workspace-run-row:hover .workspace-run-note,
-  .workspace-run-row:focus-within .workspace-run-note,
-  .workspace-run-row.selected .workspace-run-note { max-height: 48px; opacity: 1; }
 }
 
 /* P0 dark leak: invalid metric-filter input went near-white */
@@ -3006,10 +2939,8 @@ button.compare-row-head.active {
   color: var(--text);
 }
 
-/* One chip system — consolidate the 4 drifted variants to the token spec */
+/* One chip system — consolidate the drifted variants to the token spec */
 .chip,
-.workspace-run-tags b,
-.workspace-run-tags em,
 .run-workspace-meta .chip,
 .compare-tag-list .chip,
 .workspace-run-topline .chip {
@@ -3026,7 +2957,6 @@ button.compare-row-head.active {
   letter-spacing: 0;
   white-space: nowrap;
 }
-.workspace-run-tags { gap: 4px; }
 
 /* Eyebrow size is uniformly 12px so dense mono labels stay readable. */
 .analysis-stat-strip .analysis-stat span,
@@ -3171,20 +3101,17 @@ button.compare-row-head.active {
   min-height: 70px;
 }
 .workspace-run-list {
-  grid-auto-rows: minmax(76px, max-content);
+  /* Fixed-size rows (content-based, uniform); a fixed px min would collapse +
+   * clip inside this scrolling container. Floor comes from row min-height. */
+  grid-auto-rows: minmax(min-content, max-content);
 }
 .workspace-run-body {
   gap: 3px;
 }
-.workspace-run-body small,
-.workspace-run-note {
+.workspace-run-body small {
   font-size: var(--fs-data);
   line-height: 1.35;
   color: var(--text-2);
-}
-.workspace-run-tags b,
-.workspace-run-tags em {
-  font-size: var(--fs-data);
 }
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }
@@ -3330,13 +3257,10 @@ button.crumb-project {
 }
 
 /* Shrink the card text a step so more of each field fits on the rail's narrow
- * line — the name, the metric label + value, and the tags all read instead of
- * collapsing to truncated stubs. */
+ * line — the name and the metric label + value read instead of collapsing to
+ * truncated stubs. */
 .workspace-run-body strong { font-size: 12px; }
-.workspace-run-body small,
-.workspace-run-note { font-size: var(--fs-label); }
-.workspace-run-tags b,
-.workspace-run-tags em { font-size: var(--fs-micro); }
+.workspace-run-body small { font-size: var(--fs-label); }
 
 /* Evidence row: the status chip and the metric chip share one line. The metric
  * label stays (so a bare number isn't context-free) but yields first when space
@@ -3357,22 +3281,6 @@ button.crumb-project {
   font-variant-numeric: tabular-nums;
 }
 .workspace-run-metric-chip .wrm-name { color: var(--muted); }
-
-/* Tags stay on a single line (the rail's bounded row height has no room to
- * wrap once a note is shown). Leading tags show in full; when the strip is
- * wider than the card the overflow fades out at the right edge instead of
- * being hard-clipped mid-word, so it reads as "there's more" rather than
- * broken. */
-.workspace-run-tags {
-  flex-wrap: nowrap;
-  gap: 6px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
-          mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
-}
-.workspace-run-tags b,
-.workspace-run-tags em { max-width: 120px; padding: 2px 6px; }
-.workspace-run-tags em { flex: 0 0 auto; }
 
 /* A lit row reads as an intentional, branded tint with a soft accent edge —
  * not a flat gray wash. Hover is the lightest; the chart cross-highlight is a
