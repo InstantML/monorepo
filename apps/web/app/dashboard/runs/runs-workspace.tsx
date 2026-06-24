@@ -8,7 +8,7 @@ import type { CSSProperties, DragEvent, KeyboardEvent as ReactKeyboardEvent, Poi
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels.js";
 import { BULK_SELECT_MATCHING_LIMIT, canRequestStop, displayStatusForRun, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
-import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runNoteText, runRailTooltip, shortMetricName, workspacePanelTypeLabel } from "../../dashboard-models";
+import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runRailTooltip, shortMetricName, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { WorkspaceSectionView } from "./workspace-panel-card";
@@ -98,17 +98,6 @@ function RunRailTooltip({ tip }: { tip: RunRailTip | null }) {
   );
 }
 
-function visibleTagsForSearch(tags: string[], search: string, limit: number) {
-  const normalizedTags = Array.isArray(tags) ? tags.filter(Boolean) : [];
-  const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return normalizedTags.slice(0, limit);
-  const matched = normalizedTags.filter((tag) => {
-    const text = tag.toLowerCase();
-    return tokens.some((token) => text.includes(token));
-  });
-  return [...matched, ...normalizedTags].filter((tag, index, values) => values.indexOf(tag) === index).slice(0, limit);
-}
-
 function preferredHistogramObjectKey(metricKeys: string[]) {
   return metricKeys.find((key) => /histogram|distribution|score/i.test(key)) ?? metricKeys[0] ?? "";
 }
@@ -177,7 +166,6 @@ export function RunsWorkspace({
   pageSize,
   pageStart,
   panelSearch,
-  runSearch,
   runRailCollapsed,
   selectAllMatchingBusy,
   selectAllMatchingDisabled,
@@ -232,7 +220,6 @@ export function RunsWorkspace({
   pageSize: number;
   pageStart: number;
   panelSearch: string;
-  runSearch: string;
   runRailCollapsed: boolean;
   selectAllMatchingBusy: boolean;
   selectAllMatchingDisabled: boolean;
@@ -519,9 +506,7 @@ export function RunsWorkspace({
           ) : workspaceRuns.length ? workspaceRuns.map((run, index) => {
             const selected = selectedRunIds.includes(run.id);
             const compareLabel = selected ? `Deselect ${run.name}` : `Select ${run.name}`;
-            const note = runNoteText(run);
-            const visibleTags = visibleTagsForSearch(run.tags, runSearch, 3);
-            const hiddenTags = run.tags.filter((tag) => !visibleTags.includes(tag));
+            const railTooltip = runRailTooltip(run);
             const uploadHealth = uploadHealthForRun(run);
             const configSummary = runConfigSummary(run);
             const compactConfigSummary = compactRailConfigSummary(run);
@@ -536,7 +521,7 @@ export function RunsWorkspace({
                 key={run.id}
                 onMouseEnter={(event) => {
                   setHighlightRunId(run.id);
-                  setRailTip({ text: runRailTooltip(run), rect: event.currentTarget.getBoundingClientRect() });
+                  setRailTip({ text: railTooltip, rect: event.currentTarget.getBoundingClientRect() });
                 }}
                 onMouseLeave={() => {
                   setHighlightRunId((current) => (current === run.id ? null : current));
@@ -559,6 +544,7 @@ export function RunsWorkspace({
                 <button
                   aria-label={`Open ${run.name}`}
                   className="workspace-run-open"
+                  data-rail-tooltip={railTooltip}
                   onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
                   type="button"
                 >
@@ -579,11 +565,8 @@ export function RunsWorkspace({
                         <span className={`upload-health-chip ${uploadHealth.tone}`} title={uploadHealth.detail || undefined}>{uploadHealth.label}</span>
                       ) : null}
                     </span>
-                    <span className="workspace-run-tags" aria-label={`${run.name} tags`}>
-                      {visibleTags.map((tag) => <b key={tag} title={tag}>{tag}</b>)}
-                      {hiddenTags.length ? <em title={hiddenTags.join(", ")}>+{hiddenTags.length}</em> : null}
-                    </span>
-                    {note ? <small className="workspace-run-note" title={note}>{note}</small> : null}
+                    {/* Tags + note moved off the card to keep rows a fixed size;
+                        they surface in the hover tooltip (RunRailTooltip). */}
                   </span>
                 </button>
                 {canStop ? (
@@ -802,10 +785,7 @@ function RunsRailSkeleton() {
           <span className="workspace-run-skeleton-body">
             <span className="workspace-skeleton-line is-title" />
             <span className="workspace-skeleton-line is-meta" />
-            <span className="workspace-run-skeleton-tags">
-              <span className="workspace-skeleton-line is-tag" />
-              <span className="workspace-skeleton-line is-tag is-short" />
-            </span>
+            <span className="workspace-skeleton-line is-evidence" />
           </span>
         </div>
       ))}
