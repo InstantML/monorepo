@@ -434,7 +434,7 @@ select:focus,
 input:focus,
 textarea:focus {
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 /* Accent eyebrow used by PageHead and analysis headers. */

@@ -2372,7 +2372,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--paragraph:focus {
   background: var(--bg-soft);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 /* Tighten the block-list rhythm */
@@ -2568,7 +2568,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   border-color: var(--accent-line);
   background: var(--surface);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 .add-panel-modal__combo-list {
@@ -2712,7 +2712,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   background: var(--bg-soft);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 .report-block__textarea--paragraph::placeholder {
@@ -2741,7 +2741,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--markdown:focus {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 /* Code: same surface as the rendered <pre>. The language pill floats over
@@ -2787,7 +2787,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--code:focus {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 /* Inline select for code language / heading level / callout variant.
@@ -2841,7 +2841,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   background: var(--surface);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 .report-block__textarea--callout::placeholder {
@@ -2908,7 +2908,7 @@ a.report-pane__icon-button:focus-visible {
   outline: none;
   background: var(--bg-soft);
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 .report-block__inline-input::placeholder {
@@ -2957,7 +2957,7 @@ a.report-pane__icon-button:focus-visible {
 .report-block__textarea--inline-prompt:focus {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 /* Read-only surface — used by the public share page. We share the same
@@ -3288,7 +3288,7 @@ a.report-pane__icon-button {
 .report-visibility-select .select-trigger:focus-visible {
   outline: none;
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 .report-visibility-select .select-trigger-value,
