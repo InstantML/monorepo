@@ -418,7 +418,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  /* When the rail is narrow the "Select all…" link and the "N selected · Clear"
+   * status can't share a line; let the status drop to its own line (left
+   * aligned) instead of squeezing the two into a misaligned tangle. */
+  flex-wrap: wrap;
+  gap: 4px 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line-soft);
   font-size: var(--fs-data);
@@ -438,6 +442,9 @@
 .workspace-rail-page-count {
   color: var(--muted);
   font-weight: 600;
+  /* Keep "N selected · Clear" together so "Clear" never drops onto its own
+   * line under the count. */
+  white-space: nowrap;
 }
 
 .workspace-rail-actions,
@@ -531,10 +538,12 @@
 .workspace-run-list {
   flex: 1 1 auto;
   display: grid;
-  /* Floor matches .workspace-run-row min-height so collapsed rows get a
-   * real track (no overlap); max-content lets selected/hovered rows grow
-   * to fit the revealed tags + note. */
-  grid-auto-rows: minmax(76px, max-content);
+  /* Size each row to its content so selected/hovered rows grow to fit the
+   * revealed tags + note (the row's own min-height keeps the collapsed floor).
+   * A FIXED min here (e.g. minmax(76px, ...)) collapses to that floor inside
+   * this scrolling container and clips the revealed tags, so the min must be
+   * content-based. */
+  grid-auto-rows: minmax(min-content, max-content);
   align-content: start;
   gap: 2px;
   min-height: 0;

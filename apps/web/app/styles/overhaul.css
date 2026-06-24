@@ -3171,7 +3171,9 @@ button.compare-row-head.active {
   min-height: 70px;
 }
 .workspace-run-list {
-  grid-auto-rows: minmax(76px, max-content);
+  /* Content-based track min so revealed rows grow inside the scrolling rail
+   * (a fixed min collapses + clips the tags); floor comes from row min-height. */
+  grid-auto-rows: minmax(min-content, max-content);
 }
 .workspace-run-body {
   gap: 3px;
