@@ -244,6 +244,7 @@ export function RunsTabPane({
   }, [runsView]);
   function changeRunsView(view: RunsViewMode) {
     setRunsView(view);
+    if (view !== "table") onColumnsOpen(false);
     localStorage.setItem("instantml:next:runs-view", view);
   }
   const showEmptyCallout = initialLoadDone && !dashboardLoading && summaryTotal === 0 && projects.length === 0 && !project && !query && !status;
@@ -340,28 +341,18 @@ export function RunsTabPane({
       ) : null}
       <div className="runs-workspace-filter" ref={filterRef}>
         <RunsCommandbar
-          columnsOpen={columnsOpen}
           exportSelectedBusy={exportSelectedBusy}
           metricKey={metricKey}
           metricOptions={metricOptionsForControls}
-          onColumnsOpen={onColumnsOpen}
           onExportSelectedRuns={onExportSelectedRuns}
           onMetricKey={onChangeMetricKey}
-          onPinnedMetricFilter={onColumnMetricFilter}
-          onPinnedMetric={onPinnedMetric}
           onRefresh={onRefresh}
-          onTableColumns={onTableColumns}
           onViewMode={changeRunsView}
-          pinnedMetricFilter={columnMetricFilter}
-          pinnedMetricFilterValid={columnMetricFilterValid}
-          pinnedMetricOptions={columnMetricOptionsForControls}
-          pinnedMetrics={pinnedMetrics}
           selectedRunCount={selectedRunIds.length}
           selectedRunExportDisabled={selectedRunExportDisabled}
           selectedRunExportTitle={selectedRunExportTitle}
           selectedStopCandidateCount={selectedStopCandidateCount}
           selectedStopDisabledReason={selectedStopDisabledReason}
-          tableColumns={tableColumns}
           onRequestSelectedStop={() => onRequestStop(selectedRunIds)}
           viewMode={runsView}
         />
@@ -372,21 +363,29 @@ export function RunsTabPane({
           <RunsTable
             canControlRuns={canControlRuns}
             columns={tableColumns}
+            columnsOpen={columnsOpen}
             hasNextPage={hasNextPage}
             hasPreviousPage={hasPreviousPage}
             metricKey={metricKey}
             onClearFilters={onClearFilters}
             onClearSelection={onClearSelection}
+            onColumnsOpen={onColumnsOpen}
             onInspectRun={onInspectRun}
             onNextPage={onNextPage}
             onOpenRun={onOpenRun}
             onPreviousPage={onPreviousPage}
+            onPinnedMetric={onPinnedMetric}
+            onPinnedMetricFilter={onColumnMetricFilter}
             onRequestStop={onRequestStop}
             onSelectAllVisible={onSelectAllVisible}
+            onTableColumns={onTableColumns}
             onToggleRun={(runId) => onToggleRun(runId)}
             pageSize={pageSize}
             pageStart={pageStart}
             paginationBusy={paginationBusy}
+            pinnedMetricFilter={columnMetricFilter}
+            pinnedMetricFilterValid={columnMetricFilterValid}
+            pinnedMetricOptions={columnMetricOptionsForControls}
             pinnedMetrics={pinnedMetrics}
             primaryRunId={primaryRunId}
             query={query}
@@ -405,7 +404,6 @@ export function RunsTabPane({
         onAddPanel={onAddPanel}
         onAddSection={onAddSection}
         onClearFilters={onClearFilters}
-        onColumnsOpen={onColumnsOpen}
         onDuplicatePanel={onDuplicatePanel}
         onEditPanel={onEditPanel}
         onFullscreenPanel={onFullscreenPanel}
@@ -424,7 +422,6 @@ export function RunsTabPane({
         onClearSelection={onClearSelection}
         onSelectAllVisible={onSelectAllVisible}
         onSetAddPanelSection={onSetAddPanelSection}
-        onTableColumns={onTableColumns}
         onToggleRun={onToggleRun}
         onToggleSection={onToggleSection}
         metricKey={metricKey}
@@ -446,7 +443,6 @@ export function RunsTabPane({
         selectedRunIds={selectedRunIds}
         showAddPanelDrawer={Boolean(addPanelSectionId)}
         summaryTotal={summaryTotal}
-        tableColumns={tableColumns}
         view={workspaceView}
         workspaceHistogramTimelines={workspaceHistogramTimelines}
         workspacePanelRuns={workspacePanelRuns}

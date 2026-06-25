@@ -12,8 +12,7 @@ import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runRailTooltip, s
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { WorkspaceSectionView } from "./workspace-panel-card";
-import type { Dispatch, SetStateAction } from "react";
-import type { HistogramTimelineState, MetricSeries, RunSummary, TableColumns, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
+import type { HistogramTimelineState, MetricSeries, RunSummary, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
 
 type DraggedWorkspacePanel = {
   panelId: string;
@@ -131,7 +130,6 @@ export function RunsWorkspace({
   onAddPanel,
   onAddSection,
   onClearFilters,
-  onColumnsOpen,
   onDuplicatePanel,
   onEditPanel,
   onFullscreenPanel,
@@ -147,7 +145,6 @@ export function RunsWorkspace({
   onPanelSmoothing,
   onRunRailCollapsed,
   onSetAddPanelSection,
-  onTableColumns,
   onClearSelection,
   onSelectAllMatching,
   onSelectAllVisible,
@@ -172,7 +169,6 @@ export function RunsWorkspace({
   selectedRunIds,
   showAddPanelDrawer,
   summaryTotal,
-  tableColumns,
   view,
   workspacePanelRuns,
   workspaceRuns,
@@ -185,7 +181,6 @@ export function RunsWorkspace({
   onAddPanel: (sectionId: string, metricKey: string, type: WorkspacePanelType) => void;
   onAddSection: () => void;
   onClearFilters: () => void;
-  onColumnsOpen: Dispatch<SetStateAction<boolean>>;
   onDuplicatePanel: (sectionId: string, panelId: string) => void;
   onEditPanel: (sectionId: string, panelId: string) => void;
   onFullscreenPanel: (sectionId: string, panelId: string) => void;
@@ -204,7 +199,6 @@ export function RunsWorkspace({
   onSelectAllMatching: () => void;
   onSelectAllVisible: () => void;
   onSetAddPanelSection: (sectionId: string) => void;
-  onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   onToggleRun: (runId: string, options?: { shift?: boolean }) => void;
   onToggleSection: (sectionId: string) => void;
   metricKey: string;
@@ -226,7 +220,6 @@ export function RunsWorkspace({
   selectedRunIds: string[];
   showAddPanelDrawer: boolean;
   summaryTotal: number;
-  tableColumns: TableColumns;
   view: WorkspaceView;
   workspacePanelRuns: RunSummary[];
   workspaceRuns: RunSummary[];
