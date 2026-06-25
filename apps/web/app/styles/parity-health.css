@@ -61,7 +61,7 @@
 }
 
 /* ---- Micro-label + unit (mockup .mlabel / .panel__unit) ------------------- */
-/* Panel + tile titles are prose → Archivo sans, sentence case. (Was uppercase
+/* Panel + tile titles are prose → Inter sans, sentence case. (Was uppercase
  * mono, which made every card read like a log line.) */
 .hp-mlabel {
   flex: 1;

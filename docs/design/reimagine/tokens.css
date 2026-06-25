@@ -47,7 +47,7 @@
 
   /* ---- Typography ---- */
   --font-mono: "Spline Sans Mono", "SFMono-Regular", ui-monospace, monospace;
-  --font-display: "Archivo", "Helvetica Neue", sans-serif;
+  --font-display: "Inter", "Helvetica Neue", sans-serif;
 
   --fs-micro: 10px;    /* uppercase micro-labels  */
   --fs-data:  12px;    /* table cells, chips      */

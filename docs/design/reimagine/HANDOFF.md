@@ -9,13 +9,13 @@
 
 InstantML is a training-observability dashboard: run tables, metric charts,
 artifacts, health monitors. Instrument treats it as a precision instrument
-console — Spline Sans Mono carries every value/label/identifier, Archivo
+console — Spline Sans Mono carries every value/label/identifier, Inter
 carries prose, green is reserved for live/best, and structure comes from
 hairlines on a warm paper (light, default) or warm graphite (dark) surface.
 
 Stack: Next.js 16 app router, plain CSS custom properties (no Tailwind/CSS-in-JS),
 hand-rolled SVG charts, Lucide icons, Clerk auth. Fonts load via `next/font`
-(`Archivo`, `Spline Sans Mono`, `Instrument Serif` for marketing accents only).
+(`Inter`, `Spline Sans Mono`, `Instrument Serif` for marketing accents only).
 
 ## Layout
 
@@ -46,7 +46,7 @@ hand-rolled SVG charts, Lucide icons, Clerk auth. Fonts load via `next/font`
 | `--info` | `#4da3ff` | `#2d6fd1` | informational only |
 | `--series-1..6` | bright set | darkened set | CSS series ladder; JS `CHART_PALETTE` (12, `src/chart-colors.js`) is theme-agnostic, every color ≥3:1 on white **and** dark (unit-enforced in `chart-colors.test.js`) |
 | `--radius` / `--radius-sm` / `--radius-lg` / `--radius-pill` | 6px / 4px / 10px / 999px | same | v1.1 soft-precision geometry; chips are capsules |
-| `--font-mono` / `--font-ui` | Spline Sans Mono / Archivo | same | mono = all data, labels, nav, numerals; Archivo = headings/prose |
+| `--font-mono` / `--font-ui` | Spline Sans Mono / Inter | same | mono = all data, labels, nav, numerals; Inter = headings/prose |
 | `--tracking-eyebrow` | `0.14em` | same | uppercase mono micro-labels |
 | `--shadow` | `0 8px 24px rgba(0,0,0,.55)` | subtle | popovers only — panels use hairlines, never shadows |
 

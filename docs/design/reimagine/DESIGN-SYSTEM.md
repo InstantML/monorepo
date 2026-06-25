@@ -16,9 +16,9 @@ instrument bezels.
 
 Four rules govern every screen:
 
-1. **Mono carries data, Archivo carries prose.** Anything that is a value, label,
+1. **Mono carries data, Inter carries prose.** Anything that is a value, label,
    identifier, or unit is set in Spline Sans Mono. Page titles, body copy, and
-   descriptions use Archivo. If you can sort it, filter it, or copy it into a
+   descriptions use Inter. If you can sort it, filter it, or copy it into a
    terminal — it's mono.
 2. **Green means live.** `--signal` is reserved for things happening *right now*
    (running jobs, streaming data, primary actions) and best-yet values. It is
@@ -102,7 +102,7 @@ dash, not a palette slot.
 | Token | Value |
 |---|---|
 | `--font-mono` | "Spline Sans Mono" — all data, labels, nav, tables, numerals |
-| `--font-display` | "Archivo" — page titles, prose |
+| `--font-display` | "Inter" — page titles, prose |
 
 Scale: `--fs-micro` 10px (uppercase labels) · `--fs-data` 12px (cells, chips) ·
 `--fs-body` 13px (prose) · `--fs-title` 15px · `--fs-page` 20px ·
@@ -317,7 +317,7 @@ series names if not provided).
 | Right-align every numeric column, tabular figures | Center or left-align numbers |
 | Clamp y-axes at 0 for non-negative metrics | Let axis padding invent negative loss |
 | Keep quiet heatmap cells neutral | Paint healthy cells bright green |
-| Put exactly one mlabel in each panel head | Title panels in Archivo or sentence case |
+| Put exactly one mlabel in each panel head | Title panels in Inter or sentence case |
 | Use `*-dim` washes for chip fills | Use solid semantic fills behind text |
 | Show comparison baselines as faint dashes | Spend palette slots on ghosts |
 
