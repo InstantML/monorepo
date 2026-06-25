@@ -2,7 +2,7 @@
 
 Date: 2026-06-25
 
-Status: Revised after senior-engineer review
+Status: Implemented first slice
 
 Owner: Codex
 
@@ -1336,6 +1336,57 @@ PR senior reviewer 4 - backend reliability/performance:
 
 None planned.
 
+## Implementation Notes
+
+Implemented in branch `codex/iframe-embed-plan`:
+
+- Rust API adds `POST /api/embed/sessions`,
+  `GET /api/embed/sessions/:session_id/frame-policy`,
+  `GET /api/embed/sessions/:session_id/current`, and
+  `POST /api/embed/sessions/:session_id/runs/data`.
+- Embed sessions are control records (`embed_sessions`) with hashed bearer
+  tokens, 256-bit CSPRNG token generation, domain-separated HMAC/SHA-256
+  hashing, constant-time comparison, source API-key/service-account
+  revalidation, source-scope snapshot checks, org allowlist support, and bounded
+  TTL/run/panel/point caps.
+- Split service-plane routing treats session create and data reads as data-plane
+  routes, while frame-policy and current-session checks are control-plane
+  routes. Frame-policy lookups do a bounded control-database point read on a
+  session miss so newly-created data-plane sessions are visible in hosted split
+  mode without unauthenticated full-projection refreshes.
+- The Next `/embed/runs/[session_id]` route bypasses Clerk, uses a root-layout
+  embed mode with no storage scripts, fetches with `credentials: "omit"`, strips
+  the fragment token before network requests, and renders read-only line charts
+  with chart controls and controlled per-panel range zoom, but no
+  export/download actions.
+- `next.config.mjs` preserves anti-framing headers for non-embed routes and
+  orders embed API rewrites ahead of the generic `/api/:path*` data catch-all.
+  `proxy.ts` owns embed CSP/frame headers and fails closed for unknown or
+  unavailable frame-policy lookups.
+- Public docs now include an iframe embed guide with a browser-verified
+  screenshot that does not expose a live bearer token.
+
+Post-implementation senior review fold-ins:
+
+- Query-string bearer material is explicitly rejected before the iframe client
+  uses a valid fragment token, and the embed route scrubs query/hash state down
+  to the session path.
+- Embed token routes now authenticate before consuming the per-session refresh
+  bucket, so invalid callers that know only the non-secret session ID cannot
+  drain a valid iframe's data allowance.
+- Embed token routes also pass through a pre-auth client/global limiter before
+  bearer-token authentication or forced control refresh, so random valid-shaped
+  token attempts cannot trigger unbounded control-plane reloads.
+- `current` stays control-plane cheap: it authenticates and returns metadata
+  without touching tenant metric stores or reserving monthly usage. Metered
+  usage reservation remains on `runs/data`, after embed auth and short-window
+  throttling.
+- Embed API responses, including validation/auth errors and `429`s, are
+  normalized through the embed header helper so they carry private no-store,
+  no-referrer, nosniff, and `Vary: Authorization` on bearer-token routes.
+- Internal `EmbedSessionRow` storage details are no longer registered in the
+  public OpenAPI schema.
+
 ## Decision
 
 Revised after fresh-agent and senior-engineer review. Recommended v1 is accepted
@@ -1343,4 +1394,4 @@ for implementation planning: server-created, short-lived, run-scoped, read-only
 interactive chart embeds with a control-plane session record, a non-secret
 session ID in the iframe path, the bearer embed token in the URL fragment,
 route-specific frame headers, explicit embed auth, metered bounded data reads,
-and hosted rollout gates. Implementation has not started.
+and hosted rollout gates. The first slice is now implemented.

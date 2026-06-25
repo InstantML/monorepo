@@ -15,7 +15,7 @@ import { useDetailsDismiss } from "../ui/use-details-dismiss";
 import { useMeasuredSize } from "../ui/use-measured-size";
 import type { HoverPoint } from "../../dashboard-types";
 
-type ChartZoomRange = { min: number; max: number } | null;
+export type ChartZoomRange = { min: number; max: number } | null;
 
 function chartSeriesColorIndex(item: any, fallback: number) {
   return stableChartIndex(item?.id ?? item?.identifier ?? item?.name, fallback);
@@ -341,6 +341,7 @@ export function MetricChart({
   panelMenuItems,
   series,
   showExportActions = true,
+  showChartOptions = showExportActions,
   showLegend = true,
   showRange = true,
   showYAxisControls = true,
@@ -373,6 +374,8 @@ export function MetricChart({
   panelMenuItems?: ReactNode;
   /** Display series — smoothing already applied by the owner. */
   series: any[];
+  /** Keep chart/table, y-axis, zoom, and smoothing controls available. */
+  showChartOptions?: boolean;
   /** Hide the in-chart actions row when the owner renders its own controls. */
   showExportActions?: boolean;
   /** Hide the built-in legend when the owner renders its own (e.g. Overview). */
@@ -585,7 +588,7 @@ export function MetricChart({
   const chartPanelId = `${chartInstanceId}-chart-panel`;
   const smoothingControlId = `${chartInstanceId}-chart-smoothing`;
   const showViewToggle = true;
-  const showInlineControls = chartView === "chart" && showExportActions;
+  const showInlineControls = chartView === "chart" && showChartOptions;
   const showSmoothing = showInlineControls && typeof onSmoothingChange === "function";
   const smoothingValue = Math.max(0, Math.min(90, Math.round((Number(smoothing) || 0) / 10) * 10));
   // What lands in the three-dot menu: chart/table view, y-axis scale/range,
@@ -593,7 +596,7 @@ export function MetricChart({
   // in summary view, where the other controls below are hidden.
   const menuHasViewToggle = showViewToggle;
   const menuHasYAxis = showInlineControls && showYAxisControls;
-  const menuHasExport = showInlineControls && Boolean(exportFilenameBase);
+  const menuHasExport = chartView === "chart" && showExportActions && Boolean(exportFilenameBase);
   // Panel actions stay reachable in either view (chart or summary table), so they
   // keep the menu alive even when the chart-only options below are hidden.
   const menuHasChartOptions = menuHasViewToggle || menuHasYAxis || showSmoothing || menuHasExport;

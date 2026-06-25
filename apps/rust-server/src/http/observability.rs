@@ -680,6 +680,16 @@ fn known_route_template(segments: &[&str]) -> Option<String> {
         ["api", "dashboard", "preferences"] => vec!["api", "dashboard", "preferences"],
         ["api", "workspace-views"] => vec!["api", "workspace-views"],
         ["api", "workspace-views", _] => vec!["api", "workspace-views", ":view_id"],
+        ["api", "embed", "sessions"] => vec!["api", "embed", "sessions"],
+        ["api", "embed", "sessions", _, "frame-policy"] => {
+            vec!["api", "embed", "sessions", ":session_id", "frame-policy"]
+        }
+        ["api", "embed", "sessions", _, "current"] => {
+            vec!["api", "embed", "sessions", ":session_id", "current"]
+        }
+        ["api", "embed", "sessions", _, "runs", "data"] => {
+            vec!["api", "embed", "sessions", ":session_id", "runs", "data"]
+        }
         ["api", "reports"] => vec!["api", "reports"],
         ["api", "reports", "panels"] => vec!["api", "reports", "panels"],
         ["api", "reports", "share", _] => vec!["api", "reports", "share", ":share_token"],
@@ -825,6 +835,8 @@ fn is_control_route(segments: &[&str]) -> bool {
             | ["api", "billing", ..]
             | ["api", "dashboard", "preferences"]
             | ["api", "workspace-views", ..]
+            | ["api", "embed", "sessions", _, "frame-policy"]
+            | ["api", "embed", "sessions", _, "current"]
             | ["api", "users"]
             | ["api", "orgs", ..]
     ) && !is_platform_route(segments)
@@ -837,6 +849,8 @@ fn is_data_route(segments: &[&str]) -> bool {
             | ["runs", ..]
             | ["api", "runs", ..]
             | ["api", "metrics", "series"]
+            | ["api", "embed", "sessions"]
+            | ["api", "embed", "sessions", _, "runs", "data"]
             | ["api", "objects", ..]
             | ["api", "artifacts", ..]
             | ["api", "reports", ..]
@@ -1016,6 +1030,15 @@ mod tests {
             safe_request_path(&uri),
             "/api/reports/:report_id/blocks/:block_index/refresh"
         );
+
+        let uri: Uri =
+            "/api/embed/sessions/018faabb-0000-7000-9000-000000000001/runs/data?token=secret"
+                .parse()
+                .unwrap();
+        assert_eq!(
+            safe_request_path(&uri),
+            "/api/embed/sessions/:session_id/runs/data"
+        );
     }
 
     #[test]
@@ -1073,6 +1096,28 @@ mod tests {
         assert_eq!(
             route_plane_for_path("/api/billing/status"),
             RoutePlane::Control
+        );
+        assert_eq!(
+            route_plane_for_path(
+                "/api/embed/sessions/018faabb-0000-7000-9000-000000000001/frame-policy"
+            ),
+            RoutePlane::Control
+        );
+        assert_eq!(
+            route_plane_for_path(
+                "/api/embed/sessions/018faabb-0000-7000-9000-000000000001/current"
+            ),
+            RoutePlane::Control
+        );
+        assert_eq!(
+            route_plane_for_path("/api/embed/sessions"),
+            RoutePlane::Data
+        );
+        assert_eq!(
+            route_plane_for_path(
+                "/api/embed/sessions/018faabb-0000-7000-9000-000000000001/runs/data"
+            ),
+            RoutePlane::Data
         );
         assert_eq!(
             route_plane_for_path("/api/reports/share/sensitive-token"),

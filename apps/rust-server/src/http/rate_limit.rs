@@ -46,6 +46,68 @@ impl RateLimiter {
         &self.instance_id
     }
 
+    pub fn public_instance_id(&self) -> &str {
+        self.instance_id()
+    }
+
+    pub async fn check_embed_frame_policy(&self, key: String) -> Option<Duration> {
+        let decision = self
+            .check(
+                format!("embed-frame:{key}"),
+                RateLimitSpec { rps: 1, burst: 10 },
+                Instant::now(),
+            )
+            .await;
+        (!decision.allowed).then_some(decision.retry_after)
+    }
+
+    pub async fn check_embed_token_pre_auth(&self, key: String) -> Option<Duration> {
+        let now = Instant::now();
+        let client_decision = self
+            .check(
+                format!("embed-token:{key}"),
+                RateLimitSpec { rps: 5, burst: 20 },
+                now,
+            )
+            .await;
+        if !client_decision.allowed {
+            return Some(client_decision.retry_after);
+        }
+        let global_decision = self
+            .check(
+                "embed-token:global".to_string(),
+                RateLimitSpec {
+                    rps: 100,
+                    burst: 500,
+                },
+                now,
+            )
+            .await;
+        (!global_decision.allowed).then_some(global_decision.retry_after)
+    }
+
+    pub async fn check_embed_data_session(&self, session_id: Uuid) -> Option<Duration> {
+        let decision = self
+            .check(
+                format!("embed-session:{session_id}"),
+                RateLimitSpec { rps: 1, burst: 3 },
+                Instant::now(),
+            )
+            .await;
+        (!decision.allowed).then_some(decision.retry_after)
+    }
+
+    pub async fn check_embed_current_session(&self, session_id: Uuid) -> Option<Duration> {
+        let decision = self
+            .check(
+                format!("embed-current:{session_id}"),
+                RateLimitSpec { rps: 2, burst: 10 },
+                Instant::now(),
+            )
+            .await;
+        (!decision.allowed).then_some(decision.retry_after)
+    }
+
     async fn check(&self, key: String, limit: RateLimitSpec, now: Instant) -> RateLimitDecision {
         let mut buckets = self.buckets.lock().await;
         if buckets.len() > MAX_BUCKETS_BEFORE_PRUNE {
@@ -240,6 +302,9 @@ fn classify_route(method: &Method, path: &str) -> Option<RouteLimitPolicy> {
     if method == Method::OPTIONS {
         return None;
     }
+    if is_embed_token_route(method, path) {
+        return None;
+    }
     let class = if is_control_poll_route(method, path) {
         RequestClass::ControlPoll
     } else if is_import_route(method, path) {
@@ -254,6 +319,15 @@ fn classify_route(method: &Method, path: &str) -> Option<RouteLimitPolicy> {
         metered: !is_unmetered_route(method, path),
         monthly_enforced: !is_monthly_quota_exempt_route(method, path),
     })
+}
+
+fn is_embed_token_route(method: &Method, path: &str) -> bool {
+    (*method == Method::GET
+        && path.starts_with("/api/embed/sessions/")
+        && path.ends_with("/current"))
+        || (*method == Method::POST
+            && path.starts_with("/api/embed/sessions/")
+            && path.ends_with("/runs/data"))
 }
 
 fn is_control_poll_route(method: &Method, path: &str) -> bool {
@@ -653,6 +727,33 @@ mod tests {
         let buckets = limiter.buckets.lock().await;
         assert_eq!(buckets.len(), 1);
         assert!(buckets.contains_key("fresh"));
+    }
+
+    #[tokio::test]
+    async fn embed_token_pre_auth_limiter_has_client_and_global_buckets() {
+        let limiter = RateLimiter::new();
+        for _ in 0..20 {
+            assert!(limiter
+                .check_embed_token_pre_auth("203.0.113.7".to_string())
+                .await
+                .is_none());
+        }
+        assert!(limiter
+            .check_embed_token_pre_auth("203.0.113.7".to_string())
+            .await
+            .is_some());
+
+        let limiter = RateLimiter::new();
+        for index in 0..500 {
+            assert!(limiter
+                .check_embed_token_pre_auth(format!("198.51.100.{index}"))
+                .await
+                .is_none());
+        }
+        assert!(limiter
+            .check_embed_token_pre_auth("198.51.100.501".to_string())
+            .await
+            .is_some());
     }
 
     #[tokio::test]

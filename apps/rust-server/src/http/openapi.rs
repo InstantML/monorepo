@@ -50,19 +50,21 @@ use crate::domain::{
     ClickHouseConnectionValidationResponse, CompleteArtifactUploadFile, CompleteArtifactUploadPart,
     CompleteArtifactUploadRequest, ConsoleLogInput, ConsoleLogLine, CreateApiKeyRequest,
     CreateArtifactInputEdgeRequest, CreateArtifactRequest, CreateAttributesRequest,
-    CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest, CreateInvitationRequest,
-    CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
-    CreateRunForkRequest, CreateRunRequest, CreateUserRequest,
-    CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DeleteArtifactAliasRequest,
-    DeleteArtifactVersionRequest, DevGoogleAuthRequest, DeviceCodeClientInfo,
-    DeviceCodeConfirmRequest, DeviceCodePollRequest, DeviceCodeStartRequest,
+    CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest, CreateEmbedSessionRequest,
+    CreateEmbedSessionResponse, CreateInvitationRequest, CreateObjectRequest,
+    CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest, CreateRunForkRequest,
+    CreateRunRequest, CreateUserRequest, CurrentUserOrganizationCreateResponse,
+    DashboardPreferenceRow, DeleteArtifactAliasRequest, DeleteArtifactVersionRequest,
+    DevGoogleAuthRequest, DeviceCodeClientInfo, DeviceCodeConfirmRequest, DeviceCodePollRequest,
+    DeviceCodeStartRequest, EmbedCurrentSession, EmbedCurrentSessionResponse, EmbedFramePolicy,
+    EmbedFramePolicyResponse, EmbedRunsDataRequest, EmbedSessionOptions,
     ImportWorkspaceViewRequest, InitialInvitationCreateResult, InitialOrganizationInvitation,
     InitiateArtifactUploadRequest, InvitationPreviewPayload, InvitationTokenRequest,
     LogMetricsRequest, LogRankMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow,
     OnboardingApiKey, OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow,
     ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactCollectionRow,
     PublicArtifactManifestEntryRow, PublicArtifactRow, PublicArtifactVersionRow,
-    PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
+    PublicEmbedSession, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
     RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
     RenewArtifactUploadRequest, ReportRow, ReportSummary, ReserveSeatRequest, RunControlRow,
     RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
@@ -931,6 +933,17 @@ impl Modify for SecurityAddon {
             ),
         );
         components.add_security_scheme(
+            "bearerEmbedToken",
+            SecurityScheme::Http(
+                utoipa::openapi::security::HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .description(Some(
+                        "Short-lived iframe embed token sent as Authorization: Bearer instantml_embed_...",
+                    ))
+                    .build(),
+            ),
+        );
+        components.add_security_scheme(
             "browserSession",
             SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::with_description(
                 "instantml_session",
@@ -997,6 +1010,11 @@ impl Modify for SecurityAddon {
         crate::http::handlers::dashboard::import_workspace_view,
         crate::http::handlers::dashboard::delete_workspace_view,
         crate::http::handlers::dashboard::workspace_view_data,
+        // embeds
+        crate::http::handlers::embed::create_embed_session,
+        crate::http::handlers::embed::embed_frame_policy,
+        crate::http::handlers::embed::embed_current_session,
+        crate::http::handlers::embed::embed_runs_data,
         // reports
         crate::http::handlers::reports::create_report,
         crate::http::handlers::reports::list_reports,
@@ -1291,6 +1309,15 @@ impl Modify for SecurityAddon {
         DeviceCodeConfirmRequest,
         DeviceCodePollRequest,
         DeviceCodeStartRequest,
+        CreateEmbedSessionRequest,
+        CreateEmbedSessionResponse,
+        EmbedCurrentSession,
+        EmbedCurrentSessionResponse,
+        EmbedFramePolicy,
+        EmbedFramePolicyResponse,
+        EmbedRunsDataRequest,
+        EmbedSessionOptions,
+        PublicEmbedSession,
         ImportWorkspaceViewRequest,
         InitialInvitationCreateResult,
         InitialOrganizationInvitation,
@@ -1364,6 +1391,7 @@ impl Modify for SecurityAddon {
         (name = "invitations", description = "Token-backed organization invitations."),
         (name = "runs", description = "Experiment runs, metrics, attributes, objects, artifacts."),
         (name = "dashboard", description = "Browser dashboard preferences and saved workspace views."),
+        (name = "embeds", description = "Short-lived read-only iframe run embeds."),
         (name = "reports", description = "Notion-style report documents with live PanelGrids and legacy LLM-summary rendering."),
     ),
 )]

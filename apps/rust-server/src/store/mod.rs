@@ -13,6 +13,7 @@ mod billing;
 mod console_logs;
 mod demo;
 mod device_code;
+mod embed;
 mod export;
 mod imports;
 mod objects;
@@ -33,6 +34,7 @@ pub use billing::*;
 pub use console_logs::*;
 pub use demo::*;
 pub use device_code::*;
+pub use embed::*;
 pub use export::*;
 pub use imports::*;
 pub use objects::*;
@@ -82,37 +84,41 @@ use crate::{
         CompleteArtifactUploadFile, CompleteArtifactUploadRequest, ConsoleLogInput,
         CreateApiKeyRequest, CreateArtifactInputEdgeRequest, CreateArtifactRequest,
         CreateAttributesRequest, CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest,
-        CreateInvitationRequest, CreateObjectRequest, CreateOrganizationRequest,
-        CreateProjectRequest, CreateReportRequest, CreateRunForkRequest, CreateRunRequest,
-        CreateUserRequest, CreatedAuthSession, CurrentUserOrganizationCreateResponse,
-        DashboardPreferenceRow, DataCellRow, DataCellWriterLeaseRow, DeleteArtifactAliasRequest,
-        DeleteArtifactVersionRequest, DevGoogleAuthRequest, EmailDeliveryRow,
-        ImportWorkspaceViewRequest, InitialInvitationCreateResult, InitialOrganizationInvitation,
+        CreateEmbedSessionRequest, CreateEmbedSessionResponse, CreateInvitationRequest,
+        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
+        CreateRunForkRequest, CreateRunRequest, CreateUserRequest, CreatedAuthSession,
+        CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DataCellRow,
+        DataCellWriterLeaseRow, DeleteArtifactAliasRequest, DeleteArtifactVersionRequest,
+        DevGoogleAuthRequest, EmailDeliveryRow, EmbedAuthContext, EmbedCurrentSession,
+        EmbedCurrentSessionResponse, EmbedFramePolicy, EmbedFramePolicyResponse,
+        EmbedRunsDataRequest, EmbedSessionOptions, EmbedSessionRow, ImportWorkspaceViewRequest,
+        InitialInvitationCreateResult, InitialOrganizationInvitation,
         InitiateArtifactUploadRequest, InvitationPreviewPayload, InvitationTokenRequest,
         LogMetricsRequest, LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey,
         OrgInvitationRow, OrganizationMembershipSummary, OrganizationRoleCapabilities,
         OrganizationRow, ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow,
-        PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
-        RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
-        RenewArtifactUploadRequest, ReportRow, RequestContext, ReserveSeatRequest, RunControlRow,
-        RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
-        SetArtifactAliasRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
-        UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest, UpdateReportRequest,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
+        PublicEmbedSession, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint,
+        RankMetricLimits, RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint,
+        RankReducerPoint, RenewArtifactUploadRequest, ReportRow, RequestContext,
+        ReserveSeatRequest, RunControlRow, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow,
+        ServiceAccountRow, SessionContext, SetArtifactAliasRequest, StopAckRequest, StopRunRequest,
+        StopRunsRequest, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
+        UpdateReportRequest, UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
         VersionedArtifactManifestEntryInput, WorkspaceViewData, WorkspaceViewDataLimits,
-        WorkspaceViewDataPanelResult, WorkspaceViewDataRequest, WorkspaceViewDataResponse,
-        WorkspaceViewDeleteResponse, WorkspaceViewExportEnvelope, WorkspaceViewExportIntegrity,
-        WorkspaceViewExportSource, WorkspaceViewExportedView, WorkspaceViewImportResponse,
-        WorkspaceViewMetricSeries, WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED,
-        BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
-        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
-        DEFAULT_RUN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH,
-        MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT,
-        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
-        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
-        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
-        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
-        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
+        WorkspaceViewDataOptions, WorkspaceViewDataPanelResult, WorkspaceViewDataRequest,
+        WorkspaceViewDataResponse, WorkspaceViewDeleteResponse, WorkspaceViewExportEnvelope,
+        WorkspaceViewExportIntegrity, WorkspaceViewExportSource, WorkspaceViewExportedView,
+        WorkspaceViewImportResponse, WorkspaceViewMetricSeries, WorkspaceViewRow,
+        WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE,
+        BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED,
+        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES,
+        MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES,
+        MAX_METRICS_PER_BATCH, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS,
+        MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS,
+        MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT, MAX_TEXT_BYTES, PLAN_FREE,
+        PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED,
+        STORAGE_STATE_LOCKED, STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED,
+        STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -798,6 +804,9 @@ impl Store {
                 key_hash: key.key_hash,
             });
         }
+        for session in control_db.load_embed_sessions().await? {
+            data.insert_embed_session(session);
+        }
         for session in control_db.load_sessions().await? {
             data.insert_session(SessionRecord {
                 row: session.row,
@@ -904,6 +913,16 @@ impl Store {
 
     pub async fn refresh_control_records_for_auth_miss(&self) -> AppResult<()> {
         self.refresh_control_records_inner(true).await
+    }
+
+    pub async fn load_embed_session_from_control(
+        &self,
+        session_id: Uuid,
+    ) -> AppResult<Option<EmbedSessionRow>> {
+        let Some(control_db) = &self.control_db else {
+            return Ok(None);
+        };
+        control_db.load_embed_session(session_id).await
     }
 
     async fn refresh_control_records_inner(&self, force: bool) -> AppResult<()> {
@@ -1162,6 +1181,11 @@ impl Store {
                     })
                     .await
             }
+            "embed_session" => {
+                control_db
+                    .upsert_embed_session(&parse_payload(payload)?)
+                    .await
+            }
             "dashboard_preference" => {
                 control_db
                     .upsert_dashboard_preference(&parse_payload(payload)?)
@@ -1256,6 +1280,9 @@ struct StoreData {
     service_accounts: BTreeMap<Uuid, ServiceAccountRow>,
     api_keys: BTreeMap<Uuid, ApiKeyRecord>,
     api_keys_by_hash: HashMap<Vec<u8>, Uuid>,
+    embed_sessions: BTreeMap<Uuid, EmbedSessionRow>,
+    embed_sessions_by_token_hash: HashMap<Vec<u8>, Uuid>,
+    embed_create_attempts: HashMap<Uuid, Vec<DateTime<Utc>>>,
     pub(super) device_codes: BTreeMap<Vec<u8>, DeviceCodeRecord>,
     pub(super) device_codes_by_user_code: HashMap<String, Vec<u8>>,
     projects: BTreeMap<Uuid, ProjectRow>,
@@ -1362,6 +1389,7 @@ impl StoreData {
                 self.service_accounts.insert(row.id, row);
             }
             "api_key" => self.insert_api_key(parse_payload(payload)?),
+            "embed_session" => self.insert_embed_session(parse_payload(payload)?),
             "project" => self.insert_project(parse_payload(payload)?),
             "project_delete" => self.apply_project_delete(parse_payload(payload)?),
             "run" => self.insert_run(parse_payload(payload)?),
@@ -1439,6 +1467,8 @@ impl StoreData {
         self.service_accounts = fresh.service_accounts;
         self.api_keys = fresh.api_keys;
         self.api_keys_by_hash = fresh.api_keys_by_hash;
+        self.embed_sessions = fresh.embed_sessions;
+        self.embed_sessions_by_token_hash = fresh.embed_sessions_by_token_hash;
         self.data_cells = fresh.data_cells;
         self.tenant_routes = fresh.tenant_routes;
         self.billing_accounts = fresh.billing_accounts;
@@ -1522,6 +1552,18 @@ impl StoreData {
         self.api_keys_by_hash
             .insert(key.key_hash.clone(), key.row.id);
         self.api_keys.insert(key.row.id, key);
+    }
+
+    fn insert_embed_session(&mut self, row: EmbedSessionRow) {
+        if let Some(existing) = self.embed_sessions.get(&row.id) {
+            self.embed_sessions_by_token_hash
+                .remove(&existing.token_hash);
+        }
+        if row.deleted_at.is_none() && row.expires_at > Utc::now() {
+            self.embed_sessions_by_token_hash
+                .insert(row.token_hash.clone(), row.id);
+        }
+        self.embed_sessions.insert(row.id, row);
     }
 
     fn insert_project(&mut self, project: ProjectRow) {

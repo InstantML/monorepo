@@ -100,6 +100,10 @@ Current implemented design sequence, continued:
   a Postgres-backed cell registry, multiple single-writer data cells, explicit
   route discovery, Free/Pro/Premium placement, org migration, control-plane
   horizontal scale, and later data-plane multi-writer gates.
+- `2026-06-25-iframe-run-embeds.md`: reviewed first slice for short-lived,
+  server-created, read-only iframe run embeds with scoped embed sessions, dynamic
+  frame policy, fragment-token handling, split control/data routes, and
+  production verification requirements.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

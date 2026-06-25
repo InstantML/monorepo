@@ -45,6 +45,13 @@ Current navigation, workspace, and comparison controls:
   watch/sync examples stay in the SDK docs; the dashboard copy action favors a
   one-shot dry-run command so users review the Import v2 summary before commit.
 - Reports is a persisted document workspace backed by `/api/reports`: the dashboard tab lists org reports, opens each report at `/dashboard/reports/:report_id` in a Notion-style block editor so reloads and direct links preserve context, auto-saves the first and later edits, flushes pending edits before share/export actions, and supports public read-only share links at `/r/:share_token` (share tokens expire after `INSTANTML_SHARE_TOKEN_TTL_DAYS`, default 30 days; rotating mints a fresh token). Runset configuration uses a project multi-select picker and a run search-and-pin (with raw-text fallbacks), and the reports list supports one-click duplication ("<title> (copy)") plus a "Start from template" Experiment readout starter (`src/report-templates.js`). In hosted split mode the Next proxy sends report routes to the data API because reports live with tenant product data.
+- Iframe run embeds render at `/embed/runs/:session_id` without the dashboard
+  shell, Clerk provider, root storage scripts, saved-view mutation, or chart
+  export actions. The embed page reads a one-time fragment bearer token,
+  immediately removes the fragment from browser history, fetches only
+  `/api/embed/*` routes with `credentials: "omit"`, and renders read-only
+  interactive metric charts. `proxy.ts` owns the embed CSP/frame headers and
+  asks the control API for the approved parent origin before HTML is framed.
 - The top-right account/workspace menu is the primary organization selector. Its trigger shows the current workspace next to the account avatar, the menu searches all active memberships, groups personal and business workspaces, shows role/plan/member metadata, launches create-workspace, and links to settings, billing, and sign out. The left brandbar workspace text is passive context only.
 - Create-workspace keeps organization/workspace as the same backend entity. Free workspaces can invite teammates inline; paid workspaces defer invitations until after Stripe Checkout so unpaid orgs stay billing-blocked.
 - The topbar account badge uses the signed-in user's managed-auth avatar when available, then falls back to initials derived from the display name or email handle.
@@ -164,6 +171,46 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<staging Clerk publishable key>
 base values unless `INSTANTML_WEB_EXPLICIT_API_BASES=1` is set. Do not set
 `INSTANTML_API_BASE` for this default staging-router workflow. Restart
 `next dev` after changing rewrite env.
+
+Iframe embed local QA uses the same local Rust/ClickHouse API plus a temporary
+parent website. Start the API with embeds enabled:
+
+```bash
+INSTANTML_EMBED_ENABLED=1 \
+INSTANTML_EMBED_FRAME_ENABLED=1 \
+INSTANTML_EMBED_TOKEN_HMAC_SECRET=local-embed-secret \
+npm run dev:api
+```
+
+Start the web app against that local API:
+
+```bash
+INSTANTML_WEB_EXPLICIT_API_BASES=1 \
+INSTANTML_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_CONTROL_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_DATA_API_BASE=http://127.0.0.1:8000 \
+INSTANTML_API_ALLOWED_ORIGINS=http://127.0.0.1:8000 \
+npm run web:dev
+```
+
+Create an embed session from a backend or script with an `export:read` API key
+and `allowed_parent_origin` equal to the parent site's exact origin, then render
+the returned `iframe_src`:
+
+```html
+<iframe
+  src="http://127.0.0.1:3000/embed/runs/<session_id>#token=instantml_embed_..."
+  sandbox="allow-scripts allow-same-origin"
+  referrerpolicy="no-referrer"
+  width="100%"
+  height="640"
+></iframe>
+```
+
+Treat the full `iframe_src` as a bearer secret and avoid screenshots that show
+the fragment token. The committed public docs screenshot for iframe embeds is a
+browser-verified parent page with the token hidden from the address bar and no
+live token text visible.
 
 When backend work needs disposable local API and ClickHouse state, start the
 primary Rust/ClickHouse API from the repo root:

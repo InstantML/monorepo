@@ -21,9 +21,9 @@ use crate::{
     domain::{
         BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
         BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
-        DataCellWriterLeaseRow, EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow,
-        PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow,
-        WorkspaceViewRow,
+        DataCellWriterLeaseRow, EmailDeliveryRow, EmbedSessionRow, MembershipRow, OrgInvitationRow,
+        OrganizationRow, PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow,
+        UserSessionRow, WorkspaceViewRow,
     },
     errors::{AppError, AppResult},
     store::TenantRouteRecord,
@@ -634,6 +634,43 @@ impl ControlDb {
         Ok(())
     }
 
+    pub async fn upsert_embed_session(&self, session: &EmbedSessionRow) -> AppResult<()> {
+        let options = serde_json::to_value(&session.options)
+            .map_err(|_| AppError::internal("embed session options serialization failed"))?;
+        sqlx::query(
+            "INSERT INTO embed_sessions \
+             (id, schema_version, org_id, source_api_key_id, source_service_account_id, \
+              source_project_restriction_id, source_scopes_snapshot, token_hash, token_prefix, \
+              run_ids, allowed_parent_origin, options, created_at, expires_at, deleted_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
+             ON CONFLICT (id) DO UPDATE SET \
+               source_scopes_snapshot = EXCLUDED.source_scopes_snapshot, \
+               token_hash = EXCLUDED.token_hash, token_prefix = EXCLUDED.token_prefix, \
+               run_ids = EXCLUDED.run_ids, allowed_parent_origin = EXCLUDED.allowed_parent_origin, \
+               options = EXCLUDED.options, expires_at = EXCLUDED.expires_at, \
+               deleted_at = EXCLUDED.deleted_at",
+        )
+        .bind(session.id)
+        .bind(session.schema_version)
+        .bind(session.org_id)
+        .bind(session.source_api_key_id)
+        .bind(session.source_service_account_id)
+        .bind(session.source_project_restriction_id)
+        .bind(&session.source_scopes_snapshot)
+        .bind(&session.token_hash)
+        .bind(&session.token_prefix)
+        .bind(&session.run_ids)
+        .bind(&session.allowed_parent_origin)
+        .bind(options)
+        .bind(session.created_at)
+        .bind(session.expires_at)
+        .bind(session.deleted_at)
+        .execute(self.pool())
+        .await
+        .map_err(|err| map_write("embed session already exists", err))?;
+        Ok(())
+    }
+
     pub async fn upsert_session(&self, session: &NewSession) -> AppResult<()> {
         let row = &session.row;
         sqlx::query(
@@ -712,6 +749,33 @@ impl ControlDb {
         .await
         .map_err(|err| internal("load_api_keys", err))?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    pub async fn load_embed_sessions(&self) -> AppResult<Vec<EmbedSessionRow>> {
+        let rows = sqlx::query_as::<_, EmbedSessionRowDb>(
+            "SELECT schema_version, id, org_id, source_api_key_id, source_service_account_id, \
+             source_project_restriction_id, source_scopes_snapshot, token_hash, token_prefix, \
+             run_ids, allowed_parent_origin, options, created_at, expires_at, deleted_at \
+             FROM embed_sessions",
+        )
+        .fetch_all(self.pool())
+        .await
+        .map_err(|err| internal("load_embed_sessions", err))?;
+        rows.into_iter().map(TryInto::try_into).collect()
+    }
+
+    pub async fn load_embed_session(&self, session_id: Uuid) -> AppResult<Option<EmbedSessionRow>> {
+        let row = sqlx::query_as::<_, EmbedSessionRowDb>(
+            "SELECT schema_version, id, org_id, source_api_key_id, source_service_account_id, \
+             source_project_restriction_id, source_scopes_snapshot, token_hash, token_prefix, \
+             run_ids, allowed_parent_origin, options, created_at, expires_at, deleted_at \
+             FROM embed_sessions WHERE id = $1",
+        )
+        .bind(session_id)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("load_embed_session", err))?;
+        row.map(TryInto::try_into).transpose()
     }
 
     pub async fn load_sessions(&self) -> AppResult<Vec<LoadedSession>> {

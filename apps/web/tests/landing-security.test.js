@@ -129,8 +129,10 @@ describe("next.config.mjs — security headers", () => {
     assert.match(config, /"X-Frame-Options",\s*value:\s*"SAMEORIGIN"/);
   });
 
-  test("security headers cover every route", () => {
-    assert.match(config, /source:\s*"\/:path\*",\s*\n\s*headers:\s*securityHeaders/);
+  test("security headers cover non-embed routes", () => {
+    assert.match(config, /source:\s*"\/:path\(\(\?!embed/);
+    assert.match(config, /headers:\s*securityHeaders/);
+    assert.match(config, /frame-ancestors 'none'/);
   });
 });
 

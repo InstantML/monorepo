@@ -97,6 +97,8 @@ test("publicOpenApiPaths excludes known admin and internal route families", () =
   assert.equal(publicOpenApiPaths.includes("/api/reports"), true);
   assert.equal(publicOpenApiPaths.includes("/api/reports/{report_id}/markdown"), true);
   assert.equal(publicOpenApiPaths.includes("/api/dashboard/preferences"), true);
+  assert.equal(publicOpenApiPaths.includes("/api/embed/sessions"), true);
+  assert.equal(publicOpenApiPaths.includes("/api/embed/sessions/{session_id}/runs/data"), true);
 });
 
 test("findInternalDocsReferences catches internal docs links", () => {
