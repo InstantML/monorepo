@@ -204,7 +204,7 @@ button:focus-visible,
   scrollbar-width: thin;
 }
 
-/* 10 — Nav rail items are navigation prose, not telemetry → Archivo sans.
+/* 10 — Nav rail items are navigation prose, not telemetry → Inter sans.
  *      Mono is reserved for data (values, ids, units); a nav label is neither. */
 .tab-button {
   font-family: var(--font-sans);
@@ -213,7 +213,7 @@ button:focus-visible,
   letter-spacing: 0;
 }
 
-/* 12 — Section heads are prose headings → Archivo sans, sentence case.
+/* 12 — Section heads are prose headings → Inter sans, sentence case.
  *      Headings are not data, so they don't take the mono micro-label
  *      treatment; that stays for true labels (units, table columns, chips). */
 .detail-section h3,
@@ -519,7 +519,7 @@ button:disabled,
   text-transform: uppercase;
 }
 
-/* Panel heads are prose titles → Archivo sans, sentence case. Mono is for the
+/* Panel heads are prose titles → Inter sans, sentence case. Mono is for the
  * data inside the panel, not the panel's name; uppercase-mono titles made the
  * whole product read like a terminal. Count badges + table columns stay mono. */
 .tab-pane .panel-head h2,

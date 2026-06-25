@@ -3,11 +3,11 @@ import "./auth.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
-import { Archivo, Spline_Sans_Mono, Instrument_Serif } from "next/font/google";
+import { Inter, Spline_Sans_Mono, Instrument_Serif } from "next/font/google";
 
 // Instrument design language (docs/design/reimagine/DESIGN-SYSTEM.md):
-// Archivo carries display + UI prose, Spline Sans Mono carries all data.
-const display = Archivo({
+// Inter carries display + UI prose, Spline Sans Mono carries all data.
+const display = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
   variable: "--font-sans-next",
