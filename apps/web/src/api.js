@@ -392,6 +392,15 @@ function safeKnownRouteSegments(segments) {
   if (segments[1] === "workspace-views" && segments.length === 4 && segments[3] === "export") {
     return ["api", "workspace-views", ":view_id", "export"];
   }
+  if (segments[1] === "embed" && segments[2] === "sessions") {
+    if (segments.length === 3) return ["api", "embed", "sessions"];
+    if (segments.length === 5 && ["frame-policy", "current"].includes(segments[4])) {
+      return ["api", "embed", "sessions", ":session_id", segments[4]];
+    }
+    if (segments.length === 6 && segments[4] === "runs" && segments[5] === "data") {
+      return ["api", "embed", "sessions", ":session_id", "runs", "data"];
+    }
+  }
   if (segments[1] === "reports") {
     if (segments.length === 2) return ["api", "reports"];
     if (segments.length === 3 && segments[2] === "panels") return ["api", "reports", "panels"];
@@ -501,6 +510,7 @@ const STATIC_API_ROUTE_KEYS = new Set([
   "billing/webhook",
   "dashboard/preferences",
   "workspace-view-data",
+  "embed/sessions",
   "workspace-views",
   "workspace-views/import",
   "reports",

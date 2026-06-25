@@ -2061,6 +2061,244 @@
         ]
       }
     },
+    "/api/embed/sessions": {
+      "post": {
+        "tags": [
+          "embeds"
+        ],
+        "operationId": "create_embed_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEmbedSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created iframe embed session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateEmbedSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API key required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Embeds disabled or key lacks export access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          }
+        ]
+      }
+    },
+    "/api/embed/sessions/{session_id}/current": {
+      "get": {
+        "tags": [
+          "embeds"
+        ],
+        "operationId": "embed_current_session",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Embed session UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current embed session metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbedCurrentSessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Embed token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Embeds disabled or source key inactive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerEmbedToken": []
+          }
+        ]
+      }
+    },
+    "/api/embed/sessions/{session_id}/frame-policy": {
+      "get": {
+        "tags": [
+          "embeds"
+        ],
+        "operationId": "embed_frame_policy",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Embed session UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Frame policy metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbedFramePolicyResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Embed session not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/embed/sessions/{session_id}/runs/data": {
+      "post": {
+        "tags": [
+          "embeds"
+        ],
+        "operationId": "embed_runs_data",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "description": "Embed session UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbedRunsDataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Bounded run chart data",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceViewDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Embed token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Embeds disabled or source key inactive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-session rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerEmbedToken": []
+          }
+        ]
+      }
+    },
     "/api/export": {
       "get": {
         "tags": [
@@ -12057,6 +12295,63 @@
           }
         }
       },
+      "CreateEmbedSessionRequest": {
+        "type": "object",
+        "required": [
+          "run_ids",
+          "allowed_parent_origin"
+        ],
+        "properties": {
+          "allowed_parent_origin": {
+            "type": "string"
+          },
+          "options": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EmbedSessionOptions"
+              }
+            ]
+          },
+          "run_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "ttl_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "CreateEmbedSessionResponse": {
+        "type": "object",
+        "required": [
+          "embed_session",
+          "embed_token"
+        ],
+        "properties": {
+          "embed_session": {
+            "$ref": "#/components/schemas/PublicEmbedSession"
+          },
+          "embed_token": {
+            "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "CreateInvitationRequest": {
         "type": "object",
         "properties": {
@@ -12705,6 +13000,129 @@
           },
           "verification_uri_complete": {
             "type": "string"
+          }
+        }
+      },
+      "EmbedCurrentSession": {
+        "type": "object",
+        "required": [
+          "id",
+          "expires_at",
+          "run_count",
+          "theme",
+          "has_custom_view"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "has_custom_view": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "theme": {
+            "type": "string"
+          }
+        }
+      },
+      "EmbedCurrentSessionResponse": {
+        "type": "object",
+        "required": [
+          "embed_session"
+        ],
+        "properties": {
+          "embed_session": {
+            "$ref": "#/components/schemas/EmbedCurrentSession"
+          }
+        }
+      },
+      "EmbedFramePolicy": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "status",
+          "allowed_parent_origin",
+          "expires_at"
+        ],
+        "properties": {
+          "allowed_parent_origin": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
+      "EmbedFramePolicyResponse": {
+        "type": "object",
+        "required": [
+          "frame_policy"
+        ],
+        "properties": {
+          "frame_policy": {
+            "$ref": "#/components/schemas/EmbedFramePolicy"
+          }
+        }
+      },
+      "EmbedRunsDataRequest": {
+        "type": "object",
+        "properties": {
+          "options": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceViewDataOptions"
+              }
+            ]
+          },
+          "refresh_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "EmbedSessionOptions": {
+        "type": "object",
+        "properties": {
+          "max_panels": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "metric_point_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "theme": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -14355,6 +14773,36 @@
           "version_index": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "PublicEmbedSession": {
+        "type": "object",
+        "required": [
+          "id",
+          "expires_at",
+          "allowed_parent_origin",
+          "run_count",
+          "iframe_src"
+        ],
+        "properties": {
+          "allowed_parent_origin": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iframe_src": {
+            "type": "string"
+          },
+          "run_count": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -17321,6 +17769,11 @@
         "scheme": "bearer",
         "description": "InstantML SDK API key sent as Authorization: Bearer instantml_..."
       },
+      "bearerEmbedToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Short-lived iframe embed token sent as Authorization: Bearer instantml_embed_..."
+      },
       "bootstrapToken": {
         "type": "apiKey",
         "in": "header",
@@ -17375,6 +17828,10 @@
     {
       "name": "dashboard",
       "description": "Browser dashboard preferences and saved workspace views."
+    },
+    {
+      "name": "embeds",
+      "description": "Short-lived read-only iframe run embeds."
     },
     {
       "name": "reports",

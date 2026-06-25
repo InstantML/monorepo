@@ -1,6 +1,7 @@
 use std::{env, fs, net::SocketAddr, path::PathBuf, time::Duration};
 
 use crate::errors::{AppError, AppResult};
+use uuid::Uuid;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthMode {
@@ -49,6 +50,7 @@ pub struct AppConfig {
     /// Base URL of the frontend, used to construct device-code verification URIs.
     /// Defaults to the first allowed_frontend_origins entry if set, else "http://localhost:3000".
     pub frontend_base_url: Option<String>,
+    pub embed: EmbedConfig,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -75,6 +77,14 @@ pub struct EmailConfig {
     pub reply_to: Option<String>,
     pub frontend_base_url: String,
     pub resend_api_key: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EmbedConfig {
+    pub enabled: bool,
+    pub frame_enabled: bool,
+    pub org_allowlist: Vec<Uuid>,
+    pub token_hmac_secret: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -365,6 +375,7 @@ impl AppConfig {
             &allowed_frontend_origins,
         )?;
         let billing = billing_config(frontend_base_url.as_deref())?;
+        let embed = embed_config()?;
         Ok(Self {
             clickhouse_url,
             bind_addr,
@@ -413,6 +424,7 @@ impl AppConfig {
             byoc_clickhouse: byoc_clickhouse_config()?,
             billing,
             email,
+            embed,
         })
     }
 }
@@ -730,6 +742,27 @@ fn billing_config(frontend_base_url: Option<&str>) -> AppResult<BillingConfig> {
         ));
     }
     Ok(config)
+}
+
+fn embed_config() -> AppResult<EmbedConfig> {
+    let org_allowlist = env_string_list("INSTANTML_EMBED_ORG_ALLOWLIST")
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| {
+            value.parse::<Uuid>().map_err(|_| {
+                AppError::config("INSTANTML_EMBED_ORG_ALLOWLIST must contain UUID values")
+            })
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+    Ok(EmbedConfig {
+        enabled: env_bool_optional("INSTANTML_EMBED_ENABLED")?.unwrap_or(false),
+        frame_enabled: env_bool_optional("INSTANTML_EMBED_FRAME_ENABLED")?.unwrap_or(false),
+        org_allowlist,
+        token_hmac_secret: env::var("INSTANTML_EMBED_TOKEN_HMAC_SECRET")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+    })
 }
 
 fn email_config(

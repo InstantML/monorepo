@@ -1262,6 +1262,100 @@ pub struct WorkspaceViewSummary {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct EmbedSessionOptions {
+    pub theme: Option<String>,
+    pub metric_point_limit: Option<i64>,
+    pub max_panels: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateEmbedSessionRequest {
+    pub run_ids: Vec<Uuid>,
+    pub allowed_parent_origin: String,
+    pub ttl_seconds: Option<i64>,
+    pub options: Option<EmbedSessionOptions>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+pub struct EmbedSessionRow {
+    pub schema_version: i32,
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub source_api_key_id: Uuid,
+    pub source_service_account_id: Uuid,
+    pub source_project_restriction_id: Option<Uuid>,
+    pub source_scopes_snapshot: Vec<String>,
+    pub token_hash: Vec<u8>,
+    pub token_prefix: String,
+    pub run_ids: Vec<Uuid>,
+    pub allowed_parent_origin: String,
+    pub options: EmbedSessionOptions,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct PublicEmbedSession {
+    pub id: Uuid,
+    pub expires_at: DateTime<Utc>,
+    pub allowed_parent_origin: String,
+    pub run_count: usize,
+    pub iframe_src: String,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct CreateEmbedSessionResponse {
+    pub embed_session: PublicEmbedSession,
+    pub embed_token: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct EmbedFramePolicy {
+    pub session_id: Uuid,
+    pub status: String,
+    pub allowed_parent_origin: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct EmbedFramePolicyResponse {
+    pub frame_policy: EmbedFramePolicy,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct EmbedCurrentSession {
+    pub id: Uuid,
+    pub expires_at: DateTime<Utc>,
+    pub run_count: usize,
+    pub theme: String,
+    pub has_custom_view: bool,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct EmbedCurrentSessionResponse {
+    pub embed_session: EmbedCurrentSession,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct EmbedRunsDataRequest {
+    pub refresh_reason: Option<String>,
+    pub options: Option<WorkspaceViewDataOptions>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EmbedAuthContext {
+    pub org_id: Uuid,
+    pub session_id: Uuid,
+    pub source_api_key_id: Uuid,
+    pub source_service_account_id: Uuid,
+    pub source_project_restriction_id: Option<Uuid>,
+    pub scopes: Vec<String>,
+}
+
 // ============================================================================
 // Reports — Notion-style documents with live PanelGrids.
 // Persisted via the same operational-records pattern as runs/projects/

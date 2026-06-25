@@ -35,6 +35,7 @@ pub(super) fn is_control_kind(kind: &str) -> bool {
             | "session"
             | "service_account"
             | "api_key"
+            | "embed_session"
             | "dashboard_preference"
             | "workspace_view"
             | "billing_account"

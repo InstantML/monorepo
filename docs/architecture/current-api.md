@@ -620,6 +620,47 @@ visual panels return warnings and bounded summary data. The first slice caps
 requests at 100 run IDs, 50 panels, 500 points per series, 50,000 total metric
 points, and a 256 KiB request view payload.
 
+## Iframe Run Embeds
+
+Embeds are short-lived, server-created, read-only iframe sessions for selected
+runs. They are disabled by default and require `INSTANTML_EMBED_ENABLED=1`;
+framing also requires `INSTANTML_EMBED_FRAME_ENABLED=1`.
+
+| Method | Path | Plane | Auth | Output |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/embed/sessions` | data | bearer API key with `export:read`; browser sessions are rejected | `{ "embed_session": { "id": "uuid", "iframe_src": "...#token=instantml_embed_...", "run_count": 2, "allowed_parent_origin": "https://portal.example.com", "expires_at": "..." }, "embed_token": "instantml_embed_..." }` |
+| `GET` | `/api/embed/sessions/:session_id/frame-policy` | control | none; pre-auth rate limited | `{ "frame_policy": { "session_id": "uuid", "status": "active", "allowed_parent_origin": "https://portal.example.com", "expires_at": "..." } }` |
+| `GET` | `/api/embed/sessions/:session_id/current` | control | `Authorization: Bearer instantml_embed_...` | `{ "embed_session": { "id": "uuid", "run_count": 2, "theme": "system", "expires_at": "...", "has_custom_view": false } }` |
+| `POST` | `/api/embed/sessions/:session_id/runs/data` | data | `Authorization: Bearer instantml_embed_...` | `WorkspaceViewDataResponse` for the selected run IDs |
+
+`POST /api/embed/sessions` body:
+
+```json
+{
+  "run_ids": ["uuid"],
+  "allowed_parent_origin": "https://portal.example.com",
+  "ttl_seconds": 900,
+  "options": {
+    "metric_point_limit": 500,
+    "max_panels": 8,
+    "theme": "system"
+  }
+}
+```
+
+Security and limits:
+
+- The API key must keep `export:read`; project-scoped API keys can only embed
+  runs in their scoped project.
+- The bearer embed token is stored only as a domain-separated hash/HMAC and is
+  bound to `:session_id`.
+- Hosted parent origins must be exact HTTPS origins and cannot be InstantML app
+  or API origins. Loopback HTTP is accepted only for local testing.
+- V1 caps are 100 run IDs, 8 panels, 500 points per series, default TTL
+  15 minutes, max TTL 60 minutes.
+- The iframe path carries the non-secret session ID; the bearer token belongs in
+  the URL fragment and must not be sent as a query parameter.
+
 ## Bootstrap And Organization Administration
 
 These routes are operator/admin surfaces. In API-key mode, user/org bootstrap

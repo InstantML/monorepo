@@ -32,6 +32,11 @@ This directory contains the primary Rust backend for InstantML. The current stor
   for selected runs or filtered runs, `run_ids`/`runs` selects exact visible
   runs, synchronous selected export is capped at 100 run IDs, and CSV responses
   use attachment/no-store/nosniff/sandbox headers.
+- Create short-lived iframe embed sessions for selected runs through
+  `POST /api/embed/sessions`. Embed sessions are control-plane records with a
+  hashed `instantml_embed_...` bearer token, one allowed parent origin, bounded
+  run/panel/point caps, source API-key/service-account revalidation, and
+  embed-only read routes that reuse the bounded workspace-view data projection.
 - Preserve current REST response shapes for the SDK, contract smoke, and UI smoke.
 - Validate rich object values for table, histogram, media, and
   `classification_eval` objects. Histogram objects require finite bins/counts
@@ -141,6 +146,62 @@ rows are durable; run APIs and dashboard lists hide those incomplete rows.
 TensorBoard re-syncs append scalar points to an existing complete imported
 TensorBoard run when source identity matches and the original import contained
 no attributes or artifact references.
+
+## Iframe Run Embeds
+
+The iframe embed first slice is server-created and read-only. A customer
+backend calls:
+
+```http
+POST /api/embed/sessions
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "run_ids": ["<run uuid>"],
+  "allowed_parent_origin": "https://portal.example.com",
+  "ttl_seconds": 900,
+  "options": { "max_panels": 4, "metric_point_limit": 500 }
+}
+```
+
+The API key must be an SDK/API-key actor, not a browser session, and must keep
+`export:read`. Project-scoped keys can embed only runs in that project. The
+response returns a copy-once `embed_token` and `iframe_src` in the shape:
+
+```text
+https://instantml.ai/embed/runs/<session_id>#token=instantml_embed_...
+```
+
+Treat the full `iframe_src` as a bearer secret. The token is stored only as a
+domain-separated hash/HMAC in the backend and is never revealed again after
+create.
+
+Embed route ownership in split mode:
+
+- `POST /api/embed/sessions`: data plane, because it validates tenant run
+  visibility before creating the control record.
+- `GET /api/embed/sessions/:session_id/frame-policy`: control plane, because
+  the web proxy needs this before tenant data loads.
+- `GET /api/embed/sessions/:session_id/current`: control plane, token
+  revalidation plus session metadata only.
+- `POST /api/embed/sessions/:session_id/runs/data`: data plane, bounded metric
+  reads through `workspace_view_data`.
+
+Operational guardrails:
+
+- `INSTANTML_EMBED_ENABLED=false` disables all embed API routes.
+- `INSTANTML_EMBED_FRAME_ENABLED=false` makes frame-policy lookup fail closed so
+  the web route emits `frame-ancestors 'none'`.
+- `INSTANTML_EMBED_ORG_ALLOWLIST` optionally restricts session creation to a
+  comma-separated list of org UUIDs.
+- `INSTANTML_EMBED_TOKEN_HMAC_SECRET` enables keyed token hashes; set it in
+  hosted environments and rotate by expiring old sessions.
+- Hosted origin validation requires HTTPS, rejects wildcards, paths, query
+  strings, credentials, and InstantML-owned app/API origins. Loopback HTTP is
+  accepted only for local testing.
+- `POST /api/embed/sessions/:session_id/runs/data` is rate limited per session
+  and reserves monthly API-request usage before product data is returned.
 
 ## Hosted Cloud Run Deployment
 
@@ -253,6 +314,15 @@ Environment variables:
 - `INSTANTML_LOG_FORMAT`: `pretty` or `json`. Default: `pretty`.
 - `INSTANTML_SLOW_REQUEST_MS`: request latency threshold for `http_request_slow` warning logs. Default: `1000`.
 - `INSTANTML_SHARE_TOKEN_TTL_DAYS`: report share-link lifetime in days from the moment the token is rotated/minted; expired tokens 404 like unknown tokens. `0` disables expiry. Tokens persisted before issuance tracking stay valid until rotated. Default: `30`.
+- `INSTANTML_EMBED_ENABLED`: enables iframe embed API routes. Default: `false`.
+- `INSTANTML_EMBED_FRAME_ENABLED`: enables frame-policy responses used by the
+  web proxy to allow approved parent origins. Default: `false`.
+- `INSTANTML_EMBED_ORG_ALLOWLIST`: optional comma-separated org UUID allowlist
+  for creating embed sessions. Empty means any org with a valid API key may
+  create sessions while embeds are enabled.
+- `INSTANTML_EMBED_TOKEN_HMAC_SECRET`: optional secret used to HMAC embed tokens
+  before storage. If unset, tokens are still domain-separated SHA-256 hashes for
+  local/dev compatibility.
 - `INSTANTML_DEV_AUTH_ENABLED`: enables the local Google-style auth endpoint when `INSTANTML_AUTH_MODE=local`. Loopback local binds enable it by default.
 - `CLERK_SECRET_KEY`: Clerk Backend API secret used to verify hosted browser sessions and fetch user profiles.
 - `INSTANTML_MANAGED_CLERK_ENABLED`: enables hosted Clerk auth. Defaults to enabled when `CLERK_SECRET_KEY` is present and `INSTANTML_AUTH_MODE=api-key`.

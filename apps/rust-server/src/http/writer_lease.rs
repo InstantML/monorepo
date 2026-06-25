@@ -109,6 +109,9 @@ fn is_data_plane_write_guard_exempt(method: &Method, path: &str) -> bool {
     if *method != Method::POST {
         return false;
     }
+    if path.starts_with("/api/embed/sessions/") && path.ends_with("/runs/data") {
+        return true;
+    }
     matches!(
         path,
         // Read-style POST endpoints that accept large/filter payloads.
@@ -185,6 +188,10 @@ mod tests {
         assert!(!requires_data_plane_write_guard(
             &Method::POST,
             "/api/workspace-view-data"
+        ));
+        assert!(!requires_data_plane_write_guard(
+            &Method::POST,
+            "/api/embed/sessions/018faabb-0000-7000-9000-000000000001/runs/data"
         ));
         assert!(!requires_data_plane_write_guard(
             &Method::POST,

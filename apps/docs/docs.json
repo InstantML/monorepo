@@ -130,6 +130,7 @@
               "api/attributes-objects",
               "api/artifacts",
               "api/reports",
+              "api/iframe-embeds",
               "api/import-export-usage",
               "api/dashboard-control-state",
               "troubleshooting"

@@ -14,6 +14,7 @@
  *   dashboard-runs.css  — runs workspace rail, rows, filter strip
  *   panels.css          — workspace panels, canvas, sections, modals
  *   charts.css          — metric charts, axes, series, range, tooltip
+ *   embed.css           — iframe-safe embedded run charts
  *   run-detail.css      — run detail, KPIs, inspector, evidence, timeline
  *   compare.css         — compare view, leaderboard, evidence cells
  *   research.css        — Distributed and Insights dashboard panels
@@ -34,6 +35,7 @@
 @import "./styles/dashboard-runs.css";
 @import "./styles/panels.css";
 @import "./styles/charts.css";
+@import "./styles/embed.css";
 @import "./styles/run-detail.css";
 @import "./styles/compare.css";
 @import "./styles/research.css";

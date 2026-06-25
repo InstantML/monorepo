@@ -2,7 +2,10 @@
 //! a fresh isolated database per test and applies `./migrations` first.
 
 use super::*;
-use crate::{domain::DataCellRow, store::TenantRouteRecord};
+use crate::{
+    domain::{DataCellRow, EmbedSessionOptions, PublicApiKeyRow, ServiceAccountRow},
+    store::TenantRouteRecord,
+};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use sqlx::PgPool;
 
@@ -140,6 +143,60 @@ fn route(org_id: Uuid, status: &str, endpoint: &str) -> TenantRouteRecord {
     }
 }
 
+fn service_account(org_id: Uuid) -> ServiceAccountRow {
+    ServiceAccountRow {
+        id: Uuid::new_v4(),
+        org_id,
+        name: "embed service".to_string(),
+        created_by_user_id: None,
+        created_at: db_time_now(),
+        disabled_at: None,
+    }
+}
+
+fn api_key(org_id: Uuid, service_account_id: Uuid) -> ApiKeyWithHash {
+    ApiKeyWithHash {
+        row: PublicApiKeyRow {
+            id: Uuid::new_v4(),
+            org_id,
+            service_account_id,
+            name: "embed key".to_string(),
+            key_prefix: "instantml_test".to_string(),
+            scopes: vec!["export:read".to_string()],
+            project_id: None,
+            created_at: db_time_now(),
+            expires_at: None,
+            last_used_at: None,
+            revoked_at: None,
+        },
+        key_hash: vec![1, 2, 3, 4],
+    }
+}
+
+fn embed_session(org_id: Uuid, key: &ApiKeyWithHash) -> EmbedSessionRow {
+    EmbedSessionRow {
+        schema_version: 1,
+        id: Uuid::new_v4(),
+        org_id,
+        source_api_key_id: key.row.id,
+        source_service_account_id: key.row.service_account_id,
+        source_project_restriction_id: None,
+        source_scopes_snapshot: key.row.scopes.clone(),
+        token_hash: vec![9, 8, 7, 6],
+        token_prefix: "instantml_embed_".to_string(),
+        run_ids: vec![Uuid::new_v4(), Uuid::new_v4()],
+        allowed_parent_origin: "https://portal.example.com".to_string(),
+        options: EmbedSessionOptions {
+            theme: Some("system".to_string()),
+            metric_point_limit: Some(250),
+            max_panels: Some(4),
+        },
+        created_at: db_time_now(),
+        expires_at: db_time_now() + ChronoDuration::minutes(15),
+        deleted_at: None,
+    }
+}
+
 fn placement(cell_id: &str) -> TenantRoutePlacement {
     TenantRoutePlacement {
         environment: "test".to_string(),
@@ -147,6 +204,34 @@ fn placement(cell_id: &str) -> TenantRoutePlacement {
         actor: "test-operator".to_string(),
         reason: "current_data_cell".to_string(),
     }
+}
+
+#[sqlx::test]
+async fn session_point_lookup_returns_one_control_session_or_none(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let o = org("embed-point-lookup", None);
+    db.upsert_org(&o).await.unwrap();
+    let service = service_account(o.id);
+    db.upsert_service_account(&service).await.unwrap();
+    let key = api_key(o.id, service.id);
+    db.upsert_api_key(&key).await.unwrap();
+    let session = embed_session(o.id, &key);
+    db.upsert_embed_session(&session).await.unwrap();
+
+    let loaded = db
+        .load_embed_session(session.id)
+        .await
+        .unwrap()
+        .expect("session");
+    assert_eq!(loaded.id, session.id);
+    assert_eq!(loaded.allowed_parent_origin, session.allowed_parent_origin);
+    assert_eq!(loaded.run_ids, session.run_ids);
+    assert_eq!(loaded.options.max_panels, Some(4));
+    assert!(db
+        .load_embed_session(Uuid::new_v4())
+        .await
+        .unwrap()
+        .is_none());
 }
 
 #[sqlx::test]

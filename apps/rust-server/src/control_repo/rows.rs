@@ -10,9 +10,9 @@ use uuid::Uuid;
 use crate::domain::{
     BillingAccountProjection, BillingChangeIntent, BillingCheckoutIntent, BillingEventRecord,
     BillingSubscriptionRecord, BillingUsageReportRecord, DashboardPreferenceRow, DataCellRow,
-    DataCellWriterLeaseRow, EmailDeliveryRow, MembershipRow, OrgInvitationRow, OrganizationRow,
-    PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow, UserRow, UserSessionRow,
-    WorkspaceViewRow,
+    DataCellWriterLeaseRow, EmailDeliveryRow, EmbedSessionOptions, EmbedSessionRow, MembershipRow,
+    OrgInvitationRow, OrganizationRow, PublicApiKeyRow, ServiceAccountRow, TenantRouteEventRow,
+    UserRow, UserSessionRow, WorkspaceViewRow,
 };
 use crate::store::TenantRouteRecord;
 
@@ -184,6 +184,51 @@ impl From<ApiKeyRowDb> for ApiKeyWithHash {
             },
             key_hash: row.key_hash,
         }
+    }
+}
+
+#[derive(FromRow)]
+pub(super) struct EmbedSessionRowDb {
+    schema_version: i32,
+    id: Uuid,
+    org_id: Uuid,
+    source_api_key_id: Uuid,
+    source_service_account_id: Uuid,
+    source_project_restriction_id: Option<Uuid>,
+    source_scopes_snapshot: Vec<String>,
+    token_hash: Vec<u8>,
+    token_prefix: String,
+    run_ids: Vec<Uuid>,
+    allowed_parent_origin: String,
+    options: Value,
+    created_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    deleted_at: Option<DateTime<Utc>>,
+}
+
+impl TryFrom<EmbedSessionRowDb> for EmbedSessionRow {
+    type Error = crate::errors::AppError;
+
+    fn try_from(row: EmbedSessionRowDb) -> Result<Self, Self::Error> {
+        let options = serde_json::from_value::<EmbedSessionOptions>(row.options)
+            .map_err(|_| crate::errors::AppError::internal("stored embed options are invalid"))?;
+        Ok(EmbedSessionRow {
+            schema_version: row.schema_version,
+            id: row.id,
+            org_id: row.org_id,
+            source_api_key_id: row.source_api_key_id,
+            source_service_account_id: row.source_service_account_id,
+            source_project_restriction_id: row.source_project_restriction_id,
+            source_scopes_snapshot: row.source_scopes_snapshot,
+            token_hash: row.token_hash,
+            token_prefix: row.token_prefix,
+            run_ids: row.run_ids,
+            allowed_parent_origin: row.allowed_parent_origin,
+            options,
+            created_at: row.created_at,
+            expires_at: row.expires_at,
+            deleted_at: row.deleted_at,
+        })
     }
 }
 

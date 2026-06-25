@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import { Inter, Spline_Sans_Mono, Instrument_Serif } from "next/font/google";
+import { headers } from "next/headers";
 
 // Instrument design language (docs/design/reimagine/DESIGN-SYSTEM.md):
 // Inter carries display + UI prose, Spline Sans Mono carries all data.
@@ -174,23 +175,29 @@ const clerkAppearance = {
   },
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const requestHeaders = await headers();
+  const isEmbedRoute = requestHeaders.get("x-instantml-embed-route") === "1";
   return (
     <html lang="en" className={`${display.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
-        <script dangerouslySetInnerHTML={{ __html: logoIntroFlag }} />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: serializeJsonLd(organizationJsonLd) }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: serializeJsonLd(softwareApplicationJsonLd) }}
-        />
+        {isEmbedRoute ? null : (
+          <>
+            <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+            <script dangerouslySetInnerHTML={{ __html: logoIntroFlag }} />
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: serializeJsonLd(organizationJsonLd) }}
+            />
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: serializeJsonLd(softwareApplicationJsonLd) }}
+            />
+          </>
+        )}
       </head>
       <body>
-        <ClerkProvider appearance={clerkAppearance}>{children}</ClerkProvider>
+        {isEmbedRoute ? children : <ClerkProvider appearance={clerkAppearance}>{children}</ClerkProvider>}
       </body>
     </html>
   );

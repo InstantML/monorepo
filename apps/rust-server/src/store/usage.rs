@@ -90,6 +90,35 @@ pub async fn record_api_request_usage(
     Ok(())
 }
 
+pub async fn reserve_api_request_usage(
+    store: &Store,
+    org_id: Uuid,
+    class: &str,
+    instance_id: &str,
+) -> AppResult<()> {
+    let monthly = api_request_monthly_quota(store, org_id).await?;
+    if !monthly.allowed {
+        return Err(AppError::with_code(
+            http::StatusCode::TOO_MANY_REQUESTS,
+            "api_request_monthly_limit_exceeded",
+            "monthly API request limit exceeded",
+        ));
+    }
+    let now = Utc::now();
+    let rollup = {
+        let mut data = store.data.lock().await;
+        let (rollup, _) = data.increment_api_request_rollup(org_id, class, instance_id, now);
+        rollup
+    };
+    store
+        .persist_locked("api_usage_monthly", org_id, &rollup.entity_id(), &rollup)
+        .await
+        .map_err(|_| AppError::service_unavailable("usage accounting unavailable"))?;
+    let mut data = store.data.lock().await;
+    data.mark_api_request_rollup_persisted(&rollup);
+    Ok(())
+}
+
 pub async fn api_request_monthly_quota(
     store: &Store,
     org_id: Uuid,

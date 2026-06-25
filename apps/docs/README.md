@@ -109,7 +109,8 @@ Node tests.
 - `guides/`: examples, imports, W&B/Neptune migration walkthroughs, export,
   usage, auth, billing, storage, observability, and evergreen comparison guides
   for buyer-intent queries such as W&B alternatives and InstantML vs MLflow.
-- `api/`: practical API guides plus the generated OpenAPI reference tab.
+- `api/`: practical API guides plus the generated OpenAPI reference tab,
+  including short-lived read-only iframe run embeds.
 - `images/`: docs-local brand and product assets served by the Next `/docs`
   asset route and the Mintlify preview.
 - `images/product/`: 1440x1000 dashboard screenshots for the public tour and

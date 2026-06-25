@@ -617,6 +617,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/embed/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_embed_session"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/embed/sessions/{session_id}/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["embed_current_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/embed/sessions/{session_id}/frame-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["embed_frame_policy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/embed/sessions/{session_id}/runs/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["embed_runs_data"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/export": {
         parameters: {
             query?: never;
@@ -2707,6 +2771,18 @@ export interface components {
             storage_choice?: string | null;
             switch_on_create?: boolean | null;
         };
+        CreateEmbedSessionRequest: {
+            allowed_parent_origin: string;
+            options?: null | components["schemas"]["EmbedSessionOptions"];
+            run_ids: string[];
+            /** Format: int64 */
+            ttl_seconds?: number | null;
+        };
+        CreateEmbedSessionResponse: {
+            embed_session: components["schemas"]["PublicEmbedSession"];
+            embed_token: string;
+            warnings?: string[];
+        };
         CreateInvitationRequest: {
             email?: string | null;
             role?: string | null;
@@ -2857,6 +2933,39 @@ export interface components {
             user_code: string;
             verification_uri: string;
             verification_uri_complete: string;
+        };
+        EmbedCurrentSession: {
+            /** Format: date-time */
+            expires_at: string;
+            has_custom_view: boolean;
+            /** Format: uuid */
+            id: string;
+            run_count: number;
+            theme: string;
+        };
+        EmbedCurrentSessionResponse: {
+            embed_session: components["schemas"]["EmbedCurrentSession"];
+        };
+        EmbedFramePolicy: {
+            allowed_parent_origin: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            session_id: string;
+            status: string;
+        };
+        EmbedFramePolicyResponse: {
+            frame_policy: components["schemas"]["EmbedFramePolicy"];
+        };
+        EmbedRunsDataRequest: {
+            options?: null | components["schemas"]["WorkspaceViewDataOptions"];
+            refresh_reason?: string | null;
+        };
+        EmbedSessionOptions: {
+            max_panels?: number | null;
+            /** Format: int64 */
+            metric_point_limit?: number | null;
+            theme?: string | null;
         };
         ErrorResponse: {
             code?: string | null;
@@ -3332,6 +3441,15 @@ export interface components {
             version: string;
             /** Format: int64 */
             version_index: number;
+        };
+        PublicEmbedSession: {
+            allowed_parent_origin: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            id: string;
+            iframe_src: string;
+            run_count: number;
         };
         PublicInvitationRow: {
             /** Format: date-time */
@@ -5518,6 +5636,184 @@ export interface operations {
             };
             /** @description Missing ingest scope */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_embed_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmbedSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Created iframe embed session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateEmbedSessionResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description API key required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Embeds disabled or key lacks export access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    embed_current_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Embed session UUID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current embed session metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbedCurrentSessionResponse"];
+                };
+            };
+            /** @description Embed token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Embeds disabled or source key inactive */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    embed_frame_policy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Embed session UUID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Frame policy metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbedFramePolicyResponse"];
+                };
+            };
+            /** @description Embed session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    embed_runs_data: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Embed session UUID */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmbedRunsDataRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded run chart data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceViewDataResponse"];
+                };
+            };
+            /** @description Embed token required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Embeds disabled or source key inactive */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Per-session rate limited */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

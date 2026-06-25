@@ -3,6 +3,7 @@ pub mod artifacts;
 pub mod auth;
 pub mod billing;
 pub mod dashboard;
+pub mod embed;
 pub(crate) mod helpers;
 pub mod imports;
 pub mod insights;
@@ -36,6 +37,9 @@ pub(super) use dashboard::{
     create_workspace_view, delete_workspace_view, export_workspace_view, get_dashboard_preferences,
     get_workspace_view, import_workspace_view, list_workspace_views, update_dashboard_preferences,
     update_workspace_view, workspace_view_data,
+};
+pub(super) use embed::{
+    create_embed_session, embed_current_session, embed_frame_policy, embed_runs_data,
 };
 pub(super) use imports::{
     append_import_chunk, cancel_import_job, commit_import_job, create_import_job, get_import_job,
@@ -250,6 +254,12 @@ mod tests {
             "/api/dashboard/preferences",
             "/api/workspace-views",
             "/api/workspace-views/{view_id}",
+            "/api/workspace-view-data",
+            // embeds
+            "/api/embed/sessions",
+            "/api/embed/sessions/{session_id}/frame-policy",
+            "/api/embed/sessions/{session_id}/current",
+            "/api/embed/sessions/{session_id}/runs/data",
             // users / orgs
             "/api/users",
             "/api/orgs",
@@ -373,6 +383,11 @@ mod tests {
             "ArtifactManifestEntryRow",
             "ArtifactAliasRow",
             "ArtifactEdgeRow",
+            "CreateEmbedSessionRequest",
+            "CreateEmbedSessionResponse",
+            "EmbedCurrentSessionResponse",
+            "EmbedFramePolicyResponse",
+            "EmbedRunsDataRequest",
         ] {
             assert!(
                 schemas.contains_key(expected),
@@ -426,6 +441,12 @@ mod tests {
                 resend_api_key: None,
             },
             frontend_base_url: Some("http://localhost:3000".to_string()),
+            embed: crate::config::EmbedConfig {
+                enabled: false,
+                frame_enabled: false,
+                org_allowlist: Vec::new(),
+                token_hmac_secret: None,
+            },
         }
     }
 
@@ -479,6 +500,46 @@ mod tests {
                 !openapi_path_available_for_plane(path, ServicePlaneRole::Data),
                 "{path} should not be available on data plane"
             );
+        }
+    }
+
+    #[test]
+    fn embed_endpoints_follow_split_control_data_ownership() {
+        use crate::config::ServicePlaneRole;
+
+        for path in [
+            "/api/embed/sessions/{session_id}/frame-policy",
+            "/api/embed/sessions/{session_id}/current",
+        ] {
+            assert!(openapi_path_available_for_plane(
+                path,
+                ServicePlaneRole::Control
+            ));
+            assert!(openapi_path_available_for_plane(
+                path,
+                ServicePlaneRole::Combined
+            ));
+            assert!(!openapi_path_available_for_plane(
+                path,
+                ServicePlaneRole::Data
+            ));
+        }
+        for path in [
+            "/api/embed/sessions",
+            "/api/embed/sessions/{session_id}/runs/data",
+        ] {
+            assert!(openapi_path_available_for_plane(
+                path,
+                ServicePlaneRole::Data
+            ));
+            assert!(openapi_path_available_for_plane(
+                path,
+                ServicePlaneRole::Combined
+            ));
+            assert!(!openapi_path_available_for_plane(
+                path,
+                ServicePlaneRole::Control
+            ));
         }
     }
 

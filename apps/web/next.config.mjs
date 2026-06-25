@@ -94,6 +94,13 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
 ];
+const embedStaticHeaders = [
+  { key: "Cache-Control", value: "private, no-store" },
+  { key: "Pragma", value: "no-cache" },
+  { key: "Referrer-Policy", value: "no-referrer" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+];
 
 const nextConfig = {
   devIndicators: false,
@@ -114,6 +121,10 @@ const nextConfig = {
       { source: "/api/dashboard/preferences", destination: `${apiBases.control}/api/dashboard/preferences` },
       { source: "/api/workspace-views", destination: `${apiBases.control}/api/workspace-views` },
       { source: "/api/workspace-views/:path*", destination: `${apiBases.control}/api/workspace-views/:path*` },
+      { source: "/api/embed/sessions", destination: `${apiBases.data}/api/embed/sessions` },
+      { source: "/api/embed/sessions/:session_id/frame-policy", destination: `${apiBases.control}/api/embed/sessions/:session_id/frame-policy` },
+      { source: "/api/embed/sessions/:session_id/current", destination: `${apiBases.control}/api/embed/sessions/:session_id/current` },
+      { source: "/api/embed/sessions/:session_id/runs/data", destination: `${apiBases.data}/api/embed/sessions/:session_id/runs/data` },
       { source: "/api/reports", destination: `${apiBases.data}/api/reports` },
       { source: "/api/reports/:path*", destination: `${apiBases.data}/api/reports/:path*` },
       { source: "/api/:path*", destination: `${apiBases.data}/api/:path*` },
@@ -125,8 +136,12 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: "/:path((?!embed(?:/|$)).*)",
         headers: securityHeaders,
+      },
+      {
+        source: "/embed/:path*",
+        headers: embedStaticHeaders,
       },
       {
         source: "/invite",

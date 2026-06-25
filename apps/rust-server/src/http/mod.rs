@@ -37,23 +37,24 @@ use handlers::{
     billing_report_storage_overage, billing_report_usage_overage, billing_status, billing_webhook,
     cancel_import_job, commit_import_job, complete_artifact_upload, create_api_key,
     create_artifact, create_artifact_input_edge, create_attributes, create_current_user_org,
-    create_customer_clickhouse_connection, create_import_job, create_invitation, create_object,
-    create_org, create_project, create_report, create_run, create_user, create_workspace_view,
-    customer_clickhouse_connection_status, delete_artifact_alias, delete_artifact_version,
-    delete_report, delete_workspace_view, device_code_confirm, device_code_poll, device_code_start,
-    disable_service_account, download_artifact, download_artifact_entry, export_data,
-    export_report_markdown, export_workspace_view, fork_run, get_artifact_collection,
-    get_artifact_version, get_dashboard_preferences, get_import_job, get_metrics, get_report,
-    get_report_by_share_token, get_run, get_run_lineage, get_workspace_view, health, import_mlflow,
-    import_neptune, import_wandb, import_workspace_view, initiate_artifact_upload, list_api_keys,
-    list_artifact_collection_versions, list_artifact_collections, list_artifact_manifest,
-    list_artifacts, list_attributes, list_console_logs, list_imports, list_invitations,
-    list_object_rows, list_objects, list_org_memberships, list_org_panels, list_orgs,
-    list_projects, list_reports, list_runs, list_seats, list_users, list_workspace_views,
-    log_console_logs, log_metrics, log_rank_metrics, metrics_handler, metrics_series, not_found,
-    openapi_json, org_name_availability, overview, preview_invitation, rank_metrics_summary,
-    readyz, renew_artifact_upload, resend_invitation, reserve_seat, reset_demo,
-    resolve_artifact_version, revoke_api_key, revoke_invitation,
+    create_customer_clickhouse_connection, create_embed_session, create_import_job,
+    create_invitation, create_object, create_org, create_project, create_report, create_run,
+    create_user, create_workspace_view, customer_clickhouse_connection_status,
+    delete_artifact_alias, delete_artifact_version, delete_report, delete_workspace_view,
+    device_code_confirm, device_code_poll, device_code_start, disable_service_account,
+    download_artifact, download_artifact_entry, embed_current_session, embed_frame_policy,
+    embed_runs_data, export_data, export_report_markdown, export_workspace_view, fork_run,
+    get_artifact_collection, get_artifact_version, get_dashboard_preferences, get_import_job,
+    get_metrics, get_report, get_report_by_share_token, get_run, get_run_lineage,
+    get_workspace_view, health, import_mlflow, import_neptune, import_wandb, import_workspace_view,
+    initiate_artifact_upload, list_api_keys, list_artifact_collection_versions,
+    list_artifact_collections, list_artifact_manifest, list_artifacts, list_attributes,
+    list_console_logs, list_imports, list_invitations, list_object_rows, list_objects,
+    list_org_memberships, list_org_panels, list_orgs, list_projects, list_reports, list_runs,
+    list_seats, list_users, list_workspace_views, log_console_logs, log_metrics, log_rank_metrics,
+    metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
+    preview_invitation, rank_metrics_summary, readyz, renew_artifact_upload, resend_invitation,
+    reserve_seat, reset_demo, resolve_artifact_version, revoke_api_key, revoke_invitation,
     rotate_customer_clickhouse_credentials, rotate_report_share_token, run_artifact_edges,
     runs_summary, set_artifact_alias, side_by_side, stop_ack, stop_run, stop_runs, stop_signal,
     system_usage_insights, update_artifact_retention, update_dashboard_preferences, update_report,
@@ -164,6 +165,14 @@ fn control_routes() -> Router<Arc<AppState>> {
         .route("/api/admin/overview", get(admin_overview))
         .route("/api/admin/data-cells", get(admin_data_cells))
         .route("/api/admin/orgs/:org_id/plan", post(admin_change_plan))
+        .route(
+            "/api/embed/sessions/:session_id/frame-policy",
+            get(embed_frame_policy),
+        )
+        .route(
+            "/api/embed/sessions/:session_id/current",
+            get(embed_current_session),
+        )
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))
@@ -274,6 +283,11 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/api/runs/side-by-side", get(side_by_side))
         .route("/api/insights/system-usage", get(system_usage_insights))
         .route("/api/workspace-view-data", post(workspace_view_data))
+        .route("/api/embed/sessions", post(create_embed_session))
+        .route(
+            "/api/embed/sessions/:session_id/runs/data",
+            post(embed_runs_data),
+        )
         .route(
             "/api/runs/:run_id/attributes",
             post(create_attributes).get(list_attributes),

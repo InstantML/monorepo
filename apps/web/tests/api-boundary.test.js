@@ -12,6 +12,8 @@ test("product API calls stay behind ApiClient fetch instrumentation", () => {
     path.join(webRoot, "src", "api.js"),
     // Static docs markdown copy helper; not a product API call.
     path.join(webRoot, "app", "docs", "docs-agent-markdown-button.tsx"),
+    // Embed routes use short-lived fragment tokens and must omit browser credentials.
+    path.join(webRoot, "app", "embed", "runs", "[session_id]", "embedded-runs-canvas.tsx"),
   ]);
   const files = listSourceFiles(path.join(webRoot, "app"))
     .concat(listSourceFiles(path.join(webRoot, "components")))

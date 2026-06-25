@@ -137,8 +137,15 @@ pub fn openapi_path_available_for_plane(
         || path == "/api/workspace-views"
         || path.starts_with("/api/workspace-views/")
         || path.starts_with("/api/orgs/{org_id}/")
+        || (path.starts_with("/api/embed/sessions/")
+            && (path.ends_with("/frame-policy") || path.ends_with("/current")))
     {
         return service_plane.includes_control();
+    }
+    if path == "/api/embed/sessions"
+        || (path.starts_with("/api/embed/sessions/") && path.ends_with("/runs/data"))
+    {
+        return service_plane.includes_data();
     }
     service_plane.includes_data()
 }
