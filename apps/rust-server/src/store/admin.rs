@@ -34,38 +34,6 @@ pub async fn admin_data_cells(store: &Store) -> AppResult<AdminDataCellsResponse
     Ok(build_admin_data_cells(&data, Utc::now()))
 }
 
-/// Record operator-owned backup evidence for a data cell, then return the
-/// refreshed registry so the caller sees the updated admission status. The
-/// auto-registration heartbeat keeps health fresh but never marks backups
-/// fresh, so placement fails closed until this is called.
-pub async fn record_data_cell_backup(
-    store: &Store,
-    environment: Option<String>,
-    cell_id: &str,
-) -> AppResult<AdminDataCellsResponse> {
-    let cell_id = cell_id.trim();
-    if cell_id.is_empty() {
-        return Err(AppError::validation("cell_id is required"));
-    }
-    let Some(control_db) = store.control_db() else {
-        return Err(AppError::validation(
-            "recording data-cell backup evidence requires the hosted control plane",
-        ));
-    };
-    let environment = environment
-        .map(|env| env.trim().to_string())
-        .filter(|env| !env.is_empty())
-        .unwrap_or_else(|| store.cell_routing.environment.clone());
-    let now = Utc::now();
-    let cell = control_db
-        .record_data_cell_backup(&environment, cell_id, now)
-        .await?
-        .ok_or_else(|| AppError::not_found("data cell not found"))?;
-    let mut data = store.data.lock().await;
-    data.insert_data_cell(cell);
-    Ok(build_admin_data_cells(&data, now))
-}
-
 /// Operator action: change an organization's plan tier from the admin console
 /// and return its refreshed summary so the UI can update in place.
 pub async fn admin_change_org_plan(

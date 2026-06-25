@@ -383,15 +383,12 @@ Backup evidence is operator-owned; a timestamp more than five minutes in the
 future is treated as invalid so skewed manual writes cannot hold a cell open.
 Because the heartbeat never records backups, a freshly registered cell stays
 unbacked and rejects placement (login and workspace creation fail closed with a
-`503 service_unavailable`). Two ways to satisfy the gate: record evidence with
-`POST /api/admin/data-cells/{cell_id}/backup` (bootstrap-token auth) whenever a
-backup runs so `last_backup_at` stays within the 36h freshness window; or, when
-backups are handled outside the app (e.g. scheduled GCE disk snapshots), set
-`INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE=false` to disable the backup gate
-rather than write a timestamp the app never verified. The flag defaults to
-required (`true`); it only affects the backup check — closed, stale-health, and
-full cells still fail closed. Customer-owned ClickHouse routes are not assigned
-to managed data cells.
+`503 service_unavailable`). When backups are handled outside the app (e.g.
+scheduled GCE disk snapshots), set `INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE=false`
+to disable the backup-freshness gate rather than write a `last_backup_at`
+timestamp the app never verified. The flag defaults to required (`true`) and
+affects only the backup check — closed, stale-health, and full cells still fail
+closed. Customer-owned ClickHouse routes are not assigned to managed data cells.
 
 Hosted split data services also acquire a Postgres-backed
 `data_cell_writer_leases` row before accepting route-classified tenant-data
