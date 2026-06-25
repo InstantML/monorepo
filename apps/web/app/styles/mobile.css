@@ -466,13 +466,6 @@
     max-height: none;
     overflow-y: auto;
   }
-  .runs-actions-popover .column-popover {
-    position: static;
-    inset: auto;
-    max-height: min(42vh, 300px);
-    overflow-y: auto;
-  }
-
   /* ── Run workspace stacks vertically; rail becomes a horizontal bar ──── */
   .runs-workspace,
   .runs-workspace.drawer-open,
@@ -1128,13 +1121,6 @@
     bottom: max(12px, env(safe-area-inset-bottom));
     left: 12px;
   }
-  .runs-actions-popover .column-popover {
-    position: static;
-    inset: auto;
-    max-height: min(42vh, 300px);
-    overflow-y: auto;
-  }
-
   /* L9: run-workspace-topline / tabs tighten and scroll horizontally on phones. */
   .run-workspace-topline {
     padding: 10px 12px;

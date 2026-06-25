@@ -23,61 +23,39 @@ const tableColumnLabels: Array<[keyof TableColumns, string]> = [
 ];
 
 export function RunsCommandbar({
-  columnsOpen,
   exportSelectedBusy,
   metricKey,
   metricOptions,
-  onColumnsOpen,
   onExportSelectedRuns,
   onMetricKey,
-  onPinnedMetricFilter,
-  onPinnedMetric,
   onRefresh,
   onRequestSelectedStop,
-  onTableColumns,
   onViewMode,
-  pinnedMetricFilter,
-  pinnedMetricFilterValid,
-  pinnedMetricOptions,
-  pinnedMetrics,
   selectedRunCount,
   selectedRunExportDisabled,
   selectedRunExportTitle,
   selectedStopCandidateCount = 0,
   selectedStopDisabledReason = "",
-  tableColumns,
   viewMode,
 }: {
-  columnsOpen: boolean;
   exportSelectedBusy: boolean;
   metricKey: string;
   metricOptions: string[];
-  onColumnsOpen: Dispatch<SetStateAction<boolean>>;
   onExportSelectedRuns: () => void;
   onMetricKey: (value: string) => void;
-  onPinnedMetricFilter: (value: string) => void;
-  onPinnedMetric: (metric: string) => void;
   onRefresh: () => void;
   onRequestSelectedStop?: () => void;
-  onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   onViewMode: (view: RunsViewMode) => void;
-  pinnedMetricFilter: string;
-  pinnedMetricFilterValid: boolean;
-  pinnedMetricOptions: string[];
-  pinnedMetrics: string[];
   selectedRunCount: number;
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
   selectedStopCandidateCount?: number;
   selectedStopDisabledReason?: string;
-  tableColumns: TableColumns;
   viewMode: RunsViewMode;
 }) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const actionsTriggerRef = useRef<HTMLButtonElement>(null);
-  const columnsMenuRef = useRef<HTMLDivElement>(null);
-  const columnsTriggerRef = useRef<HTMLButtonElement>(null);
   const exportHelpId = "selected-runs-export-help";
   const stopHelpId = "selected-runs-stop-help";
 
@@ -101,31 +79,6 @@ export function RunsCommandbar({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [actionsOpen]);
-
-  useEffect(() => {
-    if (!actionsOpen) onColumnsOpen(false);
-  }, [actionsOpen, onColumnsOpen]);
-
-  useEffect(() => {
-    if (!columnsOpen) return;
-    function handlePointerDown(event: PointerEvent) {
-      const target = event.target;
-      if (target instanceof Node && columnsMenuRef.current?.contains(target)) return;
-      onColumnsOpen(false);
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onColumnsOpen(false);
-        columnsTriggerRef.current?.focus();
-      }
-    }
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [columnsOpen, onColumnsOpen]);
 
   return (
     <div className="runs-commandbar">
@@ -164,41 +117,6 @@ export function RunsCommandbar({
         </button>
         {actionsOpen ? (
           <div className="runs-actions-popover" id="runs-actions-popover" role="dialog" aria-label="Runs actions">
-            <div className="columns-menu" ref={columnsMenuRef}>
-              <button className="secondary compact-button" type="button" aria-expanded={columnsOpen} aria-controls="columns-popover" onClick={() => onColumnsOpen((current) => !current)} ref={columnsTriggerRef}><Columns3 size={15} /> Columns</button>
-              {columnsOpen ? (
-                <div className="column-popover" id="columns-popover">
-                  <strong>Visible columns</strong>
-                  {tableColumnLabels.map(([key, label]) => (
-                    <label key={key}>
-                      <input
-                        aria-label={`Show ${label} column`}
-                        checked={tableColumns[key]}
-                        onChange={(event) => onTableColumns((current) => ({ ...current, [key]: event.target.checked }))}
-                        type="checkbox"
-                      />
-                      {label}
-                    </label>
-                  ))}
-                  <strong>Pinned metrics</strong>
-                  <label className={`metric-filter-row ${pinnedMetricFilterValid ? "" : "invalid"}`}>
-                    <Search size={13} />
-                    <input aria-label="Pinned metric filter" id="column-metric-filter" type="search" value={pinnedMetricFilter} onChange={(event) => onPinnedMetricFilter(event.target.value)} placeholder="metric regex" />
-                  </label>
-                  {pinnedMetricOptions.slice(0, 8).map((metric) => (
-                    <label key={metric} title={metric}>
-                      <input
-                        aria-label={`Pin ${metric}`}
-                        checked={pinnedMetrics.includes(metric)}
-                        onChange={() => onPinnedMetric(metric)}
-                        type="checkbox"
-                      />
-                      {shortMetricName(metric)}
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </div>
             <button
               aria-label={selectedRunCount ? `Export ${selectedRunCount} selected runs as CSV` : "Export selected runs as CSV"}
               aria-disabled={selectedRunExportDisabled || undefined}
@@ -240,6 +158,92 @@ export function RunsCommandbar({
       </div>
       <span className="visually-hidden" id={exportHelpId}>{selectedRunExportTitle}</span>
       {selectedStopDisabledReason ? <span className="visually-hidden" id={stopHelpId}>{selectedStopDisabledReason}</span> : null}
+    </div>
+  );
+}
+
+export function RunsColumnsMenu({
+  columnsOpen,
+  onColumnsOpen,
+  onPinnedMetric,
+  onPinnedMetricFilter,
+  onTableColumns,
+  pinnedMetricFilter,
+  pinnedMetricFilterValid,
+  pinnedMetricOptions,
+  pinnedMetrics,
+  tableColumns,
+}: {
+  columnsOpen: boolean;
+  onColumnsOpen: Dispatch<SetStateAction<boolean>>;
+  onPinnedMetric: (metric: string) => void;
+  onPinnedMetricFilter: (value: string) => void;
+  onTableColumns: Dispatch<SetStateAction<TableColumns>>;
+  pinnedMetricFilter: string;
+  pinnedMetricFilterValid: boolean;
+  pinnedMetricOptions: string[];
+  pinnedMetrics: string[];
+  tableColumns: TableColumns;
+}) {
+  const columnsMenuRef = useRef<HTMLDivElement>(null);
+  const columnsTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!columnsOpen) return;
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Node && columnsMenuRef.current?.contains(target)) return;
+      onColumnsOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onColumnsOpen(false);
+        columnsTriggerRef.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [columnsOpen, onColumnsOpen]);
+
+  return (
+    <div className="columns-menu" ref={columnsMenuRef}>
+      <button className="secondary compact-button" type="button" aria-expanded={columnsOpen} aria-controls="columns-popover" onClick={() => onColumnsOpen((current) => !current)} ref={columnsTriggerRef}><Columns3 size={15} /> Columns</button>
+      {columnsOpen ? (
+        <div className="column-popover" id="columns-popover">
+          <strong>Visible columns</strong>
+          {tableColumnLabels.map(([key, label]) => (
+            <label key={key}>
+              <input
+                aria-label={`Show ${label} column`}
+                checked={tableColumns[key]}
+                onChange={(event) => onTableColumns((current) => ({ ...current, [key]: event.target.checked }))}
+                type="checkbox"
+              />
+              {label}
+            </label>
+          ))}
+          <strong>Pinned metrics</strong>
+          <label className={`metric-filter-row ${pinnedMetricFilterValid ? "" : "invalid"}`}>
+            <Search size={13} />
+            <input aria-label="Pinned metric filter" id="column-metric-filter" type="search" value={pinnedMetricFilter} onChange={(event) => onPinnedMetricFilter(event.target.value)} placeholder="metric regex" />
+          </label>
+          {pinnedMetricOptions.slice(0, 8).map((metric) => (
+            <label key={metric} title={metric}>
+              <input
+                aria-label={`Pin ${metric}`}
+                checked={pinnedMetrics.includes(metric)}
+                onChange={() => onPinnedMetric(metric)}
+                type="checkbox"
+              />
+              {shortMetricName(metric)}
+            </label>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

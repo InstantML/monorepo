@@ -1,12 +1,14 @@
 "use client";
 
 import { Square } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
 import { useMemo, useState } from "react";
 
 import { bestMetric, canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, metricGoal, visibleSelectionState } from "../../../src/state.js";
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { formatRunTime, shortMetricName } from "../../dashboard-models";
 import type { MetricSeries, RunSummary, TableColumns } from "../../dashboard-types";
+import { RunsColumnsMenu } from "./runs-commandbar";
 
 type GroupMode = "flat" | "tag" | "owner";
 
@@ -109,21 +111,29 @@ function navigateToTab(path: "/dashboard/compare" | "/dashboard/metrics") {
 export function RunsTable({
   canControlRuns,
   columns,
+  columnsOpen,
   hasNextPage,
   hasPreviousPage,
   metricKey,
   onClearFilters,
   onClearSelection,
+  onColumnsOpen,
   onInspectRun,
   onNextPage,
   onOpenRun,
   onPreviousPage,
+  onPinnedMetric,
+  onPinnedMetricFilter,
   onRequestStop,
   onSelectAllVisible,
+  onTableColumns,
   onToggleRun,
   pageSize,
   pageStart,
   paginationBusy,
+  pinnedMetricFilter,
+  pinnedMetricFilterValid,
+  pinnedMetricOptions,
   pinnedMetrics,
   primaryRunId,
   query,
@@ -135,21 +145,29 @@ export function RunsTable({
 }: {
   canControlRuns: boolean;
   columns: TableColumns;
+  columnsOpen: boolean;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   metricKey: string;
   onClearFilters: () => void;
   onClearSelection: () => void;
+  onColumnsOpen: Dispatch<SetStateAction<boolean>>;
   onInspectRun: (runId: string) => void;
   onNextPage: () => void;
   onOpenRun: (runId: string) => void;
   onPreviousPage: () => void;
+  onPinnedMetric: (metric: string) => void;
+  onPinnedMetricFilter: (value: string) => void;
   onRequestStop: (runIds: string[]) => void;
   onSelectAllVisible: () => void;
+  onTableColumns: Dispatch<SetStateAction<TableColumns>>;
   onToggleRun: (runId: string) => void;
   pageSize: number;
   pageStart: number;
   paginationBusy: boolean;
+  pinnedMetricFilter: string;
+  pinnedMetricFilterValid: boolean;
+  pinnedMetricOptions: string[];
   pinnedMetrics: string[];
   primaryRunId: string;
   query: string;
@@ -159,17 +177,8 @@ export function RunsTable({
   summaryTotal: number;
   workspaceSeries: Record<string, MetricSeries[]>;
 }) {
-  const [tableFilter, setTableFilter] = useState("");
   const [groupMode, setGroupMode] = useState<GroupMode>("flat");
-
-  const filteredRuns = useMemo(() => {
-    const tokens = tableFilter.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (!tokens.length) return runs;
-    return runs.filter((run) => {
-    const haystack = `${run.name} ${run.id} ${run.project} ${displayStatusForRun(run)} ${run.tags.join(" ")} ${runOwner(run)}`.toLowerCase();
-      return tokens.every((token) => haystack.includes(token));
-    });
-  }, [runs, tableFilter]);
+  const filteredRuns = runs;
 
   const metricSeries = workspaceSeries[metricKey];
   const goal = metricGoal(metricKey);
@@ -308,14 +317,6 @@ export function RunsTable({
             </button>
           </span>
         ))}
-        <input
-          aria-label="Filter runs in this table"
-          className="runs-tablebar-input"
-          onChange={(event) => setTableFilter(event.target.value)}
-          placeholder="Filter… try name, tag, owner or status"
-          type="search"
-          value={tableFilter}
-        />
         <div className="seg" role="group" aria-label="Group runs">
           {([
             ["flat", "Flat"],
@@ -333,6 +334,18 @@ export function RunsTable({
             </button>
           ))}
         </div>
+        <RunsColumnsMenu
+          columnsOpen={columnsOpen}
+          onColumnsOpen={onColumnsOpen}
+          onPinnedMetric={onPinnedMetric}
+          onPinnedMetricFilter={onPinnedMetricFilter}
+          onTableColumns={onTableColumns}
+          pinnedMetricFilter={pinnedMetricFilter}
+          pinnedMetricFilterValid={pinnedMetricFilterValid}
+          pinnedMetricOptions={pinnedMetricOptions}
+          pinnedMetrics={pinnedMetrics}
+          tableColumns={columns}
+        />
         <span className="mlabel runs-tablebar-count">
           {filteredRuns.length.toLocaleString("en-US")} of {Math.max(summaryTotal, filteredRuns.length).toLocaleString("en-US")}
         </span>

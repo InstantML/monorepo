@@ -784,8 +784,10 @@ try {
   await page.fill("#search", "");
   await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
-  await page.locator(".runs-commandbar").getByRole("button", { name: "Runs actions" }).click();
-  await page.locator(".runs-actions-popover").getByRole("button", { name: "Columns" }).click();
+  await page.locator(".runs-commandbar").getByRole("button", { name: "Table" }).click();
+  await page.waitForSelector(".runs-table-panel");
+  assert.equal(await page.locator(".runs-tablebar-input").count(), 0, "Runs table should rely on the top search instead of a second local search");
+  await page.locator(".runs-tablebar").getByRole("button", { name: "Columns" }).click();
   await page.waitForSelector("#columns-popover");
   await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").uncheck();
   assert.equal(await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").isChecked(), false);
@@ -797,6 +799,8 @@ try {
   assert.equal(await page.locator("#columns-popover label", { hasText: "Tags" }).locator("input").isChecked(), true);
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("#columns-popover"));
+  await page.locator(".runs-commandbar").getByRole("button", { name: "Panels" }).click();
+  await page.waitForSelector(".workspace-panel-card", { timeout: 15000 });
 
   await page.fill("#search", "no-such-training-run");
   await page.waitForSelector(".workspace-run-list .compact-empty");

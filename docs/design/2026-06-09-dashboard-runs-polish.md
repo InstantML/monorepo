@@ -61,7 +61,9 @@ Topbar:
 Runs command bar:
 
 - Keep the primary metric selector visible.
-- Move Columns, Export CSV, and Refresh into a compact "Runs actions" popover.
+- Move Export CSV and Refresh into a compact "Runs actions" popover.
+- Keep the Columns control table-local so it appears only when the Runs tab is
+  in Table view.
 - Keep export unavailable copy inside the popover and in screen-reader text.
 
 Run rail:
