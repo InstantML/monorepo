@@ -1027,6 +1027,12 @@ button.secondary.danger-action:hover:not(:disabled),
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+  /* Conventional editor/terminal monospace for everything code-shaped in this
+     card — the snippet, the pip/login commands, the footer chips, and the Copy
+     controls. The app's `--font-mono` (Spline Sans Mono) is a branded face for
+     data/labels; code reads more like code in a typical programmer mono. One
+     token keeps all of them in lockstep, so the Copy buttons match the box. */
+  --snippet-code-face: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 .empty-workspace-snippet__head {
   display: grid;
@@ -1057,10 +1063,16 @@ button.secondary.danger-action:hover:not(:disabled),
 }
 .empty-workspace-snippet__pip code {
   flex: 1;
-  font: 600 12.5px/1.4 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 600 12.5px/1.4 var(--snippet-code-face);
   color: var(--text);
   background: transparent;
   padding: 0;
+}
+/* Steps 1 & 2 reuse the shared `.copy-button` (sans). Scope the code face onto
+   them so all three Copy controls match the snippet box — without touching the
+   global button used elsewhere. */
+.empty-workspace-snippet .copy-button {
+  font-family: var(--snippet-code-face);
 }
 .empty-workspace-snippet__term {
   margin: 0;
@@ -1083,11 +1095,11 @@ button.secondary.danger-action:hover:not(:disabled),
   color: var(--accent);
 }
 .empty-workspace-snippet__term .iml-copy {
-  font: 600 11px/1 var(--font-mono);
+  font: 600 11px/1 var(--snippet-code-face);
 }
 .empty-workspace-snippet__code {
   padding: 14px 16px;
-  font: 500 12.5px/1.65 var(--font-mono);
+  font: 500 12.5px/1.65 var(--snippet-code-face);
   color: var(--text-2);
   white-space: pre;
   overflow-x: auto;
@@ -1148,7 +1160,7 @@ button.secondary.danger-action:hover:not(:disabled),
   max-width: 390px;
 }
 .empty-workspace-snippet__foot code {
-  font: 600 11.5px/1 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font: 600 11.5px/1 var(--snippet-code-face);
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--surface-soft, var(--surface));
