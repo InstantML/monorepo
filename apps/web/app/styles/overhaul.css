@@ -1125,10 +1125,13 @@ button.secondary.danger-action:hover:not(:disabled),
 }
 /* The shared `.iml-term-*` rules live in auth.css and resolve `var(--f-mono)`,
    a font token only defined under `.iml-auth`/`.iml-landing`. On the dashboard
-   that token is missing, so those `font:` shorthands are dropped — which left
-   the title at the default ~16px (too large) and the copy button unstyled.
-   Re-declare both with the dashboard's `--font-*` tokens, matching the eyebrow
-   styling of steps 1 & 2. */
+   that token is missing, so each `font:` shorthand is invalid at computed-value
+   time and falls back to the inherited value — which left the title at the
+   default ~16px (too large), the copy button unstyled, and the code body in the
+   inherited Inter UI font (proportional, not a code face). auth.css loads after
+   overhaul.css, so these equal-specificity `.iml-term-*` rules outrank
+   `.empty-workspace-snippet__code`; re-declare all three here with the
+   dashboard's tokens, matching the eyebrow styling of steps 1 & 2. */
 .empty-workspace-snippet__term .iml-term-bar .tl {
   display: inline-flex;
   align-items: center;
@@ -1149,6 +1152,11 @@ button.secondary.danger-action:hover:not(:disabled),
   /* `--r-sm` is auth-scoped and undefined on the dashboard, so this button was
      rendering square; pin its intended 4px so all three Copy controls match. */
   border-radius: var(--r-sm, 4px);
+}
+/* Re-assert the code face/metrics for the snippet body: bare `.iml-term-body`
+   (auth.css) otherwise wins the tie and drops to the inherited Inter UI font. */
+.empty-workspace-snippet__term .iml-term-body {
+  font: 500 var(--fs-body)/1.65 var(--snippet-code-face);
 }
 .empty-workspace-snippet__code {
   padding: 14px 16px;
