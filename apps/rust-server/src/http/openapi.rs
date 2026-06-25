@@ -36,8 +36,8 @@ use uuid::Uuid;
 use crate::domain::{
     AbortArtifactUploadRequest, AdminApiKeySummary, AdminBillingSummary, AdminDataCellRouteCounts,
     AdminDataCellSummary, AdminDataCellsResponse, AdminOrgCounts, AdminOrganizationSummary,
-    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminRiskItem,
-    AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
+    AdminOverviewQuerySummary, AdminOverviewResponse, AdminOverviewTotals, AdminPlanChangeRequest,
+    AdminRiskItem, AdminStorageSummary, AdminUsageGauge, AdminUserIdentity, AdminUserOrgMembership,
     AdminUserSummary, ArtifactAliasRow, ArtifactCollectionInput, ArtifactCollectionRow,
     ArtifactEdgeRow, ArtifactManifestEntriesRecord, ArtifactManifestEntryRow, ArtifactUploadFile,
     ArtifactUploadSessionRow, ArtifactVersionRow, AttributeInput, AttributeRow, AuthSessionPayload,
@@ -1011,6 +1011,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::admin::admin_overview,
         crate::http::handlers::admin::admin_data_cells,
         crate::http::handlers::admin::admin_record_data_cell_backup,
+        crate::http::handlers::admin::admin_change_plan,
         // orgs / users
         crate::http::handlers::orgs::create_user,
         crate::http::handlers::orgs::list_users,
@@ -1219,6 +1220,7 @@ impl Modify for SecurityAddon {
         AdminDataCellSummary,
         AdminDataCellRouteCounts,
         AdminBillingSummary,
+        AdminPlanChangeRequest,
         // domain
         PublicArtifactRow,
         PublicArtifactCollectionRow,

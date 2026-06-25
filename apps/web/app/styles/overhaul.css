@@ -285,35 +285,6 @@
   font: 500 11px/1.25 var(--font-mono);
   color: var(--faint);
 }
-/* Tags + note are reveal-on-attention to keep rows dense while scanning. */
-.workspace-run-tags,
-.workspace-run-note {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  transition: opacity 0.14s ease;
-  margin: 0;
-}
-.workspace-run-row:hover .workspace-run-tags,
-.workspace-run-row:focus-visible .workspace-run-tags,
-.workspace-run-row.selected .workspace-run-tags,
-.workspace-run-row:hover .workspace-run-note,
-.workspace-run-row:focus-visible .workspace-run-note,
-.workspace-run-row.selected .workspace-run-note {
-  max-height: 60px;
-  opacity: 1;
-  margin-top: 5px;
-}
-.workspace-run-tags b {
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  color: var(--text-2);
-  font: 500 10.5px/1 var(--font-mono);
-  padding: 3px 6px;
-}
-.workspace-run-note { font: 500 11px/1.35 var(--font-sans); color: var(--muted); }
-
 .workspace-run-footer {
   flex-shrink: 0;
   border-top: 1px solid var(--line-soft);
@@ -434,7 +405,7 @@ select:focus,
 input:focus,
 textarea:focus {
   border-color: var(--accent-line);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-soft);
 }
 
 /* Accent eyebrow used by PageHead and analysis headers. */
@@ -1093,19 +1064,49 @@ button.secondary.danger-action:hover:not(:disabled),
 }
 .empty-workspace-snippet__term {
   margin: 0;
+  border-radius: calc(var(--radius) - 2px);
+  overflow: hidden;
 }
+/* The shared `.iml-term-*` rules live in auth.css and resolve `var(--f-mono)`,
+   a font token only defined under `.iml-auth`/`.iml-landing`. On the dashboard
+   that token is missing, so those `font:` shorthands are dropped — which left
+   the title at the default ~16px (too large) and the copy button unstyled.
+   Re-declare both with the dashboard's `--font-*` tokens, matching the eyebrow
+   styling of steps 1 & 2. */
 .empty-workspace-snippet__term .iml-term-bar .tl {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font: 700 11px/1 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.empty-workspace-snippet__term .iml-copy {
+  font: 600 11px/1 var(--font-mono);
 }
 .empty-workspace-snippet__code {
   padding: 14px 16px;
-  font: 500 12.5px/1.65 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  color: #e0e3d8;
+  font: 500 12.5px/1.65 var(--font-mono);
+  color: var(--text-2);
   white-space: pre;
   overflow-x: auto;
   margin: 0;
+  /* Syntax palette — light defaults; dark overridden below. */
+  --syn-kw: #8839ef;
+  --syn-str: #0e7a4b;
+  --syn-num: #9c6f10;
+  --syn-fn: #1f6feb;
+  --syn-bi: #0a7d6b;
+  --syn-com: var(--faint);
+  --syn-punct: var(--muted);
+}
+:root[data-theme="dark"] .empty-workspace-snippet__code {
+  --syn-kw: #c792ea;
+  --syn-str: #7fd692;
+  --syn-num: #f0b86e;
+  --syn-fn: #82aaff;
+  --syn-bi: #5ccfb0;
 }
 .empty-workspace-snippet__code code {
   font: inherit;
@@ -1113,6 +1114,13 @@ button.secondary.danger-action:hover:not(:disabled),
   background: transparent;
   padding: 0;
 }
+.empty-workspace-snippet__code .tok-kw { color: var(--syn-kw); }
+.empty-workspace-snippet__code .tok-str { color: var(--syn-str); }
+.empty-workspace-snippet__code .tok-num { color: var(--syn-num); }
+.empty-workspace-snippet__code .tok-fn { color: var(--syn-fn); }
+.empty-workspace-snippet__code .tok-bi { color: var(--syn-bi); }
+.empty-workspace-snippet__code .tok-com { color: var(--syn-com); font-style: italic; }
+.empty-workspace-snippet__code .tok-punct { color: var(--syn-punct); }
 .empty-workspace-snippet__copy-key:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -2349,37 +2357,6 @@ button.secondary.danger-action:hover:not(:disabled),
   background: radial-gradient(circle at center, var(--accent) 0 42%, transparent 46%);
 }
 
-/* Tags + note: reveal on attention only (dense scanning) */
-.workspace-run-tags,
-.workspace-run-note {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  margin: 0;
-  transition: opacity 0.14s ease;
-}
-.workspace-run-row:hover .workspace-run-tags,
-.workspace-run-row:focus-within .workspace-run-tags,
-.workspace-run-row.selected .workspace-run-tags,
-.workspace-run-row:hover .workspace-run-note,
-.workspace-run-row:focus-within .workspace-run-note,
-.workspace-run-row.selected .workspace-run-note {
-  max-height: 48px;
-  opacity: 1;
-  margin-top: 5px;
-}
-.workspace-run-tags b,
-.workspace-run-tags em {
-  max-width: none;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text-2);
-  font: 500 10.5px/1 var(--font-mono);
-  font-style: normal;
-  padding: 3px 6px;
-}
-.workspace-run-note { color: var(--muted); font: 500 11px/1.35 var(--font-sans); }
 .workspace-run-main strong { font: 600 12.5px/1.2 var(--font-mono); letter-spacing: -0.01em; color: var(--text); }
 .workspace-run-main small { font: 500 11px/1.25 var(--font-mono); color: var(--faint); }
 
@@ -2989,13 +2966,6 @@ button.compare-row-head.active {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
-  /* keep reveal end-states usable without the transition */
-  .workspace-run-row:hover .workspace-run-tags,
-  .workspace-run-row:focus-within .workspace-run-tags,
-  .workspace-run-row.selected .workspace-run-tags,
-  .workspace-run-row:hover .workspace-run-note,
-  .workspace-run-row:focus-within .workspace-run-note,
-  .workspace-run-row.selected .workspace-run-note { max-height: 48px; opacity: 1; }
 }
 
 /* P0 dark leak: invalid metric-filter input went near-white */
@@ -3006,10 +2976,8 @@ button.compare-row-head.active {
   color: var(--text);
 }
 
-/* One chip system — consolidate the 4 drifted variants to the token spec */
+/* One chip system — consolidate the drifted variants to the token spec */
 .chip,
-.workspace-run-tags b,
-.workspace-run-tags em,
 .run-workspace-meta .chip,
 .compare-tag-list .chip,
 .workspace-run-topline .chip {
@@ -3026,7 +2994,6 @@ button.compare-row-head.active {
   letter-spacing: 0;
   white-space: nowrap;
 }
-.workspace-run-tags { gap: 4px; }
 
 /* Eyebrow size is uniformly 12px so dense mono labels stay readable. */
 .analysis-stat-strip .analysis-stat span,
@@ -3171,20 +3138,17 @@ button.compare-row-head.active {
   min-height: 70px;
 }
 .workspace-run-list {
-  grid-auto-rows: minmax(76px, max-content);
+  /* Fixed-size rows (content-based, uniform); a fixed px min would collapse +
+   * clip inside this scrolling container. Floor comes from row min-height. */
+  grid-auto-rows: minmax(min-content, max-content);
 }
 .workspace-run-body {
   gap: 3px;
 }
-.workspace-run-body small,
-.workspace-run-note {
+.workspace-run-body small {
   font-size: var(--fs-data);
   line-height: 1.35;
   color: var(--text-2);
-}
-.workspace-run-tags b,
-.workspace-run-tags em {
-  font-size: var(--fs-data);
 }
 .workspace-run-row.selected .workspace-run-select { background: transparent; }
 .workspace-run-row.selected::after { z-index: 1; }
@@ -3246,42 +3210,6 @@ button.compare-row-head.active {
 .system-metrics-card .table-wrap { max-height: 60vh; overflow: auto; }
 @media (max-width: 1100px) { .system-identity { grid-template-columns: repeat(2, 1fr); } }
 
-/* Open affordance — appears on hover so it's clear the body opens the run */
-.workspace-run-open { position: relative; }
-.workspace-run-open-hint {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-end: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin: auto 0;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font: 600 10px/1 var(--font-mono);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0;
-  transform: translateX(4px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  pointer-events: none;
-}
-.workspace-run-open:hover .workspace-run-open-hint,
-.workspace-run-open:focus-visible .workspace-run-open-hint {
-  opacity: 1;
-  transform: translateX(0);
-}
-/* The hint is absolutely positioned over the right of the row; without
- * this it sits on top of the run name/project text. Reserve its width on
- * the body (only while it's shown) so the name ellipsis-truncates clear
- * of it instead of running underneath. */
-.workspace-run-open:hover .workspace-run-body,
-.workspace-run-open:focus-visible .workspace-run-body {
-  padding-inline-end: 70px;
-}
 
 /* ── Compare metric-columns strip: add-all / reset affordances ─────────── */
 .compare-metric-strip-actions {
@@ -3347,4 +3275,86 @@ button.crumb-project {
 
 .admin-hint code {
   font-size: 11.5px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Run rail card — readability pass (2026-06-24)
+ * The 270px rail crammed the name, status, metric, tags, and note onto rigid
+ * nowrap lines: the metric label collapsed to "retu…", tags were clipped
+ * mid-word, the select dot floated detached in the vertical middle, and a lit
+ * row read as a flat gray overlay. These are all zero-height-cost fixes — the
+ * row's bounded min/max height (kept readable for the rail) is unchanged.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+/* Line the select dot up with the title row instead of centering it down the
+ * full card height (where it looked detached from the content above it). */
+.workspace-run-select {
+  align-items: start;
+  padding-top: 10px;
+}
+
+/* Shrink the card text a step so more of each field fits on the rail's narrow
+ * line — the name and the metric label + value read instead of collapsing to
+ * truncated stubs. */
+.workspace-run-body strong { font-size: 12px; }
+.workspace-run-body small { font-size: var(--fs-label); }
+
+/* Evidence row: the status chip and the metric chip share one line. The metric
+ * label stays (so a bare number isn't context-free) but yields first when space
+ * is tight; the value is protected and uses tabular figures. */
+.workspace-run-evidence { gap: 5px; margin-top: 1px; overflow: visible; }
+.workspace-run-status,
+.workspace-run-metric-chip { font-size: 10px; height: 18px; padding: 2px 6px; }
+/* Center the status label within the chip (its line-height:1 otherwise sits
+ * the glyphs high in the fixed-height pill). */
+.workspace-run-status {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.workspace-run-metric-chip {
+  flex: 0 1 auto;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.workspace-run-metric-chip .wrm-name { color: var(--muted); }
+
+/* A lit row reads as an intentional, branded tint with a soft accent edge —
+ * not a flat gray wash. Hover is the lightest; the chart cross-highlight is a
+ * touch stronger with a solid edge; selected stays the strongest state and
+ * keeps its own accent bar (so hovering a selected row doesn't wash it out). */
+.workspace-run-row:hover {
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+  box-shadow: inset 2px 0 0 var(--accent-line);
+}
+.workspace-run-row.is-highlighted {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.workspace-run-row.selected:hover {
+  background: var(--surface-selected);
+  box-shadow: none;
+}
+
+/* Stopping a run is rare, so the control stays quiet — a small, faint icon
+ * (no permanent red box) that only resolves to danger red on hover/focus. */
+.workspace-run-stop {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 4px 0 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--faint);
+  opacity: 0.5;
+  transition: color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+.workspace-run-row:hover .workspace-run-stop { opacity: 0.8; }
+.workspace-run-stop:hover,
+.workspace-run-stop:focus-visible {
+  color: var(--danger);
+  background: var(--danger-soft);
+  opacity: 1;
 }

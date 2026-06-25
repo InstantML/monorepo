@@ -185,8 +185,8 @@
 }
 
 .select-trigger:focus {
-  border-color: rgba(43, 224, 130, 0.55);
-  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.14);
+  border-color: rgba(43, 224, 130, 0.4);
+  box-shadow: 0 0 0 1px rgba(43, 224, 130, 0.12);
 }
 
 .select-trigger:disabled {

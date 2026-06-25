@@ -515,6 +515,104 @@ dd {
   overflow-wrap: anywhere;
 }
 
+.plan-list {
+  display: grid;
+  gap: 10px;
+}
+
+.plan-row {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px;
+}
+
+.plan-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.plan-row-head span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.plan-row-head strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.plan-row-head small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.plan-badge {
+  flex-shrink: 0;
+  align-self: flex-start;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  text-transform: capitalize;
+}
+
+.plan-row-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.plan-row-controls select {
+  flex: 1;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.plan-row-controls button {
+  min-height: 32px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 14px;
+}
+
+.plan-row-controls button:disabled {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.plan-row-status {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tone, var(--muted));
+}
+
+.plan-row-status.tone-good {
+  --tone: var(--good);
+}
+
+.plan-row-status.tone-danger {
+  --tone: var(--danger);
+}
+
 .usage-stack {
   display: grid;
   gap: 10px;

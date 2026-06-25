@@ -66,6 +66,28 @@ pub async fn record_data_cell_backup(
     Ok(build_admin_data_cells(&data, now))
 }
 
+/// Operator action: change an organization's plan tier from the admin console
+/// and return its refreshed summary so the UI can update in place.
+pub async fn admin_change_org_plan(
+    store: &Store,
+    org_id: Uuid,
+    plan_tier: Option<&str>,
+    data_counts_available: bool,
+) -> AppResult<AdminOrganizationSummary> {
+    operator_set_org_plan(store, org_id, plan_tier).await?;
+    let data = store.data.lock().await;
+    let org = data
+        .organizations
+        .get(&org_id)
+        .ok_or_else(|| AppError::not_found("organization not found"))?;
+    Ok(organization_summary(
+        &data,
+        org,
+        data_counts_available,
+        Utc::now(),
+    ))
+}
+
 fn build_admin_data_cells(data: &StoreData, now: DateTime<Utc>) -> AdminDataCellsResponse {
     let counts_by_cell = route_counts_by_cell(data);
     let mut data_cells = data
@@ -653,6 +675,7 @@ fn user_summary(data: &StoreData, user: &UserRow) -> AdminUserSummary {
                 .map(|org| AdminUserOrgMembership {
                     org_id: org.id,
                     org_name: org.name.clone(),
+                    plan_tier: org.plan_tier.clone(),
                     role: membership.role.clone(),
                     status: membership.status.clone(),
                 })

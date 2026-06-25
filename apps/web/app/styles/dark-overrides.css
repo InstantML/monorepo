@@ -216,10 +216,20 @@
 
 :root[data-theme="dark"] .workspace-canvas,
 :root[data-theme="dark"] .workspace-panel-toolbar,
-:root[data-theme="dark"] .workspace-run-row:hover,
 :root[data-theme="dark"] .quick-search-row:hover,
 :root[data-theme="dark"] .quick-search-row.active {
   background: #0a0c09;
+}
+
+/* A hovered run row reads as a branded green-tinted lift with an accent edge,
+ * not a flat near-black wash. Selected stays dominant when also hovered. */
+:root[data-theme="dark"] .workspace-run-row:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  box-shadow: inset 2px 0 0 var(--accent-line);
+}
+:root[data-theme="dark"] .workspace-run-row.selected:hover {
+  background: rgba(43, 224, 130, 0.075);
+  box-shadow: inset 1px 0 0 rgba(84, 240, 160, 0.22);
 }
 
 :root[data-theme="dark"] .workspace-panel-toolbar {
@@ -255,9 +265,7 @@
   box-shadow: inset 0 0 0 3px var(--surface);
 }
 
-:root[data-theme="dark"] .section-title-button span,
-:root[data-theme="dark"] .workspace-run-tags b,
-:root[data-theme="dark"] .workspace-run-tags em {
+:root[data-theme="dark"] .section-title-button span {
   border-color: var(--line);
   background: var(--surface-soft);
 }
@@ -544,8 +552,8 @@
 :root[data-theme="dark"] input:focus,
 :root[data-theme="dark"] select:focus,
 :root[data-theme="dark"] textarea:focus {
-  border-color: rgba(84, 240, 160, 0.62);
-  box-shadow: 0 0 0 3px rgba(43, 224, 130, 0.2);
+  border-color: rgba(84, 240, 160, 0.45);
+  box-shadow: 0 0 0 1px rgba(43, 224, 130, 0.16);
 }
 
 /* Range sliders carry their focus glow on the thumb, so keep the control

@@ -514,17 +514,6 @@
     flex-wrap: wrap;
     gap: 6px;
   }
-  /* Hover hint isn't reachable on touch; show a static chevron instead. */
-  .workspace-run-open-hint {
-    position: static;
-    opacity: 1;
-    transform: none;
-    margin-inline-start: auto;
-  }
-  .workspace-run-open:hover .workspace-run-body,
-  .workspace-run-open:focus-visible .workspace-run-body {
-    padding-inline-end: 0;
-  }
 
   /* Panels and drawer */
   .panel-drawer,

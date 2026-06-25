@@ -20,7 +20,12 @@ test("run rail hover surfaces tags and notes, not just the name", () => {
   assert.match(helper, /Note:/);
 
   const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
-  assert.match(workspaceSrc, /title=\{runRailTooltip\(run\)\}/);
+  // The hover text now feeds a styled custom tooltip (RunRailTooltip) and a
+  // data-rail-tooltip hook — tags + notes live there, not as inline chips, so
+  // the rows stay a fixed size.
+  assert.match(workspaceSrc, /const railTooltip = runRailTooltip\(run\)/);
+  assert.match(workspaceSrc, /data-rail-tooltip=\{railTooltip\}/);
+  assert.match(workspaceSrc, /<RunRailTooltip tip=\{railTip\} \/>/);
 });
 
 test("run rail identity dots use the shared chart palette", () => {

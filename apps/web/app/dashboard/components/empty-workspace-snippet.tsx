@@ -2,7 +2,7 @@
 
 import { ArrowRight, Check, Copy, Terminal } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 // First-run SDK snippet for the empty-workspace state. Three-step layout:
 // (1) pip install, (2) `instantml login` (device-code browser flow — the
@@ -20,8 +20,49 @@ import { useEffect, useState } from "react";
 
 const ONBOARDING_KEY_STORAGE = "instantml_onboarding_key";
 const ONBOARDING_KEY_STORAGE_TTL_MS = 10 * 60 * 1000;
-const PIP_LINE = "pip install --pre instantml";
+const PIP_LINE = "pip install instantml";
 const LOGIN_LINE = "instantml login";
+
+// Minimal Python tokenizer for syntax-highlighting the first-run snippet.
+// The snippet is fixed and small, so a regex scanner is plenty — we don't pull
+// in a highlighting dependency for a single read-only code block. Tokens map to
+// `.tok-*` classes styled in overhaul.css (`.empty-workspace-snippet__code`).
+const PY_KEYWORDS = new Set([
+  "import", "as", "for", "in", "from", "def", "return", "if", "else", "elif",
+  "while", "and", "or", "not", "is", "with", "None", "True", "False",
+]);
+const PY_BUILTINS = new Set(["range", "len", "print", "enumerate", "float", "int", "str", "list", "dict"]);
+const PY_TOKEN_RE =
+  /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*)|(\s+)|([^\sA-Za-z0-9_]+)/g;
+
+function highlightPython(code: string): ReactNode[] {
+  const out: ReactNode[] = [];
+  let key = 0;
+  let match: RegExpExecArray | null;
+  PY_TOKEN_RE.lastIndex = 0;
+  while ((match = PY_TOKEN_RE.exec(code))) {
+    const [, comment, str, num, ident, ws, punct] = match;
+    if (comment != null) {
+      out.push(<span key={key++} className="tok-com">{comment}</span>);
+    } else if (str != null) {
+      out.push(<span key={key++} className="tok-str">{str}</span>);
+    } else if (num != null) {
+      out.push(<span key={key++} className="tok-num">{num}</span>);
+    } else if (ident != null) {
+      const callsAhead = /^\s*\(/.test(code.slice(PY_TOKEN_RE.lastIndex));
+      let cls: string | null = null;
+      if (PY_KEYWORDS.has(ident)) cls = "tok-kw";
+      else if (PY_BUILTINS.has(ident)) cls = "tok-bi";
+      else if (callsAhead) cls = "tok-fn";
+      out.push(cls ? <span key={key++} className={cls}>{ident}</span> : <span key={key++}>{ident}</span>);
+    } else if (ws != null) {
+      out.push(ws);
+    } else {
+      out.push(<span key={key++} className="tok-punct">{punct}</span>);
+    }
+  }
+  return out;
+}
 
 const CLEAN_SNIPPET = [
   "import instantml as im",
@@ -153,7 +194,7 @@ export function EmptyWorkspaceSnippet({ orgName }: { orgName: string }) {
             {copied === "snippet" ? "Copied" : "Copy"}
           </button>
         </div>
-        <pre className="iml-term-body empty-workspace-snippet__code"><code>{CLEAN_SNIPPET}</code></pre>
+        <pre className="iml-term-body empty-workspace-snippet__code"><code>{highlightPython(CLEAN_SNIPPET)}</code></pre>
       </div>
 
       <footer className="empty-workspace-snippet__foot">
