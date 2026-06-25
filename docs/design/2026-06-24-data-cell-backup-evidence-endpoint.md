@@ -1,4 +1,4 @@
-# Design: Operator endpoint to record data-cell backup evidence
+# Design: Data-cell backup-evidence — operator endpoint and gate opt-out
 
 Date: 2026-06-24
 
@@ -29,6 +29,18 @@ write.
 The smallest useful version: a bootstrap-authenticated `POST` that stamps
 `last_backup_at = now()` for one existing cell and returns the refreshed
 registry.
+
+A follow-on observation drove a second, complementary change. The current
+hosted deployment self-hosts ClickHouse on a single GCE VM and has no backup
+regime at all, so no app component can truthfully record backup evidence;
+recording a timestamp would assert a backup that never happened. The chosen
+operational fix for that deployment is scheduled GCE disk snapshots (a real
+backup the app cannot observe). To avoid asserting false evidence, this design
+also adds an explicit opt-out, `INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE`
+(default `true`), that disables only the backup-freshness placement gate when
+backups are owned outside the app. The endpoint and the opt-out are independent:
+use the endpoint when an app-recorded backup signal exists; use the opt-out when
+backups are external.
 
 ## Goals
 
@@ -66,13 +78,18 @@ to keep `last_backup_at` within the freshness window so placement stays open.
   `admin_record_data_cell_backup`) is guarded by `require_strict_bootstrap`,
   takes `cell_id` as a path param and optional `environment` query param, and
   returns the refreshed registry.
+- `ControlDb` carries a `require_data_cell_backup_evidence` flag, set from
+  `INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE` (default `true`) and passed into
+  `ensure_eligible_cell`, which skips only the backup-freshness check when the
+  flag is `false`. The open/health/capacity checks are unaffected.
 
 ## Component Impact
 
 Backend:
 
 - New control_repo method, store function, admin handler, route, and OpenAPI
-  registration.
+  registration; a `ControlDb` backup-evidence policy flag threaded into
+  `ensure_eligible_cell`.
 
 Frontend:
 
@@ -135,7 +152,10 @@ relax the gate (see Alternatives), which would change safety defaults.
 - control_repo `#[sqlx::test]`: heartbeat leaves `last_backup_at` null; recording
   evidence persists the timestamp and bumps `updated_at`; missing cell id and
   mismatched environment return `None`. (Added.)
-- Existing placement tests already cover the fail-closed gate this clears.
+- control_repo `#[sqlx::test]`: with the gate disabled, a cell with a null
+  backup still accepts placement. (Added.)
+- Existing placement tests (`missing_/stale_/future_cell_backup_blocks_placement`)
+  still cover the fail-closed gate under the default (`true`).
 
 ## Documentation Plan
 
@@ -143,13 +163,18 @@ relax the gate (see Alternatives), which would change safety defaults.
 
 ## Alternatives Considered
 
-- **Relax the gate** (skip backup freshness when no backup policy is configured):
-  rejected as the default-changing path; it weakens a documented safety gate and
-  is better expressed, if ever needed, as an explicit operator config decision.
+- **Relax the gate unconditionally / by default**: rejected as default-changing;
+  it silently weakens a documented safety gate for every deployment. Instead the
+  relaxation is an explicit opt-out env flag defaulting to the safe behavior.
+- **Implicit "null backup allows, stale backup fails"**: rejected as too clever;
+  it would silently let a deployment that intends backups place orgs even if the
+  recorder never once succeeded. An explicit operator decision is clearer.
 - **Auto-stamp backups in the heartbeat**: rejected — the data service has no
   knowledge that a real backup occurred; this would record false evidence.
 
 ## Decision
 
-Accepted. Implemented as the operator endpoint above; the fail-closed placement
-gate is unchanged.
+Accepted. Two complementary mechanisms: (1) the operator endpoint to record
+real backup evidence, and (2) `INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE`
+(default `true`) to disable only the backup-freshness gate when backups are
+owned outside the app. The gate's closed/stale-health/full checks are unchanged.

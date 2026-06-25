@@ -1028,7 +1028,13 @@ impl ControlDb {
         if effective.cell_id.is_none() {
             if let Some(placement) = placement {
                 if route_is_managed_cell_candidate(&effective) {
-                    ensure_eligible_cell(&mut tx, placement, route.org_id).await?;
+                    ensure_eligible_cell(
+                        &mut tx,
+                        placement,
+                        route.org_id,
+                        self.require_data_cell_backup_evidence(),
+                    )
+                    .await?;
                     effective.cell_id = Some(placement.cell_id.clone());
                     effective.placement_reason = Some(placement.reason.clone());
                     effective.assigned_at = Some(Utc::now());
@@ -1515,6 +1521,7 @@ async fn ensure_eligible_cell(
     tx: &mut Transaction<'_, Postgres>,
     placement: &TenantRoutePlacement,
     org_id: Uuid,
+    require_backup_evidence: bool,
 ) -> AppResult<()> {
     let Some(cell) = sqlx::query_as::<_, DataCellRowDb>(
         "SELECT cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
@@ -1548,7 +1555,9 @@ async fn ensure_eligible_cell(
             cell.cell_id
         )));
     }
-    if data_cell_timestamp_is_not_fresh(now, cell.last_backup_at, DATA_CELL_BACKUP_MAX_AGE_SECS) {
+    if require_backup_evidence
+        && data_cell_timestamp_is_not_fresh(now, cell.last_backup_at, DATA_CELL_BACKUP_MAX_AGE_SECS)
+    {
         return Err(AppError::service_unavailable(format!(
             "data cell {} has no recent backup",
             cell.cell_id

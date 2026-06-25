@@ -831,6 +831,28 @@ async fn missing_cell_backup_blocks_placement(pool: PgPool) {
 }
 
 #[sqlx::test]
+async fn backup_gate_opt_out_allows_unbacked_cell(pool: PgPool) {
+    // With the backup-evidence gate disabled (backups handled outside the app),
+    // a cell with no backup timestamp still accepts placement.
+    let db = ControlDb::from_pool(pool).with_require_data_cell_backup_evidence(false);
+    let mut cell = data_cell("free-us-central1-a", Some(1));
+    cell.last_backup_at = None;
+    db.upsert_data_cell(&cell).await.unwrap();
+    let o = org("backup-opt-out", None);
+    db.upsert_org(&o).await.unwrap();
+
+    let stored = db
+        .upsert_tenant_route_with_placement(
+            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
+            Some(&placement("free-us-central1-a")),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stored.cell_id.as_deref(), Some("free-us-central1-a"));
+    assert_eq!(db.load_tenant_routes().await.unwrap().len(), 1);
+}
+
+#[sqlx::test]
 async fn stale_cell_backup_blocks_placement(pool: PgPool) {
     let db = ControlDb::from_pool(pool);
     let mut cell = data_cell("free-us-central1-a", Some(1));
