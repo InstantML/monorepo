@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::HeaderMap,
     Json,
 };
@@ -72,4 +72,32 @@ pub async fn admin_data_cells(
 ) -> AppResult<Json<crate::domain::AdminDataCellsResponse>> {
     require_strict_bootstrap(&state, &headers)?;
     Ok(Json(store::admin_data_cells(&state.store).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/data-cells/{cell_id}/backup",
+    tag = "admin",
+    params(
+        ("cell_id" = String, Path, description = "Data-cell identifier to record backup evidence for"),
+        ("environment" = Option<String>, Query, description = "Cell environment; defaults to this service's configured environment"),
+    ),
+    security(("bootstrapToken" = [])),
+    responses(
+        (status = 200, description = "Backup evidence recorded; returns the refreshed data-cell registry", body = crate::domain::AdminDataCellsResponse),
+        (status = 401, description = "Bootstrap token required", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Data cell not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn admin_record_data_cell_backup(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(cell_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<crate::domain::AdminDataCellsResponse>> {
+    require_strict_bootstrap(&state, &headers)?;
+    Ok(Json(
+        store::record_data_cell_backup(&state.store, query.get("environment").cloned(), &cell_id)
+            .await?,
+    ))
 }

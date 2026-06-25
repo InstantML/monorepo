@@ -31,21 +31,22 @@ pub(crate) mod writer_lease;
 
 use handlers::{
     abort_artifact_upload, accept_invitation, admin_data_cells, admin_overview,
-    append_import_chunk, artifact_version_lineage, auth_clerk, auth_config, auth_dev_google,
-    auth_logout, auth_session, auth_switch_organization, billing_add_seat, billing_cancel,
-    billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
-    billing_report_storage_overage, billing_report_usage_overage, billing_status, billing_webhook,
-    cancel_import_job, commit_import_job, complete_artifact_upload, create_api_key,
-    create_artifact, create_artifact_input_edge, create_attributes, create_current_user_org,
-    create_customer_clickhouse_connection, create_import_job, create_invitation, create_object,
-    create_org, create_project, create_report, create_run, create_user, create_workspace_view,
-    customer_clickhouse_connection_status, delete_artifact_alias, delete_artifact_version,
-    delete_report, delete_workspace_view, device_code_confirm, device_code_poll, device_code_start,
-    disable_service_account, download_artifact, download_artifact_entry, export_data,
-    export_report_markdown, export_workspace_view, fork_run, get_artifact_collection,
-    get_artifact_version, get_dashboard_preferences, get_import_job, get_metrics, get_report,
-    get_report_by_share_token, get_run, get_run_lineage, get_workspace_view, health, import_mlflow,
-    import_neptune, import_wandb, import_workspace_view, initiate_artifact_upload, list_api_keys,
+    admin_record_data_cell_backup, append_import_chunk, artifact_version_lineage, auth_clerk,
+    auth_config, auth_dev_google, auth_logout, auth_session, auth_switch_organization,
+    billing_add_seat, billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync,
+    billing_portal, billing_report_storage_overage, billing_report_usage_overage, billing_status,
+    billing_webhook, cancel_import_job, commit_import_job, complete_artifact_upload,
+    create_api_key, create_artifact, create_artifact_input_edge, create_attributes,
+    create_current_user_org, create_customer_clickhouse_connection, create_import_job,
+    create_invitation, create_object, create_org, create_project, create_report, create_run,
+    create_user, create_workspace_view, customer_clickhouse_connection_status,
+    delete_artifact_alias, delete_artifact_version, delete_report, delete_workspace_view,
+    device_code_confirm, device_code_poll, device_code_start, disable_service_account,
+    download_artifact, download_artifact_entry, export_data, export_report_markdown,
+    export_workspace_view, fork_run, get_artifact_collection, get_artifact_version,
+    get_dashboard_preferences, get_import_job, get_metrics, get_report, get_report_by_share_token,
+    get_run, get_run_lineage, get_workspace_view, health, import_mlflow, import_neptune,
+    import_wandb, import_workspace_view, initiate_artifact_upload, list_api_keys,
     list_artifact_collection_versions, list_artifact_collections, list_artifact_manifest,
     list_artifacts, list_attributes, list_console_logs, list_imports, list_invitations,
     list_object_rows, list_objects, list_org_memberships, list_org_panels, list_orgs,
@@ -163,6 +164,10 @@ fn control_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/api/admin/overview", get(admin_overview))
         .route("/api/admin/data-cells", get(admin_data_cells))
+        .route(
+            "/api/admin/data-cells/:cell_id/backup",
+            post(admin_record_data_cell_backup),
+        )
         .route("/api/auth/dev/google", post(auth_dev_google))
         .route("/api/auth/clerk", post(auth_clerk))
         .route("/api/auth/session", get(auth_session))

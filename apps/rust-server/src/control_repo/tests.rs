@@ -334,6 +334,43 @@ async fn data_cell_heartbeat_registers_missing_cell_and_preserves_operator_field
 }
 
 #[sqlx::test]
+async fn record_data_cell_backup_sets_evidence_and_reports_missing_cell(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+
+    // Heartbeat auto-registration leaves backups unset, so placement would
+    // fail closed until an operator records evidence.
+    let heartbeat = data_cell("free-us-central1-a", None);
+    let registered = db.heartbeat_data_cell(&heartbeat).await.unwrap();
+    assert_eq!(registered.last_backup_at, None);
+
+    // Recording evidence persists the timestamp and bumps updated_at.
+    let observed_at = db_time_now() + ChronoDuration::seconds(5);
+    let updated = db
+        .record_data_cell_backup("test", "free-us-central1-a", observed_at)
+        .await
+        .unwrap()
+        .expect("existing cell is updated");
+    assert_eq!(updated.last_backup_at, Some(observed_at));
+    assert_eq!(updated.updated_at, observed_at);
+
+    let loaded = db.load_data_cells().await.unwrap();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].last_backup_at, Some(observed_at));
+
+    // A missing cell id or mismatched environment reports None, not an error.
+    assert!(db
+        .record_data_cell_backup("test", "does-not-exist", observed_at)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(db
+        .record_data_cell_backup("prod", "free-us-central1-a", observed_at)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[sqlx::test]
 async fn data_cell_writer_lease_acquires_renews_and_releases_by_fence_token(pool: PgPool) {
     let db = ControlDb::from_pool(pool);
     db.upsert_data_cell(&data_cell("free-us-central1-a", None))

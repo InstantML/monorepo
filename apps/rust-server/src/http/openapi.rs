@@ -1010,6 +1010,7 @@ impl Modify for SecurityAddon {
         // admin
         crate::http::handlers::admin::admin_overview,
         crate::http::handlers::admin::admin_data_cells,
+        crate::http::handlers::admin::admin_record_data_cell_backup,
         // orgs / users
         crate::http::handlers::orgs::create_user,
         crate::http::handlers::orgs::list_users,

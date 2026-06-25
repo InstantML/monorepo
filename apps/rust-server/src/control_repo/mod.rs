@@ -1171,6 +1171,35 @@ impl ControlDb {
         Ok(())
     }
 
+    /// Record operator-owned backup evidence for an existing data cell. The
+    /// auto-registration heartbeat never marks backups fresh, so placement
+    /// fails closed until an operator confirms a backup ran. Returns `None`
+    /// when no matching cell row exists.
+    pub async fn record_data_cell_backup(
+        &self,
+        environment: &str,
+        cell_id: &str,
+        observed_at: DateTime<Utc>,
+    ) -> AppResult<Option<DataCellRow>> {
+        let row = sqlx::query_as::<_, DataCellRowDb>(
+            "UPDATE data_cells SET last_backup_at = $3, updated_at = $3 \
+             WHERE environment = $1 AND cell_id = $2 \
+             RETURNING cell_id, environment, region, tier, status, service_name, public_api_base, \
+               internal_api_base, clickhouse_endpoint_secret_ref, clickhouse_username_secret_ref, \
+               clickhouse_password_secret_ref, clickhouse_database_mode, max_orgs, \
+               max_metric_points_monthly, max_api_requests_monthly, max_retained_bytes, \
+               max_disk_usage_pct, reserved_headroom_pct, last_health_at, last_backup_at, \
+               notes, created_at, updated_at",
+        )
+        .bind(environment)
+        .bind(cell_id)
+        .bind(observed_at)
+        .fetch_optional(self.pool())
+        .await
+        .map_err(|err| internal("record_data_cell_backup", err))?;
+        Ok(row.map(DataCellRow::from))
+    }
+
     pub async fn load_org_invitations(&self) -> AppResult<Vec<OrgInvitationRow>> {
         let rows = sqlx::query_as::<_, OrgInvitationRowDb>(
             "SELECT id, org_id, email, role, status, token_hash, previous_token_hashes, \

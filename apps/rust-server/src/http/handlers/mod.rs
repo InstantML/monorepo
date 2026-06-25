@@ -14,7 +14,7 @@ pub mod reports;
 pub mod runs;
 pub mod usage;
 
-pub(super) use admin::{admin_data_cells, admin_overview};
+pub(super) use admin::{admin_data_cells, admin_overview, admin_record_data_cell_backup};
 pub(super) use artifacts::{
     abort_artifact_upload, artifact_version_lineage, complete_artifact_upload, create_artifact,
     create_artifact_input_edge, delete_artifact_alias, delete_artifact_version, download_artifact,

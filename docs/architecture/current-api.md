@@ -258,6 +258,31 @@ Output:
 `admission_status` mirrors placement gates: `open`, `closed`, `full`,
 `stale_health`, or `stale_backup`.
 
+### `POST /api/admin/data-cells/{cell_id}/backup`
+
+Records operator-owned backup evidence (`last_backup_at = now()`) for an
+existing data cell, clearing the `stale_backup` placement gate. The
+auto-registration heartbeat refreshes health but never marks backups fresh, so a
+newly registered cell rejects placement (login and workspace creation return
+`503 service_unavailable`) until this is called. Intended to be wired into the
+backup process or a scheduler so the timestamp stays within the freshness window.
+
+Auth:
+
+- Requires `X-InstantML-Bootstrap-Token`.
+
+Parameters:
+
+- `cell_id` (path): data-cell identifier.
+- `environment` (query, optional): cell environment; defaults to this service's
+  configured environment.
+
+Output:
+
+- Returns the refreshed data-cell registry, identical in shape to
+  `GET /api/admin/data-cells`, so the caller sees the updated `admission_status`.
+- `404` when no matching cell row exists.
+
 ## Auth And Session
 
 ### `GET /api/auth/config`

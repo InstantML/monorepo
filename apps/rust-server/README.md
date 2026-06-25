@@ -380,7 +380,13 @@ rows and never marks backups fresh. Placement still fails closed when the
 matching row is closed, has stale health or backup evidence, or is full.
 Backup evidence is operator-owned; a timestamp more than five minutes in the
 future is treated as invalid so skewed manual writes cannot hold a cell open.
-Customer-owned ClickHouse routes are not assigned to managed data cells.
+Because the heartbeat never records backups, a freshly registered cell stays
+unbacked and rejects placement until an operator records evidence with
+`POST /api/admin/data-cells/{cell_id}/backup` (bootstrap-token auth). Wire this
+into the backup process or a scheduler so `last_backup_at` stays within the
+36h freshness window; otherwise login and workspace creation fail closed with a
+`503 service_unavailable`. Customer-owned ClickHouse routes are not assigned to
+managed data cells.
 
 Hosted split data services also acquire a Postgres-backed
 `data_cell_writer_leases` row before accepting route-classified tenant-data
