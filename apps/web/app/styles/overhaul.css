@@ -2095,6 +2095,7 @@ button.secondary.danger-action:hover:not(:disabled),
 
 .admin-form-row input {
   width: 100%;
+  font-size: var(--fs-data);
 }
 
 /* Billing actions are a row of buttons, not a labeled input grid — lay them out
