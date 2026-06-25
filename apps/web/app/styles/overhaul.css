@@ -1031,9 +1031,10 @@ button.secondary.danger-action:hover:not(:disabled),
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  /* Match the docs code face (`.docs-route-code code`), including the loaded
-     Spline Sans Mono face behind `--font-mono`. */
-  --snippet-code-face: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+  /* Use a conventional editor/terminal code face. The app's `--font-mono`
+     currently resolves to Spline Sans Mono, which is useful for branded data
+     labels but too rounded to make this Python snippet read like code. */
+  --snippet-code-face: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 .empty-workspace-snippet__head {
   display: grid;
