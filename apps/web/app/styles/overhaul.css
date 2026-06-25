@@ -1027,12 +1027,9 @@ button.secondary.danger-action:hover:not(:disabled),
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  /* Conventional editor/terminal monospace for everything code-shaped in this
-     card — the snippet, the pip/login commands, the footer chips, and the Copy
-     controls. The app's `--font-mono` (Spline Sans Mono) is a branded face for
-     data/labels; code reads more like code in a typical programmer mono. One
-     token keeps all of them in lockstep, so the Copy buttons match the box. */
-  --snippet-code-face: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* Match the docs code face (`.docs-route-code code`), including the loaded
+     Spline Sans Mono face behind `--font-mono`. */
+  --snippet-code-face: var(--font-mono, "SFMono-Regular", Consolas, monospace);
 }
 .empty-workspace-snippet__head {
   display: grid;
@@ -1063,16 +1060,58 @@ button.secondary.danger-action:hover:not(:disabled),
 }
 .empty-workspace-snippet__pip code {
   flex: 1;
-  font: 600 12.5px/1.4 var(--snippet-code-face);
+  font-weight: 600;
+  font-size: 12.5px;
+  line-height: 1.4;
+  font-family: var(--snippet-code-face);
   color: var(--text);
   background: transparent;
   padding: 0;
 }
-/* Steps 1 & 2 reuse the shared `.copy-button` (sans). Scope the code face onto
-   them so all three Copy controls match the snippet box — without touching the
-   global button used elsewhere. */
+/* Steps 1 & 2 reuse the shared `.copy-button`; step 3 uses the terminal-style
+   `.iml-copy`. Make all three read as one Copy control by matching that
+   compact terminal button box exactly. */
 .empty-workspace-snippet .copy-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 9px;
+  gap: 6px;
+  border-style: solid;
+  border-width: 1px;
+  border-color: var(--line-strong);
+  border-radius: var(--r-sm, 4px);
+  background: var(--surface-2);
+  box-shadow: none;
+  color: var(--text-2);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1;
   font-family: var(--snippet-code-face);
+  text-decoration: none;
+}
+.empty-workspace-snippet .copy-button:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+/* `dark-overrides.css` re-skins `.copy-button` globally; re-assert the grey
+   `.iml-copy` face for the snippet's three controls in dark (this file loads
+   after dark-overrides, so the equal-specificity tie resolves here). */
+:root[data-theme="dark"] .empty-workspace-snippet .copy-button {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+:root[data-theme="dark"] .empty-workspace-snippet .copy-button:hover {
+  color: var(--accent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 .empty-workspace-snippet__term {
   margin: 0;
@@ -1095,11 +1134,23 @@ button.secondary.danger-action:hover:not(:disabled),
   color: var(--accent);
 }
 .empty-workspace-snippet__term .iml-copy {
-  font: 600 11px/1 var(--snippet-code-face);
+  box-sizing: border-box;
+  height: 24px;
+  min-height: 24px;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1;
+  font-family: var(--snippet-code-face);
+  /* `--r-sm` is auth-scoped and undefined on the dashboard, so this button was
+     rendering square; pin its intended 4px so all three Copy controls match. */
+  border-radius: var(--r-sm, 4px);
 }
 .empty-workspace-snippet__code {
   padding: 14px 16px;
-  font: 500 12.5px/1.65 var(--snippet-code-face);
+  font-weight: 500;
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  font-family: var(--snippet-code-face);
   color: var(--text-2);
   white-space: pre;
   overflow-x: auto;
@@ -1160,7 +1211,10 @@ button.secondary.danger-action:hover:not(:disabled),
   max-width: 390px;
 }
 .empty-workspace-snippet__foot code {
-  font: 600 11.5px/1 var(--snippet-code-face);
+  font-weight: 600;
+  font-size: 11.5px;
+  line-height: 1;
+  font-family: var(--snippet-code-face);
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--surface-soft, var(--surface));

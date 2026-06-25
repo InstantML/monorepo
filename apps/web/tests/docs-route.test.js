@@ -93,6 +93,34 @@ test("first-run onboarding links to human and agent quickstart docs", async () =
   assert.match(emptyWorkspace, /paste[\s\S]*quickstart\.md[\s\S]*to your agent/);
 });
 
+test("first-run code snippet uses the same code font contract as docs", async () => {
+  const docsStyles = await readFile(path.join(webRoot, "app", "styles", "docs.css"), "utf8");
+  const dashboardStyles = await readFile(path.join(webRoot, "app", "styles", "overhaul.css"), "utf8");
+
+  assert.match(
+    docsStyles,
+    /\.docs-route-code code\s*\{[\s\S]*?font-family:\s*var\(--font-mono, "SFMono-Regular", Consolas, monospace\);[\s\S]*?font-size:\s*var\(--fs-body\);[\s\S]*?line-height:\s*1\.65;/,
+  );
+  assert.match(dashboardStyles, /--snippet-code-face:\s*var\(--font-mono, "SFMono-Regular", Consolas, monospace\);/);
+  assert.match(
+    dashboardStyles,
+    /\.empty-workspace-snippet__code\s*\{[\s\S]*?font-size:\s*var\(--fs-body\);[\s\S]*?line-height:\s*1\.65;[\s\S]*?font-family:\s*var\(--snippet-code-face\);/,
+  );
+});
+
+test("first-run copy buttons share the terminal copy button box", async () => {
+  const dashboardStyles = await readFile(path.join(webRoot, "app", "styles", "overhaul.css"), "utf8");
+
+  assert.match(
+    dashboardStyles,
+    /\.empty-workspace-snippet \.copy-button\s*\{[\s\S]*?height:\s*24px;[\s\S]*?min-height:\s*24px;[\s\S]*?padding:\s*0 9px;[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    dashboardStyles,
+    /\.empty-workspace-snippet__term \.iml-copy\s*\{[\s\S]*?height:\s*24px;[\s\S]*?min-height:\s*24px;/,
+  );
+});
+
 test("docs routes bypass Clerk proxy middleware", async () => {
   const proxy = await readFile(path.join(webRoot, "proxy.ts"), "utf8");
   assert.match(proxy, /_next/);
