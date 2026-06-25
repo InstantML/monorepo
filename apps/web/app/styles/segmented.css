@@ -60,6 +60,7 @@
 }
 
 .iml-segmented__option:hover {
+  background: transparent;
   color: var(--text);
 }
 
