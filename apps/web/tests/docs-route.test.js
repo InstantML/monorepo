@@ -93,15 +93,10 @@ test("first-run onboarding links to human and agent quickstart docs", async () =
   assert.match(emptyWorkspace, /paste[\s\S]*quickstart\.md[\s\S]*to your agent/);
 });
 
-test("first-run code snippet uses the same code font contract as docs", async () => {
-  const docsStyles = await readFile(path.join(webRoot, "app", "styles", "docs.css"), "utf8");
+test("first-run code snippet uses a conventional code font stack", async () => {
   const dashboardStyles = await readFile(path.join(webRoot, "app", "styles", "overhaul.css"), "utf8");
 
-  assert.match(
-    docsStyles,
-    /\.docs-route-code code\s*\{[\s\S]*?font-family:\s*var\(--font-mono, "SFMono-Regular", Consolas, monospace\);[\s\S]*?font-size:\s*var\(--fs-body\);[\s\S]*?line-height:\s*1\.65;/,
-  );
-  assert.match(dashboardStyles, /--snippet-code-face:\s*var\(--font-mono, "SFMono-Regular", Consolas, monospace\);/);
+  assert.match(dashboardStyles, /--snippet-code-face:\s*ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;/);
   assert.match(
     dashboardStyles,
     /\.empty-workspace-snippet__code\s*\{[\s\S]*?font-size:\s*var\(--fs-body\);[\s\S]*?line-height:\s*1\.65;[\s\S]*?font-family:\s*var\(--snippet-code-face\);/,
