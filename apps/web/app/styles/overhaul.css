@@ -387,14 +387,18 @@ button.secondary:hover,
  * global focus ring on buttons. Re-assert token-driven, theme-aware states
  * with matching specificity, appended last so these win. */
 button:focus-visible,
-.select-trigger:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
+.select-trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   box-shadow: none;
   border-color: var(--line-strong);
+}
+/* Form fields keep the quiet focus treatment even on keyboard focus, matching
+ * the mouse-focus `:focus` state below — the soft ring stays visible for a11y. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
 }
 button:hover {
   border-color: var(--line-strong);
