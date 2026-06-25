@@ -773,67 +773,23 @@ async fn stale_cell_health_blocks_placement(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn missing_cell_backup_blocks_placement(pool: PgPool) {
+async fn placement_ignores_missing_or_stale_backup(pool: PgPool) {
+    // Backups are owned outside the app (e.g. disk snapshots), so placement no
+    // longer gates on backup evidence: a cell with a null backup is eligible.
     let db = ControlDb::from_pool(pool);
     let mut cell = data_cell("free-us-central1-a", Some(1));
     cell.last_backup_at = None;
     db.upsert_data_cell(&cell).await.unwrap();
-    let o = org("missing-backup-cell", None);
+    let o = org("null-backup-cell", None);
     db.upsert_org(&o).await.unwrap();
 
-    let err = db
+    let stored = db
         .upsert_tenant_route_with_placement(
             &route(o.id, "ready", "https://free-us-central1-a.example.test"),
             Some(&placement("free-us-central1-a")),
         )
         .await
-        .unwrap_err();
-    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
-    assert!(db.load_tenant_routes().await.unwrap().is_empty());
-    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
-}
-
-#[sqlx::test]
-async fn stale_cell_backup_blocks_placement(pool: PgPool) {
-    let db = ControlDb::from_pool(pool);
-    let mut cell = data_cell("free-us-central1-a", Some(1));
-    cell.last_backup_at =
-        Some(db_time_now() - ChronoDuration::seconds(DATA_CELL_BACKUP_MAX_AGE_SECS + 1));
-    db.upsert_data_cell(&cell).await.unwrap();
-    let o = org("stale-backup-cell", None);
-    db.upsert_org(&o).await.unwrap();
-
-    let err = db
-        .upsert_tenant_route_with_placement(
-            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
-            Some(&placement("free-us-central1-a")),
-        )
-        .await
-        .unwrap_err();
-    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
-    assert!(db.load_tenant_routes().await.unwrap().is_empty());
-    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
-}
-
-#[sqlx::test]
-async fn future_cell_backup_blocks_placement(pool: PgPool) {
-    let db = ControlDb::from_pool(pool);
-    let mut cell = data_cell("free-us-central1-a", Some(1));
-    cell.last_backup_at = Some(
-        db_time_now() + ChronoDuration::seconds(DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS + 1),
-    );
-    db.upsert_data_cell(&cell).await.unwrap();
-    let o = org("future-backup-cell", None);
-    db.upsert_org(&o).await.unwrap();
-
-    let err = db
-        .upsert_tenant_route_with_placement(
-            &route(o.id, "ready", "https://free-us-central1-a.example.test"),
-            Some(&placement("free-us-central1-a")),
-        )
-        .await
-        .unwrap_err();
-    assert_eq!(err.status(), axum::http::StatusCode::SERVICE_UNAVAILABLE);
-    assert!(db.load_tenant_routes().await.unwrap().is_empty());
-    assert!(db.load_tenant_route_events().await.unwrap().is_empty());
+        .unwrap();
+    assert_eq!(stored.cell_id.as_deref(), Some("free-us-central1-a"));
+    assert_eq!(db.load_tenant_routes().await.unwrap().len(), 1);
 }

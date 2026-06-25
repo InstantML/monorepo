@@ -255,8 +255,9 @@ Output:
   ready/provisioning/failed route counts, assigned org count, and
   `admission_status`.
 
-`admission_status` mirrors placement gates: `open`, `closed`, `full`,
-`stale_health`, or `stale_backup`.
+`admission_status` mirrors placement gates: `open`, `closed`, `full`, or
+`stale_health`. Placement does not gate on backup freshness (backups are owned
+outside the app); `last_backup_at` is reported for visibility only.
 
 ## Auth And Session
 

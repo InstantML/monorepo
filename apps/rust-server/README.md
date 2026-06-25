@@ -375,12 +375,12 @@ Root helper-only environment variables:
 When `INSTANTML_CELL_ID` is set and Postgres control storage is configured, the
 Rust data service auto-registers and heartbeats a conservative `data_cells` row
 before placement. Operators can overwrite the row with richer metadata or
-close/drain it; the heartbeat only refreshes the health timestamp on existing
-rows and never marks backups fresh. Placement still fails closed when the
-matching row is closed, has stale health or backup evidence, or is full.
-Backup evidence is operator-owned; a timestamp more than five minutes in the
-future is treated as invalid so skewed manual writes cannot hold a cell open.
-Customer-owned ClickHouse routes are not assigned to managed data cells.
+close/drain it; the heartbeat refreshes the health timestamp on existing rows.
+Placement fails closed when the matching row is closed, has stale health, or is
+full. Placement does not gate on backup evidence: backups are owned outside the
+app (e.g. scheduled GCE disk snapshots), so `last_backup_at` is recorded for
+visibility only and never blocks placement. Customer-owned ClickHouse routes are
+not assigned to managed data cells.
 
 Hosted split data services also acquire a Postgres-backed
 `data_cell_writer_leases` row before accepting route-classified tenant-data

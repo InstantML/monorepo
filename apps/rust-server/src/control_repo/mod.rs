@@ -32,7 +32,6 @@ use crate::{
 /// Postgres SQLSTATE for a unique-constraint violation.
 const PG_UNIQUE_VIOLATION: &str = "23505";
 pub(crate) const DATA_CELL_HEALTH_MAX_AGE_SECS: i64 = 10 * 60;
-pub(crate) const DATA_CELL_BACKUP_MAX_AGE_SECS: i64 = 36 * 60 * 60;
 pub(crate) const DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS: i64 = 5 * 60;
 const CUSTOMER_CLICKHOUSE_PROVISIONER: &str = "customer-clickhouse";
 
@@ -1516,12 +1515,6 @@ async fn ensure_eligible_cell(
     if data_cell_timestamp_is_not_fresh(now, cell.last_health_at, DATA_CELL_HEALTH_MAX_AGE_SECS) {
         return Err(AppError::service_unavailable(format!(
             "data cell {} has no recent health check",
-            cell.cell_id
-        )));
-    }
-    if data_cell_timestamp_is_not_fresh(now, cell.last_backup_at, DATA_CELL_BACKUP_MAX_AGE_SECS) {
-        return Err(AppError::service_unavailable(format!(
-            "data cell {} has no recent backup",
             cell.cell_id
         )));
     }
