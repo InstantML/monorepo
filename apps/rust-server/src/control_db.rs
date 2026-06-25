@@ -21,28 +21,10 @@ static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 #[derive(Clone, Debug)]
 pub struct ControlDb {
     pool: PgPool,
-    require_data_cell_backup_evidence: bool,
 }
 
 pub const DEFAULT_CONTROL_DB_MAX_CONNECTIONS: u32 = 10;
 pub const CONTROL_DB_MAX_CONNECTIONS_ENV: &str = "CONTROL_DB_MAX_CONNECTIONS";
-
-/// Operator opt-out for the data-cell backup-evidence placement gate. Defaults
-/// to required so the safe behavior is preserved; deployments whose backups are
-/// handled outside the app (e.g. disk snapshots) set this to disable the gate
-/// rather than write a backup timestamp the app never verified.
-pub const REQUIRE_DATA_CELL_BACKUP_EVIDENCE_ENV: &str =
-    "INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE";
-
-fn require_data_cell_backup_evidence_from_env() -> bool {
-    match std::env::var(REQUIRE_DATA_CELL_BACKUP_EVIDENCE_ENV) {
-        Ok(value) => !matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "false" | "0" | "no" | "off"
-        ),
-        Err(_) => true,
-    }
-}
 
 impl ControlDb {
     /// Connect to the control-plane Postgres using `DATABASE_URL`.
@@ -62,35 +44,17 @@ impl ControlDb {
             .map_err(|err| {
                 AppError::internal(format!("control-plane postgres connect failed: {err}"))
             })?;
-        Ok(Some(Self {
-            pool,
-            require_data_cell_backup_evidence: require_data_cell_backup_evidence_from_env(),
-        }))
+        Ok(Some(Self { pool }))
     }
 
     /// Build directly from a pool. Used by tests that get an isolated database
     /// from `#[sqlx::test]`.
     pub fn from_pool(pool: PgPool) -> Self {
-        Self {
-            pool,
-            require_data_cell_backup_evidence: true,
-        }
+        Self { pool }
     }
 
     pub fn pool(&self) -> &PgPool {
         &self.pool
-    }
-
-    /// Whether placement requires a recent operator-owned backup timestamp on
-    /// the target cell. See [`REQUIRE_DATA_CELL_BACKUP_EVIDENCE_ENV`].
-    pub fn require_data_cell_backup_evidence(&self) -> bool {
-        self.require_data_cell_backup_evidence
-    }
-
-    #[cfg(test)]
-    pub fn with_require_data_cell_backup_evidence(mut self, value: bool) -> Self {
-        self.require_data_cell_backup_evidence = value;
-        self
     }
 
     /// Apply pending migrations. Idempotent; safe to call on every boot.

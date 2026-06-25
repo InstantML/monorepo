@@ -32,7 +32,6 @@ use crate::{
 /// Postgres SQLSTATE for a unique-constraint violation.
 const PG_UNIQUE_VIOLATION: &str = "23505";
 pub(crate) const DATA_CELL_HEALTH_MAX_AGE_SECS: i64 = 10 * 60;
-pub(crate) const DATA_CELL_BACKUP_MAX_AGE_SECS: i64 = 36 * 60 * 60;
 pub(crate) const DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS: i64 = 5 * 60;
 const CUSTOMER_CLICKHOUSE_PROVISIONER: &str = "customer-clickhouse";
 
@@ -1028,13 +1027,7 @@ impl ControlDb {
         if effective.cell_id.is_none() {
             if let Some(placement) = placement {
                 if route_is_managed_cell_candidate(&effective) {
-                    ensure_eligible_cell(
-                        &mut tx,
-                        placement,
-                        route.org_id,
-                        self.require_data_cell_backup_evidence(),
-                    )
-                    .await?;
+                    ensure_eligible_cell(&mut tx, placement, route.org_id).await?;
                     effective.cell_id = Some(placement.cell_id.clone());
                     effective.placement_reason = Some(placement.reason.clone());
                     effective.assigned_at = Some(Utc::now());
@@ -1492,7 +1485,6 @@ async fn ensure_eligible_cell(
     tx: &mut Transaction<'_, Postgres>,
     placement: &TenantRoutePlacement,
     org_id: Uuid,
-    require_backup_evidence: bool,
 ) -> AppResult<()> {
     let Some(cell) = sqlx::query_as::<_, DataCellRowDb>(
         "SELECT cell_id, environment, region, tier, status, service_name, public_api_base, internal_api_base, \
@@ -1523,14 +1515,6 @@ async fn ensure_eligible_cell(
     if data_cell_timestamp_is_not_fresh(now, cell.last_health_at, DATA_CELL_HEALTH_MAX_AGE_SECS) {
         return Err(AppError::service_unavailable(format!(
             "data cell {} has no recent health check",
-            cell.cell_id
-        )));
-    }
-    if require_backup_evidence
-        && data_cell_timestamp_is_not_fresh(now, cell.last_backup_at, DATA_CELL_BACKUP_MAX_AGE_SECS)
-    {
-        return Err(AppError::service_unavailable(format!(
-            "data cell {} has no recent backup",
             cell.cell_id
         )));
     }

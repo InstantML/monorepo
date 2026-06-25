@@ -371,24 +371,16 @@ Root helper-only environment variables:
 - `INSTANTML_CLOUD_RUN_CONTROL_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_SERVICE`, `INSTANTML_CLOUD_RUN_DATA_CELL`: split Cloud Run service/cell names.
 - `INSTANTML_DEFAULT_DATA_CELL_ID`: default placement target used when stamping new hosted tenant routes. The Cloud Run helper sets this from `INSTANTML_CLOUD_RUN_DATA_CELL` so control/combined services can place new hosted orgs without claiming data-cell liveness.
 - `INSTANTML_CELL_ID`: per-process data-cell identity. Data services receive it from the deploy helper, it takes precedence over `INSTANTML_DEFAULT_DATA_CELL_ID` for local placement, and it is the only env var that enables automatic `data_cells` registration, heartbeats, and hosted split writer-lease acquisition.
-- `INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE`: whether placement requires a recent backup timestamp on the target cell. Defaults to `true` (fail closed without backup evidence). Set to `false` when backups are handled outside the app (e.g. scheduled GCE disk snapshots) so placement is not blocked by an unrecorded `last_backup_at`. Only affects the backup gate; closed, stale-health, and full cells still fail closed.
 
 When `INSTANTML_CELL_ID` is set and Postgres control storage is configured, the
 Rust data service auto-registers and heartbeats a conservative `data_cells` row
 before placement. Operators can overwrite the row with richer metadata or
-close/drain it; the heartbeat only refreshes the health timestamp on existing
-rows and never marks backups fresh. Placement still fails closed when the
-matching row is closed, has stale health or backup evidence, or is full.
-Backup evidence is operator-owned; a timestamp more than five minutes in the
-future is treated as invalid so skewed manual writes cannot hold a cell open.
-Because the heartbeat never records backups, a freshly registered cell stays
-unbacked and rejects placement (login and workspace creation fail closed with a
-`503 service_unavailable`). When backups are handled outside the app (e.g.
-scheduled GCE disk snapshots), set `INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE=false`
-to disable the backup-freshness gate rather than write a `last_backup_at`
-timestamp the app never verified. The flag defaults to required (`true`) and
-affects only the backup check — closed, stale-health, and full cells still fail
-closed. Customer-owned ClickHouse routes are not assigned to managed data cells.
+close/drain it; the heartbeat refreshes the health timestamp on existing rows.
+Placement fails closed when the matching row is closed, has stale health, or is
+full. Placement does not gate on backup evidence: backups are owned outside the
+app (e.g. scheduled GCE disk snapshots), so `last_backup_at` is recorded for
+visibility only and never blocks placement. Customer-owned ClickHouse routes are
+not assigned to managed data cells.
 
 Hosted split data services also acquire a Postgres-backed
 `data_cell_writer_leases` row before accepting route-classified tenant-data

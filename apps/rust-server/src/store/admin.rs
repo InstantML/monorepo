@@ -2,9 +2,7 @@ use super::*;
 use std::collections::{BTreeMap, HashSet};
 use url::Url;
 
-use crate::control_repo::{
-    data_cell_timestamp_is_not_fresh, DATA_CELL_BACKUP_MAX_AGE_SECS, DATA_CELL_HEALTH_MAX_AGE_SECS,
-};
+use crate::control_repo::{data_cell_timestamp_is_not_fresh, DATA_CELL_HEALTH_MAX_AGE_SECS};
 use crate::domain::{
     AdminApiKeySummary, AdminBillingSummary, AdminDataCellRouteCounts, AdminDataCellSummary,
     AdminDataCellsResponse, AdminOrgCounts, AdminOrganizationSummary, AdminOverviewQuerySummary,
@@ -133,9 +131,6 @@ fn data_cell_admission_status(
     }
     if data_cell_timestamp_is_not_fresh(now, cell.last_health_at, DATA_CELL_HEALTH_MAX_AGE_SECS) {
         return "stale_health".to_string();
-    }
-    if data_cell_timestamp_is_not_fresh(now, cell.last_backup_at, DATA_CELL_BACKUP_MAX_AGE_SECS) {
-        return "stale_backup".to_string();
     }
     if cell
         .max_orgs
@@ -949,7 +944,6 @@ fn key_status_rank(status: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control_repo::DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS;
     use chrono::TimeZone;
 
     fn ts(day: u32) -> DateTime<Utc> {
@@ -1122,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_data_cells_marks_stale_health_and_backup_as_not_open() {
+    fn admin_data_cells_marks_stale_health_but_ignores_backup() {
         let now = ts(24);
         let mut data = base_data();
         let base_cell = DataCellRow {
@@ -1157,17 +1151,17 @@ mod tests {
             Some(now - ChronoDuration::seconds(DATA_CELL_HEALTH_MAX_AGE_SECS + 1));
         data.insert_data_cell(stale_health);
 
+        // Backups are owned outside the app, so a missing or stale backup
+        // timestamp no longer affects admission.
         let mut stale_backup = base_cell.clone();
         stale_backup.cell_id = "standard-us-central1-c".to_string();
-        stale_backup.last_backup_at =
-            Some(now - ChronoDuration::seconds(DATA_CELL_BACKUP_MAX_AGE_SECS + 1));
+        stale_backup.last_backup_at = Some(now - ChronoDuration::days(7));
         data.insert_data_cell(stale_backup);
 
-        let mut future_backup = base_cell;
-        future_backup.cell_id = "standard-us-central1-d".to_string();
-        future_backup.last_backup_at =
-            Some(now + ChronoDuration::seconds(DATA_CELL_FUTURE_TIMESTAMP_TOLERANCE_SECS + 1));
-        data.insert_data_cell(future_backup);
+        let mut null_backup = base_cell;
+        null_backup.cell_id = "standard-us-central1-d".to_string();
+        null_backup.last_backup_at = None;
+        data.insert_data_cell(null_backup);
 
         let response = build_admin_data_cells(&data, now);
         let statuses = response
@@ -1181,11 +1175,11 @@ mod tests {
         );
         assert_eq!(
             statuses.get("standard-us-central1-c").map(String::as_str),
-            Some("stale_backup")
+            Some("open")
         );
         assert_eq!(
             statuses.get("standard-us-central1-d").map(String::as_str),
-            Some("stale_backup")
+            Some("open")
         );
     }
 

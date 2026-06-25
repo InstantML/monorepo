@@ -255,10 +255,9 @@ Output:
   ready/provisioning/failed route counts, assigned org count, and
   `admission_status`.
 
-`admission_status` mirrors placement gates: `open`, `closed`, `full`,
-`stale_health`, or `stale_backup`. The `stale_backup` gate can be disabled for
-deployments whose backups are handled outside the app via
-`INSTANTML_REQUIRE_DATA_CELL_BACKUP_EVIDENCE=false` (see the Rust server README).
+`admission_status` mirrors placement gates: `open`, `closed`, `full`, or
+`stale_health`. Placement does not gate on backup freshness (backups are owned
+outside the app); `last_backup_at` is reported for visibility only.
 
 ## Auth And Session
 
