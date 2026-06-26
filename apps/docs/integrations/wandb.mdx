@@ -1,0 +1,99 @@
+---
+title: "Weights & Biases migration"
+description: "Move from Weights & Biases to InstantML with a drop-in wandb-compatible import, side-by-side shadow logging, or W&B-primary mirroring."
+---
+
+# Weights & Biases migration
+
+InstantML offers three ways to move from Weights & Biases, depending on how
+much you want to change and how much you want to keep W&B in the loop.
+
+| Mode | Import | Source of truth | Code change |
+| --- | --- | --- | --- |
+| **Drop-in** | `import instantml.compat.wandb as wandb` | InstantML | One import line |
+| **Shadow** | `im.init(..., shadow_wandb=True)` | Both | One init flag |
+| **Mirror** | `import instantml.wandb_mirror as wandb` | W&B | One import line |
+
+## 1. Drop-in replacement
+
+Use the W&B-compatible surface to send your existing `wandb` calls straight to
+InstantML. This does **not** require the official `wandb` package.
+
+```python
+import instantml.compat.wandb as wandb
+
+run = wandb.init(
+    project="quickstart",
+    name="seed-42",
+    config={"seed": 42, "lr": 3e-4},
+    tags=["baseline"],
+)
+
+for step in range(1, 51):
+    wandb.log({"train/loss": 1.0 / step, "eval/accuracy": step / 60}, step=step)
+
+wandb.finish()
+```
+
+Supported: `init`, `log`, `finish`, `config`, `watch`, `Artifact` /
+`log_artifact`, and no-op `define_metric` / `sweep`. Unsupported behaviors raise
+a clear `UnsupportedWandbFeature` error rather than silently dropping data — for
+example, W&B `offline`, `dryrun`, and `disabled` modes are rejected because they
+would hide missing logs.
+
+In drop-in mode the `project` argument targets InstantML directly, and
+credentials come from your normal InstantML configuration (`instantml login` or
+`INSTANTML_API_KEY`).
+
+## 2. Shadow both at once
+
+Keep logging to W&B exactly as you do today and have InstantML record the same
+scalar metrics in parallel. Useful while you evaluate InstantML side by side.
+
+```bash
+python -m pip install "instantml[wandb]"
+wandb login
+```
+
+```python
+import instantml as im
+
+run = im.init(
+    project="quickstart",
+    name="wandb-shadow-seed-42",
+    config={"seed": 42},
+    shadow_wandb=True,
+)
+
+for step in range(1, 11):
+    run.log({"train/loss": 1.0 / step}, step=step)
+
+run.finish()
+```
+
+If W&B is not installed or `wandb.init(...)` fails, InstantML warns and keeps
+logging to InstantML. See the [Quickstart](/quickstart) for attaching to an
+existing `wandb.Run` and choosing a different W&B project or entity.
+
+## 3. Keep W&B primary, mirror to InstantML
+
+For the lowest-risk pilot, keep W&B as the source of truth and mirror scalar
+metrics into InstantML with a one-line import swap:
+
+```python
+import instantml.wandb_mirror as wandb
+
+run = wandb.init(project="quickstart", config={"seed": 42})
+wandb.log({"train/loss": 0.25}, step=1)
+run.finish()
+```
+
+The official `wandb` package still receives `init`, `log`, and `finish`.
+InstantML mirrors scalar metrics best-effort, and InstantML-side failures warn
+without interrupting W&B logging.
+
+## Importing past W&B history
+
+To bring your existing experiment history across, the SDK imports W&B (and
+MLflow / Neptune) JSON exports. See
+[Querying and importing data](/sdk/querying-data).

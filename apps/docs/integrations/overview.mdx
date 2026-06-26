@@ -1,0 +1,52 @@
+---
+title: "Integrations overview"
+description: "Track training runs from PyTorch Lightning, Hugging Face Transformers, Keras, and Weights & Biases with one-line InstantML adapters."
+---
+
+# Integrations
+
+InstantML keeps the core SDK small and adds thin adapters so the framework you
+already train with can log to InstantML without a second integration model.
+Every adapter calls the same public `run.log(...)` methods you would call by
+hand, so you can always drop down to direct logging for custom loops.
+
+Install the framework adapters with the `frameworks` extra:
+
+```bash
+python -m pip install "instantml[frameworks]"
+```
+
+## Framework adapters
+
+<CardGroup cols={2}>
+  <Card title="PyTorch Lightning" href="/integrations/pytorch-lightning" icon="zap">
+    Pass `im.LightningLogger(...)` to `Trainer(logger=...)`.
+  </Card>
+  <Card title="Hugging Face Transformers" href="/integrations/huggingface-transformers" icon="hugging-face">
+    Add `im.TransformersCallback()` to the `Trainer`.
+  </Card>
+  <Card title="Keras" href="/integrations/keras" icon="brain">
+    Pass `im.InstantMLKerasCallback(...)` to `model.fit(callbacks=...)`.
+  </Card>
+  <Card title="Weights & Biases" href="/integrations/wandb" icon="arrow-right-arrow-left">
+    Swap the import, shadow, or mirror — three migration modes.
+  </Card>
+</CardGroup>
+
+## Coming from Weights & Biases?
+
+There are three ways to move, depending on how much risk you want to take:
+
+| Mode | Import | Source of truth | Use when |
+| --- | --- | --- | --- |
+| **Drop-in** | `import instantml.compat.wandb as wandb` | InstantML | You are ready to switch and want a minimal code change. |
+| **Shadow** | `im.init(..., shadow_wandb=True)` | Both | You want InstantML and W&B side by side during evaluation. |
+| **Mirror** | `import instantml.wandb_mirror as wandb` | W&B | You want to keep W&B primary and mirror metrics into InstantML. |
+
+See the [Weights & Biases migration guide](/integrations/wandb) for all three.
+
+## Importing existing history
+
+To bring past experiments along, the SDK can import run history from W&B,
+MLflow, and Neptune JSON exports. See
+[Querying and importing data](/sdk/querying-data).

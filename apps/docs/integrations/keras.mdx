@@ -1,0 +1,55 @@
+---
+title: "Keras"
+description: "Log Keras training runs to InstantML with a callback that records epoch metrics from model.fit."
+---
+
+# Keras
+
+`im.InstantMLKerasCallback` is a native Keras callback. Pass it to
+`model.fit(...)` and it logs epoch metrics to InstantML.
+
+## Install
+
+```bash
+python -m pip install "instantml[frameworks]"
+```
+
+## Use it
+
+```python
+import instantml as im
+
+callback = im.InstantMLKerasCallback(
+    project="mnist",
+    name="cnn-seed-7",
+    config={"optimizer": "adam", "lr": 1e-3},
+)
+
+model.fit(
+    x_train,
+    y_train,
+    epochs=10,
+    validation_data=(x_val, y_val),
+    callbacks=[callback],
+)
+```
+
+The callback creates the run on `on_train_begin`, logs scalar metrics from each
+`on_epoch_end` (with `step=epoch`), and finishes the run on `on_train_end`.
+Extra keyword arguments are forwarded to `im.init(...)`.
+
+## Per-batch metrics
+
+By default the callback logs once per epoch. Enable per-batch logging with
+`log_batch=True`; batch metrics are namespaced under `batch/`:
+
+```python
+callback = im.InstantMLKerasCallback(project="mnist", log_batch=True)
+```
+
+## Reuse an existing run
+
+```python
+run = im.init(project="mnist", name="cnn-seed-7")
+callback = im.InstantMLKerasCallback(run=run)
+```

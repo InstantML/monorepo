@@ -72,6 +72,21 @@
         ]
       },
       {
+        "tab": "Integrations",
+        "groups": [
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/pytorch-lightning",
+              "integrations/huggingface-transformers",
+              "integrations/keras",
+              "integrations/wandb"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Dashboard",
         "groups": [
           {

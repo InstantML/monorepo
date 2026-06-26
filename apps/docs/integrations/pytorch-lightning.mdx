@@ -1,0 +1,61 @@
+---
+title: "PyTorch Lightning"
+description: "Log and compare PyTorch Lightning training runs in InstantML with a one-line logger that drops into the Lightning Trainer."
+---
+
+# PyTorch Lightning
+
+`im.LightningLogger` implements the Lightning `Logger` interface, so you pass it
+straight to the `Trainer`. It is rank-zero safe: in distributed training only
+the main process logs.
+
+## Install
+
+```bash
+python -m pip install "instantml[frameworks]"
+```
+
+## Use it
+
+```python
+import instantml as im
+from lightning import Trainer
+
+logger = im.LightningLogger(
+    project="cartpole",
+    name="ppo-seed-7",
+    tags=["lightning", "ppo"],
+)
+
+trainer = Trainer(max_epochs=10, logger=logger)
+trainer.fit(model, datamodule)
+```
+
+`LightningLogger` accepts the same keyword arguments as `im.init(...)`
+(`name`, `config`, `tags`, `notes`, `api_key`, ...) and forwards them when it
+creates the run on first use.
+
+## What gets logged
+
+- **Metrics** — everything you pass to `self.log(...)` inside your
+  `LightningModule` is forwarded through `log_metrics(...)` at the current
+  step.
+- **Hyperparameters** — `log_hyperparams(...)` records them as run config, so
+  `trainer = Trainer(logger=logger)` with `self.save_hyperparameters()`
+  captures your config automatically.
+- **Media** — `log_image`, `log_audio`, and `log_video` map to InstantML rich
+  objects.
+
+## Reuse an existing run
+
+Pass an already-created run when you want the logger to share a run with other
+code instead of creating its own:
+
+```python
+run = im.init(project="cartpole", name="ppo-seed-7")
+logger = im.LightningLogger(run=run)
+trainer = Trainer(logger=logger)
+```
+
+The run is finished automatically when Lightning calls `finalize(...)` at the
+end of training.
