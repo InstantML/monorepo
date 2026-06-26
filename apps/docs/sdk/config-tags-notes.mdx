@@ -13,9 +13,9 @@ what changed.
 Pass config at run creation:
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="mnist",
     name="cnn-seed-7",
     config={
@@ -72,7 +72,7 @@ from memory.
 ## Practical pattern
 
 ```python
-run = ro.init(
+run = im.init(
     project="finetune",
     name="llama8b-lora-seed-12",
     config={

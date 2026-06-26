@@ -3,13 +3,13 @@ import sys
 
 sys.path.insert(0, "packages/python-sdk")
 
-import instantml as ro  # noqa: E402
+import instantml as im  # noqa: E402
 from instantml.client import Client  # noqa: E402
 
 
 base_url = os.environ["INSTANTML_RUST_SMOKE_BASE_URL"]
 
-run = ro.init(
+run = im.init(
     project="rust-sdk-smoke",
     name="sdk-overlap",
     config={"seed": 1},

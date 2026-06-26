@@ -54,9 +54,9 @@ selected child yet.
 ## Log checkpoint bytes
 
 ```python
-import instantml as ro
+import instantml as im
 
-policy = ro.CheckpointPolicy(every_steps=1000)
+policy = im.CheckpointPolicy(every_steps=1000)
 
 if policy.should_save(step):
     run.log_checkpoint_file(
@@ -85,9 +85,9 @@ The dashboard's Resume Code button shows a restore snippet. For automation, use
 the Python API helper to create a fork and then attach logging to the child run:
 
 ```python
-import instantml as ro
+import instantml as im
 
-api = ro.Api()
+api = im.Api()
 child = api.fork_run(
     "source-run-id",
     checkpoint_artifact_id="artifact-id",
@@ -96,7 +96,7 @@ child = api.fork_run(
     tags=["retry", "checkpoint"],
 )
 
-run = ro.attach_run(child["id"])
+run = im.attach_run(child["id"])
 run.log({"train/loss": 0.1}, step=1001)
 run.finish()
 ```

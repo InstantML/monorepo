@@ -99,11 +99,11 @@ For chart-friendly runs, keep metric keys stable and namespace them by purpose:
 as `seed`, `variant`, `learning_rate`, `batch_size`, `model`, and `dataset`.
 
 ```python
-import instantml as ro
+import instantml as im
 
 score_bins = [index / 32 for index in range(33)]
 
-run = ro.init(
+run = im.init(
     project="reward-sweep",
     config={"variant": variant, "seed": seed, "learning_rate": learning_rate},
     tags=[variant],
@@ -115,7 +115,7 @@ run.log_metrics(
 )
 run.log_objects(
     {
-        "eval/score_distribution": ro.Histogram.from_values(
+        "eval/score_distribution": im.Histogram.from_values(
             eval_scores,
             bins=score_bins,
         )

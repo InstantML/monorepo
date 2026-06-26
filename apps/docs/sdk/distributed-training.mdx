@@ -61,9 +61,9 @@ Process-isolated spool mode writes rank metric calls as JSONL-style request
 events and replays them with the event ID as `Idempotency-Key`.
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="distributed-job",
     upload_mode="spool",
     spool_dir=".instantml/spool",

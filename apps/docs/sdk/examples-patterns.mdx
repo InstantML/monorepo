@@ -11,9 +11,9 @@ compare, export, and replay.
 ## Supervised learning
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="iris-classification",
     name="softmax-baseline-seed-7",
     config={
@@ -53,11 +53,11 @@ Use config for fields you want to group or plot against, and use scalar metric
 keys for values you want to chart or sort.
 
 ```python
-import instantml as ro
+import instantml as im
 
 confidence_bins = [index / 32 for index in range(33)]
 
-run = ro.init(
+run = im.init(
     project="ablation",
     name=f"{variant}-seed-{seed}",
     config={
@@ -82,7 +82,7 @@ for epoch in range(1, epochs + 1):
     )
     run.log_objects(
         {
-            "eval/confidence": ro.Histogram.from_values(
+            "eval/confidence": im.Histogram.from_values(
                 confidence_scores,
                 bins=confidence_bins,
             )
@@ -114,7 +114,7 @@ This shape gives you:
 ## RL or simulation
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
     name="ppo-seed-42",
     config={"algorithm": "ppo", "seed": 42, "env": "CartPole-v1"},
@@ -142,7 +142,7 @@ noisy online learning signals.
 ## Long-running jobs
 
 ```python
-run = ro.init(
+run = im.init(
     project="humanoid",
     upload_mode="spool",
     spool_dir=".instantml/spool",
@@ -163,7 +163,7 @@ Spool mode keeps the training process from blocking on post-init HTTP calls.
 ## Checkpoint resume
 
 ```python
-policy = ro.CheckpointPolicy(every_steps=1000)
+policy = im.CheckpointPolicy(every_steps=1000)
 
 if policy.should_save(step):
     run.log_checkpoint_file(
@@ -181,14 +181,14 @@ the `Api.download_artifact(...)` helper in automated restore scripts.
 Use context managers when a failing script should mark the run as failed:
 
 ```python
-with ro.init(project="sweep", name="seed-7") as run:
+with im.init(project="sweep", name="seed-7") as run:
     train(run)
 ```
 
 Use explicit `try/finally` when a framework owns the training loop:
 
 ```python
-run = ro.init(project="sweep", name="seed-7")
+run = im.init(project="sweep", name="seed-7")
 try:
     train(run)
     run.finish()

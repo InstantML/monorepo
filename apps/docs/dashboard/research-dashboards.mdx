@@ -41,9 +41,9 @@ across seeds?"
 Log the inputs with ordinary SDK run config and scalar metrics:
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="sweep",
     config={"learning_rate": lr, "batch_size": batch_size, "seed": seed},
 )

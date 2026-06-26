@@ -8,13 +8,13 @@ description: "Create runs and log metrics, configs, tags, notes, artifacts, and 
 The Python package is imported as `instantml`.
 
 ```python
-import instantml as ro
+import instantml as im
 ```
 
 ## Create a run
 
 ```python
-run = ro.init(
+run = im.init(
     project="mnist",
     name="cnn-seed-7",
     config={"seed": 7, "optimizer": "adam"},
@@ -28,7 +28,7 @@ Both `project` and `name` are optional. If you omit them, defaults apply:
 ```python
 # No project → lands in the shared `default` project.
 # No name    → server assigns `<adjective>-<noun>-<sequence>` per project.
-run = ro.init()
+run = im.init()
 print(run.name)  # e.g. "bold-falcon-1"
 ```
 
@@ -41,11 +41,11 @@ Pass an explicit `name=` whenever the run is meaningful long-term (e.g.
 named after a hyperparameter sweep cell or experiment cohort). The
 auto-name is for quick iteration and smoke tests.
 
-Use `ro.Client(...)` when you want to reuse a base URL, timeout, API key, or
+Use `im.Client(...)` when you want to reuse a base URL, timeout, API key, or
 offline directory across several runs:
 
 ```python
-client = ro.Client(
+client = im.Client(
     base_url="https://api.instantml.ai",
     timeout=2.0,
     api_key="instantml_...",
@@ -88,7 +88,7 @@ run.finish()
 You can also use a context manager:
 
 ```python
-with ro.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
+with im.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
     run.log({"train/loss": 0.42}, step=1)
 ```
 
@@ -104,7 +104,7 @@ want credential or connectivity failures to surface immediately.
 Use buffering when you want to batch post-init SDK calls in memory:
 
 ```python
-run = ro.init(project="long-run", buffer_size=25)
+run = im.init(project="long-run", buffer_size=25)
 ```
 
 Use `offline_dir` to spool failed requests for an already-created run and replay
@@ -117,7 +117,7 @@ calls. The SDK writes request events to disk, and a separate uploader drains
 them through the existing API.
 
 ```python
-run = ro.init(
+run = im.init(
     project="long-run",
     name="seed-42",
     upload_mode="spool",

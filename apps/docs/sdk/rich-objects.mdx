@@ -12,12 +12,12 @@ dashboard needs structured evidence:
 
 - `run.log_table_object(...)` for prediction samples, eval rows, and compact
   per-example diagnostics in Run Detail.
-- `run.log_objects({"key": ro.Histogram.from_values(...)})` for score,
+- `run.log_objects({"key": im.Histogram.from_values(...)})` for score,
   confidence, activation, gradient, reward, weight, or latency distributions in
   Run Detail and selected-run logged-histogram timelines.
 - `run.log_classification_eval(...)` for binary PR/ROC curves, confusion
   matrix, per-class metrics, and optional prediction rows in Run Detail.
-- `ro.Image`, `ro.Video`, and `ro.Audio` for rollout evidence, generated
+- `im.Image`, `im.Video`, and `im.Audio` for rollout evidence, generated
   examples, custom diagnostics, and audio samples.
 
 For Runs workspace summary panels, keep logging scalar metrics with
@@ -30,7 +30,7 @@ Use tables for bounded previewable rows such as predictions, eval samples, or
 per-example metrics.
 
 ```python
-import instantml as ro
+import instantml as im
 
 run.log_table_object(
     "eval/predictions",
@@ -55,7 +55,7 @@ confidence_bins = [index / 8 for index in range(9)]
 
 run.log_objects(
     {
-        "eval/confidence": ro.Histogram.from_values(
+        "eval/confidence": im.Histogram.from_values(
             [0.91, 0.72, 0.88, 0.43],
             bins=confidence_bins,
         )
@@ -112,7 +112,7 @@ bytes and creates the linked rich object for the same run.
 ```python
 run.log_objects(
     {
-        "eval/confusion_matrix": ro.Image(
+        "eval/confusion_matrix": im.Image(
             path="outputs/confusion-matrix.png",
             caption="Validation confusion matrix",
         )
@@ -126,7 +126,7 @@ artifact surfaces to render a preview:
 
 ```python
 run.log_objects(
-    {"eval/rollout": ro.Video(path="outputs/rollout.mp4", caption="Evaluation rollout")},
+    {"eval/rollout": im.Video(path="outputs/rollout.mp4", caption="Evaluation rollout")},
     step=100,
 )
 ```

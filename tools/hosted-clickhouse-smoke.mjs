@@ -315,9 +315,9 @@ function runPythonSdk(apiKey) {
 import os
 import sys
 sys.path.insert(0, "packages/python-sdk")
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="hosted-python",
     name="python-sdk-hosted",
     config={"seed": 21},

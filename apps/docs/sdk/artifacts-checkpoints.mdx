@@ -46,11 +46,11 @@ Use `VersionedArtifact` when a dataset, model, or checkpoint package needs a
 stable manifest, `latest`/`best` aliases, and lineage.
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(project="cartpole")
+run = im.init(project="cartpole")
 
-artifact = ro.VersionedArtifact(
+artifact = im.VersionedArtifact(
     "policy-checkpoints",
     type="model",
     metadata={"framework": "torch"},
@@ -74,10 +74,10 @@ raw-artifact call working.
 Resolve and consume a version from another run:
 
 ```python
-api = ro.Api()
+api = im.Api()
 dataset = api.artifact("training-data:latest", type="dataset", project="cartpole")
 
-run = ro.init(project="cartpole")
+run = im.init(project="cartpole")
 run.use_artifact(dataset)
 dataset.download("inputs/training-data")
 run.finish()
@@ -124,9 +124,9 @@ only a child run record; it does not start training or copy existing metrics.
 Attach the SDK to the child run when your resume script is ready to log.
 
 ```python
-import instantml as ro
+import instantml as im
 
-api = ro.Api()
+api = im.Api()
 child = api.fork_run(
     "source-run-id",
     checkpoint_artifact_id="artifact-id",
@@ -134,7 +134,7 @@ child = api.fork_run(
     name="retry-from-step-1000",
 )
 
-run = ro.attach_run(child["id"])
+run = im.attach_run(child["id"])
 run.log({"train/loss": 0.1}, step=1001)
 run.finish()
 ```
@@ -166,7 +166,7 @@ previewable evidence inside Run Detail:
 
 ```python
 run.log_objects(
-    {"eval/rollout": ro.Video(path="outputs/rollout.mp4", caption="Evaluation rollout")},
+    {"eval/rollout": im.Video(path="outputs/rollout.mp4", caption="Evaluation rollout")},
     step=1000,
 )
 ```

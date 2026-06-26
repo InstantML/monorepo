@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import instantml as ro
+import instantml as im
 
 DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data"
 FEATURE_NAMES = ("sepal_length_cm", "sepal_width_cm", "petal_length_cm", "petal_width_cm")
@@ -380,7 +380,7 @@ def run_experiment(
     run_name = f"iris-{config.name}-seed-{seed}"
     run = None
     try:
-        run = ro.init(
+        run = im.init(
             project="iris-classification",
             name=run_name,
             config={

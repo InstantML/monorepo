@@ -14,7 +14,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-import instantml as ro
+import instantml as im
 import instantml.async_queue as async_queue
 import instantml.client as client_module
 import instantml.serialization as serialization_module
@@ -61,14 +61,14 @@ def api_server(tmp_path):
 
 def test_client_defaults_to_hosted_api_when_env_unset(monkeypatch):
     monkeypatch.delenv("INSTANTML_API_BASE_URL", raising=False)
-    assert ro.Client().base_url == "https://api.instantml.ai"
-    assert ro.Api().base_url == "https://api.instantml.ai"
+    assert im.Client().base_url == "https://api.instantml.ai"
+    assert im.Api().base_url == "https://api.instantml.ai"
 
 
 def test_client_base_url_respects_env_override(monkeypatch):
     monkeypatch.setenv("INSTANTML_API_BASE_URL", "http://127.0.0.1:8000")
-    assert ro.Client().base_url == "http://127.0.0.1:8000"
-    assert ro.Api().base_url == "http://127.0.0.1:8000"
+    assert im.Client().base_url == "http://127.0.0.1:8000"
+    assert im.Api().base_url == "http://127.0.0.1:8000"
 
 
 def test_client_default_http_timeout_has_cold_path_headroom():
@@ -77,8 +77,8 @@ def test_client_default_http_timeout_has_cold_path_headroom():
     # The old 2.0s default timed out real users before warmup finished;
     # 10s is generous for cold start while still failing fast on a
     # genuinely unreachable backend.
-    assert ro.Client().timeout >= 10.0
-    assert ro.Api().timeout >= 10.0
+    assert im.Client().timeout >= 10.0
+    assert im.Api().timeout >= 10.0
 
 
 def test_sdk_version_falls_back_when_package_metadata_is_unavailable(monkeypatch):
@@ -99,7 +99,7 @@ def test_api_runs_builds_expected_query_string(monkeypatch):
         return {"runs": [], "total": 0}
 
     monkeypatch.setattr(Client, "_request", fake_request)
-    page = ro.Api(base_url="http://example.test", timeout=3, api_key="secret").runs(
+    page = im.Api(base_url="http://example.test", timeout=3, api_key="secret").runs(
         limit=50,
         offset=0,
         project="demo",
@@ -132,7 +132,7 @@ def test_api_runs_builds_expected_query_string(monkeypatch):
 
 def test_api_runs_rejects_cursor_with_nonzero_offset():
     with pytest.raises(ValueError, match="nonzero offset"):
-        ro.Api(base_url="http://example.test").runs(cursor="page-2", offset=25)
+        im.Api(base_url="http://example.test").runs(cursor="page-2", offset=25)
 
 
 def test_api_runs_reuses_client_request_auth_timeout_and_returns_payload(monkeypatch):
@@ -157,7 +157,7 @@ def test_api_runs_reuses_client_request_auth_timeout_and_returns_payload(monkeyp
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
 
-    page = ro.Api(base_url="http://example.test", timeout=4, api_key="secret").runs(limit=1)
+    page = im.Api(base_url="http://example.test", timeout=4, api_key="secret").runs(limit=1)
 
     assert page == {"runs": [{"id": "run-1"}], "next_cursor": None}
     assert captured == {
@@ -192,7 +192,7 @@ def test_api_download_artifact_writes_bytes_with_auth(monkeypatch, tmp_path):
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     target = tmp_path / "downloads" / "checkpoint.json"
 
-    written = ro.Api(base_url="http://example.test/", timeout=7, api_key="secret").download_artifact("artifact/1", target)
+    written = im.Api(base_url="http://example.test/", timeout=7, api_key="secret").download_artifact("artifact/1", target)
 
     assert written == str(target)
     assert target.read_bytes() == b"checkpoint bytes"
@@ -217,7 +217,7 @@ def test_api_download_artifact_accepts_directory_destinations(monkeypatch, tmp_p
             return b"bytes"
 
     monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
-    api = ro.Api(base_url="http://example.test")
+    api = im.Api(base_url="http://example.test")
     existing_dir = tmp_path / "existing"
     existing_dir.mkdir()
     trailing_dir = tmp_path / "trailing"
@@ -232,7 +232,7 @@ def test_api_download_artifact_accepts_directory_destinations(monkeypatch, tmp_p
 
 
 def test_api_download_artifact_reports_bad_paths_and_network_errors(monkeypatch, tmp_path):
-    api = ro.Api(base_url="http://example.test")
+    api = im.Api(base_url="http://example.test")
 
     with pytest.raises(TypeError, match="output_path"):
         api.download_artifact("artifact-1", 123)
@@ -271,11 +271,11 @@ def test_api_runs_raises_instantml_error_for_invalid_json(monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
     with pytest.raises(InstantMLError, match="invalid JSON"):
-        ro.Api(base_url="http://example.test").runs(limit=1)
+        im.Api(base_url="http://example.test").runs(limit=1)
 
 
 def test_sdk_integration_creates_logs_and_finishes_run(api_server, tmp_path):
-    run = ro.init(
+    run = im.init(
         project="cartpole",
         name="seed-42",
         config={"seed": 42},
@@ -310,7 +310,7 @@ def test_run_artifact_helpers_call_expected_endpoint(monkeypatch):
             calls.append((method, path, body))
             return {"artifact": {"id": "artifact-1", **body}}
 
-    run = ro.Run(client=FakeClient(), run_id="run-1")
+    run = im.Run(client=FakeClient(), run_id="run-1")
     checkpoint = run.log_checkpoint("policy.pt", "demo://policy.pt", step=10, metadata={"score": 1})
     rollout = run.log_rollout("eval.mp4", "demo://eval.mp4", step=10)
     artifact = run.log_artifact("notes.json", "demo://notes.json")
@@ -434,7 +434,7 @@ def test_run_log_versioned_artifact_uses_manifest_upload_session(monkeypatch, tm
                 }
             raise AssertionError(path)
 
-    artifact = ro.VersionedArtifact(
+    artifact = im.VersionedArtifact(
         "policy",
         type="model",
         aliases=["best"],
@@ -443,7 +443,7 @@ def test_run_log_versioned_artifact_uses_manifest_upload_session(monkeypatch, tm
 
     logged = Run(client=FakeClient(), run_id="run-1").log_artifact(artifact, step=12)
 
-    assert isinstance(logged, ro.LoggedArtifact)
+    assert isinstance(logged, im.LoggedArtifact)
     assert logged.id == "version-1"
     assert calls[0][0] == "POST"
     assert calls[0][1] == "/api/runs/run-1/artifact-uploads"
@@ -494,7 +494,7 @@ def test_run_log_versioned_artifact_returns_deduplicated_version_without_upload(
             }
 
     logged = Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(
-        ro.VersionedArtifact("policy").add_file(source),
+        im.VersionedArtifact("policy").add_file(source),
         aliases=["best"],
     )
 
@@ -549,7 +549,7 @@ def test_run_log_versioned_artifact_renews_multipart_urls(monkeypatch, tmp_path)
             raise AssertionError(path)
 
     logged = Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(
-        ro.VersionedArtifact("policy").add_file(source)
+        im.VersionedArtifact("policy").add_file(source)
     )
 
     assert logged.id == "version-1"
@@ -620,13 +620,13 @@ def test_run_log_versioned_artifact_inline_complete_and_path_validation(tmp_path
             }
 
     logged = Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(
-        ro.VersionedArtifact("dataset", type="dataset", files={"nested/config.json": source})
+        im.VersionedArtifact("dataset", type="dataset", files={"nested/config.json": source})
     )
 
     assert logged.version == "v0"
     assert calls[1][2] == {"files": [{"entry_id": "entry-inline", "content_base64": "e30="}]}
     with pytest.raises(ValueError, match="cannot contain"):
-        Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad", files={"../secret.json": source}))
+        Run(client=FakeClient(), run_id="run-1").log_versioned_artifact(im.VersionedArtifact("bad", files={"../secret.json": source}))
 
 
 def test_versioned_artifact_constructor_and_file_validation(tmp_path):
@@ -634,15 +634,15 @@ def test_versioned_artifact_constructor_and_file_validation(tmp_path):
     source.write_bytes(b"weights")
 
     with pytest.raises(ValueError, match="artifact name"):
-        ro.VersionedArtifact(" ")
+        im.VersionedArtifact(" ")
     with pytest.raises(ValueError, match="artifact type"):
-        ro.VersionedArtifact("weights", type=" ")
+        im.VersionedArtifact("weights", type=" ")
 
-    listed = ro.VersionedArtifact("weights", files=[source])
+    listed = im.VersionedArtifact("weights", files=[source])
     assert listed.files == [{"path": str(source), "name": "weights.bin"}]
 
     with pytest.raises(ValueError, match="file name"):
-        ro.VersionedArtifact("weights").add_file("")
+        im.VersionedArtifact("weights").add_file("")
 
 
 def test_versioned_artifact_helper_validation_errors(tmp_path):
@@ -660,12 +660,12 @@ def test_versioned_artifact_helper_validation_errors(tmp_path):
     with pytest.raises(ValueError, match="relative"):
         client_module._validate_artifact_manifest_path("nested\\bad.bin")
     with pytest.raises(ValueError, match="at least one file"):
-        client_module._prepare_versioned_artifact_files(ro.VersionedArtifact("empty"))
+        client_module._prepare_versioned_artifact_files(im.VersionedArtifact("empty"))
     with pytest.raises(InstantMLError, match="does not exist"):
-        client_module._prepare_versioned_artifact_files(ro.VersionedArtifact("missing").add_file(tmp_path / "missing.bin"))
+        client_module._prepare_versioned_artifact_files(im.VersionedArtifact("missing").add_file(tmp_path / "missing.bin"))
     with pytest.raises(ValueError, match="duplicate"):
         client_module._prepare_versioned_artifact_files(
-            ro.VersionedArtifact("dupe").add_file(source, name="dup.bin").add_file(other, name="dup.bin")
+            im.VersionedArtifact("dupe").add_file(source, name="dup.bin").add_file(other, name="dup.bin")
         )
 
 
@@ -1042,7 +1042,7 @@ def test_api_artifact_resolve_use_promote_and_download(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Client, "_request", fake_request)
 
-    artifact = ro.Api(base_url="http://example.test", api_key="secret").artifact("models/policy:latest", type="model")
+    artifact = im.Api(base_url="http://example.test", api_key="secret").artifact("models/policy:latest", type="model")
     assert artifact.id == "version-1"
     assert artifact.name == "policy"
     artifact.promote("best")
@@ -1097,23 +1097,23 @@ def test_artifact_api_and_download_error_paths(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Client, "_request", invalid_resolve)
     with pytest.raises(InstantMLError, match="invalid artifact response"):
-        ro.Api(base_url="http://example.test").artifact("policy:latest")
+        im.Api(base_url="http://example.test").artifact("policy:latest")
 
     def invalid_manifest(self, method, path, body=None, idempotency_key=None):
         return {"entries": "bad"}
 
     monkeypatch.setattr(Client, "_request", invalid_manifest)
     with pytest.raises(InstantMLError, match="invalid artifact manifest"):
-        ro.Api(base_url="http://example.test")._manifest_entries("version-1")
+        im.Api(base_url="http://example.test")._manifest_entries("version-1")
 
     def valid_manifest(self, method, path, body=None, idempotency_key=None):
         return {"entries": [{"id": "entry-1"}, "skip-me"]}
 
     monkeypatch.setattr(Client, "_request", valid_manifest)
-    assert ro.Api(base_url="http://example.test")._manifest_entries("version-1") == [{"id": "entry-1"}]
+    assert im.Api(base_url="http://example.test")._manifest_entries("version-1") == [{"id": "entry-1"}]
 
     with pytest.raises(TypeError, match="output_path"):
-        ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", object())
+        im.Api(base_url="http://example.test")._download_artifact_entry("entry-1", object())
 
     read_sizes = []
 
@@ -1138,7 +1138,7 @@ def test_artifact_api_and_download_error_paths(monkeypatch, tmp_path):
 
     monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: FakeResponse())
     target = tmp_path / "entry.bin"
-    assert ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", target) == str(target)
+    assert im.Api(base_url="http://example.test")._download_artifact_entry("entry-1", target) == str(target)
     assert target.read_bytes() == b"payload"
     assert read_sizes == [1024 * 1024, 1024 * 1024]
 
@@ -1147,14 +1147,14 @@ def test_artifact_api_and_download_error_paths(monkeypatch, tmp_path):
 
     monkeypatch.setattr(urllib.request, "urlopen", raise_http)
     with pytest.raises(InstantMLError, match="GET /api/artifact-entries/entry-1/download failed"):
-        ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", tmp_path / "missing.bin")
+        im.Api(base_url="http://example.test")._download_artifact_entry("entry-1", tmp_path / "missing.bin")
 
     def raise_url(request, timeout):
         raise urllib.error.URLError("offline")
 
     monkeypatch.setattr(urllib.request, "urlopen", raise_url)
     with pytest.raises(InstantMLError, match="offline"):
-        ro.Api(base_url="http://example.test")._download_artifact_entry("entry-1", tmp_path / "offline.bin")
+        im.Api(base_url="http://example.test")._download_artifact_entry("entry-1", tmp_path / "offline.bin")
 
 
 def test_logged_artifact_download_rejects_symlink_escape(tmp_path):
@@ -1194,17 +1194,17 @@ def test_run_versioned_artifact_error_paths(monkeypatch, tmp_path):
             return {"upload_session": "bad", "files": []}
 
     with pytest.raises(ValueError, match="uri"):
-        Run(client=BadSessionClient(), run_id="run-1").log_artifact(ro.VersionedArtifact("bad"), uri="demo://bad")
+        Run(client=BadSessionClient(), run_id="run-1").log_artifact(im.VersionedArtifact("bad"), uri="demo://bad")
     with pytest.raises(TypeError, match="uri is required"):
         Run(client=BadSessionClient(), run_id="run-1").log_artifact("raw")
     with pytest.raises(ValueError, match="aliases and ttl_days"):
         Run(client=BadSessionClient(), run_id="run-1").log_artifact("raw", "demo://raw", aliases=["best"])
     with pytest.raises(InstantMLError, match="upload_mode"):
-        Run(client=BadSessionClient(), run_id="run-1", upload_mode="spool").log_versioned_artifact(ro.VersionedArtifact("spool"))
+        Run(client=BadSessionClient(), run_id="run-1", upload_mode="spool").log_versioned_artifact(im.VersionedArtifact("spool"))
     with pytest.raises(TypeError, match="VersionedArtifact"):
         Run(client=BadSessionClient(), run_id="run-1").log_versioned_artifact("not-artifact")
     with pytest.raises(InstantMLError, match="invalid artifact upload session"):
-        Run(client=BadSessionClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad-session").add_file(source_a))
+        Run(client=BadSessionClient(), run_id="run-1").log_versioned_artifact(im.VersionedArtifact("bad-session").add_file(source_a))
 
     class UnknownEntryClient(BadSessionClient):
         def _request(self, method, path, body, idempotency_key=None):
@@ -1218,7 +1218,7 @@ def test_run_versioned_artifact_error_paths(monkeypatch, tmp_path):
                 }
             return {"artifact_version": {"id": "version-1"}}
 
-    artifact = ro.VersionedArtifact("unknown").add_file(source_a, name="a.bin").add_file(source_b, name="b.bin")
+    artifact = im.VersionedArtifact("unknown").add_file(source_a, name="a.bin").add_file(source_b, name="b.bin")
     with pytest.raises(InstantMLError, match="unknown artifact upload entry"):
         Run(client=UnknownEntryClient(), run_id="run-1").log_versioned_artifact(artifact, aliases=["extra"])
 
@@ -1232,7 +1232,7 @@ def test_run_versioned_artifact_error_paths(monkeypatch, tmp_path):
             return {"artifact_version": "bad"}
 
     with pytest.raises(InstantMLError, match="invalid artifact version"):
-        Run(client=BadCompleteClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad-complete").add_file(source_a, name="a.bin"))
+        Run(client=BadCompleteClient(), run_id="run-1").log_versioned_artifact(im.VersionedArtifact("bad-complete").add_file(source_a, name="a.bin"))
 
     monkeypatch.setattr(client_module, "_put_presigned_url", lambda url, payload, timeout: "etag-1")
 
@@ -1257,7 +1257,7 @@ def test_run_versioned_artifact_error_paths(monkeypatch, tmp_path):
             raise AssertionError(path)
 
     with pytest.raises(InstantMLError, match="invalid renewed"):
-        Run(client=BadRenewClient(), run_id="run-1").log_versioned_artifact(ro.VersionedArtifact("bad-renew").add_file(source_a, name="a.bin"))
+        Run(client=BadRenewClient(), run_id="run-1").log_versioned_artifact(im.VersionedArtifact("bad-renew").add_file(source_a, name="a.bin"))
 
 
 def test_use_artifact_returns_existing_handle_when_server_omits_version():
@@ -1271,22 +1271,22 @@ def test_use_artifact_returns_existing_handle_when_server_omits_version():
             assert path == "/api/runs/run-1/artifact-inputs"
             return {"edge": {"id": "edge-1"}}
 
-    artifact = client_module.LoggedArtifact(ro.Api(base_url="http://example.test"), {"id": "version-1"})
+    artifact = client_module.LoggedArtifact(im.Api(base_url="http://example.test"), {"id": "version-1"})
     assert Run(client=FakeClient(), run_id="run-1").use_artifact(artifact) is artifact
 
 
 def test_checkpoint_policy_matches_positive_integer_intervals():
-    policy = ro.CheckpointPolicy(every_steps=3)
+    policy = im.CheckpointPolicy(every_steps=3)
 
     assert [step for step in range(8) if policy.should_save(step)] == [3, 6]
     assert policy.should_save(6.0) is True
     assert policy.should_save(4.5) is False
     assert policy.should_save(None) is False
-    assert ro.CheckpointPolicy(every_steps=3, include_step_zero=True).should_save(0) is True
+    assert im.CheckpointPolicy(every_steps=3, include_step_zero=True).should_save(0) is True
     with pytest.raises(TypeError, match="every_steps"):
-        ro.CheckpointPolicy(every_steps=3.0)
+        im.CheckpointPolicy(every_steps=3.0)
     with pytest.raises(ValueError, match="positive"):
-        ro.CheckpointPolicy(every_steps=0)
+        im.CheckpointPolicy(every_steps=0)
 
 
 def test_log_checkpoint_file_enriches_metadata_and_uploads_bytes(tmp_path):
@@ -1346,9 +1346,9 @@ def test_rich_object_helpers_call_expected_endpoints(tmp_path):
 
     source = tmp_path / "sample.mp3"
     source.write_bytes(b"hello")
-    run = ro.Run(client=FakeClient(), run_id="run-1")
+    run = im.Run(client=FakeClient(), run_id="run-1")
     table = run.log_table_object("eval/samples", ["prompt", "score"], [["a", 0.9]], step=2)
-    histogram = run.log_objects({"eval/scores": ro.Histogram([0, 1, 2], [4, 8])}, step=2)[0]
+    histogram = run.log_objects({"eval/scores": im.Histogram([0, 1, 2], [4, 8])}, step=2)[0]
     media = run.log_audio("audio/sample", str(source), step=2, caption="sample")
 
     assert table["kind"] == "table"
@@ -1383,8 +1383,8 @@ def test_rich_object_spool_and_validation(tmp_path):
 
     source = tmp_path / "sample.mp3"
     source.write_bytes(b"hello")
-    run = ro.Run(client=FailingClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path / "spool"))
-    table = run.log_objects({"eval/samples": ro.Table(["prompt"], [{"prompt": "a"}])}, step=1)[0]
+    run = im.Run(client=FailingClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path / "spool"))
+    table = run.log_objects({"eval/samples": im.Table(["prompt"], [{"prompt": "a"}])}, step=1)[0]
     assert table["id"] == "spooled"
     event = json.loads(next((tmp_path / "spool" / "run-1").glob("*.json")).read_text(encoding="utf-8"))
     assert event["requests"][0]["path"] == "/api/runs/run-1/objects"
@@ -1392,9 +1392,9 @@ def test_rich_object_spool_and_validation(tmp_path):
     with pytest.raises(InstantMLError, match="rich media"):
         run.log_audio("audio/sample", str(source), step=1)
     with pytest.raises(ValueError, match="row length"):
-        ro.Run(client=FailingClient(), run_id="run-1").log_table_object("bad", ["a"], [[1, 2]])
+        im.Run(client=FailingClient(), run_id="run-1").log_table_object("bad", ["a"], [[1, 2]])
     with pytest.raises(ValueError, match="nonnegative"):
-        ro.Run(client=FailingClient(), run_id="run-1").log_objects({"bad": ro.Histogram([0, 1], [-1])}, step=1)
+        im.Run(client=FailingClient(), run_id="run-1").log_objects({"bad": im.Histogram([0, 1], [-1])}, step=1)
 
 
 def test_rich_object_helper_edge_cases(tmp_path):
@@ -1413,8 +1413,8 @@ def test_rich_object_helper_edge_cases(tmp_path):
     video = tmp_path / "rollout.mp4"
     image.write_bytes(b"fake")
     video.write_bytes(b"fake")
-    run = ro.Run(client=FakeClient(), run_id="run-1")
-    run.log_histogram("model/weights", ro.Histogram([0, 1], [3], metadata={"layer": 1}), step=1)
+    run = im.Run(client=FakeClient(), run_id="run-1")
+    run.log_histogram("model/weights", im.Histogram([0, 1], [3], metadata={"layer": 1}), step=1)
     run.log_image("images/frame", str(image), step=1)
     run.log_video_object("videos/rollout", str(video), step=1)
     assert [call[2]["kind"] for call in calls if call[1].endswith("/objects")] == ["histogram", "image", "video"]
@@ -1422,15 +1422,15 @@ def test_rich_object_helper_edge_cases(tmp_path):
     with pytest.raises(TypeError, match="objects"):
         run.log_objects(["bad"], step=1)
     with pytest.raises(TypeError, match="object key"):
-        run.log_objects({1: ro.Histogram([0, 1], [1])}, step=1)
+        run.log_objects({1: im.Histogram([0, 1], [1])}, step=1)
     with pytest.raises(ValueError, match="object key"):
-        run.log_objects({"": ro.Histogram([0, 1], [1])}, step=1)
+        run.log_objects({"": im.Histogram([0, 1], [1])}, step=1)
     with pytest.raises(ValueError, match="object key"):
-        run.log_objects({"x" * 513: ro.Histogram([0, 1], [1])}, step=1)
+        run.log_objects({"x" * 513: im.Histogram([0, 1], [1])}, step=1)
     with pytest.raises(TypeError, match="metadata"):
-        run.log_objects({"x": ro.Histogram([0, 1], [1])}, step=1, metadata=[])
+        run.log_objects({"x": im.Histogram([0, 1], [1])}, step=1, metadata=[])
     with pytest.raises(TypeError, match="JSON serializable"):
-        run.log_objects({"x": ro.Table(["a"], [{"a": object()}])}, step=1)
+        run.log_objects({"x": im.Table(["a"], [{"a": object()}])}, step=1)
     with pytest.raises(ValueError, match="columns"):
         run.log_table_object("x", [], [])
     with pytest.raises(TypeError, match="table rows"):
@@ -1438,15 +1438,15 @@ def test_rich_object_helper_edge_cases(tmp_path):
     with pytest.raises(TypeError, match="dictionaries"):
         run.log_table_object("x", ["a"], [object()])
     with pytest.raises(ValueError, match="not be empty"):
-        run.log_objects({"x": ro.Histogram([], [])}, step=1)
+        run.log_objects({"x": im.Histogram([], [])}, step=1)
     with pytest.raises(ValueError, match="bins length"):
-        run.log_objects({"x": ro.Histogram([0, 1, 2, 3], [1, 2])}, step=1)
+        run.log_objects({"x": im.Histogram([0, 1, 2, 3], [1, 2])}, step=1)
     with pytest.raises(TypeError, match="must be a list"):
-        run.log_objects({"x": ro.Histogram("bad", [1])}, step=1)
+        run.log_objects({"x": im.Histogram("bad", [1])}, step=1)
     with pytest.raises(TypeError, match="must contain numbers"):
-        run.log_objects({"x": ro.Histogram([0, "bad"], [1])}, step=1)
+        run.log_objects({"x": im.Histogram([0, "bad"], [1])}, step=1)
     with pytest.raises(ValueError, match="finite"):
-        run.log_objects({"x": ro.Histogram([0, float("inf")], [1])}, step=1)
+        run.log_objects({"x": im.Histogram([0, float("inf")], [1])}, step=1)
     with pytest.raises(InstantMLError, match="does not exist"):
         run.log_image("images/missing", str(tmp_path / "missing.png"), step=1)
     with pytest.raises(TypeError, match="unsupported"):
@@ -1463,7 +1463,7 @@ def test_log_classification_eval_builds_binary_eval_object(monkeypatch):
             calls.append((method, path, body))
             return {"object": {"id": len(calls), **body}}
 
-    run = ro.Run(client=FakeClient(), run_id="run-1")
+    run = im.Run(client=FakeClient(), run_id="run-1")
     result = run.log_classification_eval(
         "eval/classification",
         y_true=[0, 1, 1, 0],
@@ -1506,7 +1506,7 @@ def test_log_classification_eval_builds_binary_eval_object(monkeypatch):
     assert value["metadata"] == {"dataset": "holdout"}
 
     generic = run.log_objects({
-        "eval/wrapper": ro.ClassificationEval(
+        "eval/wrapper": im.ClassificationEval(
             y_true=["negative", "positive"],
             y_score=[0.4, 0.6],
             class_names=["negative", "positive"],
@@ -1537,7 +1537,7 @@ def test_log_classification_eval_accepts_tuple_inputs_and_explicit_predictions()
             calls.append((method, path, body))
             return {"object": {"id": len(calls), **body}}
 
-    run = ro.Run(client=FakeClient(), run_id="run-1")
+    run = im.Run(client=FakeClient(), run_id="run-1")
     result = run.log_classification_eval(
         "eval/explicit",
         y_true=(0, 1),
@@ -1559,7 +1559,7 @@ def test_log_classification_eval_validates_inputs(monkeypatch):
         def _request(self, method, path, body):
             raise AssertionError("network should not be used for invalid eval payloads")
 
-    run = ro.Run(client=FailingClient(), run_id="run-1")
+    run = im.Run(client=FailingClient(), run_id="run-1")
     with pytest.raises(ValueError, match="at least one sample"):
         run.log_classification_eval("eval/bad", y_true=[], y_score=[])
     monkeypatch.setattr(serialization_module, "MAX_CLASSIFICATION_EVAL_SAMPLE_COUNT", 1)
@@ -3605,7 +3605,7 @@ def test_file_aliases_and_replay_without_offline_dir():
 
 
 def test_offline_spool_and_replay(api_server, tmp_path):
-    online = ro.init(project="offline", name="replay-me", base_url=api_server, source_tracking=False, upload_mode="sync")
+    online = im.init(project="offline", name="replay-me", base_url=api_server, source_tracking=False, upload_mode="sync")
     offline = Run(
         client=Client(base_url="http://127.0.0.1:9", timeout=0.01, offline_dir=str(tmp_path)),
         run_id=online.run_id,
@@ -3762,11 +3762,11 @@ def test_process_uploader_sends_event_id_as_log_idempotency_key(tmp_path):
 
 
 def test_package_level_drain_spool_wrapper(tmp_path):
-    assert ro.drain_spool(str(tmp_path)) == 0
+    assert im.drain_spool(str(tmp_path)) == 0
 
 
 def test_process_spool_integration_drains_to_api_server(api_server, tmp_path):
-    run = ro.init(
+    run = im.init(
         project="process-spool",
         name="worker-drained",
         base_url=api_server,
@@ -4014,7 +4014,7 @@ def test_api_fork_run_returns_child_and_sends_idempotency(monkeypatch):
 
     monkeypatch.setattr(Client, "_request", fake_request)
 
-    child = ro.Api(base_url="http://example.test").fork_run(
+    child = im.Api(base_url="http://example.test").fork_run(
         "source-run",
         step=120,
         checkpoint_artifact_id="artifact-1",
@@ -4054,7 +4054,7 @@ def test_api_fork_run_uses_stable_default_idempotency(monkeypatch):
 
     monkeypatch.setattr(Client, "_request", fake_request)
 
-    api = ro.Api(base_url="http://example.test")
+    api = im.Api(base_url="http://example.test")
     assert api.fork_run("source-run", step=120, tags=["retry"]) == {"id": "child-1"}
     assert api.fork_run("source-run", step=120, tags=["retry"]) == {"id": "child-2"}
 
@@ -4064,18 +4064,18 @@ def test_api_fork_run_uses_stable_default_idempotency(monkeypatch):
 
 def test_api_fork_run_validates_inputs_and_response(monkeypatch):
     with pytest.raises(TypeError, match="inherit_config"):
-        ro.Api(base_url="http://example.test").fork_run("source-run", inherit_config="yes")
+        im.Api(base_url="http://example.test").fork_run("source-run", inherit_config="yes")
     with pytest.raises(TypeError, match="tags"):
-        ro.Api(base_url="http://example.test").fork_run("source-run", tags="retry")
+        im.Api(base_url="http://example.test").fork_run("source-run", tags="retry")
     with pytest.raises(ValueError, match="notes"):
-        ro.Api(base_url="http://example.test").fork_run("source-run", notes="")
+        im.Api(base_url="http://example.test").fork_run("source-run", notes="")
 
     def invalid_response(self, method, path, body=None, idempotency_key=None):
         return {"run": "not-a-dict"}
 
     monkeypatch.setattr(Client, "_request", invalid_response)
     with pytest.raises(InstantMLError, match="invalid fork response"):
-        ro.Api(base_url="http://example.test").fork_run("source-run", name="child")
+        im.Api(base_url="http://example.test").fork_run("source-run", name="child")
 
 
 def test_attach_run_returns_existing_run_handle(monkeypatch, tmp_path):
@@ -4110,7 +4110,7 @@ def test_attach_run_optional_local_features(monkeypatch):
     monkeypatch.setattr(Run, "start_system_metrics", lambda self, interval=15.0: events.append(("system", interval)))
     monkeypatch.setattr(Run, "capture_console", lambda self: events.append(("console", self.run_id)))
 
-    run = ro.attach_run(
+    run = im.attach_run(
         "run-123",
         api_key="key",
         base_url="http://example.test",
@@ -4132,7 +4132,7 @@ def test_top_level_attach_run_defaults_to_async(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Client, "_request", fake_request)
 
-    run = ro.attach_run(
+    run = im.attach_run(
         "run-top-async",
         api_key="key",
         base_url="http://example.test",
@@ -4601,10 +4601,10 @@ def test_log_auto_step_classifies_metrics_text_objects_and_files(tmp_path):
         {
             "loss": 0.25,
             "note": "stable",
-            "explicit_text": ro.Text("kept"),
-            "table": ro.Table.from_data([{"epoch": 1, "score": 0.9}]),
-            "hist": ro.Histogram.from_values([0.0, 1.0, 2.0], bins=2),
-            "file": ro.File(str(sample), artifact_type="checkpoint", metadata={"phase": "train"}),
+            "explicit_text": im.Text("kept"),
+            "table": im.Table.from_data([{"epoch": 1, "score": 0.9}]),
+            "hist": im.Histogram.from_values([0.0, 1.0, 2.0], bins=2),
+            "file": im.File(str(sample), artifact_type="checkpoint", metadata={"phase": "train"}),
         }
     )
     run.log({"loss": 0.2}, step=5)
@@ -4664,7 +4664,7 @@ def test_log_validation_rejects_before_submit_and_expands_supported_lists(tmp_pa
         run.log({"loss": 1.0}, step=True)
     assert calls == []
 
-    run.log({"tables": [ro.Table(["a"], [[1]]), ro.Table(["a"], [[2]])], "files": [ro.File(str(first)), ro.File(str(second))]})
+    run.log({"tables": [im.Table(["a"], [[1]]), im.Table(["a"], [[2]])], "files": [im.File(str(first)), im.File(str(second))]})
 
     assert [call[2]["key"] for call in calls if call[1].endswith("/objects")] == ["tables/0", "tables/1"]
     assert [call[2]["step"] for call in calls if call[1].endswith("/objects")] == [1, 1]
@@ -4691,9 +4691,9 @@ def test_wrappers_conversions_and_missing_optional_dependencies(monkeypatch, tmp
             return [{"name": "a", "score": 1}]
 
     run = Run(client=FakeClient(), run_id="run-1")
-    run.log_objects({"frame": ro.Table.from_dataframe(FakeDataFrame())}, step=1)
-    run.log_objects({"image": ro.Image.from_data([[[255, 0, 0]]])}, step=1)
-    run.log_objects({"scaled_image": ro.Image.from_data([[[0.5, 0.0, 0.0]]])}, step=1)
+    run.log_objects({"frame": im.Table.from_dataframe(FakeDataFrame())}, step=1)
+    run.log_objects({"image": im.Image.from_data([[[255, 0, 0]]])}, step=1)
+    run.log_objects({"scaled_image": im.Image.from_data([[[0.5, 0.0, 0.0]]])}, step=1)
 
     assert calls[0][2]["rows"] == [{"name": "a", "score": 1}]
     upload = next(call for call in calls if call[1].endswith("/artifacts/upload"))
@@ -4708,7 +4708,7 @@ def test_wrappers_conversions_and_missing_optional_dependencies(monkeypatch, tmp
 
     monkeypatch.setattr("builtins.__import__", fail_soundfile)
     with pytest.raises(InstantMLError, match="soundfile"):
-        run.log_objects({"audio": ro.Audio.from_data([0.0, 0.1])}, step=1)
+        run.log_objects({"audio": im.Audio.from_data([0.0, 0.1])}, step=1)
 
     def fail_video_imports(name, *args, **kwargs):
         if name.startswith("imageio") or name.startswith("moviepy"):
@@ -4717,7 +4717,7 @@ def test_wrappers_conversions_and_missing_optional_dependencies(monkeypatch, tmp
 
     monkeypatch.setattr("builtins.__import__", fail_video_imports)
     with pytest.raises(InstantMLError, match="moviepy or imageio"):
-        run.log_objects({"video": ro.Video.from_data([[[[0, 0, 0]]]])}, step=1)
+        run.log_objects({"video": im.Video.from_data([[[[0, 0, 0]]]])}, step=1)
 
 
 def test_local_store_records_attempted_metrics_events_and_files(tmp_path):
@@ -4736,7 +4736,7 @@ def test_local_store_records_attempted_metrics_events_and_files(tmp_path):
     source.write_bytes(b"weights")
     store = _LocalStore(str(tmp_path / "local"), "run-1")
     run = Run(client=FakeClient(), run_id="run-1", _local_store=store)
-    run.log({"loss": 1.0, "note": "ok", "table": ro.Table(["a"], [[1]]), "weights": ro.File(str(source))})
+    run.log({"loss": 1.0, "note": "ok", "table": im.Table(["a"], [[1]]), "weights": im.File(str(source))})
     run.finish()
 
     database = sqlite3.connect(tmp_path / "local" / "store.sqlite3")
@@ -4983,11 +4983,11 @@ def test_torch_watch_transformers_callback_and_lightning_logger(monkeypatch):
 
     fake_run = FakeRun()
     monkeypatch.setattr(client_module, "init", lambda **kwargs: fake_run)
-    callback = ro.TransformersCallback(project="hf-demo")
+    callback = im.TransformersCallback(project="hf-demo")
     callback.on_log(SimpleNamespace(project="ignored"), SimpleNamespace(global_step=9), object(), logs={"loss": 1.0, "epoch": "1"})
     assert fake_run.logged == [({"loss": 1.0}, 9)]
 
-    logger = ro.LightningLogger(project="lightning-demo", run=fake_run)
+    logger = im.LightningLogger(project="lightning-demo", run=fake_run)
     assert logger.name == "lightning-demo"
     assert logger.version == "fake-run"
     logger.log_metrics({"acc": 0.8}, step=2)
@@ -5028,29 +5028,29 @@ def test_wrapper_constructor_edge_cases_and_client_init_options(monkeypatch, tmp
     assert calls[0][1] == "/runs"
 
     with pytest.raises(ValueError, match="dataframe or data"):
-        ro.Table(dataframe=object(), data=[])
-    assert ro.Table(columns=("a",), rows=({"a": 1},)).rows == [{"a": 1}]
-    assert ro.Table.from_data([{"auto": 1}]).columns == ["auto"]
+        im.Table(dataframe=object(), data=[])
+    assert im.Table(columns=("a",), rows=({"a": 1},)).rows == [{"a": 1}]
+    assert im.Table.from_data([{"auto": 1}]).columns == ["auto"]
     with pytest.raises(TypeError, match="bin count"):
-        ro.Histogram.from_values([1], bins=True)
+        im.Histogram.from_values([1], bins=True)
     with pytest.raises(ValueError, match="positive"):
-        ro.Histogram.from_values([1], bins=0)
+        im.Histogram.from_values([1], bins=0)
     with pytest.raises(ValueError, match="at least two"):
-        ro.Histogram.from_values([1], bins=[0])
-    assert ro.Histogram.from_values([1, 1], bins=1).counts == [2.0]
-    assert sum(ro.Histogram.from_values([1, 1], bins=2).counts) == 2.0
-    assert ro.Histogram.from_values([0, 2], bins=[0, 1, 2]).counts == [1.0, 1.0]
-    assert ro.Histogram.from_values([-1, 0, 3], bins=[0, 1, 2]).counts == [1.0, 0.0]
+        im.Histogram.from_values([1], bins=[0])
+    assert im.Histogram.from_values([1, 1], bins=1).counts == [2.0]
+    assert sum(im.Histogram.from_values([1, 1], bins=2).counts) == 2.0
+    assert im.Histogram.from_values([0, 2], bins=[0, 1, 2]).counts == [1.0, 1.0]
+    assert im.Histogram.from_values([-1, 0, 3], bins=[0, 1, 2]).counts == [1.0, 0.0]
 
     with pytest.raises(ValueError, match="either path or data"):
-        ro.Image("x.png", data=object())
+        im.Image("x.png", data=object())
     with pytest.raises(ValueError, match="either path or data"):
-        ro.Audio("x.wav", data=object())
+        im.Audio("x.wav", data=object())
     with pytest.raises(ValueError, match="either path or data"):
-        ro.Video("x.mp4", data=object())
-    assert ro.Image(object()).path is None
-    assert ro.Audio(object()).path is None
-    assert ro.Video(object()).path is None
+        im.Video("x.mp4", data=object())
+    assert im.Image(object()).path is None
+    assert im.Audio(object()).path is None
+    assert im.Video(object()).path is None
 
 
 def test_async_init_ignores_optional_system_and_console_failures(monkeypatch, tmp_path):
@@ -5117,7 +5117,7 @@ def test_log_helpers_error_paths_and_media_roots(tmp_path):
     with pytest.raises(ValueError, match="must not be empty"):
         _classify_log_payload({"items": []})
     with pytest.raises(TypeError, match="homogeneous"):
-        _classify_log_payload({"items": [ro.File("a"), ro.Table(["a"], [[1]])]})
+        _classify_log_payload({"items": [im.File("a"), im.Table(["a"], [[1]])]})
     with pytest.raises(TypeError, match="metrics"):
         run.log_metrics([], step=1)
     with pytest.raises(TypeError, match="finite numbers"):
@@ -5127,7 +5127,7 @@ def test_log_helpers_error_paths_and_media_roots(tmp_path):
     with pytest.raises(TypeError, match="text value"):
         run.log_text({"bad": object()})
     with pytest.raises(ValueError, match="must not be empty"):
-        ro.Histogram.from_values([])
+        im.Histogram.from_values([])
     with pytest.raises(InstantMLError, match="upload source"):
         Run(client=FakeClient(), run_id="run-2").upload_file(str(tmp_path / "missing.txt"))
 
@@ -5242,8 +5242,8 @@ def test_run_media_materialization_audio_and_video_branches(monkeypatch, tmp_pat
     monkeypatch.setattr(client_module, "_write_video_data", lambda data, target, fps: (written.append(("video", data, target, fps)), target.write_bytes(b"v")))
     run = Run(client=FakeClient(), run_id="run-1", media_dir=str(tmp_path / "media"))
 
-    audio_path = run._materialize_media_source(ro.Audio.from_data([0.1], sample_rate=8000))
-    video_path = run._materialize_media_source(ro.Video.from_data([[[[0, 0, 0]]]], fps=12, format="mov"))
+    audio_path = run._materialize_media_source(im.Audio.from_data([0.1], sample_rate=8000))
+    video_path = run._materialize_media_source(im.Video.from_data([[[[0, 0, 0]]]], fps=12, format="mov"))
 
     assert audio_path.suffix == ".wav"
     assert video_path.suffix == ".mov"
@@ -5449,7 +5449,7 @@ def test_framework_adapter_warning_and_lazy_logger_paths(monkeypatch):
 
     fake_run = FakeRun()
     monkeypatch.setattr(client_module, "init", lambda **kwargs: fake_run)
-    logger = ro.LightningLogger(project="lazy")
+    logger = im.LightningLogger(project="lazy")
     logger.log_image("images", ["image"], step=1, caption="x")
     logger.log_audio("audios", ["audio"], step=2)
     logger.log_video("videos", ["video"], step=3)
@@ -5480,7 +5480,7 @@ def test_polished_framework_adapters_rank_zero_and_keras(monkeypatch, tmp_path):
     fake_run = FakeRun()
     monkeypatch.setattr(client_module, "init", lambda **kwargs: fake_run)
 
-    callback = ro.InstantMLCallback(project="hf-demo")
+    callback = im.InstantMLCallback(project="hf-demo")
     callback.on_log(
         SimpleNamespace(project="ignored"),
         SimpleNamespace(global_step=1, is_world_process_zero=False),
@@ -5505,7 +5505,7 @@ def test_polished_framework_adapters_rank_zero_and_keras(monkeypatch, tmp_path):
     assert fake_run.logged == [({"loss": 0.5}, 2)]
     assert fake_run.artifacts == [("checkpoint", str(output_dir), "checkpoint", 2, None)]
 
-    keras_callback = ro.InstantMLKerasCallback(run=fake_run, log_batch=True)
+    keras_callback = im.InstantMLKerasCallback(run=fake_run, log_batch=True)
     keras_callback.on_epoch_end(3, {"val_loss": 0.2, "ignored": object()})
     keras_callback.on_train_batch_end(4, {"loss": 0.1})
     keras_callback.on_train_end()
@@ -5553,18 +5553,18 @@ def test_framework_adapter_rank_zero_edge_paths(monkeypatch, tmp_path):
     monkeypatch.delenv("RANK", raising=False)
     monkeypatch.delenv("LOCAL_RANK", raising=False)
 
-    callback = ro.InstantMLCallback(project="hf-demo")
+    callback = im.InstantMLCallback(project="hf-demo")
     callback.setup(SimpleNamespace(project="ignored"), SimpleNamespace(is_global_zero=False))
     assert callback.run is None
     callback.on_save(SimpleNamespace(output_dir=str(tmp_path)), SimpleNamespace(is_global_zero=True), object())
     assert fake_run.artifacts == []
 
-    empty_callback = ro.InstantMLCallback()
+    empty_callback = im.InstantMLCallback()
     monkeypatch.setattr(empty_callback, "setup", lambda *args, **kwargs: None)
     empty_callback.on_log(SimpleNamespace(project="ignored"), SimpleNamespace(is_global_zero=True), object(), logs={"loss": 1.0})
     assert empty_callback.run is None
 
-    logger = ro.InstantMLLogger(project="lightning-demo", run=fake_run)
+    logger = im.InstantMLLogger(project="lightning-demo", run=fake_run)
     monkeypatch.setenv("RANK", "1")
     assert logger.version == "rank-nonzero"
     logger.log_metrics({"loss": 1.0}, step=1)
@@ -5576,7 +5576,7 @@ def test_framework_adapter_rank_zero_edge_paths(monkeypatch, tmp_path):
     assert fake_run.configs == []
     monkeypatch.delenv("RANK", raising=False)
 
-    lazy_keras = ro.InstantMLKerasCallback(project="keras-demo")
+    lazy_keras = im.InstantMLKerasCallback(project="keras-demo")
     lazy_keras.on_train_begin()
     lazy_keras.on_train_batch_end(1, {"loss": 0.5})
     assert init_calls == [{"project": "keras-demo"}]
@@ -5608,9 +5608,9 @@ def test_framework_adapters_subclass_installed_framework_bases(monkeypatch):
     monkeypatch.setitem(sys.modules, "keras", ModuleType("keras"))
     monkeypatch.setitem(sys.modules, "keras.callbacks", keras_callbacks_module)
 
-    assert isinstance(ro.InstantMLCallback(), TrainerCallback)
-    assert isinstance(ro.InstantMLLogger(project="demo", run=object()), LightningBase)
-    assert isinstance(ro.InstantMLKerasCallback(run=object()), KerasBase)
+    assert isinstance(im.InstantMLCallback(), TrainerCallback)
+    assert isinstance(im.InstantMLLogger(project="demo", run=object()), LightningBase)
+    assert isinstance(im.InstantMLKerasCallback(run=object()), KerasBase)
 
 
 def test_framework_adapter_lazy_helper_edge_paths(monkeypatch):
@@ -5618,13 +5618,13 @@ def test_framework_adapter_lazy_helper_edge_paths(monkeypatch):
     monkeypatch.setitem(sys.modules, "framework_missing_attr", missing_attr_module)
     assert client_module._optional_framework_base("framework_missing_attr", "callbacks.Callback") is None
 
-    class ChildCallback(ro.InstantMLCallback):
+    class ChildCallback(im.InstantMLCallback):
         pass
 
-    class ChildLogger(ro.InstantMLLogger):
+    class ChildLogger(im.InstantMLLogger):
         pass
 
-    class ChildKeras(ro.InstantMLKerasCallback):
+    class ChildKeras(im.InstantMLKerasCallback):
         pass
 
     assert type(ChildCallback()) is ChildCallback
@@ -5709,7 +5709,7 @@ def test_init_raises_when_no_credentials(monkeypatch, tmp_path):
     monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
     monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", tmp_path / "no_such_file")
     with pytest.raises(InstantMLError, match="instantml login"):
-        ro.init(project="test")
+        im.init(project="test")
 
 
 def test_top_level_init_defaults_to_async_upload_mode(monkeypatch, tmp_path):
@@ -5720,7 +5720,7 @@ def test_top_level_init_defaults_to_async_upload_mode(monkeypatch, tmp_path):
     monkeypatch.setattr(Client, "_request", fake_request)
     monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
 
-    run = ro.init(project="test", base_url="http://example.test", queue_dir=str(tmp_path / "async"))
+    run = im.init(project="test", base_url="http://example.test", queue_dir=str(tmp_path / "async"))
 
     assert run.wait_for_init(timeout=2.0) == "run-top-default-async"
     assert run.upload_mode == "async"
@@ -5735,7 +5735,7 @@ def test_init_succeeds_with_explicit_api_key(monkeypatch):
         return {"run": {"id": "run-1"}}
 
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", api_key="my-key", base_url="http://example.test", upload_mode="sync")
+    run = im.init(project="test", api_key="my-key", base_url="http://example.test", upload_mode="sync")
     assert run.run_id == "run-1"
 
 
@@ -5748,7 +5748,7 @@ def test_init_succeeds_with_env_var(monkeypatch):
 
     monkeypatch.setenv("INSTANTML_API_KEY", "env-key")
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", base_url="http://example.test", upload_mode="sync")
+    run = im.init(project="test", base_url="http://example.test", upload_mode="sync")
     assert run.run_id == "run-2"
 
 
@@ -5764,5 +5764,5 @@ def test_init_succeeds_with_credentials_file(monkeypatch, tmp_path):
     creds.write_text('api_key = "file-key"\n')
     monkeypatch.setattr("instantml.cli._CREDENTIALS_PATH", creds)
     monkeypatch.setattr(Client, "_request", fake_request)
-    run = ro.init(project="test", base_url="http://example.test", upload_mode="sync")
+    run = im.init(project="test", base_url="http://example.test", upload_mode="sync")
     assert run.run_id == "run-3"

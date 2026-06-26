@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import instantml as ro
+import instantml as im
 import instantml.client as client_module
 import instantml.log_payload as log_payload
 import instantml.media as media
@@ -40,15 +40,15 @@ def test_client_facade_exports_extracted_modules() -> None:
 
 def test_public_extracted_classes_preserve_client_module_identity() -> None:
     for cls in (
-        ro.Table,
-        ro.Histogram,
-        ro.File,
-        ro.Artifact,
-        ro.CheckpointPolicy,
-        ro.Text,
-        ro.Image,
-        ro.Video,
-        ro.Audio,
+        im.Table,
+        im.Histogram,
+        im.File,
+        im.Artifact,
+        im.CheckpointPolicy,
+        im.Text,
+        im.Image,
+        im.Video,
+        im.Audio,
     ):
         assert cls.__module__ == "instantml.client"
 
@@ -88,7 +88,7 @@ def test_run_media_materialization_uses_client_facade_monkeypatch(monkeypatch, t
 
     monkeypatch.setattr(client_module, "_write_image_data", fake_write_image_data)
 
-    materialized = run._materialize_media_source(ro.Image.from_data("payload"))
+    materialized = run._materialize_media_source(im.Image.from_data("payload"))
 
     assert materialized.parent == tmp_path
     assert materialized.read_bytes() == b"image"

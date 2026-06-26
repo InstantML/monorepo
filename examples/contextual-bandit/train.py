@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-import instantml as ro
+import instantml as im
 
 
 ARM_NAMES = ["email_coupon", "free_shipping", "bundle_discount", "loyalty_points"]
@@ -154,7 +154,7 @@ def run_experiment(
     artifact_every: int,
     output_dir: Path,
     emit_artifacts: bool,
-    init_run: Callable[..., ObservableRun] = ro.init,
+    init_run: Callable[..., ObservableRun] = im.init,
     artifact_sink: ArtifactSink | None = None,
 ) -> list[RunSummary]:
     validate_positive("steps", steps)

@@ -70,14 +70,14 @@ For hosted or auth-required servers, set an API key:
 export INSTANTML_API_KEY="instantml_..."
 ```
 
-You can also pass `api_key="instantml_..."` directly to `ro.init(...)`.
+You can also pass `api_key="instantml_..."` directly to `im.init(...)`.
 
 Common connection options:
 
 ```python
-import instantml as ro
+import instantml as im
 
-client = ro.Client(
+client = im.Client(
     base_url="http://127.0.0.1:8000",
     timeout=2.0,
     api_key="instantml_...",
@@ -86,14 +86,14 @@ client = ro.Client(
 run = client.init(project="cartpole", name="ppo-seed-42")
 ```
 
-Most users can call `ro.init(...)` directly. Use `ro.Client(...)` when you want to reuse a base URL, timeout, API key, or offline directory across several runs in the same script.
+Most users can call `im.init(...)` directly. Use `im.Client(...)` when you want to reuse a base URL, timeout, API key, or offline directory across several runs in the same script.
 
 ## Minimal Example
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="cartpole",
     name="ppo-seed-42",
     config={"seed": 42, "algorithm": "ppo", "learning_rate": 3e-4},
@@ -144,9 +144,9 @@ The UI uses these namespaces to group panels and make metric search easier. Unit
 Use a context manager when you want interrupted runs to be marked as failed automatically:
 
 ```python
-import instantml as ro
+import instantml as im
 
-with ro.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
+with im.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
     for epoch in range(10):
         run.log_metrics(
             {"train/loss": 0.8 / (epoch + 1), "val/accuracy": 0.7 + epoch * 0.02},
@@ -161,7 +161,7 @@ If the block exits normally, the SDK finishes the run as `finished`. If an excep
 Pass stable run identity at creation time:
 
 ```python
-run = ro.init(
+run = im.init(
     project="iris-classification",
     name="softmax-regularized-seed-17",
     config={
@@ -181,7 +181,7 @@ Run notes are trimmed and limited to 512 UTF-8 bytes. Use notes for short search
 Attach extra JSON metadata:
 
 ```python
-run = ro.init(
+run = im.init(
     project="finetune",
     metadata={"trainer": "custom-loop", "cluster": "a100-dev"},
 )
@@ -194,7 +194,7 @@ git diff metadata are opt-in through `SourceTracking(...)`. Disable source
 capture with `source_tracking=False`:
 
 ```python
-run = ro.init(project="private-run", source_tracking=False)
+run = im.init(project="private-run", source_tracking=False)
 ```
 
 `metadata["_rlobs"]` is reserved for SDK-owned source metadata and cannot be supplied by users.
@@ -376,7 +376,7 @@ In the UI:
 Use buffering when you want to batch post-init SDK calls in memory:
 
 ```python
-run = ro.init(project="long-run", buffer_size=25)
+run = im.init(project="long-run", buffer_size=25)
 
 for step in range(1000):
     run.log_metrics({"train/loss": 1.0 / (step + 1)}, step=step)
@@ -392,7 +392,7 @@ run.finish()
 `offline_dir` stores failed post-init requests so you can replay them later:
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
     offline_dir=".instantml/offline",
 )
@@ -414,7 +414,7 @@ Use `upload_mode="spool"` when your training process should avoid post-init HTTP
 Training process:
 
 ```python
-run = ro.init(
+run = im.init(
     project="humanoid-rl",
     name="td3-seed-36970",
     upload_mode="spool",
@@ -456,9 +456,9 @@ PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
 You can also call the uploader from Python:
 
 ```python
-import instantml as ro
+import instantml as im
 
-uploaded = ro.drain_spool(".instantml/spool", base_url="http://127.0.0.1:8000")
+uploaded = im.drain_spool(".instantml/spool", base_url="http://127.0.0.1:8000")
 print(uploaded)
 ```
 
@@ -470,9 +470,9 @@ This condensed example trains a small softmax classifier and logs the pieces tha
 
 ```python
 import numpy as np
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="iris-classification",
     name="softmax-baseline-seed-7",
     config={
@@ -563,7 +563,7 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 4. In the Runs workspace, use automatic panels for a quick overview or switch to manual mode and add only the metric panels you need.
 5. Drag panels between sections, resize panels from the lower-right handle, hover points for run/value tooltips, and drag the range brush to zoom into a training interval.
 6. Open Run Detail to inspect one run's metrics, config, source metadata, notes, tags, artifacts, checkpoints, and rollouts.
-7. Fork a stored checkpoint from Run Detail when you want a linked child run record for a resume script; then use `ro.attach_run(child_id)` to continue logging.
+7. Fork a stored checkpoint from Run Detail when you want a linked child run record for a resume script; then use `im.attach_run(child_id)` to continue logging.
 8. Open Compare to scan selected runs side by side or row by row. Use diff-only mode, sorting, reference switching, and tags/notes editing to decide what changed.
 9. Create Reports when you want a persisted experiment writeup with live panels, share links, and Markdown export.
 10. Save workspace views and layouts for repeated analysis.
@@ -593,7 +593,7 @@ If `import instantml` fails in a source checkout:
 
 ```bash
 export PYTHONPATH="$PWD/packages/python-sdk"
-python3 -c "import instantml as ro; print(ro.Client())"
+python3 -c "import instantml as im; print(im.Client())"
 ```
 
 If SDK calls fail with connection errors, confirm the API is running:
@@ -606,11 +606,11 @@ curl http://127.0.0.1:8000/healthz
 SDK network, server, and invalid-response failures raise `instantml.InstantMLError`:
 
 ```python
-import instantml as ro
+import instantml as im
 
 try:
-    run = ro.init(project="demo")
-except ro.InstantMLError as exc:
+    run = im.init(project="demo")
+except im.InstantMLError as exc:
     print(f"InstantML logging is unavailable: {exc}")
 ```
 
@@ -623,7 +623,7 @@ echo "$INSTANTML_API_KEY"
 or pass:
 
 ```python
-ro.init(project="demo", api_key="instantml_...", base_url="https://your-api.example.com")
+im.init(project="demo", api_key="instantml_...", base_url="https://your-api.example.com")
 ```
 
 If charts look empty, check that you logged finite numeric metrics with nonnegative steps:

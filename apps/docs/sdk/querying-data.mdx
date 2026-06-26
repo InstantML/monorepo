@@ -5,15 +5,15 @@ description: "Use the raw API helper for run summaries, bounded pages, and artif
 
 # Query runs and download artifacts
 
-Most training scripts only write data. Use `ro.Api(...)` when a script or
+Most training scripts only write data. Use `im.Api(...)` when a script or
 notebook needs to query runs, export data, or restore artifacts.
 
 ## Create an API helper
 
 ```python
-import instantml as ro
+import instantml as im
 
-api = ro.Api(
+api = im.Api(
     base_url="https://api.instantml.ai",
     api_key="instantml_...",
 )
@@ -87,12 +87,12 @@ instead of repeatedly fetching every chart series from a notebook.
 
 ## Existing-run writes
 
-Use `ro.attach_run(...)` when a resume script should continue logging into an
+Use `im.attach_run(...)` when a resume script should continue logging into an
 existing run, such as a checkpoint fork created by the dashboard or
 `Api.fork_run(...)`.
 
 ```python
-run = ro.attach_run("child-run-id")
+run = im.attach_run("child-run-id")
 run.log({"train/loss": 0.1}, step=1001)
 run.finish()
 ```
