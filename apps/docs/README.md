@@ -105,6 +105,10 @@ Node tests.
   reference docs, including the current Google Cloud ClickHouse hosted storage
   page.
 - `sdk/`: SDK usage docs.
+- `integrations/`: per-framework integration guides (PyTorch Lightning, Hugging
+  Face Transformers, Keras) and the Weights & Biases migration guide. These are
+  buyer-intent landing pages for "<framework> experiment tracking" queries and
+  surface the thin SDK adapters and `wandb` drop-in/shadow/mirror modes.
 - `dashboard/`: dashboard workflow docs.
 - `guides/`: examples, imports, W&B/Neptune migration walkthroughs, export,
   usage, auth, billing, storage, observability, and evergreen comparison guides

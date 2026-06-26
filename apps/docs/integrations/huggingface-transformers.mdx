@@ -1,0 +1,65 @@
+---
+title: "Hugging Face Transformers"
+description: "Track Hugging Face Trainer fine-tuning runs in InstantML with a Transformers callback that logs metrics and checkpoints."
+---
+
+# Hugging Face Transformers
+
+`im.TransformersCallback` is a `TrainerCallback` for the Hugging Face `Trainer`.
+It logs scalar metrics as training progresses and records each saved checkpoint
+as an artifact. It is rank-zero safe, so only the main process logs in
+distributed training.
+
+## Install
+
+```bash
+python -m pip install "instantml[frameworks]"
+```
+
+## Use it
+
+Add the callback to an existing `Trainer`:
+
+```python
+import instantml as im
+from transformers import Trainer, TrainingArguments
+
+run = im.init(project="sft", name="llama-lora-seed-7", config={"lr": 2e-4})
+
+trainer = Trainer(
+    model=model,
+    args=TrainingArguments(output_dir="out", report_to="none"),
+    train_dataset=train_ds,
+    eval_dataset=eval_ds,
+)
+trainer.add_callback(im.TransformersCallback(run=run))
+trainer.train()
+run.finish()
+```
+
+You can also pass it in the `Trainer` constructor with
+`callbacks=[im.TransformersCallback(...)]`.
+
+Set `report_to="none"` in `TrainingArguments` so the Trainer's built-in loggers
+do not double-report.
+
+## Let the callback create the run
+
+If you do not pass `run=`, the callback creates one on first log. Extra keyword
+arguments are forwarded to `im.init(...)`:
+
+```python
+trainer.add_callback(
+    im.TransformersCallback(project="sft", tags=["lora"])
+)
+```
+
+When no project is given it falls back to a `project` attribute on the
+`TrainingArguments`, then to `"transformers"`.
+
+## What gets logged
+
+- **Metrics** — scalar values from the Trainer's `on_log` events (loss,
+  learning rate, eval metrics) at the current `global_step`.
+- **Checkpoints** — on each `on_save`, the `output_dir` is recorded as a
+  `checkpoint` artifact tied to the current step.
