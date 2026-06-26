@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import instantml as ro
+import instantml as im
 
 try:  # NumPy is optional; the pure-Python path keeps this example portable.
     import numpy as np
@@ -102,7 +102,7 @@ def run_experiment(
     weights, bias = initial_parameters(seed, config.features)
     run = None
     try:
-        run = ro.init(
+        run = im.init(
             project="supervised-regression",
             name=f"{config.name}-seed-{seed}",
             config={

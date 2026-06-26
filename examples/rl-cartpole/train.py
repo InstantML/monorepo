@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import math
 
-import instantml as ro
+import instantml as im
 
 
 def generate_metrics(step: int, seed: int) -> dict[str, float]:
@@ -27,7 +27,7 @@ def main() -> None:
     parser.add_argument("--spool-dir", default=".instantml/spool", help="Process uploader spool directory")
     args = parser.parse_args()
 
-    run = ro.init(
+    run = im.init(
         project="cartpole",
         name=f"cartpole-seed-{args.seed}",
         config={"env": "CartPole-v1", "algo": "example-policy", "seed": args.seed},

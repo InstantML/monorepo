@@ -97,9 +97,9 @@ Metrics:
 ## SDK Interface
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="cartpole",
     name="cartpole-seed-42",
     config={"seed": 42},

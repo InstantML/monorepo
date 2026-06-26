@@ -35,22 +35,22 @@ instantml logout
 1. Explicit `api_key=...`.
 2. `INSTANTML_API_KEY`.
 3. CLI-stored credentials from `instantml login`.
-4. No credentials, which makes top-level `ro.init(...)` raise
+4. No credentials, which makes top-level `im.init(...)` raise
    `InstantMLError` before it creates a run.
 
 Examples:
 
 ```python
-import instantml as ro
+import instantml as im
 
 # Explicit key
-run = ro.init(project="cartpole", api_key="instantml_...", base_url="https://api.instantml.ai")
+run = im.init(project="cartpole", api_key="instantml_...", base_url="https://api.instantml.ai")
 
 # Environment key
-run = ro.init(project="cartpole", base_url="https://api.instantml.ai")
+run = im.init(project="cartpole", base_url="https://api.instantml.ai")
 
 # After `instantml login`
-run = ro.init(project="cartpole")
+run = im.init(project="cartpole")
 ```
 
 The hosted SDK default is `https://api.instantml.ai`. Use

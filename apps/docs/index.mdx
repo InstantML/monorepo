@@ -53,9 +53,9 @@ logged histogram timelines.
 ## The first useful loop
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="cartpole",
     name="ppo-seed-42",
     config={"seed": 42, "algorithm": "ppo", "learning_rate": 3e-4},

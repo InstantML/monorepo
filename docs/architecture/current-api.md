@@ -1954,9 +1954,9 @@ For SDK ingestion against hosted API-key mode:
 ```bash
 export INSTANTML_API_KEY=instantml_...
 PYTHONPATH=packages/python-sdk python3 - <<'PY'
-import instantml as ro
+import instantml as im
 
-run = ro.init(project="live-check", name="api-reference-check",
+run = im.init(project="live-check", name="api-reference-check",
               base_url="https://instantml-rust-api-hfv667633q-uc.a.run.app")
 run.log({"qa/accuracy": 1.0, "qa/loss": 0.0}, step=1)
 run.finish()

@@ -10,14 +10,14 @@ loop needs it.
 
 ## Default initialization and async writes
 
-By default, `ro.init(...)` starts run creation in the background, returns a run
+By default, `im.init(...)` starts run creation in the background, returns a run
 handle immediately, and uses async metric/log/status uploads after the run
 exists. The first write waits for run creation if it has not finished yet.
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(project="demo")
+run = im.init(project="demo")
 run.log({"train/loss": 0.2}, step=1)
 run.finish(timeout=30)
 ```
@@ -26,14 +26,14 @@ Use `run.wait_for_init()` when a script wants to fail before expensive training
 starts:
 
 ```python
-run = ro.init(project="demo")
+run = im.init(project="demo")
 run.wait_for_init()
 ```
 
 Set `async_init=False` for fully synchronous run creation:
 
 ```python
-run = ro.init(project="demo", async_init=False)
+run = im.init(project="demo", async_init=False)
 ```
 
 After initialization, scalar metrics, rank metrics, console logs, and final run
@@ -51,7 +51,7 @@ Use `upload_mode="sync"` when a short script should raise foreground
 `InstantMLError` exceptions for normal post-init writes:
 
 ```python
-run = ro.init(project="demo", upload_mode="sync")
+run = im.init(project="demo", upload_mode="sync")
 run.log({"train/loss": 0.2}, step=1)
 run.finish()
 ```
@@ -61,7 +61,7 @@ run.finish()
 Use buffering to batch post-init SDK calls in memory:
 
 ```python
-run = ro.init(project="long-run", buffer_size=25)
+run = im.init(project="long-run", buffer_size=25)
 
 for step in range(1000):
     run.log({"train/loss": 1.0 / (step + 1)}, step=step)
@@ -77,7 +77,7 @@ Call `flush()` before process exit or before you need writes visible in the UI.
 Use `offline_dir` to store failed post-init requests and replay them later:
 
 ```python
-run = ro.init(
+run = im.init(
     project="resilient-run",
     offline_dir=".instantml/offline",
 )
@@ -97,7 +97,7 @@ Use `upload_mode="spool"` when the training process should avoid post-init HTTP
 calls:
 
 ```python
-run = ro.init(
+run = im.init(
     project="long-run",
     name="seed-42",
     upload_mode="spool",

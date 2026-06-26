@@ -62,9 +62,9 @@ export INSTANTML_API_KEY="instantml_..."
 Use the key for SDK runs:
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(project="demo")
+run = im.init(project="demo")
 run.log({"accuracy": 0.94, "loss": 0.18}, step=10)
 run.finish()
 ```

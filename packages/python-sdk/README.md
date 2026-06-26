@@ -44,9 +44,9 @@ This directory contains the Python SDK used by training scripts to send runs, me
 Target public API:
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="cartpole",
     config={"seed": 42},
     tags=["baseline"],
@@ -70,9 +70,9 @@ run.set_notes("Reward stabilized after step 80.")
 run.set_tags(["baseline", "reviewed"])
 run.log_histogram("model/weights", {"bins": [0, 1], "counts": [10]}, step=1)
 run.log_objects({
-    "eval/samples": ro.Table(["prompt", "score"], [["hello", 0.92]]),
-    "eval/scores": ro.Histogram([0, 0.5, 1.0], [3, 9]),
-    "eval/frame": ro.Image.from_data([[[255, 0, 0]]]),
+    "eval/samples": im.Table(["prompt", "score"], [["hello", 0.92]]),
+    "eval/scores": im.Histogram([0, 0.5, 1.0], [3, 9]),
+    "eval/frame": im.Image.from_data([[[255, 0, 0]]]),
 }, step=1)
 run.log_classification_eval(
     "eval/classification",
@@ -82,14 +82,14 @@ run.log_classification_eval(
     positive_label="positive",
     step=1,
 )
-checkpoint_policy = ro.CheckpointPolicy(every_steps=100)
+checkpoint_policy = im.CheckpointPolicy(every_steps=100)
 if checkpoint_policy.should_save(100):
     run.log_checkpoint_file("checkpoints/policy.pt", step=100)
-run.log({"checkpoint": ro.File("checkpoints/policy.pt", artifact_type="checkpoint")}, step=1)
+run.log({"checkpoint": im.File("checkpoints/policy.pt", artifact_type="checkpoint")}, step=1)
 run.log_checkpoint("checkpoint.pt", "demo://checkpoint.pt", step=1)
 run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
 run.log_table("eval-table.jsonl", "demo://eval-table.jsonl", step=1)
-artifact = ro.VersionedArtifact("policy-checkpoints", type="model")
+artifact = im.VersionedArtifact("policy-checkpoints", type="model")
 artifact.add_file("checkpoints/policy.pt", name="checkpoint.pt")
 logged = run.log_versioned_artifact(artifact, step=1000, aliases=["best"])
 run.flush()
@@ -100,16 +100,16 @@ try:
         train_step()
         run.log({"train/loss": loss}, step=step)
         run.raise_if_stop_requested()
-except ro.InstantMLStopRequested:
+except im.InstantMLStopRequested:
     cleanup_checkpoint()
     run.finish_stopped("Stopped from the dashboard")
     raise
 
-api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
+api = im.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 checkpoint_path = api.download_artifact("artifact-id", "checkpoints/policy.pt")
 resolved = api.artifact("policy-checkpoints:best", type="model", project="cartpole")
 child = api.fork_run("source-run-id", checkpoint_artifact_id="artifact-id")
-forked_run = ro.attach_run(child["id"], base_url="http://127.0.0.1:8000", api_key="instantml_...")
+forked_run = im.attach_run(child["id"], base_url="http://127.0.0.1:8000", api_key="instantml_...")
 forked_run.use_artifact(resolved)
 forked_run.log({"train/loss": 0.1}, step=101)
 forked_run.finish()
@@ -205,14 +205,14 @@ TensorBoard run when source identity matches.
 
 ```python
 # Option 1: explicit kwarg
-run = ro.init(project="cartpole", api_key="instantml_...", base_url="https://api.example.com")
+run = im.init(project="cartpole", api_key="instantml_...", base_url="https://api.example.com")
 
 # Option 2: environment variable
 # export INSTANTML_API_KEY=instantml_...
-run = ro.init(project="cartpole", base_url="https://api.example.com")
+run = im.init(project="cartpole", base_url="https://api.example.com")
 
 # Option 3: after `instantml login`
-run = ro.init(project="cartpole", base_url="https://api.example.com")
+run = im.init(project="cartpole", base_url="https://api.example.com")
 ```
 
 ```bash
@@ -242,7 +242,7 @@ The default helper interval is 30 seconds. Pass
 training loop has explicit low-latency stop requirements.
 
 ```python
-run = ro.init(project="cartpole", stop_check_interval_seconds=5)
+run = im.init(project="cartpole", stop_check_interval_seconds=5)
 
 for step in range(total_steps):
     train_step()
@@ -256,7 +256,7 @@ else:
 ```
 
 `raise_if_stop_requested()` sends an acknowledgement before raising
-`InstantMLStopRequested`. A `with ro.init(...) as run:` block that exits through
+`InstantMLStopRequested`. A `with im.init(...) as run:` block that exits through
 that exception calls `finish_stopped()` automatically. Older servers that do not
 implement the stop endpoints are treated as "stop unsupported" and continue
 normal training.
@@ -265,7 +265,7 @@ Run summary, artifact download, versioned artifact, and fork helpers use the
 raw `Api` helper:
 
 ```python
-api = ro.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
+api = im.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
 page = api.runs(
     project="cartpole",
     q='tag:baseline status:finished notes:"reward stability"',
@@ -298,7 +298,7 @@ with the spooled event id as `Idempotency-Key`.
 Process-isolated upload mode for long training loops:
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
     upload_mode="spool",
     spool_dir=".instantml/spool",
@@ -324,7 +324,7 @@ Delivery, network, and API errors on those queued hot paths are reflected in
 from `log_metrics()`, `log_rank_metrics()`, `log_console()`, or `finish()`.
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
 )
 run.log_metrics({"train/reward": 100.0}, step=1)
@@ -503,9 +503,9 @@ follow-up design splits those collaborator boundaries.
 ## Usage
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(project="cartpole", config={"seed": 42}, tags=["baseline"], notes="CartPole baseline.")
+run = im.init(project="cartpole", config={"seed": 42}, tags=["baseline"], notes="CartPole baseline.")
 run.log({"train/reward": 100.0})
 run.log({"train/loss": 0.12, "notes/eval": "policy stabilized"}, step=2)
 run.log_config({"optimizer": {"lr": 0.0003}})
@@ -533,10 +533,10 @@ Data wrappers preserve the original path-first constructors and add conversion f
 
 ```python
 run.log({
-    "eval/table": ro.Table.from_data([{"prompt": "hello", "score": 0.92}]),
-    "eval/scores": ro.Histogram.from_values([0.1, 0.3, 0.9], bins=8),
-    "eval/frame": ro.Image.from_data(frame_array),
-    "checkpoint": ro.File("checkpoints/policy.pt", artifact_type="checkpoint"),
+    "eval/table": im.Table.from_data([{"prompt": "hello", "score": 0.92}]),
+    "eval/scores": im.Histogram.from_values([0.1, 0.3, 0.9], bins=8),
+    "eval/frame": im.Image.from_data(frame_array),
+    "checkpoint": im.File("checkpoints/policy.pt", artifact_type="checkpoint"),
 })
 ```
 
@@ -545,7 +545,7 @@ Optional media conversions import dependencies lazily. `Image.from_data()` suppo
 Optional audit and runtime capture:
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
     local_store=True,
     local_store_dir=".instantml/local",
@@ -560,9 +560,9 @@ Framework adapters stay deliberately small:
 
 ```python
 run.watch(model, log="gradients", log_freq=100)
-trainer.add_callback(ro.InstantMLCallback(run=run))  # alias: TransformersCallback
-logger = ro.InstantMLLogger(project="cartpole")      # alias: LightningLogger
-keras_callback = ro.InstantMLKerasCallback(project="cartpole")
+trainer.add_callback(im.InstantMLCallback(run=run))  # alias: TransformersCallback
+logger = im.InstantMLLogger(project="cartpole")      # alias: LightningLogger
+keras_callback = im.InstantMLKerasCallback(project="cartpole")
 ```
 
 W&B compatibility is opt-in and intentionally a small logging subset:
@@ -604,7 +604,7 @@ use different settings from W&B.
 Buffered logging and post-init offline replay:
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
     buffer_size=25,
     offline_dir=".instantml/offline",
@@ -622,7 +622,7 @@ Important limitation: `init()` still requires a reachable server because run cre
 Process-isolated upload mode:
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
     upload_mode="spool",
     spool_dir=".instantml/spool",
@@ -687,7 +687,7 @@ Use `CheckpointPolicy(every_steps=N)` when a training loop wants an explicit int
 For local development without packaging:
 
 ```bash
-PYTHONPATH=packages/python-sdk python3 -c "import instantml as ro; print(ro.Client())"
+PYTHONPATH=packages/python-sdk python3 -c "import instantml as im; print(im.Client())"
 ```
 
 ## Test

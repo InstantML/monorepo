@@ -5,15 +5,15 @@ description: "Install InstantML, choose the hosted API, and provide SDK credenti
 
 # Install and authenticate the SDK
 
-The Python package is named `instantml` and is usually imported as `ro`.
+The Python package is named `instantml` and is usually imported as `im`.
 
 ```python
-import instantml as ro
+import instantml as im
 ```
 
 ## Install
 
-InstantML ships as a beta Python package:
+InstantML ships as a Python package:
 
 ```bash
 python3 -m pip install instantml
@@ -42,13 +42,13 @@ The SDK defaults to the hosted API. Set an explicit host only when your team has
 been given a different hosted endpoint:
 
 ```python
-run = ro.init(project="cartpole", base_url="https://api.instantml.ai")
+run = im.init(project="cartpole", base_url="https://api.instantml.ai")
 ```
 
 Or create a reusable client:
 
 ```python
-client = ro.Client(base_url="https://api.instantml.ai", timeout=2.0)
+client = im.Client(base_url="https://api.instantml.ai", timeout=2.0)
 run = client.init(project="cartpole", name="ppo-seed-42")
 ```
 
@@ -66,7 +66,7 @@ Credential resolution order:
 Explicit key:
 
 ```python
-run = ro.init(
+run = im.init(
     project="cartpole",
     base_url="https://api.instantml.ai",
     api_key="instantml_...",
@@ -87,14 +87,14 @@ instantml login
 instantml whoami
 ```
 
-After login, `ro.init(...)` can read the stored credential file without another
+After login, `im.init(...)` can read the stored credential file without another
 argument.
 
 Device-code credentials cover normal SDK ingest and read/export jobs. Uploading
 files, checkpoints, or artifact bytes needs a dashboard or onboarding API key
 that includes `artifacts:write`.
 
-Top-level `ro.init(...)` fails fast when no explicit key, environment key, or
+Top-level `im.init(...)` fails fast when no explicit key, environment key, or
 CLI credential exists. Lower-level `Client(...)` objects can still be
 constructed without credentials, but authenticated hosted writes fail once they
 make a request.

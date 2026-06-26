@@ -88,9 +88,9 @@ Endpoints:
 The SDK will expose:
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(project="cartpole", config={"seed": 42})
+run = im.init(project="cartpole", config={"seed": 42})
 run.log({"train/reward": 1.0}, step=1)
 run.finish()
 ```

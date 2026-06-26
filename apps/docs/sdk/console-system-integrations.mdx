@@ -20,9 +20,9 @@ run.log_stderr(["warning: entropy dipped", "retrying evaluation"])
 Or let the SDK wrap stdout and stderr:
 
 ```python
-import instantml as ro
+import instantml as im
 
-run = ro.init(
+run = im.init(
     project="train-loop",
     name="seed-7",
     capture_console=True,
@@ -37,13 +37,13 @@ fan out log requests until that section is opened.
 
 ## System metrics
 
-System metrics are collected automatically. `ro.init()` samples CPU, memory,
+System metrics are collected automatically. `im.init()` samples CPU, memory,
 disk, network, and GPU stats every 15 seconds by default; pass
 `system_metrics=False` to disable, or `system_metrics_interval=<seconds>` to
 change the cadence:
 
 ```python
-run = ro.init(
+run = im.init(
     project="train-loop",
     name="seed-7",
     system_metrics_interval=30.0,
@@ -63,7 +63,7 @@ python3 -m pip install "instantml[system]"
 The local SQLite audit store records attempted SDK events before submit:
 
 ```python
-run = ro.init(
+run = im.init(
     project="train-loop",
     local_store=True,
     local_store_dir=".instantml/local",
@@ -86,9 +86,9 @@ Hostname, process ID, current working directory, full command argv, branch, and
 git diff metadata are opt-in:
 
 ```python
-run = ro.init(
+run = im.init(
     project="train-loop",
-    source_tracking=ro.SourceTracking(
+    source_tracking=im.SourceTracking(
         command=True,
         paths=True,
         branch=True,
@@ -102,7 +102,7 @@ run = ro.init(
 Disable source capture for sensitive jobs:
 
 ```python
-run = ro.init(project="private-run", source_tracking=False)
+run = im.init(project="private-run", source_tracking=False)
 ```
 
 SDK-owned source metadata is reserved and cannot be overwritten by user-provided
@@ -115,8 +115,8 @@ public SDK methods rather than adding a second integration model.
 
 ```python
 run.watch(model, log="gradients", log_freq=100)
-trainer.add_callback(ro.TransformersCallback(run=run))
-logger = ro.LightningLogger(project="cartpole")
+trainer.add_callback(im.TransformersCallback(run=run))
+logger = im.LightningLogger(project="cartpole")
 ```
 
 Prefer direct `run.log(...)` calls for custom loops. Use adapters when a

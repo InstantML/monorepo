@@ -6,7 +6,7 @@ import argparse
 import math
 import random
 
-import instantml as ro
+import instantml as im
 
 
 PROJECT = "rank-insights-research"
@@ -30,7 +30,7 @@ def main() -> None:
             "dropout": round(0.05 * (run_index % 3), 3),
         }
         tags = ["rank-demo", "wide" if config["width"] >= 256 else "compact"]
-        run = ro.init(
+        run = im.init(
             project=PROJECT,
             name=f"rank-insights-{run_index:02d}",
             config=config,

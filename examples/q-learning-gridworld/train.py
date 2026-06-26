@@ -6,7 +6,7 @@ import argparse
 import random
 from dataclasses import dataclass
 
-import instantml as ro
+import instantml as im
 
 
 ACTIONS = {
@@ -89,7 +89,7 @@ def train_seed(server: str, seed: int, episodes: int) -> None:
     q: dict[tuple[tuple[int, int], int], float] = {}
     alpha = 0.25
     gamma = 0.95
-    run = ro.init(
+    run = im.init(
         project="q-learning-gridworld",
         name=f"q-learning-seed-{seed}",
         config={"seed": seed, "alpha": alpha, "gamma": gamma, "env_size": env.size, "max_steps": env.max_steps},
