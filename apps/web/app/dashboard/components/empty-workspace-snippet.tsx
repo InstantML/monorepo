@@ -27,13 +27,16 @@ const LOGIN_LINE = "instantml login";
 // The snippet is fixed and small, so a regex scanner is plenty — we don't pull
 // in a highlighting dependency for a single read-only code block. Tokens map to
 // `.tok-*` classes styled in overhaul.css (`.empty-workspace-snippet__code`).
+// NB: the punctuation class excludes quote chars so a run like `="` can't
+// swallow a string's opening quote — that would desync the string scanner and
+// miscolor whole spans (e.g. `for ... range(100): run.log({`).
 const PY_KEYWORDS = new Set([
   "import", "as", "for", "in", "from", "def", "return", "if", "else", "elif",
   "while", "and", "or", "not", "is", "with", "None", "True", "False",
 ]);
 const PY_BUILTINS = new Set(["range", "len", "print", "enumerate", "float", "int", "str", "list", "dict"]);
 const PY_TOKEN_RE =
-  /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*)|(\s+)|([^\sA-Za-z0-9_]+)/g;
+  /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_]\w*)|(\s+)|([^\sA-Za-z0-9_"']+)/g;
 
 function highlightPython(code: string): ReactNode[] {
   const out: ReactNode[] = [];
