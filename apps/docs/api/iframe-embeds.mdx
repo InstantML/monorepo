@@ -5,7 +5,7 @@ description: "Create short-lived read-only iframe charts for selected runs."
 
 # Iframe run embeds
 
-Iframe embeds let your backend place a focused, interactive InstantML run chart
+Iframe embeds let your backend place a focused, interactive InstantML run board
 inside an internal portal, notebook, wiki, or review page without loading the
 full dashboard.
 
@@ -31,7 +31,7 @@ Content-Type: application/json
   "allowed_parent_origin": "https://portal.example.com",
   "ttl_seconds": 900,
   "options": {
-    "max_panels": 4,
+    "max_panels": 8,
     "metric_point_limit": 500,
     "theme": "system"
   }
@@ -76,6 +76,23 @@ The embed page removes the fragment token from browser history before it makes
 API calls. Data requests use embed-only routes, omit browser credentials, and
 return bounded chart data only for the selected run IDs.
 
+## What renders
+
+The generated embed board reuses the Runs workspace's bounded chart projection.
+It can render:
+
+- Line charts for metric trends, with smoothing, range zoom, y-axis controls,
+  legends, and hover inspection.
+- Latest-value bar charts, dot plots, and value histograms across the embedded
+  run set.
+- Scatter plots and grouped distributions when the generated panel includes
+  bounded field specs.
+
+Logged histogram timelines, rank/distributed heatmaps, table/media panels, and
+chart exports are not available in iframes yet. Embeds are intentionally
+inspection-only: viewers can hover, zoom line charts, and refresh the data, but
+they cannot mutate dashboards or download plotted data from the iframe.
+
 ## Limits and security
 
 - API key: must be an API key, not a browser session, and must include
@@ -86,6 +103,8 @@ return bounded chart data only for the selected run IDs.
   origins.
 - TTL: defaults to 15 minutes and is capped at 60 minutes.
 - Size caps: up to 100 runs, 8 panels, and 500 points per run/series in v1.
+  Create-time `options.max_panels` and `options.metric_point_limit` are caps;
+  iframe data requests can narrow them but cannot widen them.
 - Headers: non-embed InstantML pages keep anti-framing headers. The embed route
   emits a per-session `frame-ancestors` policy for the approved parent origin.
 - Actions: embeds are read-only. Dashboard navigation, saved-view edits,

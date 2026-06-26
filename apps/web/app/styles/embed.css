@@ -122,12 +122,39 @@
 }
 
 .embed-run-panel .chart-area {
-  min-height: 330px;
+  --chart-frame-height: 260px;
+  min-height: 300px;
+}
+
+.embed-run-panel .alt-chart-frame {
+  height: clamp(220px, 38vh, 260px);
+  min-height: 220px;
+}
+
+.embed-run-panel .chart-legend {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .embed-run-panel .chart-export-actions {
   right: 4px;
   top: 4px;
+}
+
+.embed-run-panel .chart-menu-pop {
+  max-height: min(320px, calc(100vh - 72px));
+  overflow-y: auto;
+}
+
+.embed-panel-warning {
+  background: color-mix(in srgb, var(--warning, #e1a928) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--warning, #e1a928) 35%, var(--line));
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 0.74rem;
+  line-height: 1.35;
+  margin: 0 0 8px;
+  padding: 7px 8px;
 }
 
 .embed-state,
@@ -154,6 +181,16 @@
   text-align: left;
 }
 
+@media (max-height: 560px) {
+  .embed-run-panel .chart-menu-pop {
+    bottom: auto;
+    max-height: calc(100vh - 16px);
+    position: fixed;
+    right: 8px;
+    top: 8px;
+  }
+}
+
 @media (max-width: 720px) {
   .embed-shell {
     padding: 10px;
@@ -169,5 +206,22 @@
 
   .embed-run-panel {
     padding: 10px;
+  }
+
+  .embed-panel-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .embed-panel-head span {
+    white-space: normal;
+  }
+
+  .embed-run-panel .chart-area {
+    min-height: 280px;
+  }
+
+  .embed-run-panel .alt-chart-frame {
+    height: 220px;
   }
 }

@@ -80,6 +80,28 @@ test("embedded run canvas keeps the bearer token out of render state and browser
   assert.doesNotMatch(canvas, /set[A-Za-z]*Token/);
 });
 
+test("embedded run canvas renders mixed read-only panel branches", () => {
+  const canvas = read("app/embed/runs/[session_id]/embedded-runs-canvas.tsx");
+  const sharedCharts = read("app/dashboard/runs/summary-panel-charts.tsx");
+  const embedCss = read("app/styles/embed.css");
+  assert.match(canvas, /embedPanelsFromViewData/);
+  assert.match(canvas, /panel\.kind === "bar" \|\| panel\.kind === "dot" \|\| panel\.kind === "histogram" \|\| panel\.kind === "value_histogram"/);
+  assert.match(canvas, /LatestMetricPanelChart/);
+  assert.match(canvas, /ScatterPanelChart/);
+  assert.match(canvas, /DistributionPanelChart/);
+  assert.match(canvas, /This scatter panel is missing numeric X and Y fields/);
+  assert.match(canvas, /This distribution panel is missing a numeric value field/);
+  assert.match(canvas, /showExportActions=\{false\}/);
+  assert.doesNotMatch(canvas, /showExportActions=\{true\}/);
+  assert.match(sharedCharts, /onMouseEnter=\{\(\) => setHover/);
+  assert.match(sharedCharts, /onFocus=\{\(\) => setHover/);
+  assert.match(sharedCharts, /tabIndex=\{0\}/);
+  assert.match(sharedCharts, /scatter-dot\$\{hover/);
+  assert.match(sharedCharts, /summary-dot\$\{hover/);
+  assert.match(embedCss, /height:\s*clamp\(220px, 38vh, 260px\)/);
+  assert.match(embedCss, /chart-menu-pop[\s\S]*overflow-y:\s*auto/);
+});
+
 test("embed routes are redacted in frontend API logs", () => {
   const apiClient = read("src/api.js");
   assert.match(apiClient, /segments\[1\] === "embed" && segments\[2\] === "sessions"/);

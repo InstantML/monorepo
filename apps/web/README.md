@@ -50,8 +50,10 @@ Current navigation, workspace, and comparison controls:
   export actions. The embed page reads a one-time fragment bearer token,
   immediately removes the fragment from browser history, fetches only
   `/api/embed/*` routes with `credentials: "omit"`, and renders read-only
-  interactive metric charts. `proxy.ts` owns the embed CSP/frame headers and
-  asks the control API for the approved parent origin before HTML is framed.
+  interactive line, latest-value bar/dot/histogram, scatter, and distribution
+  panels. `proxy.ts` owns the embed CSP/frame headers and asks the control API
+  for the approved parent origin before HTML is framed. Logged histogram
+  timelines, heatmaps, and chart export actions are still dashboard-only.
 - The top-right account/workspace menu is the primary organization selector. Its trigger shows the current workspace next to the account avatar, the menu searches all active memberships, groups personal and business workspaces, shows role/plan/member metadata, launches create-workspace, and links to settings, billing, and sign out. The left brandbar workspace text is passive context only.
 - Create-workspace keeps organization/workspace as the same backend entity. Free workspaces can invite teammates inline; paid workspaces defer invitations until after Stripe Checkout so unpaid orgs stay billing-blocked.
 - The topbar account badge uses the signed-in user's managed-auth avatar when available, then falls back to initials derived from the display name or email handle.
@@ -210,7 +212,9 @@ the returned `iframe_src`:
 Treat the full `iframe_src` as a bearer secret and avoid screenshots that show
 the fragment token. The committed public docs screenshot for iframe embeds is a
 browser-verified parent page with the token hidden from the address bar and no
-live token text visible.
+live token text visible. Verify expanded panel support by checking that the
+iframe shows at least one non-line chart and that no export/download buttons are
+present.
 
 When backend work needs disposable local API and ClickHouse state, start the
 primary Rust/ClickHouse API from the repo root:

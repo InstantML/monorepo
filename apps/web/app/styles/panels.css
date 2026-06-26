@@ -473,6 +473,15 @@
   opacity: 1;
 }
 
+.histogram-bar:focus-visible,
+.summary-bar:focus-visible,
+.summary-dot:focus-visible,
+.scatter-dot:focus-visible {
+  outline: none;
+  stroke: var(--text);
+  stroke-width: 2;
+}
+
 .alt-chart-tooltip {
   position: absolute;
   z-index: 3;
