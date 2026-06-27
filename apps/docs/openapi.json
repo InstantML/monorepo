@@ -8411,11 +8411,23 @@
           "data_kind": {
             "type": "string"
           },
+          "group_field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
           "metric_key": {
             "type": "string"
+          },
+          "replicate_field": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "section_id": {
             "type": "string"
@@ -8439,11 +8451,29 @@
           "type": {
             "type": "string"
           },
+          "value_field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "warnings": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "x_field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "y_field": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

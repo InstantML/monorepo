@@ -186,7 +186,10 @@ Embed route ownership in split mode:
 - `GET /api/embed/sessions/:session_id/current`: control plane, token
   revalidation plus session metadata only.
 - `POST /api/embed/sessions/:session_id/runs/data`: data plane, bounded metric
-  reads through `workspace_view_data`.
+  reads through `workspace_view_data`. Generated embed views can include line,
+  latest-value bar/dot/histogram, scatter, and distribution panels. Logged
+  histogram timelines and rank heatmaps remain separate follow-up contracts
+  because they need object-key or rank-specific bounded reads.
 
 Operational guardrails:
 
@@ -200,6 +203,9 @@ Operational guardrails:
 - Hosted origin validation requires HTTPS, rejects wildcards, paths, query
   strings, credentials, and InstantML-owned app/API origins. Loopback HTTP is
   accepted only for local testing.
+- Session `options.max_panels` and `options.metric_point_limit` are create-time
+  caps; data requests can request lower limits but cannot widen the stored
+  session caps.
 - `POST /api/embed/sessions/:session_id/runs/data` is rate limited per session
   and reserves monthly API-request usage before product data is returned.
 

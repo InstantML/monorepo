@@ -1,6 +1,8 @@
 use super::*;
 use crate::auth::{constant_time_eq, generate_embed_token, hash_embed_token, EMBED_TOKEN_PREFIX};
-use serde_json::json;
+use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 use url::Url;
 
 const EMBED_SCHEMA_VERSION: i32 = 1;
@@ -13,6 +15,11 @@ const MAX_EMBED_POINT_LIMIT: i64 = 500;
 const MAX_EMBED_CREATES_PER_SOURCE_PER_MINUTE: usize = 20;
 const MAX_LIVE_EMBED_SESSIONS_PER_SOURCE: usize = 100;
 const MAX_LIVE_EMBED_SESSIONS_PER_ORG: usize = 1_000;
+const EMBED_FIELD_CATALOG_MAX_RUNS: usize = 25;
+const EMBED_FIELD_CATALOG_MAX_DEPTH: usize = 4;
+const EMBED_FIELD_CATALOG_MAX_LEAVES_PER_RUN: usize = 64;
+const EMBED_FIELD_CATALOG_MAX_NODES_PER_RUN: usize = 256;
+const EMBED_FIELD_CATALOG_MAX_KEYS_PER_RUN: usize = 256;
 
 #[derive(Clone, Debug)]
 pub struct EmbedCreateConfig {
@@ -197,26 +204,28 @@ pub async fn embed_runs_data_for_session(
         auth: Some(auth),
         session: None,
     };
-    let view = generated_embed_workspace_view(store, &ctx, &row).await?;
+    let metric_point_limit = effective_embed_i64_option(
+        input
+            .options
+            .as_ref()
+            .and_then(|options| options.metric_point_limit),
+        row.options.metric_point_limit,
+        DEFAULT_EMBED_POINT_LIMIT,
+        MAX_EMBED_POINT_LIMIT,
+    );
+    let max_panels = effective_embed_usize_option(
+        input
+            .options
+            .as_ref()
+            .and_then(|options| options.max_panels),
+        row.options.max_panels,
+        MAX_EMBED_PANELS,
+        MAX_EMBED_PANELS,
+    );
+    let view = generated_embed_workspace_view(store, &ctx, &row, max_panels).await?;
     let options = Some(WorkspaceViewDataOptions {
-        metric_point_limit: Some(
-            input
-                .options
-                .as_ref()
-                .and_then(|options| options.metric_point_limit)
-                .or(row.options.metric_point_limit)
-                .unwrap_or(DEFAULT_EMBED_POINT_LIMIT)
-                .clamp(1, MAX_EMBED_POINT_LIMIT),
-        ),
-        max_panels: Some(
-            input
-                .options
-                .as_ref()
-                .and_then(|options| options.max_panels)
-                .or(row.options.max_panels)
-                .unwrap_or(MAX_EMBED_PANELS)
-                .clamp(1, MAX_EMBED_PANELS),
-        ),
+        metric_point_limit: Some(metric_point_limit),
+        max_panels: Some(max_panels),
     });
     workspace_view_data(
         store,
@@ -528,10 +537,39 @@ fn valid_embed_token_shape(token: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
+fn effective_embed_i64_option(
+    requested: Option<i64>,
+    session: Option<i64>,
+    default: i64,
+    cap: i64,
+) -> i64 {
+    [requested, session]
+        .into_iter()
+        .flatten()
+        .map(|value| value.clamp(1, cap))
+        .min()
+        .unwrap_or(default.clamp(1, cap))
+}
+
+fn effective_embed_usize_option(
+    requested: Option<usize>,
+    session: Option<usize>,
+    default: usize,
+    cap: usize,
+) -> usize {
+    [requested, session]
+        .into_iter()
+        .flatten()
+        .map(|value| value.clamp(1, cap))
+        .min()
+        .unwrap_or(default.clamp(1, cap))
+}
+
 async fn generated_embed_workspace_view(
     store: &Store,
     _ctx: &RequestContext,
     row: &EmbedSessionRow,
+    max_panels: usize,
 ) -> AppResult<Value> {
     let runs = {
         let data = store.data.lock().await;
@@ -559,20 +597,8 @@ async fn generated_embed_workspace_view(
     }
     let mut keys = ranked.into_iter().collect::<Vec<_>>();
     keys.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-    let max_panels = row.options.max_panels.unwrap_or(MAX_EMBED_PANELS);
-    let panels = keys
-        .into_iter()
-        .take(max_panels)
-        .enumerate()
-        .map(|(index, (key, _))| {
-            json!({
-                "id": format!("embed-line-{index}"),
-                "type": "line",
-                "title": key,
-                "metricKey": key
-            })
-        })
-        .collect::<Vec<_>>();
+    let metric_keys = keys.into_iter().map(|(key, _)| key).collect::<Vec<_>>();
+    let panels = generated_embed_panels_for_metric_keys(&metric_keys, &runs, max_panels);
     let project = runs.first().map(|run| run.project.clone());
     Ok(json!({
         "workspaceView": {
@@ -588,6 +614,491 @@ async fn generated_embed_workspace_view(
             }]
         }
     }))
+}
+
+fn generated_embed_panels_for_metric_keys(
+    metric_keys: &[String],
+    runs: &[RunRow],
+    max_panels: usize,
+) -> Vec<Value> {
+    let mut panels = Vec::new();
+    let Some(primary_key) = metric_keys.first() else {
+        return panels;
+    };
+    let max_panels = max_panels.clamp(1, MAX_EMBED_PANELS);
+    push_generated_embed_panel(&mut panels, "line", primary_key, runs, max_panels);
+    if let Some(second_key) = metric_keys.get(1) {
+        push_generated_embed_panel(&mut panels, "line", second_key, runs, max_panels);
+    }
+    for panel_type in ["histogram", "bar", "dot", "scatter", "distribution"] {
+        push_generated_embed_panel(&mut panels, panel_type, primary_key, runs, max_panels);
+    }
+    for metric_key in metric_keys.iter().skip(2) {
+        push_generated_embed_panel(&mut panels, "line", metric_key, runs, max_panels);
+    }
+    panels
+}
+
+fn push_generated_embed_panel(
+    panels: &mut Vec<Value>,
+    panel_type: &str,
+    metric_key: &str,
+    runs: &[RunRow],
+    max_panels: usize,
+) {
+    if panels.len() >= max_panels {
+        return;
+    }
+    let index = panels.len();
+    let mut panel = json!({
+        "id": format!("embed-{panel_type}-{index}"),
+        "type": panel_type,
+        "title": generated_embed_panel_title(panel_type, metric_key),
+        "metricKey": metric_key
+    });
+    if let Some(object) = panel.as_object_mut() {
+        match panel_type {
+            "scatter" => {
+                object.insert(
+                    "xField".to_string(),
+                    Value::String(preferred_embed_scatter_x_field(runs)),
+                );
+                object.insert(
+                    "yField".to_string(),
+                    Value::String(metric_field_id(metric_key, "best")),
+                );
+            }
+            "distribution" => {
+                object.insert(
+                    "valueField".to_string(),
+                    Value::String(metric_field_id(metric_key, "best")),
+                );
+                let (group_field, replicate_field) = preferred_embed_distribution_fields(runs);
+                if let Some(group_field) = group_field {
+                    object.insert("groupField".to_string(), Value::String(group_field));
+                }
+                if let Some(replicate_field) = replicate_field {
+                    object.insert("replicateField".to_string(), Value::String(replicate_field));
+                }
+            }
+            _ => {}
+        }
+    }
+    panels.push(panel);
+}
+
+fn generated_embed_panel_title(panel_type: &str, metric_key: &str) -> String {
+    match panel_type {
+        "line" => metric_key.to_string(),
+        "histogram" => format!("{metric_key} histogram"),
+        "bar" => format!("{metric_key} latest bars"),
+        "dot" => format!("{metric_key} latest dots"),
+        "scatter" => format!("{metric_key} tradeoff"),
+        "distribution" => format!("{metric_key} distribution"),
+        _ => metric_key.to_string(),
+    }
+}
+
+fn metric_field_id(metric_key: &str, aggregation: &str) -> String {
+    format!(
+        "metric:{}:{}",
+        encode_uri_component(metric_key),
+        if matches!(aggregation, "latest" | "min" | "max" | "mean" | "best") {
+            aggregation
+        } else {
+            "latest"
+        }
+    )
+}
+
+fn run_field_id(field: &str) -> String {
+    if field == "created_at_unix" {
+        "run:created_at_unix".to_string()
+    } else {
+        "run:duration_seconds".to_string()
+    }
+}
+
+fn run_categorical_field_id(field: &str) -> String {
+    if field == "first_tag" {
+        "run:first_tag".to_string()
+    } else {
+        "run:status".to_string()
+    }
+}
+
+fn object_field_id(source: &str, path: &[String]) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let pointer = format!(
+        "/{}",
+        path.iter()
+            .map(|segment| segment.replace('~', "~0").replace('/', "~1"))
+            .collect::<Vec<_>>()
+            .join("/")
+    );
+    Some(format!(
+        "{}:{}",
+        if source == "metadata" {
+            "metadata"
+        } else {
+            "config"
+        },
+        encode_uri_component(&pointer)
+    ))
+}
+
+fn encode_uri_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        if matches!(
+            byte,
+            b'A'..=b'Z'
+                | b'a'..=b'z'
+                | b'0'..=b'9'
+                | b'-'
+                | b'_'
+                | b'.'
+                | b'!'
+                | b'~'
+                | b'*'
+                | b'\''
+                | b'('
+                | b')'
+        ) {
+            encoded.push(*byte as char);
+        } else {
+            let _ = write!(&mut encoded, "%{:02X}", *byte);
+        }
+    }
+    encoded
+}
+
+#[derive(Clone, Debug)]
+struct EmbedNumericField {
+    id: String,
+    label: String,
+    source_rank: usize,
+    available_count: usize,
+}
+
+#[derive(Clone, Debug)]
+struct EmbedCategoricalField {
+    id: String,
+    label: String,
+    source_rank: usize,
+    available_count: usize,
+    groups: BTreeSet<String>,
+}
+
+#[derive(Default)]
+struct EmbedFieldTraversalBudget {
+    keys: usize,
+    leaves: usize,
+    nodes: usize,
+}
+
+impl EmbedFieldTraversalBudget {
+    fn exhausted(&self) -> bool {
+        self.leaves >= EMBED_FIELD_CATALOG_MAX_LEAVES_PER_RUN
+            || self.nodes >= EMBED_FIELD_CATALOG_MAX_NODES_PER_RUN
+            || self.keys >= EMBED_FIELD_CATALOG_MAX_KEYS_PER_RUN
+    }
+
+    fn enter_node(&mut self) -> bool {
+        if self.nodes >= EMBED_FIELD_CATALOG_MAX_NODES_PER_RUN {
+            return false;
+        }
+        self.nodes += 1;
+        true
+    }
+
+    fn visit_key(&mut self) -> bool {
+        if self.keys >= EMBED_FIELD_CATALOG_MAX_KEYS_PER_RUN {
+            return false;
+        }
+        self.keys += 1;
+        true
+    }
+
+    fn visit_leaf(&mut self) -> bool {
+        if self.leaves >= EMBED_FIELD_CATALOG_MAX_LEAVES_PER_RUN {
+            return false;
+        }
+        self.leaves += 1;
+        true
+    }
+}
+
+fn preferred_embed_scatter_x_field(runs: &[RunRow]) -> String {
+    let mut fields = embed_numeric_fields(runs);
+    fields.sort_by(|left, right| {
+        scatter_field_rank(left)
+            .cmp(&scatter_field_rank(right))
+            .then_with(|| left.source_rank.cmp(&right.source_rank))
+            .then_with(|| right.available_count.cmp(&left.available_count))
+            .then_with(|| left.label.cmp(&right.label))
+    });
+    fields
+        .first()
+        .map(|field| field.id.clone())
+        .unwrap_or_else(|| run_field_id("duration_seconds"))
+}
+
+fn preferred_embed_distribution_fields(runs: &[RunRow]) -> (Option<String>, Option<String>) {
+    let fields = embed_categorical_fields(runs);
+    let group_field = fields
+        .iter()
+        .filter(|field| {
+            let groups = field.groups.len();
+            (2..=12).contains(&groups) && !is_seed_like_field(&field.label)
+        })
+        .min_by(|left, right| {
+            distribution_group_rank(left)
+                .cmp(&distribution_group_rank(right))
+                .then_with(|| left.source_rank.cmp(&right.source_rank))
+                .then_with(|| right.available_count.cmp(&left.available_count))
+                .then_with(|| left.label.cmp(&right.label))
+        })
+        .map(|field| field.id.clone());
+    let replicate_field = fields
+        .iter()
+        .filter(|field| is_seed_like_field(&field.label))
+        .max_by(|left, right| {
+            left.available_count
+                .cmp(&right.available_count)
+                .then_with(|| right.source_rank.cmp(&left.source_rank))
+                .then_with(|| right.label.cmp(&left.label))
+        })
+        .map(|field| field.id.clone());
+    (group_field, replicate_field)
+}
+
+fn embed_numeric_fields(runs: &[RunRow]) -> Vec<EmbedNumericField> {
+    let mut counts = BTreeMap::<String, EmbedNumericField>::new();
+    for run in runs.iter().take(EMBED_FIELD_CATALOG_MAX_RUNS) {
+        let mut budget = EmbedFieldTraversalBudget::default();
+        collect_numeric_object_fields(
+            &run.config,
+            "config",
+            0,
+            &mut Vec::new(),
+            &mut counts,
+            &mut budget,
+        );
+        collect_numeric_object_fields(
+            &run.metadata,
+            "metadata",
+            0,
+            &mut Vec::new(),
+            &mut counts,
+            &mut budget,
+        );
+    }
+    counts.into_values().collect()
+}
+
+fn embed_categorical_fields(runs: &[RunRow]) -> Vec<EmbedCategoricalField> {
+    let mut counts = BTreeMap::<String, EmbedCategoricalField>::new();
+    for run in runs.iter().take(EMBED_FIELD_CATALOG_MAX_RUNS) {
+        let mut budget = EmbedFieldTraversalBudget::default();
+        mark_categorical_field(
+            &mut counts,
+            run_categorical_field_id("status"),
+            "Status".to_string(),
+            2,
+            &run.status,
+        );
+        if let Some(first_tag) = run.tags.first() {
+            mark_categorical_field(
+                &mut counts,
+                run_categorical_field_id("first_tag"),
+                "First tag".to_string(),
+                1,
+                first_tag,
+            );
+        }
+        collect_categorical_object_fields(
+            &run.config,
+            "config",
+            0,
+            &mut Vec::new(),
+            &mut counts,
+            &mut budget,
+        );
+        collect_categorical_object_fields(
+            &run.metadata,
+            "metadata",
+            0,
+            &mut Vec::new(),
+            &mut counts,
+            &mut budget,
+        );
+    }
+    counts.into_values().collect()
+}
+
+fn collect_numeric_object_fields(
+    value: &Value,
+    source: &str,
+    depth: usize,
+    path: &mut Vec<String>,
+    counts: &mut BTreeMap<String, EmbedNumericField>,
+    budget: &mut EmbedFieldTraversalBudget,
+) {
+    let Some(object) = value.as_object() else {
+        return;
+    };
+    if depth >= EMBED_FIELD_CATALOG_MAX_DEPTH || budget.exhausted() || !budget.enter_node() {
+        return;
+    }
+    for (key, child) in object {
+        if budget.exhausted() || !budget.visit_key() {
+            break;
+        }
+        path.push(key.clone());
+        if embed_finite_number(child).is_some() {
+            if !budget.visit_leaf() {
+                path.pop();
+                break;
+            }
+            if let Some(id) = object_field_id(source, path) {
+                let label = format!("{source}.{}", path.join("."));
+                let entry = counts.entry(id.clone()).or_insert(EmbedNumericField {
+                    id,
+                    label,
+                    source_rank: if source == "config" { 0 } else { 3 },
+                    available_count: 0,
+                });
+                entry.available_count += 1;
+            }
+        } else if child.is_object() {
+            collect_numeric_object_fields(child, source, depth + 1, path, counts, budget);
+        }
+        path.pop();
+    }
+}
+
+fn collect_categorical_object_fields(
+    value: &Value,
+    source: &str,
+    depth: usize,
+    path: &mut Vec<String>,
+    counts: &mut BTreeMap<String, EmbedCategoricalField>,
+    budget: &mut EmbedFieldTraversalBudget,
+) {
+    let Some(object) = value.as_object() else {
+        return;
+    };
+    if depth >= EMBED_FIELD_CATALOG_MAX_DEPTH || budget.exhausted() || !budget.enter_node() {
+        return;
+    }
+    for (key, child) in object {
+        if budget.exhausted() || !budget.visit_key() {
+            break;
+        }
+        path.push(key.clone());
+        if let Some(value) = embed_categorical_value(child) {
+            if !budget.visit_leaf() {
+                path.pop();
+                break;
+            }
+            if let Some(id) = object_field_id(source, path) {
+                let label = format!("{source}.{}", path.join("."));
+                mark_categorical_field(
+                    counts,
+                    id,
+                    label,
+                    if source == "config" { 0 } else { 3 },
+                    &value,
+                );
+            }
+        } else if child.is_object() {
+            collect_categorical_object_fields(child, source, depth + 1, path, counts, budget);
+        }
+        path.pop();
+    }
+}
+
+fn mark_categorical_field(
+    counts: &mut BTreeMap<String, EmbedCategoricalField>,
+    id: String,
+    label: String,
+    source_rank: usize,
+    value: &str,
+) {
+    let value = value.trim();
+    if value.is_empty() || value.len() > 120 {
+        return;
+    }
+    let entry = counts.entry(id.clone()).or_insert(EmbedCategoricalField {
+        id,
+        label,
+        source_rank,
+        available_count: 0,
+        groups: BTreeSet::new(),
+    });
+    entry.available_count += 1;
+    entry.groups.insert(value.to_string());
+}
+
+fn embed_finite_number(value: &Value) -> Option<f64> {
+    let number = match value {
+        Value::Number(number) => number.as_f64(),
+        Value::String(text) if text.len() <= 64 => text.trim().parse::<f64>().ok(),
+        _ => None,
+    }?;
+    number.is_finite().then_some(number)
+}
+
+fn embed_categorical_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => {
+            let text = text.trim();
+            (!text.is_empty() && text.len() <= 120).then(|| text.to_string())
+        }
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
+fn scatter_field_rank(field: &EmbedNumericField) -> usize {
+    let text = field.label.to_lowercase();
+    if text.contains("learning_rate") || text.ends_with(".lr") || text.contains(".lr.") {
+        0
+    } else if text.contains("batch_size") || text.contains("batch.size") {
+        1
+    } else if is_seed_like_field(&text) {
+        2
+    } else {
+        3
+    }
+}
+
+fn distribution_group_rank(field: &EmbedCategoricalField) -> usize {
+    let text = field.label.to_lowercase();
+    if [
+        "variant", "group", "dataset", "model", "policy", "algo", "method",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
+    {
+        0
+    } else if field.id == run_categorical_field_id("first_tag") {
+        1
+    } else if field.id == run_categorical_field_id("status") {
+        2
+    } else {
+        3
+    }
+}
+
+fn is_seed_like_field(text: &str) -> bool {
+    text.to_lowercase()
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .any(|part| part == "seed")
 }
 
 #[cfg(test)]
@@ -644,6 +1155,27 @@ mod tests {
             tenant_routing_tier: "dedicated".to_string(),
             storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
             storage_state: STORAGE_STATE_READY.to_string(),
+        }
+    }
+
+    fn test_run(name: &str, status: &str, config: Value, tags: Vec<&str>) -> RunRow {
+        let started_at = Utc::now();
+        RunRow {
+            id: Uuid::new_v4(),
+            org_id: Uuid::new_v4(),
+            project_id: Uuid::new_v4(),
+            project: "embed-test".to_string(),
+            name: name.to_string(),
+            status: status.to_string(),
+            config,
+            tags: tags.into_iter().map(str::to_string).collect(),
+            metadata: json!({}),
+            created_at: started_at,
+            started_at,
+            finished_at: Some(started_at + ChronoDuration::seconds(42)),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
         }
     }
 
@@ -767,6 +1299,127 @@ mod tests {
         assert_eq!(options.metric_point_limit, Some(MAX_EMBED_POINT_LIMIT));
         assert_eq!(options.max_panels, Some(MAX_EMBED_PANELS));
         assert_eq!(warnings.len(), 3);
+    }
+
+    #[test]
+    fn embed_data_options_apply_session_caps() {
+        assert_eq!(
+            effective_embed_i64_option(
+                None,
+                Some(200),
+                DEFAULT_EMBED_POINT_LIMIT,
+                MAX_EMBED_POINT_LIMIT
+            ),
+            200
+        );
+        assert_eq!(
+            effective_embed_i64_option(
+                Some(500),
+                Some(200),
+                DEFAULT_EMBED_POINT_LIMIT,
+                MAX_EMBED_POINT_LIMIT
+            ),
+            200
+        );
+        assert_eq!(
+            effective_embed_i64_option(
+                Some(100),
+                Some(200),
+                DEFAULT_EMBED_POINT_LIMIT,
+                MAX_EMBED_POINT_LIMIT
+            ),
+            100
+        );
+        assert_eq!(
+            effective_embed_i64_option(
+                None,
+                None,
+                DEFAULT_EMBED_POINT_LIMIT,
+                MAX_EMBED_POINT_LIMIT
+            ),
+            DEFAULT_EMBED_POINT_LIMIT
+        );
+        assert_eq!(
+            effective_embed_usize_option(Some(8), Some(3), MAX_EMBED_PANELS, MAX_EMBED_PANELS),
+            3
+        );
+        assert_eq!(
+            effective_embed_usize_option(Some(2), None, MAX_EMBED_PANELS, MAX_EMBED_PANELS),
+            2
+        );
+        assert_eq!(
+            effective_embed_usize_option(None, None, MAX_EMBED_PANELS, MAX_EMBED_PANELS),
+            MAX_EMBED_PANELS
+        );
+    }
+
+    #[test]
+    fn generated_embed_panels_include_summary_specs_and_encoded_fields() {
+        let runs = vec![
+            test_run(
+                "run-a",
+                "completed",
+                json!({ "learning_rate": 0.001, "variant": "baseline", "seed": 1 }),
+                vec!["baseline"],
+            ),
+            test_run(
+                "run-b",
+                "failed",
+                json!({ "learning_rate": 0.002, "variant": "trial", "seed": 2 }),
+                vec!["trial"],
+            ),
+        ];
+        let metric_keys = vec![
+            "eval/return mean".to_string(),
+            "train:loss".to_string(),
+            "rollout/reward".to_string(),
+        ];
+        let panels = generated_embed_panels_for_metric_keys(&metric_keys, &runs, MAX_EMBED_PANELS);
+        let panel_types = panels
+            .iter()
+            .filter_map(|panel| panel.get("type").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            panel_types,
+            vec![
+                "line",
+                "line",
+                "histogram",
+                "bar",
+                "dot",
+                "scatter",
+                "distribution",
+                "line"
+            ]
+        );
+        let scatter = panels
+            .iter()
+            .find(|panel| panel.get("type").and_then(Value::as_str) == Some("scatter"))
+            .unwrap();
+        assert_eq!(
+            scatter.get("xField").and_then(Value::as_str),
+            Some("config:%2Flearning_rate")
+        );
+        assert_eq!(
+            scatter.get("yField").and_then(Value::as_str),
+            Some("metric:eval%2Freturn%20mean:best")
+        );
+        let distribution = panels
+            .iter()
+            .find(|panel| panel.get("type").and_then(Value::as_str) == Some("distribution"))
+            .unwrap();
+        assert_eq!(
+            distribution.get("valueField").and_then(Value::as_str),
+            Some("metric:eval%2Freturn%20mean:best")
+        );
+        assert_eq!(
+            distribution.get("groupField").and_then(Value::as_str),
+            Some("config:%2Fvariant")
+        );
+        assert_eq!(
+            distribution.get("replicateField").and_then(Value::as_str),
+            Some("config:%2Fseed")
+        );
     }
 
     #[test]

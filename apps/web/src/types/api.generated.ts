@@ -4143,15 +4143,20 @@ export interface components {
         };
         WorkspaceViewDataPanelResult: {
             data_kind: string;
+            group_field?: string | null;
             id: string;
             metric_key: string;
+            replicate_field?: string | null;
             section_id: string;
             section_name: string;
             series_key?: string | null;
             summary_values: unknown[];
             title: string;
             type: string;
+            value_field?: string | null;
             warnings: string[];
+            x_field?: string | null;
+            y_field?: string | null;
         };
         WorkspaceViewDataRequest: {
             options?: null | components["schemas"]["WorkspaceViewDataOptions"];

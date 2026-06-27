@@ -1223,6 +1223,16 @@ pub struct WorkspaceViewDataPanelResult {
     pub metric_key: String,
     pub data_kind: String,
     pub series_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replicate_field: Option<String>,
     pub summary_values: Vec<Value>,
     pub warnings: Vec<String>,
 }

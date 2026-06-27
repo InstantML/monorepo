@@ -104,6 +104,10 @@ Current implemented design sequence, continued:
   server-created, read-only iframe run embeds with scoped embed sessions, dynamic
   frame policy, fragment-token handling, split control/data routes, and
   production verification requirements.
+- `2026-06-25-iframe-embed-panel-types.md`: reviewed follow-up for iframe
+  embeds that adds generated bar, dot, latest-value histogram, scatter, and
+  distribution panels while preserving read-only/no-export iframe boundaries and
+  bounded workspace-view data reads.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
