@@ -8,6 +8,20 @@ description: "A screenshot-backed tour of the main InstantML dashboard surfaces.
 The dashboard is organized around repeated research work: scan many runs,
 inspect metric behavior, open one run, then compare candidates.
 
+## Navigation
+
+The left rail groups surfaces into three sections:
+
+| Group | Surfaces |
+| --- | --- |
+| Operate | Runs, Metrics, Distributed |
+| Data | Datasets, Artifacts, Insights |
+| System | Run Health, Reports, Settings, API |
+
+Run Detail is not a rail item — you reach it by opening a run. Comparison is not
+a rail item either; it lives inside the Runs **Table** view. The top-right
+account menu switches workspaces and opens settings or billing.
+
 ## Runs workspace
 
 ![Runs workspace with selected runs](/images/product/dashboard-runs.png)
@@ -16,7 +30,10 @@ Use Runs for the broadest view of a project:
 
 - Filter by project, status, search text, and sort mode.
 - Select runs from the rail.
-- Export selected runs as bounded CSV from the command bar.
+- Toggle between **Panels** (run selector plus chart canvas) and **Table** (a
+  flat, sortable run list with an embedded comparison).
+- Export selected runs as bounded CSV, or review stop requests, from the **Runs
+  actions** menu.
 - Review maintained summary values without loading full metric history.
 - Build line panels from metric series, summary panels from metric aggregates,
   scatter panels from two loaded numeric run fields, seed/group distribution
@@ -35,16 +52,20 @@ or billing for the current workspace.
 
 ![Metrics dashboard](/images/product/dashboard-metrics.png)
 
-Metrics is line-chart first. Use it when you know the scalar metric you care
-about and want to compare series behavior across selected runs. Chart export
-controls download the plotted CSV sample or an SVG image of the visible graph.
+Metrics is line-chart first. A metric browser on the left groups logged keys by
+namespace; the chart supports smoothing, a step/time x-axis, a linear/log
+y-axis, grouped averages, and a series table you can show, hide, or pin from.
+Chart export downloads the plotted CSV sample or an SVG image of the visible
+graph.
 
 ## Run Detail
 
 ![Run detail page](/images/product/dashboard-run-detail.png)
 
-Run Detail focuses on one run: tags, notes, status, metric summaries, config,
-source context, logs, files, system information, and graph-style run evidence.
+Run Detail focuses on one run. A KPI cockpit summarizes step progress, the
+headline eval metric, loss, throughput, GPU utilization, and ETA, with header
+actions to fork a checkpoint, jump to Compare, or request a stop. Its tabs cover
+the overview, metrics, artifacts, logs, config and source context, and lineage.
 
 ![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
 
@@ -56,20 +77,25 @@ initial summary view.
 
 ![Compare dashboard](/images/product/dashboard-compare.png)
 
-Compare lets you inspect selected runs side by side or row by row. Use it after
-the Runs workspace has narrowed the candidate set.
+Comparison lives at the top of the Runs **Table** view. Select two or more runs
+in the table and they render side by side with a reference run, goal-aware
+deltas, and addable metric columns. Use it after the Runs workspace has narrowed
+the candidate set.
 
-## Research dashboards
+## Distributed and Insights
 
 ![Distributed dashboard](/images/product/dashboard-distributed.png)
 
-Distributed and Insights are research-oriented views for rank-aware
-metrics, grouped reducers, loaded summaries, and exploratory analysis.
+Distributed is a rank-aware view for one selected run: reducer lines, rank
+coverage, per-rank snapshots, heatmaps, and outliers from metrics logged with
+`run.log_rank_metrics(...)`.
 
 ![Insights dashboard](/images/product/dashboard-insights.png)
 
-These views are designed for large sweeps and distributed training runs where a
-single scalar chart is not enough context.
+Insights has two views — **GPU & System** usage and **Run Analysis** (grouped
+reducers, hyperparameter scatter, k-means clusters, evaluation summary cards, and
+parallel-coordinate sweep traces). Both operate over the loaded or selected run
+summaries.
 
 ## Checkpoint forks and lineage
 

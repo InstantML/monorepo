@@ -1853,13 +1853,19 @@ async function captureDocScreenshots(page, webBaseUrl) {
     await navTo("Metrics", ".tab-pane.active canvas, .metric-chart, .tab-pane.active svg");
   });
 
-  // 3. Compare (select all demo runs first).
+  // 3. Compare — now embedded at the top of the Runs → Table view (the
+  //    standalone Compare nav link was removed when it collapsed into the table,
+  //    see docs/design 2026-06 + apps/web/.../runs/tab-pane.tsx). Select the
+  //    visible runs, flip the Panels ⇄ Table toggle to Table, and capture the
+  //    side-by-side panel that the selection drives.
   await shot("dashboard-compare.png", async () => {
     await openRunsDemo();
     const master = page.locator(".workspace-run-rail input[type=checkbox]").first();
     if (await master.count()) await master.check().catch(() => {});
     await page.waitForTimeout(300);
-    await navTo("Compare", ".compare-table, .side-by-side, .tab-pane.active table");
+    await page.getByRole("group", { name: "Runs view" }).getByRole("button", { name: "Table" }).click({ timeout: 8000 });
+    await page.waitForSelector(".compare-embed .cmp-table-shell, .compare-embed .side-by-side, .compare-embed", { timeout: 12000 }).catch(() => {});
+    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
   });
 
   // 4. Insights (loaded run analysis over the demo set).

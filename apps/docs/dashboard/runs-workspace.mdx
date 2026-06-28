@@ -11,6 +11,19 @@ The Runs workspace is the daily command center. It combines a run selector,
 summary stats, visualization panels, saved views, and a bounded server-backed
 run list.
 
+## Panels and Table views
+
+The Runs command bar carries a metric selector, a **Panels ⇄ Table** toggle, and
+a **Runs actions** menu:
+
+- **Panels** is the run selector rail plus the chart canvas described below.
+- **Table** is a flat, sortable run list with selectable columns and pinned
+  metric columns. Selecting two or more runs renders an embedded
+  [comparison](/dashboard/compare-runs) above the table.
+- **Runs actions** holds Export CSV, review-stop-requests, and refresh.
+
+The chosen view is remembered per browser.
+
 ## Search and sort
 
 Use the search field for names, tags, notes, configs, and indexed run context.
@@ -43,14 +56,14 @@ fetch full metric aggregates for every selected run.
 
 ## Export selected runs
 
-Use **Export CSV** in the Runs command bar to download the selected runs and
+Use **Export CSV** in the **Runs actions** menu to download the selected runs and
 their bounded project, metric, attribute, artifact, rich-object row, and import
 metadata. The dashboard calls `GET /api/export?format=csv&run_ids=...`, so the
 download follows the same org, project, role, and API-key rules as the API.
 
 Synchronous selected-run export is capped at 100 run IDs. If nothing is
-selected, or the selection is above the cap, the command bar announces the
-reason instead of silently exporting a partial subset.
+selected, or the selection is above the cap, the menu announces the reason
+instead of silently exporting a partial subset.
 
 ## Panels
 

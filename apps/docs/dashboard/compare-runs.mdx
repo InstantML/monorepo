@@ -1,75 +1,73 @@
 ---
 title: "Compare runs"
-description: "Use the dashboard to scan runs, chart metrics, inspect details, and compare evidence."
+description: "Compare selected runs side by side from the Runs Table view."
 ---
 
 # Compare runs
 
-After logging runs, the dashboard gives you a dense workflow for finding the
-best candidates and understanding what changed.
+Comparison is no longer a separate tab. It lives at the top of the **Runs →
+Table** view, so the runs you select in the table below drive the comparison
+directly: pick a set, see it compared.
 
 ![Compare dashboard](/images/product/dashboard-compare.png)
 
-## Runs workspace
+## Open the comparison surface
 
-Use the Runs workspace for the broad scan:
+1. Go to **Runs**.
+2. In the Runs command bar, switch the **Panels ⇄ Table** toggle to **Table**.
+3. Select two or more runs with the checkboxes in the table.
 
-- Search run names, tags, notes, configs, and other indexed summary text.
+With fewer than two runs selected, the panel shows a quiet prompt instead of an
+empty table. Select a second run and the comparison renders above the table.
+
+The comparison reads the first 50 selected runs (`COMPARE_RUN_LIMIT`). When more
+are selected, the header notes how many runs are beyond the cap so the table
+stays responsive.
+
+## What the comparison shows
+
+The header reads "Comparing *N* runs" with the active metric and its goal
+direction. Each run is a row; metric, config, and artifact values are columns:
+
+- **Reference run** — choose the baseline from the Reference selector. Deltas in
+  every other row are measured against it.
+- **Goal-aware deltas** — each metric cell shows the change versus the reference,
+  colored by whether the metric improved (lower is better for loss-like keys,
+  higher otherwise).
+- **Metric columns** — start from the primary metric, then **Add metric** columns
+  (up to 12 total), **Add all**, remove individual columns, or **Reset** to the
+  primary metric.
+- **Sortable columns** — click a column header to sort runs by that metric,
+  config, duration, status, tags, notes, or artifact count.
+- **Artifacts jump** — click a run's artifact count to open that run's Artifacts.
+
+## Export and clear
+
+- **Export CSV** downloads the selected runs and their bounded metric,
+  attribute, and artifact data. Synchronous export is capped at 100 selected
+  runs; the button explains when a selection is empty or above the cap.
+- **Clear** drops the current selection so you can start a new comparison set.
+
+Export follows the same org, project, role, and API-key rules as the API, since
+it calls `GET /api/export?format=csv&run_ids=...`.
+
+## Workflow
+
+Use the Runs workspace to narrow candidates first:
+
+- Search names, tags, notes, configs, and other indexed summary text.
 - Use exact or grouped filters such as `tag:baseline status:finished`,
   `name:"long context" -tag:debug`, and
-  `(tag:baseline OR tag:candidate) notes:ablated` when narrowing the selection
-  before opening Compare.
+  `(tag:baseline OR tag:candidate) notes:ablated`.
 - Sort by newest, selected metric latest or best value, name, status, or
   duration.
-- Select runs from the rail to drive charts and comparison views.
-- Add line panels for metric series, bar/value histogram/dot panels for metric
-  summaries, scatter panels for two loaded numeric run fields, seed/group
-  distribution panels, and selected-run logged histogram timelines.
 
-The run list uses bounded summary data. Full metric series are fetched through
-separate chart requests when a line panel needs them. Scatter, distribution,
-bar, value histogram, and dot panels stay on loaded summaries so comparison
-scanning does not accidentally fetch every metric history. Logged histogram
-timelines read at most 100 rich histogram objects for one selected run and
-explicit key.
+Then switch to **Table**, select the survivors, and read the side-by-side
+comparison. For a single run's full context — config, source metadata, logs,
+artifacts, and lineage — open [Run Detail](/dashboard/run-detail). The Run
+Detail header also has a **Compare** button that selects the open run and jumps
+straight to the Table view.
 
-## Run Detail
-
-Open Run Detail when one run needs closer inspection:
-
-- Metric chart for the selected run.
-- Config, tags, notes, and source metadata.
-- Logged artifacts, files, checkpoints, rollouts, tables, histograms, and typed
-  classification evaluation bundles when present.
-- Logs and file previews loaded only when their local sections are opened.
-
-## Compare
-
-Use Compare after selecting multiple runs:
-
-- Pick a reference run.
-- Switch between runs-as-rows and runs-as-columns views.
-- Filter to differences.
-- Add metric columns.
-- Sort evidence rows and run columns.
-- Jump from artifact counts to the selected run's artifact context.
-
-Keep selected sets focused for human review. The current side-by-side endpoint
-has a selected-run cap, and broad metric scans belong in the Runs workspace.
-
-## Rows mode
-
-Rows mode (runs as rows) is useful when runs are the primary objects of
-inspection. It keeps metric, config, tag, note, and artifact context close to
-each row.
-
-## Columns mode
-
-Columns mode (runs as columns) is useful when config or metric differences are
-the primary objects of inspection. Switch the reference run when the baseline
-changes.
-
-## Diff-only mode
-
-Diff-only mode hides rows that match the reference. Use it when many selected
-runs share the same config defaults.
+The comparison uses bounded summary data. Full metric series are fetched
+separately when a line panel needs them, so comparison scanning never pulls
+every metric history at once.
