@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { ChevronRight, Globe } from "lucide-react";
+import { ChevronLeft, ChevronRight, Globe } from "lucide-react";
 
 import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
 import { DocsCodeBlock } from "../docs-code-block";
 import { DocsMobileInert } from "../docs-mobile-inert";
 import { DocsSearch } from "../docs-search";
+import { DocsToc } from "../docs-toc";
+import type { DocsTocItem } from "../docs-toc";
 import { InstantMlMark } from "../../instantml-mark";
 import {
   docsMarkdownUrl,
@@ -99,6 +101,8 @@ export default async function DocsPage({ params }: DocsParams) {
   const markdownHref = docsMarkdownUrl(page.path);
   const navigation = page.navigation as DocsNavigation;
   const activeTab = findActiveTab(navigation, page.path);
+  const tocItems = page.kind === "api-reference" ? [] : tocItemsFromBlocks(blocks);
+  const pager = pagerForPath(navigation, page.path);
 
   return (
     <main className="docs-route">
@@ -161,15 +165,49 @@ export default async function DocsPage({ params }: DocsParams) {
           {page.kind === "api-reference" ? (
             <ApiReference endpoints={endpoints} />
           ) : (
-            <div className="docs-route-body">
-              {blocks.map((block, index) => (
-                <DocsBlockView block={block} key={`${block.type}-${index}`} />
-              ))}
-            </div>
+            <>
+              <div className="docs-route-body">
+                {blocks.map((block, index) => (
+                  <DocsBlockView block={block} key={`${block.type}-${index}`} />
+                ))}
+              </div>
+              {pager ? <DocsPager pager={pager} /> : null}
+            </>
           )}
         </article>
+        <DocsToc items={tocItems} />
       </div>
     </main>
+  );
+}
+
+function DocsPager({
+  pager,
+}: {
+  pager: { previous: { path: string; title: string } | null; next: { path: string; title: string } | null };
+}) {
+  if (!pager.previous && !pager.next) return null;
+  return (
+    <nav className="docs-route-pager" aria-label="Page navigation">
+      {pager.previous ? (
+        <Link className="docs-route-pager-link is-prev" href={pageUrl(pager.previous.path)}>
+          <span className="docs-route-pager-dir">
+            <ChevronLeft aria-hidden size={14} /> Previous
+          </span>
+          <span className="docs-route-pager-title">{pager.previous.title}</span>
+        </Link>
+      ) : (
+        <span />
+      )}
+      {pager.next ? (
+        <Link className="docs-route-pager-link is-next" href={pageUrl(pager.next.path)}>
+          <span className="docs-route-pager-dir">
+            Next <ChevronRight aria-hidden size={14} />
+          </span>
+          <span className="docs-route-pager-title">{pager.next.title}</span>
+        </Link>
+      ) : null}
+    </nav>
   );
 }
 
@@ -187,6 +225,46 @@ function firstPagePath(tab: DocsNavigation[number]): string | null {
     if (group.pages.length > 0) return group.pages[0].path;
   }
   return null;
+}
+
+// Strip the inline markdown the renderer understands (code, bold, links) so the
+// "On this page" labels read as plain text.
+function plainHeadingText(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .trim();
+}
+
+function tocItemsFromBlocks(blocks: DocsBlock[]): DocsTocItem[] {
+  return blocks
+    .filter((block): block is Extract<DocsBlock, { type: "heading" }> => block.type === "heading")
+    // h2/h3 only — deeper headings make the rail noisy, like Mintlify's default.
+    .filter((block) => block.level <= 3)
+    .map((block) => ({ id: block.id, text: plainHeadingText(block.text), level: Math.min(Math.max(block.level, 2), 3) }));
+}
+
+// Flatten every page across tabs/groups in navigation order, then return the
+// neighbours of the current page for the prev/next footer.
+function pagerForPath(navigation: DocsNavigation, currentPath: string) {
+  const ordered: Array<{ path: string; title: string }> = [];
+  const seen = new Set<string>();
+  for (const tab of navigation) {
+    for (const group of tab.groups) {
+      for (const page of group.pages) {
+        if (seen.has(page.path)) continue;
+        seen.add(page.path);
+        ordered.push({ path: page.path, title: page.title });
+      }
+    }
+  }
+  const index = ordered.findIndex((page) => page.path === currentPath);
+  if (index === -1) return null;
+  return {
+    previous: index > 0 ? ordered[index - 1] : null,
+    next: index < ordered.length - 1 ? ordered[index + 1] : null,
+  };
 }
 
 function DocsSidebar({
