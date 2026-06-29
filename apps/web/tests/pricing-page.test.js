@@ -5,7 +5,7 @@
  * landing-page.test.js. No JSDOM, no Playwright — these run under
  * `node --test` and verify:
  *   1. Route file + component file exist and export the right symbols.
- *   2. Component declares "use client" (it uses ThemeToggle / interactive bits).
+ *   2. Component declares "use client" (it renders the shared landing nav).
  *   3. Page references the tier numbers shared by signup, Rust plan guards,
  *      and public docs ($0 / $199 / $699).
  *   4. Page surfaces the implemented plan limits and explicit overage model.
@@ -79,6 +79,13 @@ describe("pricing route — files exist", () => {
     assert.ok(exists("components/pricing/PricingPage.tsx"));
   });
 
+  test("workspace loading screen is scoped to dashboard routes", () => {
+    assert.ok(!exists("app/loading.tsx"));
+    assert.ok(exists("app/dashboard/loading.tsx"));
+    const dashboardLoading = read("app/dashboard/loading.tsx");
+    assert.match(dashboardLoading, /AppLoadingScreen/);
+  });
+
   test("PricingPage.tsx exports PricingPage", () => {
     const src = read("components/pricing/PricingPage.tsx");
     assert.ok(
@@ -99,7 +106,7 @@ test("PricingPage.tsx declares 'use client'", () => {
   const src = read("components/pricing/PricingPage.tsx");
   assert.ok(
     src.includes('"use client"'),
-    "PricingPage uses ThemeToggle and must be a client component"
+    "PricingPage renders the shared landing nav and must be a client component"
   );
 });
 
@@ -301,19 +308,21 @@ describe("PricingPage — surfaces implemented pricing model", () => {
 // ── Nav wiring ──────────────────────────────────────────────────────────────
 describe("Landing nav links to /pricing", () => {
   const landingSrc = read("components/landing/LandingPage.tsx");
+  const navSrc = read("components/landing/LandingNav.tsx");
 
   test("landing nav has /pricing link", () => {
-    assert.match(landingSrc, /href=["']\/pricing["']/);
+    assert.match(landingSrc, /<LandingNav \/>/);
+    assert.match(navSrc, /href=["']\/pricing["']/);
   });
 
   test("landing and pricing nav keep Docs/Pricing visible on mobile", () => {
     const pricingSrc = read("components/pricing/PricingPage.tsx");
     const css = read("app/styles/landing-system.css");
 
-    assert.match(landingSrc, /href=["']\/docs["'][\s\S]*?landing-nav__link--mobile/);
-    assert.match(landingSrc, /href=["']\/pricing["'][\s\S]*?landing-nav__link--mobile/);
-    assert.match(pricingSrc, /href=["']\/docs["'][\s\S]*?landing-nav__link--mobile/);
-    assert.match(pricingSrc, /href=["']\/pricing["'][\s\S]*?landing-nav__link--mobile/);
+    assert.match(landingSrc, /<LandingNav \/>/);
+    assert.match(pricingSrc, /<LandingNav \/>/);
+    assert.match(navSrc, /href=["']\/docs["'][\s\S]*?landing-nav__link/);
+    assert.match(navSrc, /href=["']\/pricing["'][\s\S]*?landing-nav__link--mobile/);
     assert.match(css, /\.landing-nav__link--mobile\s*\{\s*display:\s*inline-flex;/);
     assert.match(css, /\.landing-nav__links > \*\s*\{\s*flex-shrink:\s*0;/);
     assert.match(css, /\.landing-theme-toggle\s*\{[\s\S]*?flex:\s*0 0 44px;/);
@@ -346,6 +355,6 @@ describe("Pricing CSS is wired", () => {
     const css = read("app/styles/pricing.css");
     assert.ok(css.includes(".pricing-tier-card"));
     assert.ok(css.includes(".pricing-compare-grid"));
-    assert.ok(css.includes(".pricing-surprise"));
+    assert.ok(css.includes(".pricing-compare-col__value"));
   });
 });

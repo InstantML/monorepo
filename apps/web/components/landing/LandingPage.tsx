@@ -4,11 +4,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { LogoMark } from "./LogoMark";
-import { NavLogo } from "./NavLogo";
+import { LandingNav } from "./LandingNav";
 import { MaskingDemo } from "./MaskingDemo";
 import { AuditFeed } from "./AuditFeed";
 import { TtlRing } from "./TtlRing";
-import { ThemeToggle } from "./ThemeToggle";
 
 const DEMO_EMAIL =
   "mailto:hello@instantml.ai?subject=InstantML%20design%20partner&body=Hi%20%E2%80%94%20I%27d%20like%20to%20try%20InstantML.%0A%0ATeam%3A%0AStack%3A%0AModel%2Fworkflow%3A%0ARun%20volume%3A%0ABiggest%20pain%20with%20current%20tool%3A";
@@ -448,22 +447,7 @@ function FooterCol({ title, links }: { title: string; links: [string, string][] 
 export function LandingPage() {
   return (
     <div className="landing-root">
-      {/* Nav */}
-      <nav className="landing-nav">
-        <div className="landing-nav__inner">
-          <NavLogo size={22} />
-          <div className="landing-nav__links">
-            <a href="#developers" className="landing-nav__link">SDK</a>
-            <Link href="/docs" className="landing-nav__link">Docs</Link>
-            <Link href="/pricing" className="landing-nav__link landing-nav__link--mobile">Pricing</Link>
-            <Link href="/signin" className="landing-nav__link landing-nav__link--md">Sign in</Link>
-            <ThemeToggle />
-            <Link href="/signup" className="landing-cta-primary landing-cta-primary--sm">
-              Start free
-            </Link>
-          </div>
-        </div>
-      </nav>
+      <LandingNav />
 
       {/* Hero */}
       <div className="landing-hero-wrap">
