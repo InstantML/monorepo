@@ -242,6 +242,31 @@ run.log({"loss": 0.1}, step=1)
   assert.equal(parsed.blocks.find((block) => block.type === "code")?.language, "python");
 });
 
+test("public docs card icons are mapped by the same-origin docs renderer", async () => {
+  const route = await readFile(path.join(webRoot, "app", "docs", "[[...slug]]", "page.tsx"), "utf8");
+  const mappedIcons = new Set(
+    [...route.matchAll(/^\s*(?:"([^"]+)"|([a-z][a-z0-9-]*)):\s*[A-Z][A-Za-z0-9]*/gm)].map(
+      (match) => match[1] ?? match[2],
+    ),
+  );
+  const cardIcons = new Set();
+
+  for (const page of await loadPublicDocsPages()) {
+    const slug = page.path === "index" ? [] : page.path.split("/");
+    const docsPage = await loadDocsPage(slug);
+    if (docsPage.kind !== "mdx") continue;
+    for (const block of docsPage.blocks) {
+      if (block.type !== "cards") continue;
+      for (const card of block.cards) {
+        if (card.icon) cardIcons.add(card.icon);
+      }
+    }
+  }
+
+  const missing = [...cardIcons].filter((icon) => !mappedIcons.has(icon)).sort();
+  assert.deepEqual(missing, []);
+});
+
 test("docs parser joins wrapped list item continuation lines", () => {
   const parsed = parseDocsMdx(`---
 title: "Lists"
