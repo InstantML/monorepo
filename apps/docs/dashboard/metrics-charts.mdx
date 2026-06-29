@@ -13,13 +13,15 @@ series over training step or logged time. Use the Runs workspace when you need
 bar, value histogram, dot, scatter, seed/group distribution, or selected-run
 logged histogram timeline panels.
 
-## Metric catalog
+## Metric browser
 
-The metric catalog groups available metric keys by namespace, coverage, point
-count, goal-aware best value, and selected-run presence.
+The metric browser on the left groups available metric keys by namespace and
+shows coverage, point count, goal-aware best value, and selected-run presence.
+Type in its search field — or press `/` from anywhere on the page — to filter,
+and pin a key to keep its own chart below the main one.
 
 Use namespaces such as `train/`, `eval/`, `reward/`, and `system/` to keep the
-catalog readable.
+browser readable.
 
 ## Chart controls
 
@@ -27,6 +29,8 @@ Current chart controls include:
 
 - Selected metric.
 - Step or logged-time x-axis.
+- A linear or log y-axis.
+- A **Chart** / **Summary table** toggle for the same selection.
 - Optional smoothing.
 - Grouped averages.
 - Group by seed, first tag, or the current fixed config grouping options such
@@ -34,11 +38,18 @@ Current chart controls include:
 - Range brush zoom.
 - Hover readouts with run name, step or logged time, raw value, and smoothed
   value when smoothing is active.
-- Chart CSV export for the plotted sample.
-- SVG image export for the visible graph.
+- Chart CSV export for the plotted sample and SVG image export for the visible
+  graph.
 
 Unit-bounded metrics such as accuracy, F1, precision, recall, and AUC use a
 normalized `0..1` y-axis. Return, reward, and loss metrics auto-scale.
+
+## Series table
+
+Below the chart, the series table lists each plotted run with its last, min,
+max, best-at-step, and point count. Toggle a run's visibility to focus the chart
+on a subset without changing the underlying selection. Pinned metrics render as
+their own charts stacked under the primary one.
 
 ## Scalar metrics that chart well
 
@@ -58,7 +69,7 @@ scalar metrics. Log those as rich objects so the dashboard can fetch them
 through bounded object routes instead of bloating the scalar metric hot path.
 
 For per-sample distributions over time, log histogram rich objects with
-`ro.Histogram.from_values(scores, bins=shared_edges)` under a stable object key.
+`im.Histogram.from_values(scores, bins=shared_edges)` under a stable object key.
 For binary classifier evidence, use `run.log_classification_eval(...)` so Run
 Detail can render PR/ROC, confusion matrix, per-class metrics, and prediction
 rows.
@@ -78,8 +89,10 @@ Metric charts share the same visual system as Runs workspace line panels:
 
 ## Export chart evidence
 
-Use the chart export buttons when you need to move evidence into a notebook,
-issue, report, or lab note. CSV export contains the already plotted data,
+Each chart's three-dot options menu offers **Download data (CSV)** and
+**Download image (SVG)**; the Metrics header also has a one-click SVG button.
+Use them when you need to move evidence into a notebook, issue, report, or lab
+note. CSV export contains the already plotted data,
 including the visible sample, grouping labels, series type, source run count for
 aggregates, step/time, value, and smoothed value when smoothing is active. SVG
 image export renders the visible chart client-side without requesting

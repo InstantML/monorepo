@@ -1,9 +1,20 @@
+/* Docs prose is set in DM Sans (self-hosted via next/font, so no external
+ * request and no CSP allowance needed); code spans/blocks stay monospace. */
+.docs-route,
+.docs-route :is(h1, h2, h3, h4, p, li, a, strong, em, b, small, th, td, summary, figcaption, dt, dd) {
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+.docs-route :is(code, pre, kbd) {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
 .docs-route {
   min-height: 100vh;
   background: #f7f8f5;
   color: #171a14;
   --docs-topbar-height: 104px;
   --docs-sidebar-width: 264px;
+  --docs-toc-width: 224px;
   --scrollbar-track: #f7f8f5;
   --scrollbar-thumb: rgba(14, 107, 67, 0.28);
   --scrollbar-thumb-hover: rgba(14, 107, 67, 0.48);
@@ -250,8 +261,10 @@ body:has(.docs-route) {
 .docs-route-tab {
   position: relative;
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
+  /* Grid-stack the label over a hidden bold ghost (::before) so the tab is
+     always sized to its active (bold) width — activating it never reflows. */
+  display: inline-grid;
+  place-items: center;
   padding: 12px 12px;
   color: #53635c;
   font-size: var(--fs-ui);
@@ -260,6 +273,18 @@ body:has(.docs-route) {
   text-decoration: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px; /* overlap row border so the underline meets it */
+}
+
+.docs-route-tab::before {
+  content: attr(data-label);
+  grid-area: 1 / 1;
+  font-weight: 600;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.docs-route-tab-text {
+  grid-area: 1 / 1;
 }
 
 .docs-route-tab:hover {
@@ -276,8 +301,9 @@ body:has(.docs-route) {
 
 .docs-route-shell {
   display: grid;
-  grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr);
-  gap: clamp(48px, 6vw, 112px);
+  /* Mintlify-style three columns: nav rail · reading column · "On this page". */
+  grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr) var(--docs-toc-width);
+  gap: clamp(28px, 3.5vw, 64px);
   /* No margin: 0 auto — pin the shell to the viewport edges. */
   margin: 0;
   padding: 0 clamp(20px, 3vw, 40px) 96px 0;
@@ -438,11 +464,13 @@ body:has(.docs-route) {
 
 .docs-route-article {
   min-width: 0;
-  width: calc(100% - clamp(48px, 8vw, 160px));
-  max-width: 1280px;
-  margin-inline: auto;
+  width: 100%;
+  /* A fixed reading measure keeps prose comfortable; the "On this page" rail
+   * fills the space to its right instead of letting lines run wide. */
+  max-width: 760px;
+  margin: 0;
   padding-top: 56px;
-  padding-inline: clamp(24px, 4vw, 64px);
+  padding-inline: 0;
 }
 
 .docs-route-article-header {
@@ -832,7 +860,143 @@ body:has(.docs-route) {
   color: #b42318;
 }
 
+/* ---------- "On this page" TOC ---------- */
+
+.docs-route-toc {
+  position: sticky;
+  top: var(--docs-topbar-height);
+  align-self: start;
+  max-height: calc(100vh - var(--docs-topbar-height));
+  overflow-y: auto;
+  /* Align the rail's first row with the article body, past the page title. */
+  padding: 56px 2px 24px 0;
+}
+
+.docs-route-toc-title {
+  display: block;
+  margin-bottom: 12px;
+  color: #7a8a82;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.docs-route-toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 1px solid rgba(23, 33, 27, 0.1);
+}
+
+.docs-route-toc-item a {
+  display: block;
+  margin-left: -1px;
+  padding: 5px 0 5px 14px;
+  border-left: 2px solid transparent;
+  color: #5d6b63;
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.docs-route-toc-item.level-3 a {
+  padding-left: 26px;
+  font-size: 12.5px;
+}
+
+.docs-route-toc-item a:hover {
+  color: #0e6b43;
+}
+
+.docs-route-toc-item a.is-active {
+  border-left-color: #0e6b43;
+  color: #0e6b43;
+  font-weight: 600;
+}
+
+/* ---------- Heading hover anchor ---------- */
+
+.docs-route-body :is(h2, h3, h4) a {
+  position: relative;
+}
+
+.docs-route-body :is(h2, h3, h4) a:hover::before {
+  content: "#";
+  position: absolute;
+  left: -0.85em;
+  color: rgba(14, 107, 67, 0.45);
+  font-weight: 600;
+}
+
+/* ---------- Prev/next pager ---------- */
+
+.docs-route-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 56px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(23, 33, 27, 0.1);
+}
+
+.docs-route-pager-link {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid rgba(21, 32, 26, 0.12);
+  border-radius: 10px;
+  background: #ffffff;
+  text-decoration: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.docs-route-pager-link.is-next {
+  text-align: right;
+}
+
+.docs-route-pager-link:hover {
+  border-color: rgba(43, 224, 130, 0.42);
+  box-shadow: 0 12px 28px rgba(21, 32, 26, 0.06);
+  transform: translateY(-1px);
+}
+
+.docs-route-pager-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #7a8a82;
+  font-size: var(--fs-data);
+  font-weight: 700;
+}
+
+.docs-route-pager-link.is-next .docs-route-pager-dir {
+  justify-content: flex-end;
+}
+
+.docs-route-pager-title {
+  color: #0e6b43;
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
 /* ---------- Responsive ---------- */
+
+@media (max-width: 1200px) {
+  /* Drop the "On this page" rail first; the reading column reclaims the space. */
+  .docs-route-shell {
+    grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr);
+  }
+
+  .docs-route-toc {
+    display: none;
+  }
+
+  .docs-route-article {
+    max-width: 860px;
+  }
+}
 
 @media (max-width: 1100px) {
   .docs-route {
@@ -960,5 +1124,17 @@ body:has(.docs-route) {
   .docs-route-api-row dl {
     grid-column: 1;
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docs-route-pager {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .docs-route-pager-link.is-next {
+    text-align: left;
+  }
+
+  .docs-route-pager-link.is-next .docs-route-pager-dir {
+    justify-content: flex-start;
   }
 }

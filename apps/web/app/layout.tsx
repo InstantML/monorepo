@@ -3,7 +3,7 @@ import "./auth.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
-import { Inter, Spline_Sans_Mono, Instrument_Serif } from "next/font/google";
+import { DM_Sans, Inter, Spline_Sans_Mono, Instrument_Serif } from "next/font/google";
 import { headers } from "next/headers";
 
 // Instrument design language (docs/design/reimagine/DESIGN-SYSTEM.md):
@@ -19,6 +19,14 @@ const mono = Spline_Sans_Mono({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
   variable: "--font-mono-next",
+  display: "swap",
+});
+
+// Public docs prose font (self-hosted by next/font — no external request).
+// Loaded as a variable font so the full weight range is available to the docs.
+const docsSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-dm-sans",
   display: "swap",
 });
 
@@ -179,7 +187,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const requestHeaders = await headers();
   const isEmbedRoute = requestHeaders.get("x-instantml-embed-route") === "1";
   return (
-    <html lang="en" className={`${display.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang="en" className={`${display.variable} ${mono.variable} ${serif.variable} ${docsSans.variable}`} suppressHydrationWarning>
       <head>
         {isEmbedRoute ? null : (
           <>

@@ -7,34 +7,46 @@ description: "Inspect one run's metrics, config, source context, logs, artifacts
 
 ![Run Detail](/images/product/dashboard-run-detail.png)
 
-Run Detail is the place to slow down and inspect one run.
+Run Detail is the place to slow down and inspect one run. Open it by clicking a
+run in the Runs workspace.
 
-## Summary
+## Header and KPI cockpit
 
-The top of the page shows run identity and status:
+The header shows run identity and live status:
 
-- Run name.
-- Duration and source metadata availability.
-- Status.
-- Tags and notes.
-- Metric key count.
-- Artifact count.
-- Latest and best metric summaries when available.
+- Breadcrumb back to Runs plus the short run id.
+- Run name and a status chip (Live, Finished, Failed, or stopping/stopped).
+- Forked-from context, seed, owner, and start time when available.
+- Header actions to **Fork** the newest checkpoint, jump to **Compare**, or
+  **Request stop** on a running run (when your role allows it).
+
+Below the header, a KPI cockpit summarizes the run from its own logged metrics.
+Cards appear only when the underlying signal exists:
+
+- **Step** progress, with a meter when the run declared a target step count.
+- The **headline eval metric**, flagged "best yet" when the latest value is the
+  run's extreme.
+- **Loss**, with a per-1k-step slope.
+- **Throughput** and **GPU utilization** when system metrics are logged.
+- **ETA**, estimated from the recent step rate for running runs with a target.
 
 ## Run Detail tabs
 
-Run Detail has its own tabs, separate from the global dashboard navigation:
+Run Detail has its own tabs, separate from the global dashboard navigation. The
+Metrics and Artifacts tabs carry a count badge:
 
 | Tab | Use |
 | --- | --- |
-| Overview | Main status, tags, notes, metric summaries, and stored checkpoints |
+| Overview | KPI cockpit, headline charts, config, checkpoints, alerts, and timeline |
 | Metrics | Metric curve chart and the metric summary table |
 | Artifacts | Artifact, checkpoint, media, table, histogram, and evaluation evidence |
 | Logs | Stdout/stderr style logs for the selected run |
 | Config | Config plus source/system metadata captured by the SDK |
 | Lineage | Conditional relationship/evidence graph surfaces when graph data exists |
 
-Logs and object manifests load only when the relevant tab is opened.
+Logs and object manifests load only when the relevant tab is opened. User-facing
+metric summaries cover logged training metrics; internal SDK telemetry
+(`system/instantml/*`) lives on the Config tab.
 
 ## Tags and notes
 

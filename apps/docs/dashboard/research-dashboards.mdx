@@ -17,19 +17,38 @@ every page in a project.
 
 ![Distributed dashboard](/images/product/dashboard-distributed.png)
 
-Use Distributed for rank-aware training runs and reducer-style inspection. This
-surface is aimed at jobs where individual ranks or workers produce metrics that
-need grouped views.
+Distributed (titled **Rank reducers**) is scoped to one selected run and is
+aimed at jobs where individual ranks or workers each log values. Pick a run and
+a rank key to see reducer lines (mean, weighted mean, median, with a p05–p95
+band), rank coverage versus the expected world size, a per-rank snapshot at the
+latest step, a deviation heatmap, and the highest-deviation rank/step outliers.
+
+Log the inputs with rank-aware metrics:
+
+```python
+run.log_rank_metrics(
+    {"train/loss": loss},
+    step=step,
+    rank=rank,
+    world_size=world_size,
+)
+```
 
 ## Insights
 
 ![Insights dashboard](/images/product/dashboard-insights.png)
 
-Insights is for exploratory views over the loaded run summaries, such as
-grouped reducers, hyperparameter scatter, loaded-summary cluster cards,
-parallel-coordinate traces for sweep/HPO tradeoffs, and evaluation metric
-summary cards. These traces are exploratory and summary-only; they are not
-saved Runs workspace panels.
+Insights has two views, switched with the toggle in its header and defaulting to
+**Run Analysis**:
+
+- **GPU & System** summarizes GPU and system-usage telemetry across the loaded
+  or selected runs.
+- **Run Analysis** holds exploratory views over the run summaries: grouped
+  reducers, an evaluation-metric summary grid, hyperparameter scatter, k-means
+  cluster projections, and parallel-coordinate traces for sweep/HPO tradeoffs.
+
+These views are exploratory and summary-only; they are not saved Runs workspace
+panels.
 
 Parallel coordinates work best when the loaded or selected run summaries have
 several numeric config or summary fields with real variation: learning rate,
@@ -57,6 +76,6 @@ run.log_metrics({"eval/accuracy": accuracy, "train/loss": loss}, step=epoch)
 | Runs | You need a fast broad scan |
 | Metrics | You need one metric charted carefully |
 | Run Detail | You need to inspect one run |
-| Compare | You have a candidate set and need differences |
+| Compare (Runs → Table) | You have a candidate set and need differences |
 | Distributed | Rank/worker context matters |
 | Insights | You want exploratory summaries over the loaded/selected runs |
