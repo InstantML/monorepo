@@ -48,14 +48,21 @@
   min-width: 0;
 }
 .distributed-toolbar .select-trigger {
+  /* The run trigger stacks two lines (name + project/status), so it needs more
+     vertical room than the single-line 32px default to avoid looking cramped. */
   width: 100%;
+  height: auto;
+  min-height: 46px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  align-items: center;
 }
 .distributed-toolbar .distributed-run-select {
   flex: 1.4 1 320px;
 }
 .distributed-toolbar .select-trigger-value {
   display: grid;
-  gap: 2px;
+  gap: 3px;
 }
 
 /* ── Section band — used by compact embedded analysis panes. ─────────────── */
