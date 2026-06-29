@@ -1726,7 +1726,7 @@ button.compare-row-head.active {
 
 /* table shell — its own bounded scroll region so the column-header row stays
  * sticky on vertical scroll and wheel scrolling stays on the table. */
-.cmp-table-wrap{overflow:auto;max-height:70vh;scrollbar-gutter:stable;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.cmp-table-wrap{overflow:auto;max-height:70vh;scrollbar-gutter:stable;border:1px solid var(--line);border-radius:0;background:var(--surface)}
 .cmp-table-shell{position:relative;min-width:0}
 .cmp-table{min-width:max-content}
 .cmp-row{display:grid;grid-template-columns:var(--cmp-cols);align-items:stretch}
@@ -1743,14 +1743,14 @@ button.compare-row-head.active {
 .cmp-th{
   display:flex;flex-direction:column;gap:2px;align-items:flex-start;justify-content:flex-end;width:100%;
   background:var(--surface);
-  padding:11px 14px 9px;border:0;cursor:pointer;text-align:left;
+  padding:11px 14px 9px;border:0;border-radius:0;cursor:pointer;text-align:left;
   font-family:var(--font-sans);color:var(--text-2);
 }
 .cmp-th.num{align-items:flex-end;text-align:right}
 .cmp-th-cell.sticky .cmp-th{box-shadow:1px 0 0 var(--line)}
 .cmp-th:hover{background:var(--surface-hover)}
-.cmp-th-label{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--text);white-space:nowrap}
-.cmp-th-meta{font-size:10.5px;font-weight:400;letter-spacing:0;color:var(--faint);white-space:nowrap}
+.cmp-th-label{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-label);font-weight:500;color:var(--text);white-space:nowrap}
+.cmp-th-meta{font-size:var(--fs-micro);font-weight:400;letter-spacing:0;color:var(--faint);white-space:nowrap}
 .cmp-th-chev{color:var(--dim);flex:none}
 .cmp-th:hover .cmp-th-chev{color:var(--muted)}
 .cmp-th.sorted .cmp-th-chev{color:var(--accent)}
@@ -1761,7 +1761,7 @@ button.compare-row-head.active {
 .cmp-cell{
   display:flex;flex-direction:column;justify-content:center;gap:3px;
   padding:10px 14px;min-width:0;
-  font-family:var(--font-mono);font-size: var(--fs-body);color:var(--text-2);white-space:nowrap;
+  font-family:var(--font-mono);font-size:var(--fs-data);color:var(--text-2);white-space:nowrap;
 }
 .cmp-cell.num{align-items:flex-end;text-align:right;font-variant-numeric:tabular-nums}
 .cmp-row:hover .cmp-cell{background:var(--surface-hover)}
@@ -1776,7 +1776,7 @@ button.compare-row-head.active {
 .cmp-row:hover .cmp-identity{background:var(--surface-hover)}
 .cmp-row.reference .cmp-identity{background:var(--surface-selected);box-shadow:inset 2px 0 0 var(--accent),1px 0 0 var(--line)}
 .cmp-identity-meta{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
-.cmp-run-name{font-family:var(--font-mono);font-weight:600;font-size: var(--fs-body);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-run-name{font-family:var(--font-mono);font-weight:500;font-size:var(--fs-data);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmp-identity-sub{display:flex;align-items:center;gap:7px;min-width:0}
 .cmp-proj{font-family:var(--font-sans);font-size: 12px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmp-anchor{flex:none;background:transparent;border:0;cursor:pointer;color:var(--dim);font-size:14px;line-height:1;padding:3px 5px;border-radius:var(--control-radius)}
@@ -1791,7 +1791,7 @@ button.compare-row-head.active {
 .pill.cmp-status.warning{background:#fff8e8;color:#9a4a00;border-color:#f4d6a1}
 
 /* metric cells */
-.cmp-metric .cmp-metric-val{font-family:var(--font-mono);font-size:13.5px;font-weight:600;color:var(--text)}
+.cmp-metric .cmp-metric-val{font-family:var(--font-mono);font-size:var(--fs-data);font-weight:600;color:var(--text)}
 /* Emphasize the focus-metric value by weight, not color — a green value reads as
  * "good" even on rows that are worse than the reference. Direction is carried by
  * the delta chip below. */
@@ -1810,7 +1810,7 @@ button.compare-row-head.active {
 .cmp-cell.diff::after{content:"";position:absolute;top:50%;right:auto;left:5px;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:var(--amber)}
 .cmp-cell.num.diff{padding-left:18px}
 
-.cmp-artifact-link{font-family:var(--font-mono);font-size: var(--fs-body);color:var(--text);background:transparent;border:0;border-bottom:1px dotted var(--line-strong);cursor:pointer;padding:0 0 1px}
+.cmp-artifact-link{font-family:var(--font-mono);font-size:var(--fs-data);color:var(--text);background:transparent;border:0;border-bottom:1px dotted var(--line-strong);cursor:pointer;padding:0 0 1px}
 .cmp-artifact-link:hover{color:var(--accent);border-color:var(--accent)}
 
 /* Matrix (transposed) diff highlight means "differs from reference", not "better".
