@@ -7,10 +7,14 @@
  * decision (see product/wiki/decisions/ship-mcp-server-in-v1.md).
  *
  * Tracker tools (read-only over runs/metrics):
- *   - tracker.list_runs(project_id?, query?, limit?)
+ *   - tracker.list_runs(project?, query?, limit?, cursor?, sort_by?, metric_key?)
  *   - tracker.get_run(run_id)
  *   - tracker.query_metrics(run_id, key, since_step?, until_step?)
  *   - tracker.list_metrics(run_id)
+ *   - tracker.get_metric_series_batch(run_ids, key, ...)
+ *   - tracker.compare_runs(run_ids, reference_run_id?, diff_only?)
+ *   - tracker.export_runs(run_ids?, project?, query?, format?)
+ *   - tracker.workspace_view_data(view, run_ids, options?)
  *
  * Report tools (read/write document surface — Notion-style live docs):
  *   - tracker.list_reports(project?, limit?)

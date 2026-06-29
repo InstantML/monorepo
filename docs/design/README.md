@@ -109,6 +109,12 @@ Current implemented design sequence, continued:
   distribution panels while preserving read-only/no-export iframe boundaries and
   bounded workspace-view data reads.
 
+Current draft designs:
+
+- `2026-06-29-agent-compare-runs-api.md`: draft read-only API for agent
+  top-k/filter-based run comparison that reuses run search, summaries,
+  side-by-side rows, and optional bounded series previews.
+
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
 Current strategic emphasis: beat W&B for smaller startups, labs, and lean ML teams on speed, UI quality, and predictable pricing. The current public tier model is Free, Pro, and Premium, with Stripe-backed payment collection for paid signup and plan changes plus blocked-at-limit usage guardrails. Metric-point and API-request limits are scoped to the current UTC calendar month and reset on the first day of the next month; storage/project/run quotas are retained-resource posture. Free/non-billable API request overage is blocked, paid Pro/Premium request overage is Stripe-metered, and paid storage overage is reported as current-month high-water retained GiB deltas. The Rust/ClickHouse design is accepted for the backend foundation path, and the implemented default backend now uses Rust with ClickHouse for metadata and ClickHouse for metric time series.

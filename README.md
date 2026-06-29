@@ -23,6 +23,8 @@ Start with:
 - `docs/architecture/self-hosted-gcp-clickhouse.md` for the current
   InstantML-owned GCP ClickHouse production/staging operating model.
 - `docs/design/2026-05-19-utoipa-migration.md` for the OpenAPI-driven TS codegen pipeline. Run `npm run codegen:api` after any Rust handler change.
+- `docs/sdk/agent-run-analysis.md` for the MCP run discovery, comparison,
+  metric-series, export, and workspace-view-data workflow.
 - `docs/users/checkpoint-forking-agent-guide.md` for agent-facing checkpoint
   logging, fork/resume, scope, and docs-sync guidance.
 - `docs/users/day-1-customer-discovery.md` for planning-only customer discovery hypotheses.
