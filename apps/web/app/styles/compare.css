@@ -797,8 +797,8 @@ button.compare-row-head.active {
 .artifact-catalog-panel .panel-head,
 .artifact-version-panel .panel-head,
 .artifact-manifest-panel .panel-head {
-  align-items: flex-start;
   flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 .artifact-catalog-panel .panel-head h2,
