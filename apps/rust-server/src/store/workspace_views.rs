@@ -463,6 +463,11 @@ pub async fn workspace_view_data(
                     "metric_summary".to_string()
                 },
                 series_key,
+                x_field: panel.x_field.clone(),
+                y_field: panel.y_field.clone(),
+                value_field: panel.value_field.clone(),
+                group_field: panel.group_field.clone(),
+                replicate_field: panel.replicate_field.clone(),
                 summary_values: metric_summary,
                 warnings: panel_warnings,
             }
@@ -1072,7 +1077,7 @@ fn metric_series_point_count(series: &[Value]) -> usize {
 fn workspace_view_summary_panel_type(panel_type: &str) -> bool {
     matches!(
         panel_type,
-        "bar" | "dot" | "value" | "value_histogram" | "distribution"
+        "bar" | "dot" | "value" | "histogram" | "value_histogram" | "scatter" | "distribution"
     )
 }
 
@@ -1084,6 +1089,11 @@ struct WorkspaceViewDataPanel {
     section_id: String,
     section_name: String,
     metric_key: String,
+    x_field: Option<String>,
+    y_field: Option<String>,
+    value_field: Option<String>,
+    group_field: Option<String>,
+    replicate_field: Option<String>,
 }
 
 fn workspace_view_data_payload(view: &Value) -> AppResult<(Value, Vec<String>)> {
@@ -1178,10 +1188,24 @@ fn workspace_view_data_panels(
                 section_id: section_id.clone(),
                 section_name: section_name.clone(),
                 metric_key: validate_name(Some(metric_key), "metricKey")?,
+                x_field: workspace_view_panel_field(panel, "xField"),
+                y_field: workspace_view_panel_field(panel, "yField"),
+                value_field: workspace_view_panel_field(panel, "valueField"),
+                group_field: workspace_view_panel_field(panel, "groupField"),
+                replicate_field: workspace_view_panel_field(panel, "replicateField"),
             });
         }
     }
     Ok((panels, warnings))
+}
+
+fn workspace_view_panel_field(panel: &Value, key: &str) -> Option<String> {
+    panel
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(512).collect::<String>())
 }
 
 fn metric_summary_values(summaries: &[Value], metric_key: &str) -> Vec<Value> {
@@ -1426,17 +1450,51 @@ mod tests {
                     "name": "Eval",
                     "panels": [
                         { "id": "panel-line", "title": "Reward", "type": "line", "metricKey": "eval/reward" },
-                        { "id": "panel-bar", "title": "Loss", "type": "bar", "metricKey": "train/loss" }
+                        { "id": "panel-bar", "title": "Loss", "type": "bar", "metricKey": "train/loss" },
+                        { "id": "panel-hist", "title": "Loss hist", "type": "histogram", "metricKey": "train/loss" },
+                        { "id": "panel-legacy-hist", "title": "Loss legacy hist", "type": "value_histogram", "metricKey": "train/loss" },
+                        {
+                            "id": "panel-scatter",
+                            "title": "Reward tradeoff",
+                            "type": "scatter",
+                            "metricKey": "eval/reward",
+                            "xField": "run:duration_seconds",
+                            "yField": "metric:eval%2Freward:best"
+                        },
+                        {
+                            "id": "panel-dist",
+                            "title": "Reward distribution",
+                            "type": "distribution",
+                            "metricKey": "eval/reward",
+                            "valueField": "metric:eval%2Freward:best",
+                            "groupField": "run:status",
+                            "replicateField": "config:%2Fseed"
+                        }
                     ]
                 }]
             }
         });
         let (panels, warnings) = workspace_view_data_panels(&payload, 10).unwrap();
         assert!(warnings.is_empty());
-        assert_eq!(panels.len(), 2);
+        assert_eq!(panels.len(), 6);
         assert_eq!(panels[0].section_name, "Eval");
         assert_eq!(panels[0].metric_key, "eval/reward");
         assert_eq!(panels[1].panel_type, "bar");
+        assert!(workspace_view_summary_panel_type("histogram"));
+        assert!(workspace_view_summary_panel_type("value_histogram"));
+        assert!(workspace_view_summary_panel_type("scatter"));
+        assert_eq!(panels[2].panel_type, "histogram");
+        assert_eq!(panels[4].x_field.as_deref(), Some("run:duration_seconds"));
+        assert_eq!(
+            panels[4].y_field.as_deref(),
+            Some("metric:eval%2Freward:best")
+        );
+        assert_eq!(
+            panels[5].value_field.as_deref(),
+            Some("metric:eval%2Freward:best")
+        );
+        assert_eq!(panels[5].group_field.as_deref(), Some("run:status"));
+        assert_eq!(panels[5].replicate_field.as_deref(), Some("config:%2Fseed"));
     }
 
     #[test]

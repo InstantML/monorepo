@@ -2,7 +2,23 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Globe } from "lucide-react";
+import {
+  BookOpen,
+  Building2,
+  ChartLine,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  FileText,
+  FlaskConical,
+  Gauge,
+  Globe,
+  LayoutDashboard,
+  type LucideIcon,
+  Package,
+  Rocket,
+  Terminal,
+} from "lucide-react";
 
 import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
 import { DocsCodeBlock } from "../docs-code-block";
@@ -44,6 +60,25 @@ export const runtime = "nodejs";
 export const dynamic = "force-static";
 
 const SITE_URL = "https://instantml.ai";
+
+// Card icons are authored in docs.json/MDX as Lucide kebab-case names. Map the
+// ones we use to their components so the static render emits real SVGs instead
+// of a first-letter placeholder. "chart-line" / "line-chart" are the new and
+// deprecated names for the same icon.
+const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
+  "book-open": BookOpen,
+  "building-2": Building2,
+  "chart-line": ChartLine,
+  "credit-card": CreditCard,
+  "file-text": FileText,
+  "flask-conical": FlaskConical,
+  gauge: Gauge,
+  "layout-dashboard": LayoutDashboard,
+  "line-chart": ChartLine,
+  package: Package,
+  rocket: Rocket,
+  terminal: Terminal,
+};
 
 function docsRoutePath(pagePath: string) {
   if (pagePath === "index") return "/docs";
@@ -335,6 +370,15 @@ function DocsSidebar({
   );
 }
 
+function DocsCardIcon({ icon }: { icon: string }) {
+  const Icon = icon ? DOCS_CARD_ICONS[icon] : undefined;
+  return (
+    <span className="docs-route-card-icon" aria-hidden="true">
+      {Icon ? <Icon size={20} strokeWidth={2} /> : icon ? icon.slice(0, 1).toUpperCase() : "D"}
+    </span>
+  );
+}
+
 function DocsBlockView({ block }: { block: DocsBlock }) {
   if (block.type === "heading") {
     const Heading = `h${Math.min(Math.max(block.level, 2), 4)}` as "h2" | "h3" | "h4";
@@ -402,7 +446,7 @@ function DocsBlockView({ block }: { block: DocsBlock }) {
     <div className="docs-route-card-grid">
       {block.cards.map((card) => (
         <Link className="docs-route-card" href={docsHref(card.href)} key={card.href}>
-          <span className="docs-route-card-icon">{card.icon ? card.icon.slice(0, 1).toUpperCase() : "D"}</span>
+          <DocsCardIcon icon={card.icon} />
           <span>
             <strong>{card.title}</strong>
             <small>{card.description}</small>

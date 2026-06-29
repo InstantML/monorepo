@@ -625,6 +625,10 @@
 
 .tab-label {
   max-width: 0;
+  /* overflow clips horizontally during the max-width collapse animation, so
+   * keep a line-height tall enough that it never clips glyph descenders
+   * (g/y/p) on the way past — line-height:1 on .tab-button would shave them. */
+  line-height: 1.4;
   overflow: hidden;
   opacity: 0;
   white-space: nowrap;

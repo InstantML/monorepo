@@ -637,7 +637,7 @@ export function RunsWorkspace({
             <input aria-label="Search panels" id="panel-search" type="search" value={panelSearch} onChange={(event) => onPanelSearch(event.target.value)} placeholder="Search panels" />
           </label>
           {view.mode === "manual" ? <button className="icon-button framed" type="button" onClick={onResetWorkspace} aria-label="Rebuild layout" title="Rebuild layout from logged metrics"><RefreshCw size={15} /></button> : null}
-          {!showAddPanelDrawer ? <button className="primary-button" data-add-panel-trigger="true" type="button" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /> Add panels</button> : null}
+          {!showAddPanelDrawer ? <button className="primary-button icon-only" data-add-panel-trigger="true" type="button" aria-label="Add panels" title="Add panels" onClick={() => onSetAddPanelSection(activeAddSectionId)}><Plus size={15} /></button> : null}
         </div>
 
         <div className="workspace-sections">
@@ -688,7 +688,7 @@ export function RunsWorkspace({
         </div>
       </section>
 
-      {showAddPanelDrawer ? (
+      {showAddPanelDrawer && typeof document !== "undefined" ? createPortal(
         <>
           <div className="panel-drawer-backdrop" aria-hidden="true" onMouseDown={() => onSetAddPanelSection("")} />
           <aside className="panel-drawer" role="dialog" aria-modal="true" aria-label="Add panels" ref={addDrawerRef} tabIndex={-1}>
@@ -763,7 +763,8 @@ export function RunsWorkspace({
               {!availableMetricKeys.length ? <div className="empty compact-empty">No metrics are available for the current filters yet.</div> : null}
             </div>
           </aside>
-        </>
+        </>,
+        document.body,
       ) : null}
     </div>
   );

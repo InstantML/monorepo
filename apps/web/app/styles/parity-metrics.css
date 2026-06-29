@@ -159,6 +159,7 @@
   border-left-color: var(--accent);
 }
 .metrics-parity .mx-tree-leaf-main {
+  display: block;
   flex: 1;
   min-width: 0;
   overflow: hidden;

@@ -473,6 +473,15 @@
   opacity: 1;
 }
 
+.histogram-bar:focus-visible,
+.summary-bar:focus-visible,
+.summary-dot:focus-visible,
+.scatter-dot:focus-visible {
+  outline: none;
+  stroke: var(--text);
+  stroke-width: 2;
+}
+
 .alt-chart-tooltip {
   position: absolute;
   z-index: 3;
@@ -698,6 +707,7 @@
   z-index: calc(var(--z-pop, 100) - 2);
   background: rgba(9, 14, 20, 0.22);
   backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 }
 
 .edit-drawer {

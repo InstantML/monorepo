@@ -497,8 +497,11 @@ textarea:focus {
   border-right: 1px solid var(--line);
 }
 .brandbar .brand-mark {
-  width: 28px;
-  height: 28px;
+  /* Match the landing nav logo: NavLogo size=22 renders a ~22px dot grid.
+     The .instantml-mark-svg { width:100% } rule makes the mark fill this box,
+     so this size (not the inline size prop) controls the rendered mark. */
+  width: 22px;
+  height: 22px;
   border: 0;
   background: transparent;
   color: var(--text);

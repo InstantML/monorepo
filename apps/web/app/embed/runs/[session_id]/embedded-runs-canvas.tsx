@@ -4,15 +4,18 @@ import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { smoothSeries } from "../../../../src/charts.js";
+import { distributionSummaryForRuns, latestMetricValues, scatterPointsForRuns } from "../../../../src/dashboard-panels.js";
 import { parseEmbedTokenLocation } from "../../../../src/embed-token.js";
 import type { components } from "../../../../src/types/api.generated";
 import { metricTitle } from "../../../dashboard-models";
 import { MetricChart, type ChartZoomRange } from "../../../dashboard/metrics/metric-chart";
+import { DistributionPanelChart, LatestMetricPanelChart, ScatterPanelChart } from "../../../dashboard/runs/summary-panel-charts";
 
 type EmbedCurrentSessionResponse = components["schemas"]["EmbedCurrentSessionResponse"];
 type WorkspaceViewDataResponse = components["schemas"]["WorkspaceViewDataResponse"];
 type WorkspaceViewData = components["schemas"]["WorkspaceViewData"];
 type WorkspacePanelResult = components["schemas"]["WorkspaceViewDataPanelResult"];
+type LatestPanelType = "bar" | "dot" | "histogram" | "value_histogram";
 
 type ChartSeries = {
   id: string;
@@ -27,6 +30,52 @@ type ChartSeries = {
     smoothedValue?: number;
   }>;
 };
+
+type EmbeddedPanelBase = {
+  id: string;
+  metricKey: string;
+  plottedLabel: string;
+  title: string;
+  warnings: string[];
+};
+
+type EmbeddedLinePanel = EmbeddedPanelBase & {
+  kind: "line";
+  series: ChartSeries[];
+};
+
+type EmbeddedLatestPanel = EmbeddedPanelBase & {
+  kind: LatestPanelType;
+  values: Array<{ id: string; index: number; name: string; value: number }>;
+};
+
+type EmbeddedScatterPanel = EmbeddedPanelBase & {
+  kind: "scatter";
+  missingCount: number;
+  points: Array<{ id: string; name: string; x: number; y: number }>;
+  xField: string;
+  yField: string;
+};
+
+type EmbeddedDistributionPanel = EmbeddedPanelBase & {
+  groupField?: string;
+  kind: "distribution";
+  replicateField?: string;
+  summary: ReturnType<typeof distributionSummaryForRuns>;
+  valueField: string;
+};
+
+type EmbeddedUnsupportedPanel = EmbeddedPanelBase & {
+  kind: "unsupported";
+  message: string;
+};
+
+type EmbeddedPanel =
+  | EmbeddedLinePanel
+  | EmbeddedLatestPanel
+  | EmbeddedScatterPanel
+  | EmbeddedDistributionPanel
+  | EmbeddedUnsupportedPanel;
 
 export function EmbeddedRunsCanvas({ sessionId }: { sessionId: string }) {
   const tokenRef = useRef("");
@@ -105,7 +154,7 @@ export function EmbeddedRunsCanvas({ sessionId }: { sessionId: string }) {
   }, [load]);
 
   const panels = useMemo(() => (
-    viewData ? chartPanelsFromViewData(viewData, smoothing) : []
+    viewData ? embedPanelsFromViewData(viewData, smoothing) : []
   ), [smoothing, viewData]);
   const panelIds = useMemo(() => panels.map((panel) => panel.id), [panels]);
   const warningText = viewData?.warnings?.filter(Boolean).slice(0, 2).join(" ") ?? "";
@@ -149,7 +198,7 @@ export function EmbeddedRunsCanvas({ sessionId }: { sessionId: string }) {
 
       <section className="embed-meta" aria-label="Embed status">
         <span>{viewData ? `${viewData.run_ids.length} runs` : "Loading runs"}</span>
-        {viewData ? <span>{viewData.metric_keys.length} metrics</span> : null}
+        {viewData ? <span>{pluralCount(viewData.metric_keys.length, "metric")}</span> : null}
         {expiresLabel ? <span>Expires {expiresLabel}</span> : null}
         {updatedLabel ? <span>Updated {updatedLabel}</span> : null}
       </section>
@@ -170,35 +219,71 @@ export function EmbeddedRunsCanvas({ sessionId }: { sessionId: string }) {
                   <h2 title={panel.title}>{panel.title}</h2>
                   <p>{metricTitle(panel.metricKey)}</p>
                 </div>
-                <span>{panel.series.length} plotted</span>
+                <span>{panel.plottedLabel}</span>
               </div>
-              <MetricChart
-                emptyMessage="No logged series for this metric in the embedded run set."
-                height={260}
-                metricKey={panel.metricKey}
-                onSmoothingChange={setSmoothing}
-                onZoomRangeChange={(range) => {
-                  setZoomRangesByPanelId((current) => {
-                    const next = { ...current };
-                    if (range) {
-                      next[panel.id] = range;
-                    } else {
-                      delete next[panel.id];
-                    }
-                    return next;
-                  });
-                }}
-                padding={34}
-                series={panel.series}
-                showChartOptions
-                showExportActions={false}
-                showLegend
-                showRange
-                showYAxisControls
-                smoothing={smoothing}
-                xMode="step"
-                zoomRange={zoomRangesByPanelId[panel.id] ?? null}
-              />
+              {panel.warnings.length ? <p className="embed-panel-warning">{panel.warnings.slice(0, 2).join(" ")}</p> : null}
+              {panel.kind === "line" ? (
+                <MetricChart
+                  emptyMessage="No logged series for this metric in the embedded run set."
+                  height={260}
+                  metricKey={panel.metricKey}
+                  onSmoothingChange={setSmoothing}
+                  onZoomRangeChange={(range) => {
+                    setZoomRangesByPanelId((current) => {
+                      const next = { ...current };
+                      if (range) {
+                        next[panel.id] = range;
+                      } else {
+                        delete next[panel.id];
+                      }
+                      return next;
+                    });
+                  }}
+                  padding={34}
+                  series={panel.series}
+                  showChartOptions
+                  showExportActions={false}
+                  showLegend
+                  showRange
+                  showYAxisControls
+                  smoothing={smoothing}
+                  xMode="step"
+                  zoomRange={zoomRangesByPanelId[panel.id] ?? null}
+                />
+              ) : panel.kind === "bar" || panel.kind === "dot" || panel.kind === "histogram" || panel.kind === "value_histogram" ? (
+                <LatestMetricPanelChart
+                  height={260}
+                  metricKey={panel.metricKey}
+                  padding={42}
+                  type={panel.kind}
+                  values={panel.values}
+                  width={520}
+                />
+              ) : panel.kind === "scatter" ? (
+                <ScatterPanelChart
+                  height={260}
+                  missingCount={panel.missingCount}
+                  points={panel.points}
+                  scopeLabel={viewData ? `${viewData.run_ids.length} runs` : "embedded runs"}
+                  width={520}
+                  xField={panel.xField}
+                  yField={panel.yField}
+                />
+              ) : panel.kind === "distribution" ? (
+                <DistributionPanelChart
+                  groupField={panel.groupField}
+                  height={260}
+                  replicateField={panel.replicateField}
+                  scopeLabel={viewData ? `${viewData.run_ids.length} runs` : "embedded runs"}
+                  summary={panel.summary}
+                  valueField={panel.valueField}
+                  width={520}
+                />
+              ) : panel.kind === "unsupported" ? (
+                <div className="chart-area" aria-label={`Unsupported panel ${panel.title}`}>
+                  <div className="empty">{panel.message}</div>
+                </div>
+              ) : null}
             </article>
           ))}
         </section>
@@ -246,17 +331,111 @@ function extractAndScrubEmbedToken() {
   }
 }
 
-function chartPanelsFromViewData(viewData: WorkspaceViewData, smoothing: number) {
+function embedPanelsFromViewData(viewData: WorkspaceViewData, smoothing: number): EmbeddedPanel[] {
+  const runs = embeddedRuns(viewData);
   return viewData.panels
-    .filter((panel) => panel.type === "line" && panel.series_key)
-    .map((panel) => ({
-      id: panel.id,
-      title: panel.title || metricTitle(panel.metric_key),
-      metricKey: panel.metric_key,
-      series: smoothSeries(seriesForPanel(viewData, panel), smoothing),
-    }))
-    .filter((panel) => panel.series.length > 0)
+    .map((panel): EmbeddedPanel => {
+      const base = embeddedPanelBase(panel);
+      const type = normalizePanelType(panel.type);
+      if (type === "line") {
+        const series = smoothSeries(seriesForPanel(viewData, panel), smoothing);
+        return {
+          ...base,
+          kind: "line",
+          plottedLabel: `${series.length} plotted`,
+          series,
+        };
+      }
+      if (type === "bar" || type === "dot" || type === "histogram" || type === "value_histogram") {
+        const values = latestMetricValues(runs, panel.metric_key);
+        return {
+          ...base,
+          kind: type,
+          plottedLabel: `${values.length} values`,
+          values,
+        };
+      }
+      if (type === "scatter") {
+        const xField = fieldString(panel.x_field);
+        const yField = fieldString(panel.y_field);
+        if (!xField || !yField) {
+          return {
+            ...base,
+            kind: "unsupported",
+            message: "This scatter panel is missing numeric X and Y fields.",
+            plottedLabel: "needs fields",
+          };
+        }
+        const scatter = scatterPointsForRuns(runs, xField, yField);
+        return {
+          ...base,
+          kind: "scatter",
+          missingCount: scatter.missing,
+          plottedLabel: `${scatter.points.length} plotted`,
+          points: scatter.points,
+          xField,
+          yField,
+        };
+      }
+      if (type === "distribution") {
+        const valueField = fieldString(panel.value_field);
+        if (!valueField) {
+          return {
+            ...base,
+            kind: "unsupported",
+            message: "This distribution panel is missing a numeric value field.",
+            plottedLabel: "needs field",
+          };
+        }
+        const groupField = fieldString(panel.group_field);
+        const replicateField = fieldString(panel.replicate_field);
+        const summary = distributionSummaryForRuns(runs, valueField, groupField, replicateField);
+        return {
+          ...base,
+          groupField,
+          kind: "distribution",
+          plottedLabel: `${summary.plotted} plotted`,
+          replicateField,
+          summary,
+          valueField,
+        };
+      }
+      return {
+        ...base,
+        kind: "unsupported",
+        message: `Panel type "${panel.type}" is not supported in run embeds yet.`,
+        plottedLabel: "unsupported",
+      };
+    })
     .slice(0, 8);
+}
+
+function embeddedPanelBase(panel: WorkspacePanelResult): EmbeddedPanelBase {
+  const warnings = Array.isArray(panel.warnings)
+    ? panel.warnings.filter((warning): warning is string => typeof warning === "string" && warning.length > 0)
+    : [];
+  return {
+    id: panel.id,
+    title: panel.title || metricTitle(panel.metric_key),
+    metricKey: panel.metric_key,
+    plottedLabel: "",
+    warnings,
+  };
+}
+
+function normalizePanelType(type: string) {
+  if (type === "line" || type === "bar" || type === "dot" || type === "histogram" || type === "value_histogram" || type === "scatter" || type === "distribution") {
+    return type;
+  }
+  return "unsupported";
+}
+
+function fieldString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function embeddedRuns(viewData: WorkspaceViewData) {
+  return viewData.runs.filter((run) => run && typeof run === "object" && !Array.isArray(run)) as Array<Record<string, unknown>>;
 }
 
 function seriesForPanel(viewData: WorkspaceViewData, panel: WorkspacePanelResult): ChartSeries[] {
@@ -342,4 +521,8 @@ function shortTime(value: string) {
     minute: "2-digit",
     second: "2-digit",
   }).format(date);
+}
+
+function pluralCount(count: number, singular: string) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }

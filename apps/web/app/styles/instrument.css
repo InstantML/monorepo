@@ -287,11 +287,24 @@ button:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
-/* 17 — Consolidated artifact empty state. */
+/* 17 — Consolidated artifact empty state. Reserve the same vertical footprint as
+   the loading skeleton so the page settles in place instead of snapping from a
+   tall three-panel layout down to a small box once the empty result resolves. */
+.artifact-empty-panel {
+  display: flex;
+  min-height: min(440px, 60vh);
+}
+
+.artifact-empty-panel .panel-body {
+  flex: 1;
+}
+
 .artifact-empty-panel .artifact-empty-state {
   display: grid;
+  align-content: center;
   justify-items: center;
   gap: 10px;
+  min-height: 100%;
   padding: 56px 24px;
   text-align: center;
   color: var(--muted);

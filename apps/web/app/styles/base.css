@@ -271,6 +271,12 @@ button.primary-button:hover {
   background: var(--accent-strong);
 }
 
+button.primary-button.icon-only {
+  gap: 0;
+  padding-inline: 0;
+  aspect-ratio: 1;
+}
+
 button:focus-visible,
 .select-trigger:focus-visible {
   outline: none;
