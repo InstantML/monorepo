@@ -50,6 +50,7 @@ describe("landing components — file presence and exports", () => {
   const components = [
     ["LogoMark.tsx",    "LogoMark"],
     ["NavLogo.tsx",     "NavLogo"],
+    ["LandingNav.tsx",  "LandingNav"],
     ["ThemeToggle.tsx", "ThemeToggle"],
     ["HeroSpotlight.tsx","HeroSpotlight"],
     ["MaskingDemo.tsx", "MaskingDemo"],
@@ -70,6 +71,7 @@ describe("landing components — file presence and exports", () => {
 describe("landing components — use client directives", () => {
   const mustBeClient = [
     "ThemeToggle.tsx",
+    "LandingNav.tsx",
     "HeroSpotlight.tsx",
     "MaskingDemo.tsx",
     "AuditFeed.tsx",
@@ -116,10 +118,10 @@ test("NavLogo avoids invalid SVG auto dimensions", () => {
 });
 
 test("LandingPage top navigation links to docs", () => {
-  const src = fs.readFileSync(path.join(componentsDir, "LandingPage.tsx"), "utf8");
+  const src = fs.readFileSync(path.join(componentsDir, "LandingNav.tsx"), "utf8");
   assert.match(src, /import Link from "next\/link"/);
   assert.match(src, /href="\/docs"/);
-  assert.match(src, />Docs<\/Link>/);
+  assert.match(src, />\s*Docs\s*<\/Link>/);
 });
 
 test("LandingPage migration copy matches implemented importer and shadow paths", () => {
