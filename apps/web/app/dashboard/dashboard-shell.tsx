@@ -577,7 +577,13 @@ function workspaceViewImportByteLength(value: string) {
   return new TextEncoder().encode(value).length;
 }
 
-export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabId }) {
+export function DashboardShell({
+  initialTab = "runs",
+  initialSession = null,
+}: {
+  initialTab?: ShellTabId;
+  initialSession?: DashboardSessionPayload | null;
+}) {
   const api = useMemo(() => new ApiClient(), []);
   const clerk = useClerk();
   const dashboardRequestRef = useRef(0);
@@ -631,10 +637,10 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   const messageRef = useRef("Loading runs...");
   const [activeTab, setActiveTab] = useState<ShellTabId>(() => initialActiveTab(initialTab));
   const activeTabRef = useRef(activeTab);
-  const [dashboardAuthorized, setDashboardAuthorized] = useState(false);
-  const [dashboardSessionChecked, setDashboardSessionChecked] = useState(false);
+  const [dashboardAuthorized, setDashboardAuthorized] = useState(() => Boolean(initialSession?.authenticated));
+  const [dashboardSessionChecked, setDashboardSessionChecked] = useState(() => Boolean(initialSession?.authenticated));
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
-  const [sessionPayload, setSessionPayload] = useState<DashboardSessionPayload | null>(null);
+  const [sessionPayload, setSessionPayload] = useState<DashboardSessionPayload | null>(() => initialSession);
   const [projectPreferenceReady, setProjectPreferenceReady] = useState(false);
   const [orgMemberships, setOrgMemberships] = useState<OrgMembershipSummary[]>([]);
   const [orgSwitchBusy, setOrgSwitchBusy] = useState(false);
@@ -1458,6 +1464,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
   }, [api, currentPageCursor, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
 
   useEffect(() => {
+    if (initialSession?.authenticated) return undefined;
     const controller = new AbortController();
     async function checkSession() {
       try {
@@ -1490,7 +1497,7 @@ export function DashboardShell({ initialTab = "runs" }: { initialTab?: ShellTabI
     }
     checkSession();
     return () => controller.abort();
-  }, [api]);
+  }, [api, initialSession?.authenticated]);
 
   const signOut = useCallback(async () => {
     setDashboardAuthorized(false);

@@ -11,6 +11,7 @@ import { roleLabel } from "../src/roles.js";
 import { organizationRequiresStorageOnboarding, postAuthRedirectPath, safeCheckoutRedirectUrl, sanitizeNextPath } from "../src/routes.js";
 import { deriveClerkSlug } from "../src/workspace.js";
 import { InstantMlMark } from "./instantml-mark";
+import { AppLoadingScreen } from "./loading-screen";
 
 type AuthMode = "signin" | "signup" | "onboarding";
 type PlanTier = "free" | "pro" | "premium";
@@ -763,6 +764,18 @@ export function AuthFlow({ mode }: { mode: AuthMode }) {
   // single disabled skeleton so the dev-auth form doesn't flash before
   // the Clerk path is available (or vice versa).
   const authReady = config.loaded && (!config.managed_clerk_enabled || Boolean(clerkConfigError) || clerkLoaded);
+  const signinSessionResolving =
+    mode === "signin"
+    && !isOnboarding
+    && !loadFailed
+    && !showSessionRecovery
+    && !isError
+    && managedClerkReady
+    && Boolean(isSignedIn);
+
+  if (signinSessionResolving) {
+    return <AppLoadingScreen detail={authReady ? "Opening workspace" : "Checking session"} />;
+  }
 
   return (
     <div className="iml-auth">

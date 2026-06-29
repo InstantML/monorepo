@@ -104,7 +104,16 @@ test("initial dashboard data load renders shell with Runs skeletons", () => {
   const shellSrc = read("app/dashboard/dashboard-shell.tsx");
   assert.match(shellSrc, /dashboardSessionChecked/);
   assert.match(shellSrc, /if \(!dashboardSessionChecked\) return <AppLoadingScreen detail="Checking session" \/>/);
+  assert.match(shellSrc, /initialSession = null/);
+  assert.match(shellSrc, /useState\(\(\) => Boolean\(initialSession\?\.authenticated\)\)/);
+  assert.match(shellSrc, /useState<DashboardSessionPayload \| null>\(\(\) => initialSession\)/);
+  assert.match(shellSrc, /if \(initialSession\?\.authenticated\) return undefined/);
   assert.doesNotMatch(shellSrc, /if \(!initialLoadDone\) return <AppLoadingScreen/);
+
+  const pageSrc = read("app/dashboard/[[...tab]]/page.tsx");
+  assert.match(pageSrc, /serverAuthSession\(\(await headers\(\)\)\.get\("cookie"\) \?\? ""\)/);
+  assert.match(pageSrc, /redirect\(`\/signin\?next=\$\{encodeURIComponent\(sanitizeNextPath\(requestedPath\)\)\}`\)/);
+  assert.match(pageSrc, /return <DashboardShell initialTab=\{initialTab\} initialSession=\{session\} \/>/);
 
   const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
   assert.match(workspaceSrc, /const initialRunsLoading = !initialLoadDone && workspaceRuns\.length === 0/);

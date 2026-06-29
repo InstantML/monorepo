@@ -16,8 +16,27 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const authFlowPath = path.join(__dirname, "..", "app", "auth-flow.tsx");
 const authCssPath = path.join(__dirname, "..", "app", "auth.css");
+const signInPagePath = path.join(__dirname, "..", "app", "signin", "page.tsx");
 
 describe("AuthFlow stale Clerk session recovery", () => {
+  test("redirects valid InstantML sessions from signin before rendering AuthFlow", () => {
+    const src = fs.readFileSync(signInPagePath, "utf8");
+    assert.match(src, /import \{ headers \} from "next\/headers"/);
+    assert.match(src, /import \{ redirect \} from "next\/navigation"/);
+    assert.match(src, /serverAuthSession\(\(await headers\(\)\)\.get\("cookie"\) \?\? ""\)/);
+    assert.match(src, /if \(session\?\.authenticated\) \{[\s\S]*redirect\(postAuthRedirectPath\(session, nextPath\)\)/);
+    assert.match(src, /return <AuthFlow mode="signin" \/>/);
+  });
+
+  test("keeps only known signed-in users on the app loading shell while the workspace opens", () => {
+    const src = fs.readFileSync(authFlowPath, "utf8");
+    assert.match(src, /import \{ AppLoadingScreen \} from "\.\/loading-screen"/);
+    assert.match(src, /const signinSessionResolving =/);
+    assert.match(src, /mode === "signin"[\s\S]*&& managedClerkReady[\s\S]*&& Boolean\(isSignedIn\)/);
+    assert.doesNotMatch(src, /!authReady \|\| \(managedClerkReady && Boolean\(isSignedIn\)\)/);
+    assert.match(src, /if \(signinSessionResolving\) \{[\s\S]*return <AppLoadingScreen detail=\{authReady \? "Opening workspace" : "Checking session"\} \/>/);
+  });
+
   test("retries the Clerk exchange with a non-cached token after a 401", () => {
     const src = fs.readFileSync(authFlowPath, "utf8");
     assert.match(src, /getToken\(forceFreshToken \? \{ skipCache: true \} : undefined\)/);
