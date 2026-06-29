@@ -59,6 +59,13 @@
   border-color: var(--accent);
 }
 
+.workspace-section-empty::before,
+.workspace-section-empty::after,
+.workspace-section-empty:hover::before,
+.workspace-section-empty:hover::after {
+  display: none;
+}
+
 /* 2 — Stat numerals are data: tabular mono, not display sans. */
 .metric-card strong,
 .run-kpi-grid .metric-card strong {
