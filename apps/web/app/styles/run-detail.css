@@ -463,7 +463,9 @@
   color: var(--blue);
 }
 
-pre {
+.raw-detail pre,
+.inspector pre,
+.api-context-detail pre {
   max-height: 230px;
   overflow-x: hidden;
   overflow-y: auto;

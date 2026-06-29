@@ -1151,7 +1151,9 @@
 
   /* L1: pre blocks (raw JSON config / metrics) — switch to horizontal
    * scroll for long lines on touch (mouse users can read the wrap fine). */
-  pre {
+  .raw-detail pre,
+  .inspector pre,
+  .api-context-detail pre {
     overflow-x: auto;
     white-space: pre;
     -webkit-overflow-scrolling: touch;
