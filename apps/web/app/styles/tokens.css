@@ -2,7 +2,7 @@
  * Do not modify brand values without updating the brand doc.
  * Source: Instrument design language 2026-06-11
  * (docs/design/reimagine/DESIGN-SYSTEM.md). Signal green #2be082 on warm
- * graphite; Spline Sans Mono carries data, Inter carries prose.
+ * graphite; Spline Sans Mono carries data, DM Sans carries prose.
  * ─────────────────────────────────────────────────────────────────────────── */
 :root {
   --color-ink: #0d0f0c;
@@ -10,7 +10,7 @@
   --color-deep: #0e5a36;
   --color-soft: #f6f7f3;
   --color-paper: #ffffff;
-  /* Wordmark letter-spacing per brand spec (Inter 650) */
+  /* Wordmark letter-spacing per brand spec */
   --tracking-wordmark: -0.02em;
 }
 
@@ -87,8 +87,8 @@
   --z-workbar: 40;
   --z-sticky-th: 5;
   --z-pop: 100;
-  --font-display: var(--font-sans-next, "Inter"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-ui: var(--font-sans-next, "Inter"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-dm-sans, "DM Sans"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-ui: var(--font-dm-sans, "DM Sans"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-sans: var(--font-ui);
   --font-mono: var(--font-mono-next, "Spline Sans Mono"), ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-serif: var(--font-serif-next, "Instrument Serif"), Georgia, "Times New Roman", serif;

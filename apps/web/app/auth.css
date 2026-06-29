@@ -14,8 +14,8 @@
   --accent-line:rgba(15, 138, 84,.26);
   --warm:#9a6300; --warm-soft:rgba(154,99,0,.1);
   --danger:#b42318; --danger-soft:rgba(180,35,24,.1);
-  --f-sans:var(--font-sans-next),"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-display:var(--font-sans-next),"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-sans:var(--font-dm-sans),"DM Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-display:var(--font-dm-sans),"DM Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:var(--font-mono-next),"Spline Sans Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --f-serif:"Instrument Serif",var(--font-serif-next),Georgia,"Times New Roman",serif;
   --r-sm:4px; --r:6px; --r-lg:10px; --r-pill:999px;
