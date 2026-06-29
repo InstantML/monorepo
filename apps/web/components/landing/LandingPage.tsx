@@ -475,7 +475,11 @@ export function LandingPage() {
               </span>
               <span className="landing-proof-chip">
                 <span className="landing-proof-chip__check"><IconCheck /></span>
-                Hosted + Premium BYOC
+                Hosted + Premium BYOC ClickHouse
+              </span>
+              <span className="landing-proof-chip">
+                <span className="landing-proof-chip__check"><IconCheck /></span>
+                Predictable pricing
               </span>
             </div>
 
