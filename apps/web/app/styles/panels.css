@@ -707,6 +707,7 @@
   z-index: calc(var(--z-pop, 100) - 2);
   background: rgba(9, 14, 20, 0.22);
   backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 }
 
 .edit-drawer {
