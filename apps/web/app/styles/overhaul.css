@@ -782,6 +782,10 @@ textarea:focus {
   cursor: default;
   opacity: 1;
 }
+.account-workspace-option.selected .org-switcher-option-name {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+}
 .account-workspace-actions {
   display: grid;
   gap: 2px;

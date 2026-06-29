@@ -496,6 +496,7 @@ test("workspace creation UI keeps the active workspace visible and waits for ava
   assert.match(topbar, /> New workspace</, "menu action should match the mixed personal/org creation modal");
   assert.equal(/account-workspace-list" role="listbox"/.test(topbar), false, "account workspace menu should not claim listbox semantics without arrow-key handling");
   assert.match(css, /@media \(max-width: 720px\) \{[\s\S]*?\.account-workspace-current \{[\s\S]*?display: block;/, "mobile account trigger should keep the current workspace visible");
+  assert.match(css, /\.account-workspace-option\.selected \.org-switcher-option-name \{[\s\S]*?color: var\(--text\);[\s\S]*?-webkit-text-fill-color: var\(--text\);/, "selected workspace name should keep primary text color even when the current workspace button is disabled");
 });
 
 test("workspace view API normalizes generated and legacy envelopes", () => {
