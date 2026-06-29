@@ -1,0 +1,120 @@
+---
+title: "Use InstantML with agents"
+description: "Expose InstantML runs, metrics, comparisons, exports, and reports to MCP-compatible agents."
+---
+
+# Use InstantML with agents
+
+InstantML ships an MCP server that lets compatible agents inspect runs, fetch
+bounded metric series, compare selected runs, export evidence, and draft
+reports through the same InstantML API your SDK and dashboard use.
+
+## What you need
+
+- An InstantML API base URL, such as `https://api.instantml.ai`.
+- An InstantML API key with `export:read` for run-analysis tools.
+- `artifacts:write` is only needed when your normal scripts upload artifacts.
+- A copy of the InstantML repository or package that contains
+  `tools/mcp-server.mjs`.
+- Node dependencies installed with `npm ci`.
+
+Report-writing tools use the same authenticated API key. Use an org-scoped key
+when the agent should create or update reports across the workspace.
+
+## Configure your agent
+
+Add the InstantML MCP server to your MCP-compatible agent configuration:
+
+```json
+{
+  "mcpServers": {
+    "instantml": {
+      "command": "node",
+      "args": ["/path/to/instantml/tools/mcp-server.mjs"],
+      "env": {
+        "INSTANTML_API_URL": "https://api.instantml.ai",
+        "INSTANTML_API_KEY": "instantml_..."
+      }
+    }
+  }
+}
+```
+
+Then restart the agent so it launches the MCP server and discovers the tools.
+
+## Available run tools
+
+| Tool | Use it for |
+| --- | --- |
+| `tracker.list_runs` | Search and page run summaries by project, query, status, metric sort, and cursor. |
+| `tracker.get_run` | Fetch one run summary by UUID. |
+| `tracker.list_metrics` | Discover metric keys and latest/min/max/mean summary values for a run. |
+| `tracker.query_metrics` | Fetch bounded metric points for one run and one metric key. |
+| `tracker.get_metric_series_batch` | Fetch one metric across many run IDs through the batched series endpoint. |
+| `tracker.compare_runs` | Compare up to 50 selected runs by config, metadata, tags, attributes, and metric summaries. |
+| `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV. |
+| `tracker.workspace_view_data` | Resolve a portable dashboard view plus explicit run IDs into bounded panel data. |
+
+## Available report tools
+
+| Tool | Use it for |
+| --- | --- |
+| `tracker.list_reports` | List reports in the organization. |
+| `tracker.get_report` | Read one report, including its ordered block body. |
+| `tracker.create_report` | Create a block-based report. |
+| `tracker.update_report` | Patch a report title, description, visibility, or blocks. |
+| `tracker.delete_report` | Delete a report. |
+| `tracker.share_report` | Generate a public share token for a report. |
+| `tracker.report_block_schema` | Fetch the canonical block and panel schema example. |
+| `tracker.list_org_panels` | Discover existing report panel specs to reuse. |
+| `tracker.add_panel_to_report` | Append a panel to an existing report panel grid. |
+
+## Recommended workflow
+
+Ask the agent to narrow candidates before fetching detailed data:
+
+```text
+Find the best finished cartpole runs tagged baseline, compare the top five by
+eval/return_mean, and summarize the config differences.
+```
+
+The agent should usually call:
+
+1. `tracker.list_runs` with `project`, `query`, `sort_by: "metric-best"`, and
+   `metric_key`.
+2. `tracker.list_metrics` if the metric key is unknown.
+3. `tracker.get_metric_series_batch` for bounded curves across the selected run
+   IDs.
+4. `tracker.compare_runs` after narrowing to at most 50 run IDs.
+5. `tracker.export_runs` when you need portable evidence for a notebook or
+   spreadsheet.
+
+## Search examples
+
+`tracker.list_runs` uses the same run search language as the dashboard:
+
+```text
+tag:baseline status:finished
+notes:"reward stability" -tag:debug
+(tag:baseline OR tag:candidate) config:lr
+re:/seed-(13|14)/
+```
+
+Bare text, such as `seed 13 reward`, searches name, tags, notes, config,
+metadata, status, project, and ID as implicit `AND` terms.
+
+## Limits
+
+InstantML keeps MCP reads bounded:
+
+- Run summary pages are capped at 1,000 rows.
+- Batched metric series accepts up to 2,000 run IDs and caps total returned
+  points.
+- Selected-run comparison accepts up to 50 run IDs and 5,000 compare rows.
+- Workspace-view data accepts up to 100 run IDs, 50 panels, 500 points per
+  series, and 50,000 total metric points.
+- Selected export accepts up to 100 exact run IDs.
+
+If an agent needs broad project analysis, ask it to start with summaries and
+metric aggregates, then fetch detailed series only for the candidate runs it
+selects.
