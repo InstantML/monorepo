@@ -3,7 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import {
+  ArrowLeftRight,
   BookOpen,
+  Bot,
+  Brain,
   Building2,
   ChartLine,
   ChevronLeft,
@@ -18,6 +21,7 @@ import {
   Package,
   Rocket,
   Terminal,
+  Zap,
 } from "lucide-react";
 
 import { DocsAgentMarkdownButton } from "../docs-agent-markdown-button";
@@ -66,7 +70,10 @@ const SITE_URL = "https://instantml.ai";
 // of a first-letter placeholder. "chart-line" / "line-chart" are the new and
 // deprecated names for the same icon.
 const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
+  "arrow-left-right": ArrowLeftRight,
   "book-open": BookOpen,
+  bot: Bot,
+  brain: Brain,
   "building-2": Building2,
   "chart-line": ChartLine,
   "credit-card": CreditCard,
@@ -78,6 +85,7 @@ const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
   package: Package,
   rocket: Rocket,
   terminal: Terminal,
+  zap: Zap,
 };
 
 function docsRoutePath(pagePath: string) {
