@@ -10,8 +10,6 @@ import { AuditFeed } from "./AuditFeed";
 import { TtlRing } from "./TtlRing";
 import { ThemeToggle } from "./ThemeToggle";
 
-const DEMO_EMAIL =
-  "mailto:hello@instantml.ai?subject=InstantML%20design%20partner&body=Hi%20%E2%80%94%20I%27d%20like%20to%20try%20InstantML.%0A%0ATeam%3A%0AStack%3A%0AModel%2Fworkflow%3A%0ARun%20volume%3A%0ABiggest%20pain%20with%20current%20tool%3A";
 const COPYRIGHT_YEAR = new Date().getFullYear();
 
 function useSectionObserver() {
@@ -406,26 +404,6 @@ function BentoEyebrow({ icon, label }: { icon: ReactNode; label: string }) {
   );
 }
 
-function MatrixCell({ label, status, tone }: { label: string; status: string; tone: "ok" | "progress" | "neutral" }) {
-  const dotBg =
-    tone === "ok" ? "var(--accent)" : tone === "progress" ? "var(--warm)" : "var(--dim)";
-  const dotShadow =
-    tone === "ok"
-      ? "0 0 0 1px rgba(31,184,119,0.18)"
-      : tone === "progress"
-        ? "0 0 0 1px rgba(224,176,122,0.18)"
-        : "none";
-  return (
-    <div className="bento-cell landing-matrix-cell">
-      <div className="landing-matrix-cell__row">
-        <span className="landing-matrix-cell__label">{label}</span>
-        <span className="landing-matrix-cell__dot" style={{ background: dotBg, boxShadow: dotShadow }} aria-hidden />
-      </div>
-      <span className="landing-matrix-cell__status">{status}</span>
-    </div>
-  );
-}
-
 function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
   return (
     <div>
@@ -659,41 +637,6 @@ export function LandingPage() {
         </div>
       </Section>
 
-      {/* What ships today */}
-      <Section className="landing-section-py" id="pricing">
-        <div className="landing-section-intro">
-          <h2 className="landing-h2">
-            Shipping now.
-          </h2>
-        </div>
-
-        <div className="landing-matrix-grid">
-          <MatrixCell label="Python SDK"      status="init / log / finish" tone="ok" />
-          <MatrixCell label="Run compare"     status="Side-by-side"        tone="ok" />
-          <MatrixCell label="Artifacts"       status="Files · checkpoints" tone="ok" />
-          <MatrixCell label="W&B import"      status="JSON · CLI"          tone="ok" />
-          <MatrixCell label="MLflow import"   status="JSON · CLI"          tone="ok" />
-          <MatrixCell label="Neptune import"  status="JSON · CLI"          tone="ok" />
-          <MatrixCell label="Docker Compose"  status="One command"         tone="ok" />
-          <MatrixCell label="BYOC ClickHouse" status="Premium option"      tone="ok" />
-          <MatrixCell label="Hosted SaaS"     status="Design partners"     tone="progress" />
-          <MatrixCell label="Dual-log to W&B" status="In testing"          tone="progress" />
-          <MatrixCell label="Predictable pricing" status="No tracked hours" tone="ok" />
-          <MatrixCell label="Data export"     status="GET /api/export"     tone="ok" />
-        </div>
-
-        <div className="landing-pricing-footer">
-          <a href={DEMO_EMAIL} className="landing-text-link">
-            Talk to us about pricing
-            <IconArrow />
-          </a>
-          <span className="landing-pricing-sep">·</span>
-          <a href="mailto:hello@instantml.ai" className="landing-text-link">
-            hello@instantml.ai
-          </a>
-        </div>
-      </Section>
-
       {/* CTA */}
       <Section className="landing-section-py">
         <div className="landing-cta-card">
@@ -740,7 +683,6 @@ export function LandingPage() {
                 ["Developers", "#developers"],
                 ["Docs", "/docs"],
                 ["Pricing", "/pricing"],
-                ["What ships today", "#pricing"],
               ]}
             />
             <FooterCol
