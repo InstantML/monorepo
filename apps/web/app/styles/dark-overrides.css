@@ -322,7 +322,9 @@
 :root[data-theme="dark"] .artifact-card,
 :root[data-theme="dark"] .summary-row,
 :root[data-theme="dark"] .side-row,
-:root[data-theme="dark"] pre {
+:root[data-theme="dark"] .raw-detail pre,
+:root[data-theme="dark"] .inspector pre,
+:root[data-theme="dark"] .api-context-detail pre {
   border-color: var(--line);
   background: var(--color-ink);
   color: var(--text);

@@ -1006,7 +1006,10 @@ a.report-pane__action:hover {
   border: 1px solid var(--line);
 }
 
+pre.report-render__markdown,
+.report-render__code,
 .report-render__markdown pre {
+  margin: 0;
   padding: 14px 16px;
   background: var(--bg-soft);
   border: 1px solid var(--line);
@@ -1016,6 +1019,22 @@ a.report-pane__action:hover {
   font-size: 12.5px;
   line-height: 1.55;
   color: var(--text);
+}
+
+pre.report-render__markdown {
+  white-space: pre-wrap;
+}
+
+.report-render__code {
+  white-space: pre;
+}
+
+.report-render__code code {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
 }
 
 .report-render__hr {
@@ -1899,6 +1918,8 @@ a.report-pane__action:hover {
 .panel-chart--code {
   background: var(--bg, var(--surface));
   font: 540 12.5px/1.55 var(--font-mono);
+  max-height: none;
+  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
 }

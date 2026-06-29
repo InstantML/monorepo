@@ -657,9 +657,15 @@ body:has(.docs-route) {
 }
 
 .docs-route-code pre {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  max-height: none;
   margin: 0;
   overflow-x: auto;
+  overflow-y: visible;
   padding: 18px;
+  white-space: pre;
 }
 
 .docs-route-code code {

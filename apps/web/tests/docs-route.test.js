@@ -56,6 +56,18 @@ test("docs routes declare self canonicals and static public rendering", async ()
   assert.match(sitemap, /docsUrl\(page\.path\)/);
 });
 
+test("docs code blocks do not inherit standalone raw pre borders", async () => {
+  const docsStyles = await readFile(path.join(webRoot, "app", "styles", "docs.css"), "utf8");
+  const preStyles = await Promise.all(
+    ["run-detail.css", "dark-overrides.css", "mobile.css"].map((file) =>
+      readFile(path.join(webRoot, "app", "styles", file), "utf8"),
+    ),
+  );
+
+  assert.match(docsStyles, /\.docs-route-code pre\s*\{[\s\S]*?border:\s*0;[\s\S]*?max-height:\s*none;/);
+  assert.doesNotMatch(preStyles.join("\n"), /(?:^|\n)\s*pre\s*\{/);
+});
+
 test("docs loader caches static filesystem work for server renders", async () => {
   const docs = await readFile(path.join(webRoot, "src", "docs.js"), "utf8");
   assert.match(docs, /from "react"/, "docs loader should use React cache for request-level dedupe");
