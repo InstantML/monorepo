@@ -4203,7 +4203,6 @@ function dismissTopOverlay() {
     return (
       <main className="auth-page" aria-busy="false">
         <section className="auth-card">
-          <p className="eyebrow">Session</p>
           <h1>Sign in required</h1>
           <p>{dashboardAuthMessage}</p>
           <SignInLink />

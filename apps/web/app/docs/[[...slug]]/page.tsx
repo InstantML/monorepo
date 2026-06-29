@@ -187,7 +187,6 @@ export default async function DocsPage({ params }: DocsParams) {
         <article className="docs-route-article">
           <header className="docs-route-article-header">
             <div>
-              <div className="docs-route-eyebrow">InstantML documentation</div>
               <h1>{page.title}</h1>
               {page.description ? <p className="docs-route-description">{page.description}</p> : null}
             </div>

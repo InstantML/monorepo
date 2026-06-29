@@ -413,7 +413,11 @@ textarea:focus {
 }
 
 /* Accent eyebrow used by PageHead and analysis headers. */
-.eyebrow--accent { color: var(--accent); }
+.eyebrow--accent {
+  color: var(--accent-strong);
+  letter-spacing: 0;
+  text-transform: none;
+}
 .eyebrow--warm { color: var(--warm); }
 
 /* color-mix fallback: paint a solid chrome bg first for engines without it. */
