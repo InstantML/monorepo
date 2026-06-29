@@ -42,12 +42,10 @@
 }
 
 .mono-label {
-  font-family: var(--font-mono);
-  font-size: var(--fs-data);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--accent-strong);
+  font-weight: 650;
 }
 
 /* ─── Background textures (reused across landing hero + CTA card) ─── */
@@ -150,12 +148,9 @@
   background: var(--surface-soft);
 }
 .landing-stat-card__key {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  /* --muted, not --faint: small uppercase mono labels need headroom past
-     4.5:1 on the dark landing surface (audit L2). */
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
   color: var(--muted);
   margin-bottom: 8px;
 }
@@ -198,10 +193,9 @@
   line-height: 1;
 }
 .landing-paint-tile__tag {
-  font-family: var(--font-mono);
-  font-size: var(--fs-data);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
 }
 .landing-paint-tile__tag--danger { color: rgba(248, 113, 113, 0.8); }
 .landing-paint-tile__tag--accent { color: var(--accent); }
@@ -237,11 +231,10 @@
   border: 1px solid var(--accent-line);
 }
 .landing-bento-eyebrow__label {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--text-2);
 }
 
 /* ─── Pill ─── */
@@ -764,11 +757,10 @@
   background: var(--surface-soft);
 }
 .landing-masking-demo__label {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--muted);
 }
 .landing-masking-demo__live {
   display: inline-flex;
@@ -839,11 +831,10 @@
   background: var(--surface-soft);
 }
 .landing-audit-feed__label {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--muted);
 }
 .landing-audit-feed__live {
   display: inline-flex;
@@ -937,11 +928,10 @@
   pointer-events: none;
 }
 .landing-ttl-ring__eyebrow {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--muted);
   margin-bottom: 4px;
 }
 .landing-ttl-ring__value {
@@ -952,11 +942,10 @@
   line-height: 1;
 }
 .landing-ttl-ring__unit {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--muted);
   margin-top: 6px;
 }
 
@@ -1096,10 +1085,9 @@
   margin-bottom: 24px;
 }
 .landing-hero-badge__text {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
   color: var(--muted);
 }
 .landing-h1 {
@@ -1682,11 +1670,10 @@
   line-height: 1.6;
 }
 .landing-footer-col-title {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--muted);
   margin-bottom: 16px;
 }
 .landing-footer-links {

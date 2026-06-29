@@ -516,14 +516,6 @@ body:has(.docs-route) {
   border-color: rgba(24, 122, 82, 0.34);
 }
 
-.docs-route-eyebrow {
-  margin-bottom: 12px;
-  color: #1a8a5e;
-  font-size: var(--fs-data);
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
 .docs-route-article h1 {
   max-width: 720px;
   margin: 0;

@@ -97,7 +97,7 @@ export function TtlRing() {
       </svg>
 
       <div className="landing-ttl-ring__label">
-        <div className="landing-ttl-ring__eyebrow">newest page p95</div>
+        <div className="landing-ttl-ring__eyebrow">Newest runs page p95</div>
         <div className="landing-ttl-ring__value" ref={valueRef}>{display}</div>
         <div className="landing-ttl-ring__unit">ms · hosted 50k runs</div>
       </div>

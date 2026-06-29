@@ -363,7 +363,7 @@ function HeroProductPreview() {
       <div className="landing-product-preview__main">
         <div className="landing-product-preview__toolbar">
           <div>
-            <span className="landing-product-preview__eyebrow">Line · eval/return_mean</span>
+            <span className="landing-product-preview__eyebrow">Line chart · eval/return_mean</span>
             <strong>Return Mean</strong>
           </div>
           <div className="landing-product-preview__chips">

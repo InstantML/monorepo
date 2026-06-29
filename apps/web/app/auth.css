@@ -2,7 +2,7 @@
  * Self-contained, namespaced (.iml-*) so it never touches dashboard selectors
  * (.eyebrow / .brand-mark / .button-link are shared globally elsewhere).
  * Light-first operational auth screens: white surfaces, Bolt accent,
- * mono eyebrows, italic-serif emphasis, and hairline borders. */
+ * clear state labels, italic-serif emphasis, and hairline borders. */
 
 .iml-auth,
 .iml-landing {
@@ -64,7 +64,7 @@
 
 /* ── primitives ─────────────────────────────────────────────────────────── */
 .iml-eyebrow{display:flex;align-items:center;gap:8px;
-  font:600 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;
+  font:650 12px/1.2 var(--f-sans);letter-spacing:0;
   color:var(--muted);margin:0}
 .iml-eyebrow.is-accent{color:var(--accent)}
 .iml-eyebrow.is-danger{color:var(--danger)}
