@@ -69,7 +69,7 @@
     height: 44px;
     border-right: 0;
   }
-  .brandbar .brand-mark { width: 30px; height: 30px; }
+  .brandbar .brand-mark { width: 24px; height: 24px; }
 
   .brandbar-row {
     flex-direction: row;
