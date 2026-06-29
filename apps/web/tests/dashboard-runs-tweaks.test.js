@@ -75,6 +75,15 @@ test("workspace charts render at measured CSS-pixel size (no stretch) with dark-
   assert.match(panelsCss, /\.scatter-dot[\s\S]*?stroke: var\(--chart-card-bg, var\(--surface\)\)/);
 });
 
+test("empty workspace sections hide decorative section corner ticks", () => {
+  const workspacePanelSrc = read("app/dashboard/runs/workspace-panel-card.tsx");
+  const instrumentCss = read("app/styles/instrument.css");
+
+  assert.match(workspacePanelSrc, /shownPanels\.length \? "" : "workspace-section-empty"/);
+  assert.match(workspacePanelSrc, /<section className=\{sectionClasses\}/);
+  assert.match(instrumentCss, /\.workspace-section-empty::before,\s*\.workspace-section-empty::after,\s*\.workspace-section-empty:hover::before,\s*\.workspace-section-empty:hover::after\s*\{\s*display: none;\s*\}/);
+});
+
 test("metric charts expose an accessible summary table view", () => {
   const metricChartSrc = read("app/dashboard/metrics/metric-chart.tsx");
   const chartsSrc = read("src/charts.js");

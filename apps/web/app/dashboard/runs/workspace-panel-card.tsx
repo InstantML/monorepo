@@ -785,8 +785,14 @@ export function WorkspaceSectionView({
   const hideEmpties = !panelSearchActive && !showEmptyPanels;
   const emptyPanelCount = panelSearchActive ? 0 : visiblePanels.filter(isEmptyGeneratedPanel).length;
   const shownPanels = hideEmpties ? visiblePanels.filter((panel) => !isEmptyGeneratedPanel(panel)) : visiblePanels;
+  const sectionClasses = [
+    "workspace-section",
+    section.collapsed ? "collapsed" : "",
+    shownPanels.length ? "" : "workspace-section-empty",
+  ].filter(Boolean).join(" ");
+
   return (
-    <section className={`workspace-section ${section.collapsed ? "collapsed" : ""}`} data-section-id={section.id}>
+    <section className={sectionClasses} data-section-id={section.id}>
       <div className="workspace-section-head">
         <button className="section-title-button" type="button" onClick={() => onToggleSection(section.id)}>
           <ChevronDown size={15} /> <strong>{section.name}</strong> <span>{section.panels.length}</span>
