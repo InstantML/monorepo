@@ -244,32 +244,6 @@
   color: var(--faint);
 }
 
-/* ─── Matrix cell ─── */
-.landing-matrix-cell { padding: 20px; }
-.landing-matrix-cell__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.landing-matrix-cell__label {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text);
-  letter-spacing: 0;
-}
-.landing-matrix-cell__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-}
-.landing-matrix-cell__status {
-  font-size: var(--fs-data);
-  font-family: var(--font-mono);
-  color: var(--faint);
-  letter-spacing: 0.05em;
-}
-
 /* ─── Pill ─── */
 .pill {
   display: inline-flex;
@@ -1608,25 +1582,6 @@
 .landing-dev-body { margin-top: 20px; font-size: var(--fs-title); }
 .landing-dev-pills { align-items: flex-start; }
 .landing-code-center { display: flex; justify-content: center; }
-
-.landing-matrix-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-@media (min-width: 768px) {
-  .landing-matrix-grid { grid-template-columns: repeat(4, 1fr); }
-}
-.landing-pricing-footer {
-  margin-top: 32px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  font-size: var(--fs-body);
-  color: var(--faint);
-}
-.landing-pricing-sep { color: var(--dim); }
 
 .landing-cta-card {
   position: relative;
