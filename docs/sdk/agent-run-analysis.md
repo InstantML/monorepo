@@ -2,11 +2,12 @@
 
 This guide describes the current MCP tools an agent should use to inspect,
 compare, and export InstantML runs. The tools are thin wrappers around the Rust
-API in `apps/rust-server`; they require `INSTANTML_API_URL` and an API key with
-`export:read`.
+API in `apps/rust-server`; hosted consumers should connect to
+`https://mcp.instantml.ai/mcp` with an InstantML API key that has `export:read`.
+
+Local preview from a repository checkout still uses stdio:
 
 ```bash
-INSTANTML_API_URL=https://api.instantml.ai \
 INSTANTML_API_KEY=instantml_... \
 node tools/mcp-server.mjs
 ```

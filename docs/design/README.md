@@ -111,6 +111,9 @@ Current implemented design sequence, continued:
 
 Current draft designs:
 
+- `2026-06-29-hosted-mcp-server.md`: draft first slice for exposing the
+  existing MCP tools through a hosted Streamable HTTP server at
+  `https://mcp.instantml.ai/mcp`, while preserving local stdio fallback.
 - `2026-06-29-agent-compare-runs-api.md`: draft read-only API for agent
   top-k/filter-based run comparison that reuses run search, summaries,
   side-by-side rows, and optional bounded series previews.

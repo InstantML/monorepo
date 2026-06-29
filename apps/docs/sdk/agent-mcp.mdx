@@ -11,51 +11,72 @@ reports through the same InstantML API your SDK and dashboard use.
 
 ## What you need
 
-- The InstantML consumer API base URL: `https://api.instantml.ai`.
+- The InstantML hosted MCP URL: `https://mcp.instantml.ai/mcp`.
 - An InstantML API key with `export:read` for run-analysis tools.
 - `artifacts:write` is only needed when your normal scripts upload artifacts.
-- Access to the InstantML MCP server package or, during preview, a checkout of
-  the InstantML repository that contains `tools/mcp-server.mjs`.
-- For repository checkouts, Node dependencies installed with `npm ci`.
 
 Report-writing tools use the same authenticated API key. Use an org-scoped key
 when the agent should create or update reports across the workspace.
 
-You do not need to deploy your own InstantML backend to use the hosted API.
-Consumer agents should always set `INSTANTML_API_URL` to
-`https://api.instantml.ai`.
+You do not need to deploy your own InstantML backend or clone the InstantML
+repository to use the hosted MCP server.
 
-## Repository and package access
+## Configure your agent
 
-The MCP server is a small Node process that runs next to the agent and talks to
-the hosted InstantML API. During preview, InstantML grants access by sharing the
-repository or a package that contains `tools/mcp-server.mjs`.
-
-For a broader public launch, the easiest setup should be a published npm
-package, so users can point their agent at a single command instead of cloning
-the repository:
+Add the hosted InstantML MCP server to your MCP-compatible agent configuration.
+For clients that support remote MCP servers with headers, use the hosted URL
+directly:
 
 ```json
 {
   "mcpServers": {
     "instantml": {
-      "command": "npx",
-      "args": ["-y", "@instantml/mcp"],
-      "env": {
-        "INSTANTML_API_URL": "https://api.instantml.ai",
-        "INSTANTML_API_KEY": "instantml_..."
+      "url": "https://mcp.instantml.ai/mcp",
+      "headers": {
+        "Authorization": "Bearer instantml_..."
       }
     }
   }
 }
 ```
 
-Use the repository checkout path below until the npm package is published.
+Claude Code can register the same hosted server from the terminal:
 
-## Configure your agent
+```bash
+claude mcp add --transport http instantml https://mcp.instantml.ai/mcp \
+  --header "Authorization: Bearer instantml_..."
+```
 
-With a repository checkout, add the InstantML MCP server to your MCP-compatible
-agent configuration:
+Some clients support local stdio servers but do not yet support authenticated
+remote MCP headers. For those clients, use `mcp-remote` as a local bridge:
+
+```json
+{
+  "mcpServers": {
+    "instantml": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.instantml.ai/mcp",
+        "--header",
+        "Authorization:${INSTANTML_MCP_AUTH_HEADER}"
+      ],
+      "env": {
+        "INSTANTML_MCP_AUTH_HEADER": "Bearer instantml_..."
+      }
+    }
+  }
+}
+```
+
+Then restart the agent so it launches or connects to the MCP server and
+discovers the tools.
+
+## Local preview fallback
+
+During preview or internal development, you can run the MCP server from a
+repository checkout instead of using the hosted endpoint:
 
 ```json
 {
@@ -72,7 +93,9 @@ agent configuration:
 }
 ```
 
-Then restart the agent so it launches the MCP server and discovers the tools.
+The local fallback runs next to the agent over stdio. `INSTANTML_API_URL`
+defaults to `https://api.instantml.ai`, so consumers normally only need to set
+`INSTANTML_API_KEY`.
 
 ## Available run tools
 

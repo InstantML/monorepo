@@ -32,15 +32,22 @@
  * (line / bar / scalar / scatter) and runsets that can pin specific run IDs.
  *
  * Usage:
- *   INSTANTML_API_URL=https://<hosted-url> \
+ *   INSTANTML_API_URL=https://api.instantml.ai \
  *   INSTANTML_API_KEY=<scoped-key> \
  *   node tools/mcp-server.mjs
+ *
+ * Hosted/HTTP usage:
+ *   node tools/mcp-server.mjs --transport http --host 0.0.0.0 --port 8080
  *
  * Add to Claude Code's `mcpServers` config to enable agent calls.
  */
 
+import http from "node:http";
+import { pathToFileURL } from "node:url";
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -48,42 +55,191 @@ import {
 
 import { buildTools } from "./mcp-server-tools.mjs";
 
-const API_URL = process.env.INSTANTML_API_URL;
-const API_KEY = process.env.INSTANTML_API_KEY;
+export const DEFAULT_API_URL = "https://api.instantml.ai";
+const JSON_CONTENT_TYPE = "application/json";
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Authorization, Content-Type, Accept, Mcp-Session-Id, Last-Event-ID",
+  "Access-Control-Max-Age": "86400",
+};
 
-if (!API_URL || !API_KEY) {
-  console.error(
-    "ERROR: set INSTANTML_API_URL and INSTANTML_API_KEY environment variables",
-  );
-  process.exit(1);
+function getArgValue(args, name) {
+  const prefix = `${name}=`;
+  const inline = args.find((arg) => arg.startsWith(prefix));
+  if (inline) return inline.slice(prefix.length);
+  const index = args.indexOf(name);
+  if (index >= 0 && index + 1 < args.length) return args[index + 1];
+  return undefined;
 }
 
-const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+function normalizeTransport(value) {
+  const normalized = String(value ?? "stdio").toLowerCase();
+  if (normalized === "http" || normalized === "streamable-http") return "http";
+  return "stdio";
+}
 
-const server = new Server(
-  { name: "instantml-mcp", version: "0.2.0" },
-  { capabilities: { tools: {} } },
-);
+export function parseCliOptions(argv = process.argv.slice(2), env = process.env) {
+  const transport = normalizeTransport(
+    getArgValue(argv, "--transport") ?? env.INSTANTML_MCP_TRANSPORT,
+  );
+  const apiUrl = getArgValue(argv, "--api-url") ?? env.INSTANTML_API_URL ?? DEFAULT_API_URL;
+  const portValue = getArgValue(argv, "--port") ?? env.INSTANTML_MCP_PORT ?? env.PORT ?? "8080";
+  const port = Number.parseInt(portValue, 10);
+  const hasCloudRunPort = Boolean(env.PORT);
+  return {
+    transport,
+    apiUrl,
+    apiKey: env.INSTANTML_API_KEY,
+    host:
+      getArgValue(argv, "--host") ??
+      env.INSTANTML_MCP_HOST ??
+      (transport === "http" && hasCloudRunPort ? "0.0.0.0" : "127.0.0.1"),
+    port: Number.isFinite(port) ? port : 8080,
+  };
+}
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
-}));
+function createMcpServer({ apiUrl, apiKey }) {
+  const tools = buildTools({ apiUrl, apiKey });
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const tool = tools.find((t) => t.name === request.params.name);
-  if (!tool) {
-    throw new Error(`unknown tool: ${request.params.name}`);
+  const server = new Server(
+    { name: "instantml-mcp", version: "0.3.0" },
+    { capabilities: { tools: {} } },
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+  }));
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const tool = tools.find((t) => t.name === request.params.name);
+    if (!tool) {
+      throw new Error(`unknown tool: ${request.params.name}`);
+    }
+    try {
+      return await tool.handler(request.params.arguments ?? {});
+    } catch (err) {
+      return {
+        content: [{ type: "text", text: `error: ${err.message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  return server;
+}
+
+export function bearerTokenFromHeader(value) {
+  if (!value) return null;
+  const match = String(value).match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+function writeJson(res, statusCode, value, headers = {}) {
+  res.writeHead(statusCode, {
+    ...CORS_HEADERS,
+    "Content-Type": JSON_CONTENT_TYPE,
+    ...headers,
+  });
+  res.end(JSON.stringify(value));
+}
+
+function writeJsonRpcError(res, statusCode, code, message) {
+  writeJson(res, statusCode, {
+    jsonrpc: "2.0",
+    error: { code, message },
+    id: null,
+  });
+}
+
+async function startStdio({ apiUrl, apiKey }) {
+  if (!apiKey) {
+    console.error("ERROR: set INSTANTML_API_KEY for stdio MCP mode");
+    process.exit(1);
   }
+  const server = createMcpServer({ apiUrl, apiKey });
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error(`instantml-mcp listening (transport=stdio, api=${apiUrl})`);
+}
+
+async function handleHttpMcpRequest(req, res, { apiUrl }) {
+  if (req.method === "OPTIONS") {
+    writeJson(res, 204, {});
+    return;
+  }
+  if (req.url === "/health") {
+    writeJson(res, 200, { ok: true, service: "instantml-mcp" });
+    return;
+  }
+  const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+  if (path !== "/mcp") {
+    writeJson(res, 404, { error: "not_found" });
+    return;
+  }
+  if (req.method !== "POST") {
+    writeJsonRpcError(res, 405, -32000, "Method not allowed.");
+    return;
+  }
+
+  const apiKey = bearerTokenFromHeader(req.headers.authorization);
+  if (!apiKey) {
+    writeJsonRpcError(res, 401, -32001, "Missing Authorization bearer token.");
+    return;
+  }
+
+  const server = createMcpServer({ apiUrl, apiKey });
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+
   try {
-    return await tool.handler(request.params.arguments ?? {});
+    await server.connect(transport);
+    res.setHeader("Access-Control-Allow-Origin", CORS_HEADERS["Access-Control-Allow-Origin"]);
+    res.setHeader("Access-Control-Allow-Headers", CORS_HEADERS["Access-Control-Allow-Headers"]);
+    await transport.handleRequest(req, res);
+    res.on("close", () => {
+      transport.close().catch((err) => console.error("MCP HTTP transport close failed:", err));
+      server.close().catch((err) => console.error("MCP HTTP server close failed:", err));
+    });
   } catch (err) {
-    return {
-      content: [{ type: "text", text: `error: ${err.message}` }],
-      isError: true,
-    };
+    console.error("MCP HTTP request failed:", err);
+    if (!res.headersSent) {
+      writeJsonRpcError(res, 500, -32603, "Internal server error.");
+    }
   }
-});
+}
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-console.error(`instantml-mcp listening (api=${API_URL})`);
+async function startHttp(options) {
+  const server = http.createServer((req, res) => {
+    handleHttpMcpRequest(req, res, options).catch((err) => {
+      console.error("Unhandled MCP HTTP request failure:", err);
+      if (!res.headersSent) {
+        writeJsonRpcError(res, 500, -32603, "Internal server error.");
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(options.port, options.host, resolve);
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : options.port;
+  console.error(
+    `instantml-mcp listening (transport=http, host=${options.host}, port=${port}, api=${options.apiUrl})`,
+  );
+}
+
+export async function main(argv = process.argv.slice(2), env = process.env) {
+  const options = parseCliOptions(argv, env);
+  if (options.transport === "http") {
+    await startHttp(options);
+    return;
+  }
+  await startStdio(options);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
