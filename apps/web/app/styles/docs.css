@@ -1,3 +1,13 @@
+/* Docs prose is set in DM Sans (self-hosted via next/font, so no external
+ * request and no CSP allowance needed); code spans/blocks stay monospace. */
+.docs-route,
+.docs-route :is(h1, h2, h3, h4, p, li, a, strong, em, b, small, th, td, summary, figcaption, dt, dd) {
+  font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+.docs-route :is(code, pre, kbd) {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
 .docs-route {
   min-height: 100vh;
   background: #f7f8f5;
@@ -251,8 +261,10 @@ body:has(.docs-route) {
 .docs-route-tab {
   position: relative;
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
+  /* Grid-stack the label over a hidden bold ghost (::before) so the tab is
+     always sized to its active (bold) width — activating it never reflows. */
+  display: inline-grid;
+  place-items: center;
   padding: 12px 12px;
   color: #53635c;
   font-size: var(--fs-ui);
@@ -261,6 +273,18 @@ body:has(.docs-route) {
   text-decoration: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px; /* overlap row border so the underline meets it */
+}
+
+.docs-route-tab::before {
+  content: attr(data-label);
+  grid-area: 1 / 1;
+  font-weight: 600;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.docs-route-tab-text {
+  grid-area: 1 / 1;
 }
 
 .docs-route-tab:hover {

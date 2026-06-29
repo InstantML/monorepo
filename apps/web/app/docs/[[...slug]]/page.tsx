@@ -134,11 +134,12 @@ export default async function DocsPage({ params }: DocsParams) {
               return (
                 <Link
                   className={isActive ? "docs-route-tab is-active" : "docs-route-tab"}
+                  data-label={tab.tab}
                   href={href}
                   key={tab.tab}
                   aria-current={isActive ? "page" : undefined}
                 >
-                  {tab.tab}
+                  <span className="docs-route-tab-text">{tab.tab}</span>
                 </Link>
               );
             })}
