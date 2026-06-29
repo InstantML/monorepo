@@ -11,19 +11,51 @@ reports through the same InstantML API your SDK and dashboard use.
 
 ## What you need
 
-- An InstantML API base URL, such as `https://api.instantml.ai`.
+- The InstantML consumer API base URL: `https://api.instantml.ai`.
 - An InstantML API key with `export:read` for run-analysis tools.
 - `artifacts:write` is only needed when your normal scripts upload artifacts.
-- A copy of the InstantML repository or package that contains
-  `tools/mcp-server.mjs`.
-- Node dependencies installed with `npm ci`.
+- Access to the InstantML MCP server package or, during preview, a checkout of
+  the InstantML repository that contains `tools/mcp-server.mjs`.
+- For repository checkouts, Node dependencies installed with `npm ci`.
 
 Report-writing tools use the same authenticated API key. Use an org-scoped key
 when the agent should create or update reports across the workspace.
 
+You do not need to deploy your own InstantML backend to use the hosted API.
+Consumer agents should always set `INSTANTML_API_URL` to
+`https://api.instantml.ai`.
+
+## Repository and package access
+
+The MCP server is a small Node process that runs next to the agent and talks to
+the hosted InstantML API. During preview, InstantML grants access by sharing the
+repository or a package that contains `tools/mcp-server.mjs`.
+
+For a broader public launch, the easiest setup should be a published npm
+package, so users can point their agent at a single command instead of cloning
+the repository:
+
+```json
+{
+  "mcpServers": {
+    "instantml": {
+      "command": "npx",
+      "args": ["-y", "@instantml/mcp"],
+      "env": {
+        "INSTANTML_API_URL": "https://api.instantml.ai",
+        "INSTANTML_API_KEY": "instantml_..."
+      }
+    }
+  }
+}
+```
+
+Use the repository checkout path below until the npm package is published.
+
 ## Configure your agent
 
-Add the InstantML MCP server to your MCP-compatible agent configuration:
+With a repository checkout, add the InstantML MCP server to your MCP-compatible
+agent configuration:
 
 ```json
 {
