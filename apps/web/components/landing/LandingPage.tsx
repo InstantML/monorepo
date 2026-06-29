@@ -707,7 +707,6 @@ export function LandingPage() {
               &copy; {COPYRIGHT_YEAR} InstantML
             </span>
             <span className="landing-footer__status">
-              <span className="status-live" />
               v0.1 · hello@instantml.ai
             </span>
           </div>
