@@ -573,6 +573,7 @@ test("API key UI does not expose admin controls to read-only members", () => {
   assert.match(shell, /canManageOrg=\{canManageOrg\}/, "API tab should receive membership capabilities");
   assert.match(apiPane, /const visibleApiKeys = canManageOrg \? apiKeys : \[\];/, "API tab should hide stale key rows from read-only members");
   assert.match(apiPane, /const visibleNewApiKey = canManageOrg \? newApiKey : "";/, "API tab should hide stale copy-once keys from read-only members");
+  assert.match(apiPane, /newApiKey=\{visibleNewApiKey\}/, "agent setup snippets should receive only the gated copy-once key");
   assert.match(apiPane, /\{canManageOrg \? \(/, "API-key creation controls should be gated");
   assert.match(apiPane, /disabled=\{adminBusy \|\| !canManageOrg\}/, "manual API-key refresh should be disabled for read-only members");
   assert.match(apiPane, /\{canManageOrg \? \([\s\S]*?onRevokeApiKey/, "API-key revoke controls should be gated");

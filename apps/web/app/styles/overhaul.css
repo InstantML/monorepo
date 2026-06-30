@@ -2169,6 +2169,114 @@ button.secondary.danger-action:hover:not(:disabled),
   white-space: nowrap;
 }
 
+.agent-setup-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
+  padding: 12px;
+}
+
+.agent-setup-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.agent-setup-card__icon {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  color: var(--accent-strong);
+  background: var(--surface-soft);
+}
+
+.agent-setup-card strong {
+  display: block;
+  color: var(--text);
+  font: 650 13px/1.2 var(--font-sans);
+}
+
+.agent-setup-card p {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-meta);
+}
+
+.agent-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-client-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-client-tabs button {
+  width: auto;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text-2);
+  font: 650 12px/1 var(--font-sans);
+}
+
+.agent-client-tabs button.active,
+.agent-client-tabs button[aria-selected="true"] {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+  color: var(--text);
+}
+
+.agent-snippet-panel {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+}
+
+.agent-snippet-panel__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 8px 10px;
+}
+
+.agent-snippet-panel__bar span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-2);
+  font: 650 12px/1.2 var(--font-sans);
+  overflow-wrap: anywhere;
+}
+
+.agent-snippet-panel pre {
+  margin: 0;
+  max-height: 360px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 11px;
+  overflow: auto;
+}
+
 .admin-stack,
 .admin-list,
 .admin-alert-list {

@@ -111,6 +111,10 @@ Current implemented design sequence, continued:
 
 Current draft designs:
 
+- `2026-06-30-zero-friction-mcp-setup.md`: draft phased plan for making
+  `https://mcp.instantml.ai/mcp` easier to connect from agent clients through a
+  dashboard setup panel, registry metadata, an npm installer scaffold, and a
+  separately reviewed OAuth follow-up.
 - `2026-06-29-hosted-mcp-server.md`: draft first slice for exposing the
   existing MCP tools through a hosted Streamable HTTP server at
   `https://mcp.instantml.ai/mcp`, while preserving local stdio fallback.

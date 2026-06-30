@@ -1,5 +1,6 @@
 import { Code2, Copy, KeyRound, Plus, RefreshCw, X } from "lucide-react";
 
+import { AgentSetupPanel } from "./agent-setup";
 import { ApiTable } from "./api-table";
 import { PageHead } from "../ui/page-head";
 import type { ApiRow } from "../../dashboard-types";
@@ -84,6 +85,11 @@ export function ApiTabPane({
                 <button className="secondary" onClick={onCopyNewApiKey} type="button"><Copy size={14} /> Copy</button>
               </div>
             ) : null}
+            <AgentSetupPanel
+              canManageOrg={canManageOrg}
+              newApiKey={visibleNewApiKey}
+              onCreateAgentKeyName={() => onApiKeyNameChange("Agent MCP key")}
+            />
             <div className="admin-list">
               {visibleApiKeys.map((key) => (
                 <div className={`api-row ${key.revoked_at ? "muted" : ""}`} key={key.id}>

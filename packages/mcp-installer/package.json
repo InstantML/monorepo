@@ -1,0 +1,19 @@
+{
+  "name": "@instantml/mcp",
+  "version": "0.1.0",
+  "description": "Setup helper and local bridge for the hosted InstantML MCP server.",
+  "type": "module",
+  "bin": {
+    "instantml-mcp": "./bin/instantml-mcp.mjs"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "license": "UNLICENSED",
+  "mcpName": "ai.instantml/mcp",
+  "private": false
+}
