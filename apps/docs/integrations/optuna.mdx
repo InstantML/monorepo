@@ -1,0 +1,41 @@
+---
+title: "Optuna"
+description: "Log Optuna trial metrics and parameters to InstantML with a small callback."
+---
+
+# Optuna
+
+Install the Optuna extra:
+
+```bash
+python -m pip install "instantml[optuna]"
+```
+
+Attach the callback to `study.optimize(...)`:
+
+```python
+import instantml as im
+from instantml.integrations.optuna import InstantMLCallback as OptunaCallback
+
+run = im.init(project="hpo", config={"model": "xgboost"})
+callback = OptunaCallback(run=run)
+
+study.optimize(objective, n_trials=50, callbacks=[callback])
+run.finish()
+```
+
+The callback logs completed trial values at `trial.number`:
+
+| Source | InstantML key |
+| --- | --- |
+| `trial.value` | `optuna/value` |
+| `trial.intermediate_values` | `optuna/intermediate/<name>` |
+| `trial.user_attrs["metric/..."]` | `optuna/user_attrs/...` |
+| `trial.params` | `config/optuna/params/...` |
+
+Failed and pruned trials are skipped. Pass `metric_name=...`,
+`step_attr=...`, or `user_attr_metric_prefix=...` when your study uses a
+different convention.
+
+If the callback creates the run itself, call `callback.finish()` when the study
+is complete. Passing `run=` keeps run ownership in your script.

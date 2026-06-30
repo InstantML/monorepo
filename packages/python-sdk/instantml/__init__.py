@@ -33,6 +33,15 @@ from .client import (
     init,
 )
 from .tracing import AttachedTraceContext, TraceContext, TraceSpan
+from .integrations import (
+    CatBoostCallback,
+    LightGBMCallback,
+    OptunaCallback,
+    StableBaselinesCallback,
+    XGBoostCallback,
+    log_dvc_metadata,
+    log_hf_dataset,
+)
 
 __all__ = [
     "Api",
@@ -64,10 +73,17 @@ __all__ = [
     "TransformersCallback",
     "Video",
     "VersionedArtifact",
+    "CatBoostCallback",
+    "LightGBMCallback",
+    "OptunaCallback",
+    "StableBaselinesCallback",
+    "XGBoostCallback",
     "__version__",
     "drain_spool",
     "attach_run",
     "init",
+    "log_dvc_metadata",
+    "log_hf_dataset",
 ]
 
 

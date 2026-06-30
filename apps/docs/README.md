@@ -108,9 +108,10 @@ Node tests.
 - `sdk/tracing.mdx`: product trace context managers, `trace_op` decorators,
   privacy/capture behavior, delivery modes, and dashboard workflow.
 - `integrations/`: per-framework integration guides (PyTorch Lightning, Hugging
-  Face Transformers, Keras) and the Weights & Biases migration guide. These are
-  buyer-intent landing pages for "<framework> experiment tracking" queries and
-  surface the thin SDK adapters and `wandb` drop-in/shadow/mirror modes.
+  Face Transformers, Keras, Optuna, tree boosting, Stable Baselines, dataset
+  provenance) and the Weights & Biases migration guide. These are buyer-intent
+  landing pages for "<framework> experiment tracking" queries and surface the
+  thin SDK adapters and `wandb` drop-in/shadow/mirror modes.
 - `dashboard/`: dashboard workflow docs, including the run-scoped Traces
   workspace and Run Detail trace entry point.
 - `guides/`: examples, imports, W&B/Neptune migration walkthroughs, export,

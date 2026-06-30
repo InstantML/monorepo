@@ -15,6 +15,7 @@ Expected examples:
 - `contextual-bandit/`: online bandit dogfood example with policy comparison, regret, checkpoints, rollouts, and reports.
 - `supervised-regression/`: non-RL training-loop dogfood example with train/validation curves and metadata artifacts.
 - `rank-insights/`: synthetic distributed-rank and sweep-analysis seed data for the Distributed and Insights dashboards, including a direct ClickHouse scale seeder for multi-project 2k-run/10k-20k-step dogfood.
+- `integrations/`: copy-pasteable framework adapter examples and a dependency-free integration smoke script that logs representative Optuna/tree/RL/dataset events.
 - `query-api/`: deterministic post-hoc SDK query example that seeds 20 runs,
   then reads run pages, bounded metric series, single-run rich objects, and
   table rows through `Api.query_*` helpers.

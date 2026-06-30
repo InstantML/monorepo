@@ -1,0 +1,44 @@
+---
+title: "Datasets"
+description: "Log bounded dataset provenance metadata from Hugging Face Datasets and DVC."
+---
+
+# Datasets
+
+Install the dataset extra:
+
+```bash
+python -m pip install "instantml[datasets]"
+```
+
+Dataset helpers are explicit and bounded. They log metadata under run config
+paths and only scan preview rows when you ask for a preview.
+
+## Hugging Face Datasets
+
+```python
+import instantml as im
+from instantml.integrations.datasets import log_hf_dataset
+
+run = im.init(project="sft")
+log_hf_dataset(run, train_dataset, key="data/train", include_preview=True)
+```
+
+The helper records row counts, column names, split, fingerprint, features, and
+redacted cache metadata. Preview rows are capped at 100 rows, with strings
+truncated to 1,000 characters.
+
+## DVC
+
+```python
+from instantml.integrations.datasets import log_dvc_metadata
+
+log_dvc_metadata(run, repo_path=".", key="data/dvc")
+```
+
+The DVC helper reads local DVC metadata files such as `dvc.lock`, `dvc.yaml`,
+and `*.dvc`. It stores repo-relative or basename-only paths, file sizes, and
+simple output/dependency hashes. It does not upload dataset contents.
+
+Secret-looking keys, credentials, bearer strings, and absolute home paths are
+redacted before logging.
