@@ -1112,6 +1112,13 @@
     align-items: stretch;
     flex-direction: column;
   }
+  /* The title block carries `flex: 1 1 280px` for the desktop ROW layout, where
+   * 280px acts as a min-width. Once the header flips to a column the main axis
+   * is vertical, so that basis becomes a 280px min-HEIGHT and opens a tall empty
+   * gap above the view switch. Reset it to hug its content in column mode. */
+  .insights-page .analysis-header .analysis-title-block {
+    flex: 0 0 auto;
+  }
   .insights-view-switch {
     width: fit-content;
   }

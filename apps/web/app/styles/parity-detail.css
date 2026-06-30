@@ -283,3 +283,18 @@
   .pd-kpis { grid-template-columns: repeat(3, 1fr); }
   .pd-chartgrid { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 600px) {
+  /* On phones the run title (with its live/status chip) and the action buttons
+   * (Compare / Request stop) no longer fit on one row, so the chip overlapped
+   * the Compare button. Stack the hero and let the actions wrap onto their own
+   * row beneath the title. */
+  .pd-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .pd-actions {
+    flex-wrap: wrap;
+  }
+}
