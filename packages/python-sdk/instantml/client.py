@@ -160,6 +160,52 @@ def _finish_drain_seconds(default: float) -> float:
 
 
 _DEFAULT_INIT_WAIT_SECONDS = 30.0
+_QUERY_PAGE_LIMIT_MAX = 100
+_QUERY_OBJECT_ROW_LIMIT_MAX = 1000
+_QUERY_MAX_PAGES = 100
+_QUERY_RUN_IDS_MAX = 100
+_QUERY_KEYS_MAX = 25
+_QUERY_KEY_BYTES_MAX = 256
+_QUERY_Q_BYTES_MAX = 512
+_QUERY_POINT_LIMIT_MAX = 10_000
+_QUERY_BUCKETS_MAX = 2_000
+
+
+@dataclass(frozen=True)
+class Page:
+    """Bounded SDK query page."""
+
+    items: list[dict[str, Any]]
+    next_cursor: str | None
+    raw: dict[str, Any]
+    limit: int
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index):
+        return self.items[index]
+
+
+@dataclass(frozen=True)
+class MetricSeriesPage:
+    """Bounded metric series query result."""
+
+    series: list[dict[str, Any]]
+    raw: dict[str, Any]
+    point_limit: int
+
+    def __iter__(self):
+        return iter(self.series)
+
+    def __len__(self) -> int:
+        return len(self.series)
+
+    def __getitem__(self, index):
+        return self.series[index]
 
 
 @dataclass(frozen=True)
@@ -652,6 +698,344 @@ class Api:
             path,
         )
 
+    def query_runs(
+        self,
+        project: str | None = None,
+        q: str | None = None,
+        status: str | None = None,
+        sort_by: str | None = None,
+        metric_key: str | None = None,
+        limit: int = 100,
+        cursor: str | None = None,
+        max_pages: int | None = 1,
+    ) -> Page:
+        """Return a bounded, notebook-friendly run summary page."""
+
+        safe_limit = _validate_query_int(limit, "limit", 1, _QUERY_PAGE_LIMIT_MAX)
+        safe_max_pages = _validate_query_max_pages(max_pages)
+        safe_q = _validate_optional_query_text(q, "q", _QUERY_Q_BYTES_MAX)
+        safe_project = _validate_optional_query_text(project, "project", MAX_TEXT_BYTES)
+        safe_status = _validate_optional_query_text(status, "status", MAX_TEXT_BYTES)
+        safe_sort_by = _validate_optional_query_text(sort_by, "sort_by", MAX_TEXT_BYTES)
+        safe_metric_key = _validate_optional_query_text(metric_key, "metric_key", _QUERY_KEY_BYTES_MAX)
+        safe_cursor = _validate_optional_query_text(cursor, "cursor", MAX_TEXT_BYTES)
+        items: list[dict[str, Any]] = []
+        raws: list[dict[str, Any]] = []
+        next_cursor = safe_cursor
+        pages = 0
+        while True:
+            raw = self.runs(
+                cursor=next_cursor,
+                limit=safe_limit,
+                project=safe_project,
+                status=safe_status,
+                q=safe_q,
+                sort_by=safe_sort_by,
+                metric_key=safe_metric_key,
+            )
+            runs = raw.get("runs")
+            if not isinstance(runs, list):
+                raise InstantMLError("server returned an invalid run query response")
+            items.extend(item for item in runs if isinstance(item, dict))
+            raws.append(raw)
+            pages += 1
+            next_cursor = _query_next_cursor(raw)
+            if not next_cursor:
+                break
+            if safe_max_pages is not None and pages >= safe_max_pages:
+                break
+        return Page(items=items, next_cursor=next_cursor, raw=_query_raw(raws), limit=safe_limit)
+
+    def iter_runs(
+        self,
+        project: str | None = None,
+        q: str | None = None,
+        status: str | None = None,
+        sort_by: str | None = None,
+        metric_key: str | None = None,
+        page_size: int = 100,
+        cursor: str | None = None,
+        max_pages: int | None = None,
+    ):
+        """Yield run summaries lazily in server order."""
+
+        safe_page_size = _validate_query_int(page_size, "page_size", 1, _QUERY_PAGE_LIMIT_MAX)
+        safe_max_pages = _validate_query_max_pages(max_pages)
+        next_cursor = _validate_optional_query_text(cursor, "cursor", MAX_TEXT_BYTES)
+        pages = 0
+        while True:
+            page = self.query_runs(
+                project=project,
+                q=q,
+                status=status,
+                sort_by=sort_by,
+                metric_key=metric_key,
+                limit=safe_page_size,
+                cursor=next_cursor,
+                max_pages=1,
+            )
+            for item in page.items:
+                yield item
+            pages += 1
+            if not page.next_cursor:
+                break
+            if safe_max_pages is not None and pages >= safe_max_pages:
+                break
+            next_cursor = page.next_cursor
+
+    def query_metrics(
+        self,
+        run_ids: list[str] | tuple[str, ...],
+        keys: list[str] | tuple[str, ...],
+        x_axis: str = "step",
+        step_min: int | float | None = None,
+        step_max: int | float | None = None,
+        time_min: str | None = None,
+        time_max: str | None = None,
+        point_limit: int = 1000,
+        buckets: int | None = None,
+    ) -> MetricSeriesPage:
+        """Return bounded metric series for run/key pairs."""
+
+        if x_axis != "step":
+            raise ValueError("x_axis currently supports only 'step'")
+        if time_min is not None or time_max is not None:
+            raise ValueError(
+                "time_min and time_max are not supported by the current metrics series route; "
+                "use step_min and step_max"
+            )
+        safe_run_ids = _validate_query_text_list(run_ids, "run_ids", _QUERY_RUN_IDS_MAX, MAX_TEXT_BYTES)
+        safe_keys = _validate_query_text_list(keys, "keys", _QUERY_KEYS_MAX, _QUERY_KEY_BYTES_MAX)
+        safe_point_limit = _validate_query_int(point_limit, "point_limit", 1, _QUERY_POINT_LIMIT_MAX)
+        safe_buckets = (
+            _validate_query_int(buckets, "buckets", 1, _QUERY_BUCKETS_MAX)
+            if buckets is not None
+            else None
+        )
+        safe_step_min = _validate_query_step(step_min, "step_min")
+        safe_step_max = _validate_query_step(step_max, "step_max")
+        if safe_step_min is not None and safe_step_max is not None and float(safe_step_min) > float(safe_step_max):
+            raise ValueError("step_min cannot be greater than step_max")
+
+        client = Client(base_url=self.base_url, timeout=self.timeout, api_key=self.api_key)
+        raws: list[dict[str, Any]] = []
+        by_pair: dict[tuple[str, str], dict[str, Any]] = {}
+        for key in safe_keys:
+            body: dict[str, Any] = {
+                "key": key,
+                "run_ids": safe_run_ids,
+                "limit": safe_point_limit,
+            }
+            if safe_step_min is not None:
+                body["start_step"] = safe_step_min
+            if safe_step_max is not None:
+                body["end_step"] = safe_step_max
+            if safe_buckets is not None:
+                body["buckets"] = safe_buckets
+            raw = client._request("POST", "/api/metrics/series", body)
+            raws.append(raw)
+            series = raw.get("series")
+            if not isinstance(series, list):
+                raise InstantMLError("server returned an invalid metric series response")
+            for entry in series:
+                if not isinstance(entry, dict):
+                    continue
+                run_id = str(entry.get("run_id") or "")
+                points = entry.get("metrics")
+                if run_id not in safe_run_ids or not isinstance(points, list) or not points:
+                    continue
+                normalized = dict(entry)
+                normalized.setdefault("key", key)
+                normalized["metrics"] = points
+                by_pair[(run_id, key)] = normalized
+
+        ordered = [
+            by_pair[(run_id, key)]
+            for run_id in safe_run_ids
+            for key in safe_keys
+            if (run_id, key) in by_pair
+        ]
+        return MetricSeriesPage(series=ordered, raw=_query_raw(raws), point_limit=safe_point_limit)
+
+    def query_objects(
+        self,
+        project: str | None = None,
+        q: str | None = None,
+        kind: str | None = None,
+        key: str | None = None,
+        run_id: str | None = None,
+        from_step: int | float | None = None,
+        to_step: int | float | None = None,
+        limit: int = 100,
+        cursor: str | None = None,
+        max_pages: int | None = 1,
+    ) -> Page:
+        """Return rich-object summaries through the cross-run explorer when available."""
+
+        safe_limit = _validate_query_int(limit, "limit", 1, _QUERY_PAGE_LIMIT_MAX)
+        safe_max_pages = _validate_query_max_pages(max_pages)
+        safe_project = _validate_optional_query_text(project, "project", MAX_TEXT_BYTES)
+        safe_q = _validate_optional_query_text(q, "q", _QUERY_Q_BYTES_MAX)
+        safe_kind = _validate_optional_query_text(kind, "kind", MAX_TEXT_BYTES)
+        safe_key = _validate_optional_query_text(key, "key", _QUERY_KEY_BYTES_MAX)
+        safe_run_id = _validate_optional_query_text(run_id, "run_id", MAX_TEXT_BYTES)
+        safe_from_step = _validate_query_step(from_step, "from_step")
+        safe_to_step = _validate_query_step(to_step, "to_step")
+        if safe_from_step is not None and safe_to_step is not None and float(safe_from_step) > float(safe_to_step):
+            raise ValueError("from_step cannot be greater than to_step")
+        safe_cursor = _validate_optional_query_text(cursor, "cursor", MAX_TEXT_BYTES)
+        try:
+            return self._query_objects_explorer(
+                project=safe_project,
+                q=safe_q,
+                kind=safe_kind,
+                key=safe_key,
+                run_id=safe_run_id,
+                from_step=safe_from_step,
+                to_step=safe_to_step,
+                limit=safe_limit,
+                cursor=safe_cursor,
+                max_pages=safe_max_pages,
+            )
+        except InstantMLError as exc:
+            if not _query_endpoint_unsupported(exc):
+                raise
+            if safe_run_id is None:
+                raise InstantMLError(
+                    "cross-run object queries require GET /api/objects/explorer; supply run_id for the older per-run fallback"
+                ) from exc
+            unsupported_filters = []
+            if safe_project is not None:
+                unsupported_filters.append("project")
+            if safe_q is not None:
+                unsupported_filters.append("q")
+            if safe_from_step is not None:
+                unsupported_filters.append("from_step")
+            if safe_to_step is not None:
+                unsupported_filters.append("to_step")
+            if unsupported_filters:
+                fields = ", ".join(unsupported_filters)
+                raise InstantMLError(
+                    f"the older per-run object route cannot preserve these filters without /api/objects/explorer: {fields}"
+                ) from exc
+            return self._query_objects_for_run(
+                run_id=safe_run_id,
+                kind=safe_kind,
+                key=safe_key,
+                limit=safe_limit,
+                cursor=safe_cursor,
+                max_pages=safe_max_pages,
+            )
+
+    def object_rows(self, object_id: int | str, limit: int = 100, offset: int = 0) -> Page:
+        """Return a bounded page of table-object rows."""
+
+        safe_object_id = _validate_object_id(object_id)
+        safe_limit = _validate_query_int(limit, "limit", 1, _QUERY_OBJECT_ROW_LIMIT_MAX)
+        safe_offset = _validate_query_int(offset, "offset", 0, 10**12)
+        raw = Client(base_url=self.base_url, timeout=self.timeout, api_key=self.api_key)._request(
+            "GET",
+            _append_query(
+                f"/api/objects/{urllib.parse.quote(safe_object_id, safe='')}/rows",
+                {"limit": safe_limit, "offset": safe_offset},
+            ),
+        )
+        rows = raw.get("rows")
+        if not isinstance(rows, list):
+            raise InstantMLError("server returned an invalid object rows response")
+        items = [item for item in rows if isinstance(item, dict)]
+        next_cursor = f"offset:{safe_offset + len(items)}" if len(items) == safe_limit else None
+        return Page(items=items, next_cursor=next_cursor, raw=raw, limit=safe_limit)
+
+    def _query_objects_explorer(
+        self,
+        *,
+        project: str | None,
+        q: str | None,
+        kind: str | None,
+        key: str | None,
+        run_id: str | None,
+        from_step: int | float | None,
+        to_step: int | float | None,
+        limit: int,
+        cursor: str | None,
+        max_pages: int | None,
+    ) -> Page:
+        client = Client(base_url=self.base_url, timeout=self.timeout, api_key=self.api_key)
+        items: list[dict[str, Any]] = []
+        raws: list[dict[str, Any]] = []
+        next_cursor = cursor
+        pages = 0
+        while True:
+            raw = client._request(
+                "GET",
+                _append_query(
+                    "/api/objects/explorer",
+                    {
+                        "project": project,
+                        "q": q,
+                        "kind": kind,
+                        "key": key,
+                        "run_id": run_id,
+                        "from_step": from_step,
+                        "to_step": to_step,
+                        "limit": limit,
+                        "cursor": next_cursor,
+                    },
+                ),
+            )
+            objects = raw.get("objects")
+            if not isinstance(objects, list):
+                raise InstantMLError("server returned an invalid object query response")
+            items.extend(item for item in objects if isinstance(item, dict))
+            raws.append(raw)
+            pages += 1
+            next_cursor = _query_next_cursor(raw)
+            if not next_cursor:
+                break
+            if max_pages is not None and pages >= max_pages:
+                break
+        return Page(items=items, next_cursor=next_cursor, raw=_query_raw(raws), limit=limit)
+
+    def _query_objects_for_run(
+        self,
+        *,
+        run_id: str,
+        kind: str | None,
+        key: str | None,
+        limit: int,
+        cursor: str | None,
+        max_pages: int | None,
+    ) -> Page:
+        client = Client(base_url=self.base_url, timeout=self.timeout, api_key=self.api_key)
+        offset = _query_offset_cursor(cursor)
+        items: list[dict[str, Any]] = []
+        raws: list[dict[str, Any]] = []
+        next_cursor: str | None = None
+        pages = 0
+        while True:
+            raw = client._request(
+                "GET",
+                _append_query(
+                    f"/api/runs/{urllib.parse.quote(run_id, safe='')}/objects",
+                    {"kind": kind, "key": key, "limit": limit, "offset": offset},
+                ),
+            )
+            objects = raw.get("objects")
+            if not isinstance(objects, list):
+                raise InstantMLError("server returned an invalid per-run object response")
+            page_items = [item for item in objects if isinstance(item, dict)]
+            items.extend(page_items)
+            raws.append(raw)
+            pages += 1
+            next_cursor = f"offset:{offset + len(page_items)}" if len(page_items) == limit else None
+            if not next_cursor:
+                break
+            if max_pages is not None and pages >= max_pages:
+                break
+            offset += len(page_items)
+        return Page(items=items, next_cursor=next_cursor, raw=_query_raw(raws), limit=limit)
+
     def fork_run(
         self,
         source_run_id: str,
@@ -794,6 +1178,121 @@ class Api:
             target.unlink(missing_ok=True)
             raise InstantMLError(f"GET /api/artifact-entries/{entry_id}/download failed: {exc}") from exc
         return str(target)
+
+
+def _validate_query_int(value: Any, field: str, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{field} must be an integer")
+    if value < minimum:
+        raise ValueError(f"{field} must be at least {minimum}")
+    if value > maximum:
+        raise ValueError(f"{field} cannot exceed {maximum}")
+    return value
+
+
+def _validate_query_max_pages(value: int | None) -> int | None:
+    if value is None:
+        return None
+    return _validate_query_int(value, "max_pages", 1, _QUERY_MAX_PAGES)
+
+
+def _validate_optional_query_text(value: str | None, field: str, max_bytes: int) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be a string")
+    text = value.strip()
+    if not text:
+        return None
+    if len(text.encode("utf-8")) > max_bytes:
+        raise ValueError(f"{field} must be at most {max_bytes} bytes")
+    return text
+
+
+def _validate_query_text_list(
+    values: list[str] | tuple[str, ...],
+    field: str,
+    max_items: int,
+    max_bytes: int,
+) -> list[str]:
+    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
+        raise TypeError(f"{field} must be a list of strings")
+    if not values:
+        raise ValueError(f"{field} must include at least one item")
+    if len(values) > max_items:
+        raise ValueError(f"{field} cannot include more than {max_items} items")
+    normalized = []
+    seen = set()
+    singular = field[:-1] if field.endswith("s") else field
+    for value in values:
+        text = _validate_optional_query_text(value, singular, max_bytes)
+        if text is None:
+            raise ValueError(f"{singular} must be a non-empty string")
+        if text in seen:
+            raise ValueError(f"{field} cannot include duplicates")
+        seen.add(text)
+        normalized.append(text)
+    return normalized
+
+
+def _validate_query_step(value: int | float | None, field: str) -> int | float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{field} must be a number")
+    if not math.isfinite(float(value)):
+        raise ValueError(f"{field} must be finite")
+    if float(value) < 0:
+        raise ValueError(f"{field} must be nonnegative")
+    return value
+
+
+def _validate_object_id(value: int | str) -> str:
+    if isinstance(value, bool):
+        raise TypeError("object_id must be an integer or string")
+    if isinstance(value, int):
+        if value < 0:
+            raise ValueError("object_id must be nonnegative")
+        return str(value)
+    return _validate_text(value, "object_id")
+
+
+def _append_query(path: str, params: dict[str, Any]) -> str:
+    query = urllib.parse.urlencode(
+        [(key, value) for key, value in params.items() if value is not None and value != ""]
+    )
+    return f"{path}?{query}" if query else path
+
+
+def _query_next_cursor(raw: dict[str, Any]) -> str | None:
+    cursor = raw.get("next_cursor")
+    return cursor if isinstance(cursor, str) and cursor else None
+
+
+def _query_raw(raws: list[dict[str, Any]]) -> dict[str, Any]:
+    if len(raws) == 1:
+        return raws[0]
+    return {"pages": raws}
+
+
+def _query_endpoint_unsupported(exc: InstantMLError) -> bool:
+    message = str(exc).lower()
+    return "404" in message or "405" in message or "not found" in message or "method not allowed" in message
+
+
+def _query_offset_cursor(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    if not cursor.startswith("offset:"):
+        raise ValueError("per-run object fallback cursors must use offset:<number>")
+    raw = cursor.removeprefix("offset:")
+    try:
+        offset = int(raw)
+    except ValueError as exc:
+        raise ValueError("per-run object fallback cursors must use offset:<number>") from exc
+    if offset < 0:
+        raise ValueError("per-run object fallback offset cursor must be nonnegative")
+    return offset
 
 
 class LoggedArtifact:

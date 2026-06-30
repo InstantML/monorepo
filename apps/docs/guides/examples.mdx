@@ -123,6 +123,21 @@ Open the dashboard, select the generated rank-insights project, and inspect
 Distributed and Insights for rank coverage, outliers, reducer differences, and
 clustered run groups.
 
+## Query API
+
+Post-hoc SDK query workflow for notebooks and automation.
+
+```bash
+PYTHONPATH=packages/python-sdk \
+  python3 examples/query-api/query.py \
+  --server https://api.instantml.ai
+```
+
+The script creates 20 short runs by default, then calls `Api.query_runs()`,
+`Api.iter_runs()`, `Api.query_metrics()`, `Api.query_objects(run_id=...)`, and
+`Api.object_rows()` and prints a compact JSON summary. Use `--skip-seed` to
+query an existing `query-api-demo` project.
+
 ## What to capture
 
 After running an example, confirm:

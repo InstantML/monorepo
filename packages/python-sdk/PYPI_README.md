@@ -130,6 +130,38 @@ run = im.init(project="cartpole", api_key="instantml_...")
 
 Get a key from **Settings → API Keys** in the dashboard.
 
+## Query runs and metrics
+
+Use `Api` from notebooks, eval jobs, and automation when you need bounded reads
+instead of training-loop writes:
+
+```python
+import instantml as im
+
+api = im.Api(base_url="https://api.instantml.ai", api_key="instantml_...")
+
+runs = api.query_runs(
+    project="cartpole",
+    q="tag:baseline status:finished",
+    sort_by="metric-best",
+    metric_key="eval/return_mean",
+    limit=20,
+)
+
+series = api.query_metrics(
+    [run["id"] for run in runs.items],
+    ["eval/return_mean"],
+    point_limit=1000,
+    buckets=400,
+)
+```
+
+`query_runs()` returns a `Page` with `items`, `next_cursor`, and the raw server
+payload. `iter_runs()` pages lazily. `query_metrics()` preserves caller run/key
+order and keeps metric reads bounded. `query_objects()` reads rich-object
+summaries through the cross-run object explorer when available, falling back
+only for explicit single-run object queries on older backends.
+
 ## Self-hosted / local development
 
 Override the API base URL via env var or kwarg:

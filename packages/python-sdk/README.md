@@ -261,21 +261,65 @@ that exception calls `finish_stopped()` automatically. Older servers that do not
 implement the stop endpoints are treated as "stop unsupported" and continue
 normal training.
 
-Run summary, artifact download, versioned artifact, and fork helpers use the
-raw `Api` helper:
+Post-hoc run analysis, artifact download, versioned artifact, and fork helpers
+use `Api`:
 
 ```python
 api = im.Api(base_url="http://127.0.0.1:8000", api_key="instantml_...")
-page = api.runs(
+runs = api.query_runs(
     project="cartpole",
     q='tag:baseline status:finished notes:"reward stability"',
     sort_by="metric-best",
     metric_key="eval/return_mean",
     limit=25,
 )
+
+series = api.query_metrics(
+    [run["id"] for run in runs.items],
+    ["eval/return_mean", "train/loss"],
+    point_limit=1000,
+    buckets=400,
+)
+
+for run in api.iter_runs(project="cartpole", q="tag:candidate", page_size=50, max_pages=2):
+    print(run["id"], run.get("name"))
 ```
 
-`Api.runs()` returns the decoded `/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`, `offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`, omits `None` and empty-string parameters, and raises `ValueError` when `cursor` is combined with a nonzero `offset`. Prefer `project` for Rust filtering; `project_id` remains a legacy SDK compatibility parameter and Rust-hosted summaries do not expose it as a query filter outside project-scoped API-key auth. The `q` language matches the dashboard search bar: bare terms are implicit `AND`, fields include `all`, `name`, `project`, `notes`, `config`, `metadata`, `tag`/`tags`, `status`, and `id`, uppercase `AND`/`OR`/`NOT` and grouping are supported, `-tag:debug` excludes field/group terms, quoted phrases are literal, and Rust supports explicit regex like `re:/seed-(13|14)/`. The deprecated Node compatibility API rejects completed regex with `run_search_regex_unsupported`.
+`query_runs()` returns `Page(items, next_cursor, raw, limit)`, preserves server
+ordering, validates page sizes at 1..100, and can auto-page up to
+`max_pages`. `iter_runs()` pages lazily. `query_metrics()` calls the bounded
+`/api/metrics/series` route once per requested key, validates up to 100 run IDs
+and 25 keys, returns `MetricSeriesPage(series, raw, point_limit)`, and orders
+series by caller run order then caller key order. It supports step windows
+through `step_min` and `step_max`; timestamp windows are rejected until the
+server exposes a timestamp-filtered metric route.
+
+Rich objects can be queried through the same helper:
+
+```python
+objects = api.query_objects(project="cartpole", kind="table", key="eval/samples")
+rows = api.object_rows(objects.items[0]["id"], limit=100)
+```
+
+`query_objects()` uses `GET /api/objects/explorer` when the backend exposes it.
+Older backends fall back only for explicit single-run calls such as
+`query_objects(run_id="...", kind="table")`; the SDK does not fan out across
+runs to emulate cross-run object queries.
+
+`Api.runs()` remains the raw compatibility helper and returns the decoded
+`/api/runs/summary` payload as a dictionary. It accepts `cursor`, `limit`,
+`offset`, `project`, `project_id`, `status`, `q`, `sort_by`, and `metric_key`,
+omits `None` and empty-string parameters, and raises `ValueError` when `cursor`
+is combined with a nonzero `offset`. Prefer `project` for Rust filtering;
+`project_id` remains a legacy SDK compatibility parameter and Rust-hosted
+summaries do not expose it as a query filter outside project-scoped API-key
+auth. The `q` language matches the dashboard search bar: bare terms are
+implicit `AND`, fields include `all`, `name`, `project`, `notes`, `config`,
+`metadata`, `tag`/`tags`, `status`, and `id`, uppercase `AND`/`OR`/`NOT` and
+grouping are supported, `-tag:debug` excludes field/group terms, quoted phrases
+are literal, and Rust supports explicit regex like `re:/seed-(13|14)/`. The
+deprecated Node compatibility API rejects completed regex with
+`run_search_regex_unsupported`.
 
 `Api.download_artifact(artifact_id, output_path)` downloads stored raw artifact bytes, creates parent directories, and returns the written path. It is the restore primitive used by checkpoint resume snippets in the web UI. `Api.artifact(ref, type=..., project=...)` resolves a versioned artifact ref such as `policy-checkpoints:latest`, `policy-checkpoints:best`, or `policy-checkpoints:v0` and returns a `LoggedArtifact`; `LoggedArtifact.download(output_dir=...)` downloads stored manifest entries while keeping paths inside the requested root, `promote(alias="best", reason="...")` moves a custom alias, and `delete(delete_aliases=False, reason="...")` soft-deletes the version with the API's required confirmation fields. `Run.use_artifact(...)` records an input lineage edge from a resolved version to the run. `Api.fork_run(source_run_id, checkpoint_artifact_id=..., step=...)` calls the Rust same-project fork route and returns the created child run dictionary; the SDK derives a stable idempotency key from the fork body unless you pass `idempotency_key` explicitly. `attach_run(run_id, ...)` validates the run exists by default, then returns a default-async `Run` handle for logging into an existing child run. Use `validate=False` only with write-only credentials or intentionally offline attach flows, and call `finish()` or `wait_for_processing()` before short scripts exit so queued async events are drained.
 

@@ -108,6 +108,9 @@ Current implemented design sequence, continued:
   embeds that adds generated bar, dot, latest-value histogram, scatter, and
   distribution panels while preserving read-only/no-export iframe boundaries and
   bounded workspace-view data reads.
+- `2026-06-30-aim-gap2-query-api.md`: implemented Aim parity slice for a typed,
+  bounded Python SDK query API over runs, metric series, rich objects, and table
+  previews while keeping the server-backed `q` language authoritative.
 
 Current draft designs:
 
