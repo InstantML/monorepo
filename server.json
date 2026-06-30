@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.instantml/mcp",
+  "title": "InstantML",
+  "description": "Inspect, compare, export, and report on InstantML training runs.",
+  "version": "0.1.0",
+  "websiteUrl": "https://instantml.ai",
+  "repository": {
+    "url": "https://github.com/InstantML/monorepo",
+    "source": "github",
+    "id": "tools"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.instantml.ai/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token using an InstantML API key with export:read for run-analysis tools.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

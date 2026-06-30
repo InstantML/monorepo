@@ -713,6 +713,13 @@
   .api-row > * { width: auto; }
   .api-row > small { flex-basis: 100%; }
   .api-row > button { margin-left: auto; }
+  .agent-snippet-panel__bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .agent-snippet-panel__bar .copy-button {
+    margin-left: 0;
+  }
 
   /* Single-column lists across all secondary tabs */
   .settings-list,

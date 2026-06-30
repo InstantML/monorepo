@@ -21,6 +21,19 @@ You do not need to deploy your own InstantML backend, clone the InstantML
 repository, or keep a local MCP process running. Your agent connects over
 Streamable HTTP and sends an InstantML API key in the `Authorization` header.
 
+## Fastest setup
+
+1. Open the InstantML dashboard and go to **API**.
+2. Create an API key named `Agent MCP key`.
+3. Copy the setup snippet for Claude Code, Codex, Cursor, VS Code, or a local
+   bridge from the **Connect Agent** panel.
+4. Restart or reconnect the client, then ask it to list your latest InstantML
+   runs.
+
+This dashboard flow is the preferred setup because it keeps key creation and
+agent configuration in one place. Use the manual snippets below when setting up
+an agent before opening the dashboard.
+
 ## Prerequisites
 
 - An InstantML API key with `export:read` for run-analysis tools.
