@@ -122,7 +122,7 @@ Days 5-8 UI/server slice is implemented:
 Training-observability roadmap first slice is implemented:
 
 - Typed attributes for configs, float series, string series, file/file series, histograms, and tags.
-- Attribute-backed rich logged objects for selected-run tables, histograms, and media attachments, with paginated table preview rows.
+- Attribute-backed rich logged objects for selected-run tables, histograms, classification evals, text, and media attachments, with a cross-run Objects explorer and paginated table preview rows.
 - Buffered SDK logging, explicit `flush()`, offline JSONL spool/replay, source metadata, and typed helper methods.
 - Process-isolated SDK spool mode with a separate uploader for long-running training loops.
 - Artifact upload/download with size, SHA256, MIME type, local filesystem storage for development, and Cloudflare R2-backed per-org buckets for hosted artifact bytes.
@@ -143,11 +143,11 @@ Training-observability roadmap first slice is implemented:
 - Reports are persisted workspace documents backed by `/api/reports`, with live panel grids, autosave, share tokens, legacy LLM-summary rendering, and Markdown export.
 - Hosted pricing is Free/Pro/Premium with visible plan usage, no tracked-hour billing in v1, and explicit paid storage/API request overage.
 - Cursor-backed Rust run browsing for the Runs workspace with indexed server-side search/sort, raw Python `Api.runs()` access, typed SDK query helpers for bounded runs/metrics/rich objects/table rows, a repeatable local 100,000-run benchmark, and a hosted Cloud Run API benchmark for the deployed Cloud Run -> ClickHouse path. Local 2026-05-11 evidence measured project summary p95 78 ms, search p95 118 ms, selected metric-best sort p95 66 ms, chart series p95 22 ms, and production web first useful render 387 ms; the current 2026-05-23 hosted GCP showcase stayed sub-second on 50,000 runs and 522M metric points.
-- Rich-object benchmark evidence from 2026-05-11 measured selected-run object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, and table row p95 1.9 ms for 1,000 bounded rows.
+- Rich-object benchmark evidence from 2026-05-11 measured selected-run object list p95 47.5 ms for 500 objects, table-only object list p95 8.3 ms, and table row p95 1.9 ms for 1,000 bounded rows; the Objects explorer extends that surface to cursor-paginated cross-run browsing.
 - Keyboard workflow MVP covering quick search, shortcut help, overlay dismissal, workspace undo/redo, run selector collapse, focus handoff, and fullscreen panel traversal.
 - Tab-aware frontend data fetching so hidden Metrics, Run Detail, Compare, and artifact surfaces no longer fan out requests during every dashboard entry.
 - Real Neptune Exporter Parquet import, transformed W&B, transformed MLflow JSON, and TensorBoard scalar importer/sync endpoints and CLIs.
-- Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts.
+- Real-data NumPy Iris classification example with uploaded model, prediction, confusion-matrix, and dataset-profile artifacts, plus an object-explorer seed example for text/table/histogram/classification/image evidence.
 - Docker Compose for a one-command local Rust/ClickHouse API and artifact-storage stack.
 - Internal Cloud Run deployment for the Rust API with Secret Manager secrets, bounded single-instance control/data cells, private VPC access to the self-hosted GCP ClickHouse VM, and local frontend-only development against the hosted API.
 - Structured Rust server observability: JSON Cloud Run logs include request completion events, sanitized handled-error fields, slow-request warnings, and first-slice workflow outcomes for project/run mutations, metric/log ingestion, artifacts, imports, readiness, and worker cleanup. Hosted edge correlation uses the request `x-request-id` header and observed Cloudflare `cf-ray` when the API is proxied through Cloudflare.

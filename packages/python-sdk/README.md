@@ -128,6 +128,10 @@ forked_run.log({"train/loss": 0.1}, step=101)
 forked_run.finish()
 ```
 
+The deterministic object explorer example at `examples/object-explorer/` logs
+text, table, histogram, classification-eval, and generated image objects
+through these same SDK helpers so `/dashboard/objects` can be tested locally.
+
 ## Tracing
 
 Tracing is for product traces tied to an InstantML run, not internal SDK/server

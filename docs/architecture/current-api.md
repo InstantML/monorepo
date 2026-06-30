@@ -1,6 +1,6 @@
 # Current Rust API Reference
 
-Date: 2026-05-30
+Date: 2026-06-30
 
 Status: Current implemented API surface for `apps/rust-server`
 
@@ -1707,6 +1707,74 @@ Output:
 ```json
 { "objects": [], "limit": 100, "offset": 0 }
 ```
+
+### `GET /api/objects/explorer`
+
+Auth: `export:read` API key or tenant-readable browser session.
+
+Cross-run object search for dashboard object browsing. The route reuses the
+run-search `q` language and project visibility rules before scanning logged
+objects, then returns only bounded previews and safe artifact metadata.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `project` | Optional project name filter |
+| `project_id` | Optional project UUID filter |
+| `run_id` | Optional run UUID filter |
+| `q` | Optional shared run-search expression |
+| `kind` | Optional kind: `image`, `video`, `audio`, `text`, `table`, `histogram`, or `classification_eval` |
+| `key` | Optional object-key substring filter, max 128 bytes |
+| `from_step` | Optional inclusive numeric lower step bound |
+| `to_step` | Optional inclusive numeric upper step bound |
+| `limit` | Default 50, max 100 |
+| `cursor` | Opaque cursor from the previous response |
+
+Invalid cursors, unsupported kinds, malformed UUIDs, inverted step ranges, and
+out-of-range limits return `400` with `code: "object_explorer_invalid"`.
+
+Output:
+
+```json
+{
+  "objects": [
+    {
+      "object_id": "attr:123",
+      "id": 123,
+      "run_id": "uuid",
+      "run_name": "seed-7",
+      "project": "demo",
+      "kind": "image",
+      "key": "eval/frame",
+      "step": 10,
+      "created_at": "2026-06-30T00:00:00Z",
+      "logged_at": "2026-06-30T00:00:00Z",
+      "summary": {},
+      "metadata": {},
+      "preview": { "text": null, "truncated": false },
+      "artifact_id": "uuid",
+      "artifact": {
+        "id": "uuid",
+        "name": "frame.png",
+        "uri": "instantml://artifacts/...",
+        "mime_type": "image/png",
+        "size_bytes": 1024,
+        "storage_backend": "local"
+      }
+    }
+  ],
+  "next_cursor": null,
+  "limit": 50,
+  "page_info": { "pagination": "cursor", "has_next_page": false }
+}
+```
+
+Artifact `storage_key` and `storage_path` are intentionally omitted. Text
+previews are capped to 2,000 bytes, histogram previews are capped to 64 counts,
+classification-eval previews cap class rows, prediction rows, and PR/ROC curve
+points, and table object cells still require
+`GET /api/objects/:object_id/rows`.
 
 ### `GET /api/objects/:object_id/rows`
 

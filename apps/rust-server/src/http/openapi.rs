@@ -1102,6 +1102,7 @@ impl Modify for SecurityAddon {
         crate::http::handlers::runs::list_attributes,
         crate::http::handlers::runs::create_object,
         crate::http::handlers::runs::list_objects,
+        crate::http::handlers::runs::list_objects_explorer,
         crate::http::handlers::runs::list_object_rows,
         // artifacts
         crate::http::handlers::artifacts::create_artifact,

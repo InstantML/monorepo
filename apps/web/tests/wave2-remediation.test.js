@@ -60,7 +60,7 @@ test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", ()
   assert.match(configSrc, /id: "system"/);
   assert.doesNotMatch(configSrc, /id: "overview"/);
   assert.match(configSrc, /id: "alerts", label: "Run Health"/);
-  for (const id of ["runs", "metrics", "distributed", "insights", "artifacts", "reports", "alerts", "datasets", "settings", "agent"]) {
+  for (const id of ["runs", "metrics", "distributed", "insights", "artifacts", "objects", "reports", "alerts", "datasets", "settings", "agent"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
   // CK2: the Checkpoints tab merged into Run Detail; its nav slot is gone but
@@ -77,6 +77,15 @@ test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", ()
   const runDetailSrc = read("app/dashboard/detail/run-detail.tsx");
   assert.match(runDetailSrc, /checkpoint-uri/);
   assert.match(runDetailSrc, /eval_return/);
+});
+
+test("objects workspace filters round-trip through shareable URL params", () => {
+  const objectsSrc = read("app/dashboard/objects/tab-pane.tsx");
+  assert.match(objectsSrc, /function objectUrlState/, "Objects tab should initialize filters from the URL");
+  assert.match(objectsSrc, /params\.get\("kind"\)/, "Objects tab should read the object kind URL filter");
+  assert.match(objectsSrc, /setOrDelete\("kind", state\.kind\)/, "Objects tab should write the object kind URL filter");
+  assert.match(objectsSrc, /setOrDelete\("from_step", state\.fromStep\)/, "Objects tab should write step-range filters");
+  assert.match(objectsSrc, /window\.addEventListener\("popstate", syncFromUrl\)/, "Objects tab should handle browser back/forward filter state");
 });
 
 // R1 — the runs table is mounted behind a panels/table view toggle.

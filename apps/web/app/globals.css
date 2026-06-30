@@ -17,6 +17,7 @@
  *   embed.css           — iframe-safe embedded run charts
  *   run-detail.css      — run detail, KPIs, inspector, evidence, timeline
  *   compare.css         — compare view, leaderboard, evidence cells
+ *   objects.css         — cross-run logged object explorer
  *   research.css        — Distributed and Insights dashboard panels
  *   traces.css          — traces list, tree, inspector, and filters
  *   dark-overrides.css  — dark-theme overrides (Phase 3: dissolve into each file)
@@ -39,6 +40,7 @@
 @import "./styles/embed.css";
 @import "./styles/run-detail.css";
 @import "./styles/compare.css";
+@import "./styles/objects.css";
 @import "./styles/research.css";
 @import "./styles/traces.css";
 @import "./styles/skeleton.css";

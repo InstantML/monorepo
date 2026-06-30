@@ -18,6 +18,7 @@ Split from the original `globals.css` (11,348 lines) as part of the
 | `run-detail.css` | Run detail, KPIs, inspector | `.run-detail-*`, `.run-kpi-*`, `.inspector` |
 | `compare.css` | Compare view, leaderboard | `.compare-*`, `.leaderboard-*` |
 | `traces.css` | Traces dashboard list, tree, inspector, and filters | `.traces-*`, `.trace-*` |
+| `objects.css` | Cross-run logged object explorer | `.objects-*` |
 | `dark-overrides.css` | Dark-theme overrides (Phase 3 target) | `:root[data-theme="dark"] *` |
 | `overhaul.css` | Visual overhaul layers 2026-05-15 (Phase 3 target), including account/workspace menu and create-workspace modal rules until those are folded into dashboard styles | Duplicated rules from all feature areas, `.account-workspace-*`, `.workspace-create-*` |
 | `mobile.css` | Compact dashboard redesign ≤900px | `@media (max-width: 900px)` |

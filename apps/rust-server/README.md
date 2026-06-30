@@ -42,7 +42,9 @@ This directory contains the primary Rust backend for InstantML. The current stor
   `classification_eval` objects. Histogram objects require finite bins/counts
   with compatible lengths; classification eval objects are compact binary
   bundles with bounded PR/ROC curves, 2x2 confusion matrices, per-class
-  metrics, and optional prediction previews.
+  metrics, and optional prediction previews. Serve a cursor-paginated
+  cross-run object explorer for text, table, histogram, classification-eval,
+  and media evidence without exposing artifact storage keys or paths.
 - Keep hosted multi-process/control-plane routing work behind `docs/design/2026-05-16-multi-instance-control-data-plane.md`; the in-process operational index is accepted for local/test and narrow single-writer cells only. The server can now run as `combined`, `control`, or `data` through `INSTANTML_SERVICE_PLANE`, and data-plane auth refreshes User Data control records before request auth. Live multi-writer freshness, write uniqueness, public cell routing, and metric/log idempotency remain scale-out gates.
 
 ## Local Setup
@@ -636,7 +638,7 @@ Large-run benchmark:
 INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_LONG_RUN_STEPS=20000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
 ```
 
-The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints. The large-run benchmark uses 100,000 run records by default and gives the newest run 20,000 steps across several metric keys so single-run chart reads and batched selected-run M4 reads exercise the same bounded dashboard path without forcing a multi-billion-row write in normal verification.
+The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints. The rich-object path covers selected-run objects, table rows, and cross-run object explorer reads. The large-run benchmark uses 100,000 run records by default and gives the newest run 20,000 steps across several metric keys so single-run chart reads and batched selected-run M4 reads exercise the same bounded dashboard path without forcing a multi-billion-row write in normal verification.
 
 Hosted demo seed/benchmark:
 
@@ -716,7 +718,7 @@ Coverage exception (multi-writer):
 - `src/store/traces.rs`: trace ingest validation, idempotency, billing guardrails, summary shaping, trace list/detail reads, and child cursor handling.
 - `src/trace_store.rs`: ClickHouse trace table writes and bounded trace summary/topology queries.
 - `src/store/runs.rs`: projects, runs, run filtering/summaries, same-project fork lineage, scalar metric writes, and metric read endpoints.
-- `src/store/objects.rs`: typed attributes, rich objects, table rows, raw artifacts, and raw artifact metadata writes after local/R2 byte preflight.
+- `src/store/objects.rs`: typed attributes, rich objects, cross-run object explorer reads, table rows, raw artifacts, and raw artifact metadata writes after local/R2 byte preflight.
 - `src/store/artifact_versions.rs`: versioned artifact collections, manifests, upload-session commit flow, aliases, retention/delete state, manifest downloads, and run/artifact lineage edges.
 - `src/store/imports.rs`: Neptune, W&B, MLflow, and TensorBoard import normalization plus Import v2 job/chunk state, canonical chunk validation, redaction, provenance, and commit logic.
 - `src/store/export.rs`: side-by-side comparison, filtered compare-query support, and bounded JSON export.

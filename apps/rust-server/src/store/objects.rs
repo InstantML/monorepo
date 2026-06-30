@@ -1,5 +1,29 @@
 use super::*;
 
+use std::cmp::Ordering;
+
+use axum::http::StatusCode;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
+const DEFAULT_OBJECT_EXPLORER_LIMIT: usize = 50;
+const MAX_OBJECT_EXPLORER_LIMIT: usize = 100;
+const OBJECT_EXPLORER_TEXT_PREVIEW_BYTES: usize = 2_000;
+const OBJECT_EXPLORER_KEY_MAX_BYTES: usize = 128;
+
+#[derive(Debug, Clone)]
+struct ObjectExplorerCandidate {
+    row: AttributeRow,
+    run: RunRow,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ObjectExplorerCursor {
+    v: i32,
+    step: Option<f64>,
+    created_at: DateTime<Utc>,
+    id: i64,
+}
+
 pub async fn create_attributes(
     store: &Store,
     ctx: &RequestContext,
@@ -315,6 +339,126 @@ pub async fn list_objects(
     Ok(json!({ "objects": rows, "limit": limit, "offset": offset }))
 }
 
+pub async fn list_objects_explorer(
+    store: &Store,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+) -> AppResult<Value> {
+    let limit = validate_object_explorer_limit(query.get("limit").map(String::as_str))?;
+    let kind = query
+        .get("kind")
+        .map(|value| normalize_explorer_kind_filter(value))
+        .transpose()?;
+    let key = validate_object_explorer_key(query.get("key").map(String::as_str))?;
+    let run_id = query
+        .get("run_id")
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| parse_explorer_uuid(value, "run_id"))
+        .transpose()?;
+    let project_id = query
+        .get("project_id")
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| parse_explorer_uuid(value, "project_id"))
+        .transpose()?;
+    let from_step =
+        validate_object_explorer_step(query.get("from_step").map(String::as_str), "from_step")?;
+    let to_step =
+        validate_object_explorer_step(query.get("to_step").map(String::as_str), "to_step")?;
+    if let (Some(from), Some(to)) = (from_step, to_step) {
+        if from > to {
+            return Err(object_explorer_invalid(
+                "from_step must be less than or equal to to_step",
+            ));
+        }
+    }
+    let cursor = query
+        .get("cursor")
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| decode_object_explorer_cursor(value))
+        .transpose()?;
+
+    let run_query = run_filter_query(query);
+    let mut runs = filtered_runs(store, ctx, &run_query).await?;
+    if let Some(project_id) = project_id {
+        runs.retain(|run| run.project_id == project_id);
+    }
+    if let Some(run_id) = run_id {
+        runs.retain(|run| run.id == run_id);
+    }
+    let run_by_id = runs
+        .into_iter()
+        .map(|run| (run.id, run))
+        .collect::<HashMap<_, _>>();
+
+    let data = store.data.lock().await;
+    let mut candidates = Vec::new();
+    for (run_id, run) in &run_by_id {
+        for attribute_id in data.attributes_by_run.get(run_id).into_iter().flatten() {
+            let Some(row) = data.attributes.get(&(ctx.org_id, *attribute_id)) else {
+                continue;
+            };
+            let Some(row_kind) = explorer_kind_for_row(&row.kind) else {
+                continue;
+            };
+            if kind
+                .as_ref()
+                .map(|value| row_kind != value)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if key
+                .as_ref()
+                .map(|value| !row.path.contains(value))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            if !step_in_range(row.step, from_step, to_step) {
+                continue;
+            }
+            candidates.push(ObjectExplorerCandidate {
+                row: row.clone(),
+                run: run.clone(),
+            });
+        }
+    }
+    candidates.sort_by(compare_object_explorer_candidates);
+    let after_cursor = candidates
+        .into_iter()
+        .filter(|candidate| {
+            cursor
+                .as_ref()
+                .map(|cursor| compare_candidate_to_cursor(candidate, cursor) == Ordering::Greater)
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+    let has_next = after_cursor.len() > limit;
+    let page = after_cursor.into_iter().take(limit).collect::<Vec<_>>();
+    let next_cursor = if has_next {
+        page.last()
+            .map(encode_object_explorer_cursor)
+            .transpose()?
+            .map(Value::String)
+            .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
+    let objects = page
+        .iter()
+        .map(|candidate| object_explorer_value(&data, candidate))
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "objects": objects,
+        "next_cursor": next_cursor,
+        "limit": limit,
+        "page_info": {
+            "pagination": "cursor",
+            "has_next_page": has_next
+        }
+    }))
+}
+
 pub async fn list_object_rows(
     store: &Store,
     ctx: &RequestContext,
@@ -356,6 +500,320 @@ pub async fn list_object_rows(
         })
         .collect::<Vec<_>>();
     Ok(json!({ "object_id": object_id, "rows": rows, "limit": limit, "offset": offset }))
+}
+
+fn run_filter_query(query: &HashMap<String, String>) -> HashMap<String, String> {
+    ["project", "q"]
+        .into_iter()
+        .filter_map(|key| {
+            query
+                .get(key)
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| (key.to_string(), value.clone()))
+        })
+        .collect()
+}
+
+fn validate_object_explorer_limit(raw: Option<&str>) -> AppResult<usize> {
+    let Some(raw) = raw.filter(|value| !value.trim().is_empty()) else {
+        return Ok(DEFAULT_OBJECT_EXPLORER_LIMIT);
+    };
+    let value = raw
+        .trim()
+        .parse::<usize>()
+        .map_err(|_| object_explorer_invalid("limit must be a positive integer"))?;
+    if value == 0 || value > MAX_OBJECT_EXPLORER_LIMIT {
+        return Err(object_explorer_invalid(format!(
+            "limit must be between 1 and {MAX_OBJECT_EXPLORER_LIMIT}"
+        )));
+    }
+    Ok(value)
+}
+
+fn validate_object_explorer_key(raw: Option<&str>) -> AppResult<Option<String>> {
+    let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if value.len() > OBJECT_EXPLORER_KEY_MAX_BYTES || value.chars().any(char::is_control) {
+        return Err(object_explorer_invalid("key filter is invalid"));
+    }
+    Ok(Some(value.to_string()))
+}
+
+fn validate_object_explorer_step(raw: Option<&str>, field: &'static str) -> AppResult<Option<f64>> {
+    let Some(value) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|_| object_explorer_invalid(format!("{field} must be a finite number")))?;
+    if !parsed.is_finite() {
+        return Err(object_explorer_invalid(format!(
+            "{field} must be a finite number"
+        )));
+    }
+    Ok(Some(parsed))
+}
+
+fn parse_explorer_uuid(raw: &str, field: &'static str) -> AppResult<Uuid> {
+    Uuid::parse_str(raw.trim())
+        .map_err(|_| object_explorer_invalid(format!("{field} must be a UUID")))
+}
+
+fn normalize_explorer_kind_filter(raw: &str) -> AppResult<String> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return Err(object_explorer_invalid("kind must not be empty"));
+    }
+    if value == "text" {
+        return Ok("text".to_string());
+    }
+    let normalized = normalize_object_kind(value)
+        .map_err(|_| object_explorer_invalid("unsupported object kind"))?;
+    Ok(if normalized == "histogram_series" {
+        "histogram".to_string()
+    } else {
+        normalized
+    })
+}
+
+fn object_explorer_invalid(message: impl Into<String>) -> AppError {
+    AppError::with_code(StatusCode::BAD_REQUEST, "object_explorer_invalid", message)
+}
+
+fn explorer_kind_for_row(kind: &str) -> Option<&'static str> {
+    match kind {
+        "table" => Some("table"),
+        "image" => Some("image"),
+        "video" => Some("video"),
+        "audio" => Some("audio"),
+        "histogram_series" => Some("histogram"),
+        "classification_eval" => Some("classification_eval"),
+        "string_series" => Some("text"),
+        _ => None,
+    }
+}
+
+fn step_in_range(step: Option<f64>, from_step: Option<f64>, to_step: Option<f64>) -> bool {
+    if from_step.is_none() && to_step.is_none() {
+        return true;
+    }
+    let Some(step) = step else {
+        return false;
+    };
+    from_step.map(|from| step >= from).unwrap_or(true)
+        && to_step.map(|to| step <= to).unwrap_or(true)
+}
+
+fn compare_object_explorer_candidates(
+    left: &ObjectExplorerCandidate,
+    right: &ObjectExplorerCandidate,
+) -> Ordering {
+    compare_object_explorer_sort_tuple(
+        left.row.step,
+        left.row.created_at,
+        left.row.id,
+        right.row.step,
+        right.row.created_at,
+        right.row.id,
+    )
+}
+
+fn compare_candidate_to_cursor(
+    candidate: &ObjectExplorerCandidate,
+    cursor: &ObjectExplorerCursor,
+) -> Ordering {
+    compare_object_explorer_sort_tuple(
+        candidate.row.step,
+        candidate.row.created_at,
+        candidate.row.id,
+        cursor.step,
+        cursor.created_at,
+        cursor.id,
+    )
+}
+
+fn compare_object_explorer_sort_tuple(
+    left_step: Option<f64>,
+    left_created_at: DateTime<Utc>,
+    left_id: i64,
+    right_step: Option<f64>,
+    right_created_at: DateTime<Utc>,
+    right_id: i64,
+) -> Ordering {
+    match (left_step, right_step) {
+        (Some(left), Some(right)) => right.total_cmp(&left),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+    .then_with(|| right_created_at.cmp(&left_created_at))
+    .then_with(|| right_id.cmp(&left_id))
+}
+
+fn encode_object_explorer_cursor(candidate: &ObjectExplorerCandidate) -> AppResult<String> {
+    let cursor = ObjectExplorerCursor {
+        v: 1,
+        step: candidate.row.step,
+        created_at: candidate.row.created_at,
+        id: candidate.row.id,
+    };
+    let raw = serde_json::to_vec(&cursor)
+        .map_err(|_| AppError::internal("object explorer cursor encoding failed"))?;
+    Ok(URL_SAFE_NO_PAD.encode(raw))
+}
+
+fn decode_object_explorer_cursor(raw: &str) -> AppResult<ObjectExplorerCursor> {
+    let bytes = URL_SAFE_NO_PAD
+        .decode(raw.trim().as_bytes())
+        .map_err(|_| object_explorer_invalid("cursor is invalid"))?;
+    let cursor = serde_json::from_slice::<ObjectExplorerCursor>(&bytes)
+        .map_err(|_| object_explorer_invalid("cursor is invalid"))?;
+    if cursor.v != 1 {
+        return Err(object_explorer_invalid("cursor is invalid"));
+    }
+    Ok(cursor)
+}
+
+fn object_explorer_value(data: &StoreData, candidate: &ObjectExplorerCandidate) -> Value {
+    let row = &candidate.row;
+    let kind = explorer_kind_for_row(&row.kind).unwrap_or("unknown");
+    let metadata = row
+        .value
+        .get("metadata")
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let artifact = row
+        .artifact_id
+        .and_then(|id| data.artifacts.get(&id))
+        .filter(|artifact| artifact.org_id == row.org_id && artifact.run_id == row.run_id)
+        .map(|artifact| {
+            json!({
+                "id": artifact.id,
+                "name": artifact.name,
+                "uri": artifact.uri,
+                "mime_type": artifact.mime_type,
+                "size_bytes": artifact.size_bytes,
+                "storage_backend": artifact.storage_backend
+            })
+        });
+    let preview = object_explorer_preview(kind, &row.value);
+    json!({
+        "object_id": format!("attr:{}", row.id),
+        "id": row.id,
+        "run_id": row.run_id,
+        "run_name": candidate.run.name,
+        "project": candidate.run.project,
+        "kind": kind,
+        "key": row.path,
+        "step": row.step,
+        "created_at": row.created_at,
+        "logged_at": row.logged_at,
+        "summary": row.summary,
+        "metadata": metadata,
+        "preview": preview,
+        "artifact_id": row.artifact_id,
+        "artifact": artifact
+    })
+}
+
+fn object_explorer_preview(kind: &str, value: &Value) -> Value {
+    let mut preview = Map::new();
+    if kind == "text" {
+        let raw = value
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| serde_json::to_string(value).unwrap_or_default());
+        let (text, truncated) = truncate_utf8(&raw, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES);
+        preview.insert("text".to_string(), Value::String(text));
+        preview.insert("truncated".to_string(), Value::Bool(truncated));
+    } else {
+        preview.insert("text".to_string(), Value::Null);
+        preview.insert("truncated".to_string(), Value::Bool(false));
+    }
+    if kind == "histogram" {
+        if let Some(histogram) = histogram_preview(value) {
+            preview.insert("histogram".to_string(), histogram);
+        }
+    }
+    if kind == "classification_eval" {
+        if let Some(evaluation) = classification_eval_preview(value) {
+            preview.insert("evaluation".to_string(), evaluation);
+        }
+    }
+    Value::Object(preview)
+}
+
+fn histogram_preview(value: &Value) -> Option<Value> {
+    let object = value.as_object()?;
+    let bins = object.get("bins").and_then(Value::as_array)?;
+    let counts = object.get("counts").and_then(Value::as_array)?;
+    let truncated = bins.len() > 65 || counts.len() > 64;
+    Some(json!({
+        "bins": bins.iter().take(65).cloned().collect::<Vec<_>>(),
+        "counts": counts.iter().take(64).cloned().collect::<Vec<_>>(),
+        "truncated": truncated
+    }))
+}
+
+fn classification_eval_preview(value: &Value) -> Option<Value> {
+    let object = value.as_object()?;
+    Some(json!({
+        "accuracy": object.get("accuracy").cloned().unwrap_or(Value::Null),
+        "macro_f1": object.get("macro_f1").cloned().unwrap_or(Value::Null),
+        "sample_count": object.get("sample_count").cloned().unwrap_or(Value::Null),
+        "class_names": string_array_preview(object.get("class_names"), 2),
+        "confusion_matrix": matrix_preview(object.get("confusion_matrix"), 2, 2),
+        "per_class": record_array_preview(object.get("per_class"), 2),
+        "predictions": record_array_preview(object.get("predictions"), 5),
+        "pr_curve": record_array_preview(object.get("pr_curve"), 200),
+        "roc_curve": record_array_preview(object.get("roc_curve"), 200),
+    }))
+}
+
+fn string_array_preview(value: Option<&Value>, limit: usize) -> Vec<Value> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| item.as_str().is_some())
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+fn record_array_preview(value: Option<&Value>, limit: usize) -> Vec<Value> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| item.is_object())
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+fn matrix_preview(value: Option<&Value>, row_limit: usize, column_limit: usize) -> Vec<Value> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_array)
+        .take(row_limit)
+        .map(|row| Value::Array(row.iter().take(column_limit).cloned().collect()))
+        .collect()
+}
+
+fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value.to_string(), false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (value[..end].to_string(), true)
 }
 
 pub async fn create_artifact(
@@ -614,4 +1072,191 @@ pub async fn get_artifact_for_context(
     let run = fetch_run_in_data(&data, ctx, artifact.run_id)?;
     ensure_run_access_in_data(ctx, &run)?;
     Ok(artifact)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(id: u128, name: &str) -> RunRow {
+        RunRow {
+            id: Uuid::from_u128(id),
+            org_id: Uuid::from_u128(1),
+            project_id: Uuid::from_u128(2),
+            project: "cartpole".to_string(),
+            name: name.to_string(),
+            status: "finished".to_string(),
+            config: json!({}),
+            tags: vec![],
+            metadata: json!({}),
+            created_at: epoch(),
+            started_at: epoch(),
+            finished_at: Some(epoch()),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
+        }
+    }
+
+    fn attribute(
+        id: i64,
+        run_id: Uuid,
+        kind: &str,
+        step: Option<f64>,
+        created_offset: i64,
+    ) -> AttributeRow {
+        AttributeRow {
+            id,
+            org_id: Uuid::from_u128(1),
+            run_id,
+            path: format!("eval/{kind}/{id}"),
+            kind: kind.to_string(),
+            step,
+            logged_at: Some(epoch() + ChronoDuration::seconds(created_offset)),
+            value: json!({"metadata": {"caption": id}, "bins": [0, 1], "counts": [id]}),
+            summary: json!({}),
+            artifact_id: None,
+            created_at: epoch() + ChronoDuration::seconds(created_offset),
+        }
+    }
+
+    #[test]
+    fn object_explorer_cursor_uses_stable_sort_tuple() {
+        let run = run(10, "seed-10");
+        let mut rows = vec![
+            ObjectExplorerCandidate {
+                row: attribute(1, run.id, "image", Some(1.0), 1),
+                run: run.clone(),
+            },
+            ObjectExplorerCandidate {
+                row: attribute(2, run.id, "image", Some(3.0), 2),
+                run: run.clone(),
+            },
+            ObjectExplorerCandidate {
+                row: attribute(3, run.id, "image", None, 3),
+                run: run.clone(),
+            },
+        ];
+        rows.sort_by(compare_object_explorer_candidates);
+        assert_eq!(
+            rows.iter()
+                .map(|candidate| candidate.row.id)
+                .collect::<Vec<_>>(),
+            vec![2, 1, 3]
+        );
+
+        let cursor =
+            decode_object_explorer_cursor(&encode_object_explorer_cursor(&rows[0]).unwrap())
+                .unwrap();
+        let after = rows
+            .iter()
+            .filter(|candidate| {
+                compare_candidate_to_cursor(candidate, &cursor) == Ordering::Greater
+            })
+            .map(|candidate| candidate.row.id)
+            .collect::<Vec<_>>();
+        assert_eq!(after, vec![1, 3]);
+    }
+
+    #[test]
+    fn object_explorer_text_preview_is_bounded_on_utf8_boundary() {
+        let long = format!(
+            "{}{}",
+            "a".repeat(OBJECT_EXPLORER_TEXT_PREVIEW_BYTES - 1),
+            "é"
+        );
+        let preview = object_explorer_preview("text", &json!(long));
+        assert_eq!(
+            preview["text"].as_str().unwrap().len(),
+            OBJECT_EXPLORER_TEXT_PREVIEW_BYTES - 1
+        );
+        assert_eq!(preview["truncated"], json!(true));
+    }
+
+    #[test]
+    fn object_explorer_filter_validation_is_bounded() {
+        assert_eq!(validate_object_explorer_limit(None).unwrap(), 50);
+        assert!(validate_object_explorer_limit(Some("0")).is_err());
+        assert!(validate_object_explorer_limit(Some("101")).is_err());
+        assert_eq!(normalize_explorer_kind_filter("text").unwrap(), "text");
+        assert_eq!(
+            normalize_explorer_kind_filter("histogram").unwrap(),
+            "histogram"
+        );
+        assert!(normalize_explorer_kind_filter("dataset").is_err());
+        assert_eq!(
+            validate_object_explorer_key(Some("eval/frame"))
+                .unwrap()
+                .as_deref(),
+            Some("eval/frame")
+        );
+        assert!(validate_object_explorer_key(Some("bad\nkey")).is_err());
+        assert!(validate_object_explorer_step(Some("NaN"), "from_step").is_err());
+    }
+
+    #[test]
+    fn object_explorer_classification_preview_is_bounded() {
+        let preview = object_explorer_preview(
+            "classification_eval",
+            &json!({
+                "accuracy": 0.91,
+                "macro_f1": 0.88,
+                "sample_count": 512,
+                "class_names": ["negative", "positive", "extra"],
+                "confusion_matrix": [[210, 12, 1], [19, 271, 2], [1, 2, 3]],
+                "per_class": [
+                    {"class_name": "negative", "precision": 0.92},
+                    {"class_name": "positive", "precision": 0.89},
+                    {"class_name": "extra", "precision": 0.5}
+                ],
+                "predictions": (0..12).map(|index| json!({"id": index, "score": 0.9})).collect::<Vec<_>>(),
+                "pr_curve": (0..250).map(|index| json!({"recall": index as f64 / 250.0, "precision": 0.9})).collect::<Vec<_>>(),
+                "roc_curve": (0..250).map(|index| json!({"fpr": index as f64 / 250.0, "tpr": 0.9})).collect::<Vec<_>>()
+            }),
+        );
+        let evaluation = &preview["evaluation"];
+        assert_eq!(evaluation["accuracy"], json!(0.91));
+        assert_eq!(evaluation["class_names"].as_array().unwrap().len(), 2);
+        assert_eq!(evaluation["confusion_matrix"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            evaluation["confusion_matrix"][0].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(evaluation["per_class"].as_array().unwrap().len(), 2);
+        assert_eq!(evaluation["predictions"].as_array().unwrap().len(), 5);
+        assert_eq!(evaluation["pr_curve"].as_array().unwrap().len(), 200);
+        assert_eq!(evaluation["roc_curve"].as_array().unwrap().len(), 200);
+    }
+
+    #[test]
+    fn object_explorer_value_redacts_artifact_storage_details() {
+        let run = run(10, "seed-10");
+        let artifact_id = Uuid::from_u128(20);
+        let mut data = StoreData::default();
+        data.insert_artifact(ArtifactRow {
+            id: artifact_id,
+            org_id: Uuid::from_u128(1),
+            run_id: run.id,
+            kind: "file".to_string(),
+            name: "frame.png".to_string(),
+            uri: "instantml://artifacts/frame.png".to_string(),
+            step: Some(3.0),
+            size_bytes: Some(1024),
+            sha256: Some("abc".to_string()),
+            mime_type: Some("image/png".to_string()),
+            storage_backend: "local".to_string(),
+            storage_key: Some("private/key".to_string()),
+            storage_path: Some("/tmp/private/frame.png".to_string()),
+            metadata: json!({}),
+            created_at: epoch(),
+        });
+        let mut row = attribute(1, run.id, "image", Some(3.0), 1);
+        row.artifact_id = Some(artifact_id);
+        let value = object_explorer_value(&data, &ObjectExplorerCandidate { row, run });
+
+        assert_eq!(value["object_id"], json!("attr:1"));
+        assert_eq!(value["artifact"]["mime_type"], json!("image/png"));
+        assert!(value["artifact"].get("storage_key").is_none());
+        assert!(value["artifact"].get("storage_path").is_none());
+    }
 }

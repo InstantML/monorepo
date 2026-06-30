@@ -135,6 +135,7 @@ Node tests.
 ## Design Docs
 
 - `docs/design/2026-05-23-mintlify-docs-mvp.md`
+- `docs/design/2026-06-30-aim-gap1-object-explorers.md`
 
 ## Notes For Future Agents
 

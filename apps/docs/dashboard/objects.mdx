@@ -1,0 +1,52 @@
+---
+title: "Objects workspace"
+description: "Browse rich logged objects across runs, including images, audio, video, text, tables, histograms, and classification evaluations."
+---
+
+# Objects workspace
+
+The Objects workspace is for rich evidence that does not fit in a scalar metric.
+Use it to scan generated images, rollout media, text summaries, prediction
+tables, histogram snapshots, and classification evaluations across runs without
+opening each run first.
+
+Open **Objects** from the dashboard rail. The page reads the current project
+context and then fetches a bounded page from `GET /api/objects/explorer`.
+
+## Filters
+
+- **Kind** narrows to images, video, audio, text, tables, histograms, or
+  classification evaluations.
+- **Run query** uses the same run-search language as the Runs workspace, so
+  filters such as `tag:baseline`, `status:finished`, or `name:"seed 7"` work.
+- **Key** matches object keys such as `eval/frame` or `eval/samples`.
+- **From** and **To** bound the object step range.
+
+## Inspector
+
+Selecting a result opens a preview:
+
+- Images, audio, and video preview only when bytes were stored through
+  InstantML.
+- Text previews are capped so long generated outputs do not dominate the page.
+- Histogram previews show bounded bin/count data.
+- Classification evaluation previews show capped PR/ROC, confusion-matrix,
+  per-class, and prediction rows.
+- Table previews fetch rows lazily from
+  `GET /api/objects/{object_id}/rows`.
+
+Object explorer responses omit private artifact storage keys and paths. Use the
+API tab or SDK helpers with object or artifact IDs when you need to automate a
+follow-up workflow.
+
+## Seed Example
+
+For a local smoke run:
+
+```bash
+PYTHONPATH=packages/python-sdk \
+python3 examples/object-explorer/train.py --server "$INSTANTML_API_BASE"
+```
+
+The example creates an `object-explorer-demo` project with deterministic text,
+table, histogram, classification-eval, and image objects for the workspace.

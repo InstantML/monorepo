@@ -1020,6 +1020,42 @@ pub async fn list_objects(
 
 #[utoipa::path(
     get,
+    path = "/api/objects/explorer",
+    tag = "runs",
+    params(
+        ("project" = Option<String>, Query, description = "Project name filter"),
+        ("project_id" = Option<String>, Query, description = "Project UUID filter"),
+        ("q" = Option<String>, Query, description = "Run search query"),
+        ("kind" = Option<String>, Query, description = "Object kind"),
+        ("key" = Option<String>, Query, description = "Object key substring"),
+        ("run_id" = Option<String>, Query, description = "Run UUID filter"),
+        ("from_step" = Option<f64>, Query, description = "Minimum object step"),
+        ("to_step" = Option<f64>, Query, description = "Maximum object step"),
+        ("limit" = Option<i64>, Query, description = "Page size"),
+        ("cursor" = Option<String>, Query, description = "Opaque page cursor"),
+    ),
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Cross-run rich object explorer page", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Invalid object explorer or run search query", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient scope or project access", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn list_objects_explorer(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
+    Ok(Json(
+        store::list_objects_explorer(&state.store, &ctx, &query).await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/objects/{object_id}/rows",
     tag = "runs",
     params(

@@ -905,6 +905,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/objects/explorer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_objects_explorer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/objects/{object_id}/rows": {
         parameters: {
             query?: never;
@@ -7000,6 +7016,74 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_objects_explorer: {
+        parameters: {
+            query?: {
+                /** @description Project name filter */
+                project?: string;
+                /** @description Project UUID filter */
+                project_id?: string;
+                /** @description Run search query */
+                q?: string;
+                /** @description Object kind */
+                kind?: string;
+                /** @description Object key substring */
+                key?: string;
+                /** @description Run UUID filter */
+                run_id?: string;
+                /** @description Minimum object step */
+                from_step?: number;
+                /** @description Maximum object step */
+                to_step?: number;
+                /** @description Page size */
+                limit?: number;
+                /** @description Opaque page cursor */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cross-run rich object explorer page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid object explorer or run search query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

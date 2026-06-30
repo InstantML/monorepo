@@ -147,6 +147,62 @@ export type LoggedObject = {
   created_at: string;
 };
 
+export type ObjectExplorerPreview = {
+  text?: string | null;
+  truncated?: boolean;
+  histogram?: {
+    bins?: unknown[];
+    counts?: unknown[];
+    truncated?: boolean;
+  };
+  evaluation?: {
+    accuracy?: unknown;
+    macro_f1?: unknown;
+    sample_count?: unknown;
+    class_names?: unknown[];
+    confusion_matrix?: unknown[];
+    per_class?: unknown[];
+    predictions?: unknown[];
+    pr_curve?: unknown[];
+    roc_curve?: unknown[];
+  };
+};
+
+export type ObjectExplorerItem = {
+  object_id: string;
+  id: number;
+  run_id: string;
+  run_name: string;
+  project: string;
+  key: string;
+  kind: "table" | "image" | "video" | "audio" | "histogram" | "text" | "classification_eval" | string;
+  step: number | null;
+  created_at: string;
+  logged_at?: string | null;
+  metadata: Record<string, unknown>;
+  summary: Record<string, unknown>;
+  preview?: ObjectExplorerPreview;
+  artifact_id?: string | null;
+  artifact?: {
+    id: string;
+    name?: string | null;
+    uri?: string | null;
+    mime_type?: string | null;
+    size_bytes?: number | null;
+    storage_backend?: string | null;
+  } | null;
+};
+
+export type ObjectExplorerEnvelope = {
+  objects: ObjectExplorerItem[];
+  next_cursor?: string | null;
+  limit: number;
+  page_info?: {
+    pagination?: string;
+    has_next_page?: boolean;
+  };
+};
+
 export type LoggedObjectRow = {
   row_index: number;
   row: Record<string, unknown>;
@@ -226,6 +282,7 @@ export type TabId =
   | "compare"
   | "alerts"
   | "datasets"
+  | "objects"
   | "insights"
   | "artifacts"
   | "reports"

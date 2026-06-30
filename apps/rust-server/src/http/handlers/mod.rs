@@ -69,9 +69,9 @@ pub(super) use reports::{
 pub(super) use runs::{
     compare_matching_runs, create_attributes, create_object, create_project, create_run, fork_run,
     get_metrics, get_run, get_run_lineage, list_attributes, list_console_logs, list_object_rows,
-    list_objects, list_projects, list_runs, log_console_logs, log_metrics, log_metrics_batch,
-    log_rank_metrics, overview, rank_metrics_summary, runs_summary, side_by_side, stop_ack,
-    stop_run, stop_runs, stop_signal, update_run,
+    list_objects, list_objects_explorer, list_projects, list_runs, log_console_logs, log_metrics,
+    log_metrics_batch, log_rank_metrics, overview, rank_metrics_summary, runs_summary,
+    side_by_side, stop_ack, stop_run, stop_runs, stop_signal, update_run,
 };
 pub(super) use traces::{
     get_trace_children, get_trace_detail, get_trace_step_summary, list_traces, log_trace_events,
