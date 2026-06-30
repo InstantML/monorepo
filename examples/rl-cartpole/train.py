@@ -7,6 +7,8 @@ import math
 
 import instantml as im
 
+ro = im
+
 
 def generate_metrics(step: int, seed: int) -> dict[str, float]:
     reward = 20.0 + step * 1.5 + math.sin(seed + step / 3.0) * 2.0

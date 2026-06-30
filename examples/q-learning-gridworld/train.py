@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 import instantml as im
 
+ro = im
+
 
 ACTIONS = {
     0: (0, 1),

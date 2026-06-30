@@ -12,6 +12,8 @@ from typing import Any
 
 import instantml as im
 
+ro = im
+
 try:  # NumPy is optional; the pure-Python path keeps this example portable.
     import numpy as np
 except ImportError:  # pragma: no cover - exercised only when NumPy is absent locally.
