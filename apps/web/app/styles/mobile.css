@@ -58,7 +58,12 @@
   .mobile-menu-button { display: inline-flex; }
 
   .brandbar {
-    grid-template-columns: 44px 44px 1fr;
+    /* Four children — menu button, brand cell, project select, brandbar-row —
+     * map 1:1 onto four columns. With only three columns the brandbar-row
+     * wrapped to a second line and, because the bar height is fixed at 56px,
+     * spilled the workspace chip down over the page title. The trailing `auto`
+     * column keeps the workspace/account cluster on this row, right-aligned. */
+    grid-template-columns: 44px 44px minmax(0, 1fr) auto;
     height: 56px;
     flex: 0 0 56px;
     padding: 0 10px 0 2px;
@@ -76,27 +81,20 @@
     gap: 8px;
     padding: 0;
     min-width: 0;
-    flex: 1;
+    /* Sized by its own content (the account/workspace chip) and pinned to the
+     * right of the bar — it no longer stretches the project column. */
+    flex: 0 0 auto;
+    justify-content: flex-end;
   }
   .brand-wordmark {
     font-size: var(--fs-body);
     flex: 0 0 auto;
   }
-  .breadcrumb {
-    font-size: var(--fs-data);
-    gap: 4px;
-    flex: 1;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-  .breadcrumb .crumb {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  /* Hide the project crumb + first separator on tight phones; keep the
-   * page label so users always know where they are. */
-  .breadcrumb .crumb:not(.cur):not(.crumb-link),
-  .breadcrumb .sep:first-of-type {
+  /* The breadcrumb only restates the page title, which the page-head already
+   * shows prominently below the bar — hide it on phones to reclaim the row for
+   * the project selector and workspace chip. Run Detail keeps its own in-page
+   * back affordance, so no navigation is lost. */
+  .brandbar .breadcrumb {
     display: none;
   }
 
