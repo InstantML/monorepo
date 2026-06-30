@@ -9,28 +9,87 @@ InstantML ships an MCP server that lets compatible agents inspect runs, fetch
 bounded metric series, compare selected runs, export evidence, and draft
 reports through the same InstantML API your SDK and dashboard use.
 
-## What you need
+## Hosted server
 
-- The InstantML hosted MCP URL: `https://mcp.instantml.ai/mcp`.
+Use the hosted MCP server for the fastest setup:
+
+```text
+https://mcp.instantml.ai/mcp
+```
+
+You do not need to deploy your own InstantML backend, clone the InstantML
+repository, or keep a local MCP process running. Your agent connects over
+Streamable HTTP and sends an InstantML API key in the `Authorization` header.
+
+## Prerequisites
+
 - An InstantML API key with `export:read` for run-analysis tools.
-- `artifacts:write` is only needed when your normal scripts upload artifacts.
+- An org-scoped key when the agent should create or update reports across the
+  workspace.
+- Node.js only when your client needs the `mcp-remote` bridge shown below.
 
-Report-writing tools use the same authenticated API key. Use an org-scoped key
-when the agent should create or update reports across the workspace.
+Keep API keys out of checked-in config files. Prefer environment variables for
+shared workspaces or team repositories.
 
-You do not need to deploy your own InstantML backend or clone the InstantML
-repository to use the hosted MCP server.
+## Claude Code
 
-## Configure your agent
+Register the hosted MCP server from your terminal:
 
-Add the hosted InstantML MCP server to your MCP-compatible agent configuration.
-For clients that support remote MCP servers with headers, use the hosted URL
-directly:
+```bash
+claude mcp add --transport http instantml https://mcp.instantml.ai/mcp \
+  --header "Authorization: Bearer instantml_..."
+```
+
+Add `--scope user` to make the server available across all Claude Code
+projects. After adding the server, run `/mcp` inside Claude Code to confirm the
+server is connected.
+
+## Codex
+
+Export your InstantML API key:
+
+```bash
+export INSTANTML_API_KEY=instantml_...
+```
+
+Then add the hosted server to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.instantml]
+url = "https://mcp.instantml.ai/mcp"
+bearer_token_env_var = "INSTANTML_API_KEY"
+```
+
+## Cursor
+
+Open Cursor Settings, go to Tools and MCP, then add a custom MCP server:
 
 ```json
 {
   "mcpServers": {
     "instantml": {
+      "transport": "http",
+      "url": "https://mcp.instantml.ai/mcp",
+      "headers": {
+        "Authorization": "Bearer instantml_...",
+        "Accept": "application/json, text/event-stream"
+      }
+    }
+  }
+}
+```
+
+Restart Cursor after saving the config.
+
+## VS Code
+
+Create or update `.vscode/mcp.json` in your workspace:
+
+```json
+{
+  "servers": {
+    "instantml": {
+      "type": "http",
       "url": "https://mcp.instantml.ai/mcp",
       "headers": {
         "Authorization": "Bearer instantml_..."
@@ -40,15 +99,13 @@ directly:
 }
 ```
 
-Claude Code can register the same hosted server from the terminal:
+Open the Command Palette and run `MCP: List Servers`, then start the InstantML
+server.
 
-```bash
-claude mcp add --transport http instantml https://mcp.instantml.ai/mcp \
-  --header "Authorization: Bearer instantml_..."
-```
+## Claude Desktop and local-only clients
 
-Some clients support local stdio servers but do not yet support authenticated
-remote MCP headers. For those clients, use `mcp-remote` as a local bridge:
+Some clients launch local stdio servers but do not yet support authenticated
+remote MCP headers. Use `mcp-remote` as a local bridge:
 
 ```json
 {
@@ -70,13 +127,58 @@ remote MCP headers. For those clients, use `mcp-remote` as a local bridge:
 }
 ```
 
-Then restart the agent so it launches or connects to the MCP server and
-discovers the tools.
+Restart the client after saving the config. The bridge runs locally and forwards
+requests to the hosted MCP server with your bearer token.
+
+## Other MCP clients
+
+Use these connection settings:
+
+| Field | Value |
+| --- | --- |
+| Transport | Streamable HTTP |
+| URL | `https://mcp.instantml.ai/mcp` |
+| Header | `Authorization: Bearer instantml_...` |
+| Accept header, if required | `application/json, text/event-stream` |
+
+If your client only accepts a command, use:
+
+```bash
+INSTANTML_MCP_AUTH_HEADER="Bearer instantml_..." \
+npx -y mcp-remote https://mcp.instantml.ai/mcp \
+  --header "Authorization:${INSTANTML_MCP_AUTH_HEADER}"
+```
+
+## Verify the connection
+
+Ask your agent:
+
+```text
+List my InstantML projects and show the latest five runs.
+```
+
+The agent should discover the InstantML tools and call `tracker.list_runs`. For
+run analysis, try:
+
+```text
+Find the best finished cartpole runs tagged baseline, compare the top five by
+eval/return_mean, and summarize the config differences.
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| The server is not listed | Restart the client and check that the MCP config file is in the right location. |
+| `401` or authentication errors | Check that the `Authorization` header starts with `Bearer ` and uses a valid InstantML API key. |
+| The server connects but run tools fail | Use a key with `export:read`; use an org-scoped key for cross-workspace report actions. |
+| The client cannot connect to a remote URL | Use the `mcp-remote` bridge or the local preview fallback below. |
+| Tools return too much data | Ask the agent to start with summaries, then fetch bounded series only for selected runs. |
 
 ## Local preview fallback
 
-During preview or internal development, you can run the MCP server from a
-repository checkout instead of using the hosted endpoint:
+During internal development, you can run the MCP server from a repository
+checkout instead of using the hosted endpoint:
 
 ```json
 {
