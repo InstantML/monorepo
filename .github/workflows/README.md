@@ -5,6 +5,7 @@
 | Stable Quality Gates | [`ci.yml`](./ci.yml) | Pull request, push to `main` | Parallel Rust, Node, Python/SDK, docs, and codegen-drift checks. A `changes` job (`dorny/paths-filter`) runs first so each split job only runs when its area is touched; the final `Stable Quality Gates` job always runs, aggregates the split jobs (treating skipped = untouched as a pass), and is used as the gate for the deploy workflow. |
 | Python SDK Release | [`python-sdk-release.yml`](./python-sdk-release.yml) | Release published, manual dispatch | Publish the `instantml` Python SDK to (Test)PyPI via OIDC trusted publishing. |
 | Deploy Cloud Run | [`deploy-cloud-run.yml`](./deploy-cloud-run.yml) | Manual dispatch, push of `deploy-*` / `release-*` tag | CI-triggered Cloud Run rollout. Replaces the laptop-only `npm run deploy:cloud-run`. |
+| Deploy MCP Server | [`deploy-mcp.yml`](./deploy-mcp.yml) | Manual dispatch, push of `deploy-mcp-*` tag | Build (`tools/mcp.Dockerfile`) and deploy the `instantml-mcp` Cloud Run service. Mirrors the same WIF auth and CI-green gate. |
 
 ## Cloud Run deploy
 

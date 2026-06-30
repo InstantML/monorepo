@@ -48,6 +48,8 @@
     "deploy:cloud-run:single": "node tools/deploy-cloud-run.mjs --topology=single",
     "deploy:cloud-run:multi": "node tools/deploy-cloud-run.mjs --topology=split",
     "deploy:cloud-run:staging": "node tools/deploy-cloud-run.mjs --topology=split --environment=staging --public-router",
+    "deploy:mcp": "node tools/deploy-mcp.mjs",
+    "deploy:mcp:staging": "node tools/deploy-mcp.mjs --environment=staging",
     "docs:sync-openapi": "node tools/sync-docs-openapi.mjs",
     "docs:check-openapi": "node tools/sync-docs-openapi.mjs --check",
     "docs:test": "node --test apps/web/tests/docs-route.test.js tools/tests/docs-openapi.test.js tools/tests/benchmark-docs.test.js tools/tests/docs-screenshots.test.js",

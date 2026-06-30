@@ -1,0 +1,181 @@
+name: Deploy MCP Server
+
+# Builds and deploys the hosted InstantML MCP server (tools/mcp-server.mjs) to
+# the `instantml-mcp` Cloud Run service. Triggered from the Actions UI (manual)
+# or by pushing a `deploy-mcp-*` tag.
+#
+# Auth: Workload Identity Federation, same as deploy-cloud-run.yml — no
+# service-account JSON in GitHub Secrets. The runner exchanges its GitHub OIDC
+# token for a short-lived GCP token tied to the deploy service account.
+#
+# The MCP server needs no Secret Manager values: it forwards the caller's bearer
+# token to the InstantML API and (when OAuth is enabled) delegates sign-in to the
+# Clerk authorization server, so the only config is plain env vars set below.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deploy environment.
+        required: true
+        default: prod
+        type: choice
+        options:
+          - prod
+          - staging
+      enable_oauth:
+        description: Advertise OAuth discovery (browser sign-in) on the MCP server.
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "deploy-mcp-*"
+
+permissions:
+  contents: read
+  # GitHub OIDC -> GCP WIF token exchange. No repo write permissions.
+  id-token: write
+  # Lets the CI-green pre-gate query ci.yml run history for the deploy SHA.
+  actions: read
+
+concurrency:
+  group: deploy-mcp-${{ github.event.inputs.environment || 'prod' }}
+  cancel-in-progress: false
+
+jobs:
+  # Refuse to deploy any SHA whose CI workflow has not gone green.
+  gate:
+    name: Require Stable Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm CI passed for this SHA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          status=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${DEPLOY_SHA}&status=success&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "missing"')
+          if [ "${status}" != "success" ]; then
+            echo "::error::Stable Quality Gates (ci.yml) has not succeeded for ${DEPLOY_SHA}. Re-run CI and merge before deploying."
+            exit 1
+          fi
+          echo "CI is green for ${DEPLOY_SHA}."
+
+  deploy:
+    name: Build And Deploy MCP
+    needs: gate
+    runs-on: ubuntu-latest
+    environment:
+      # The prod GitHub Environment must require reviewer approval; that gate is
+      # what enforces manual approval before any gcloud mutation here.
+      name: ${{ github.event.inputs.environment || 'prod' }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate To GCP Via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set Up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve Deploy Inputs
+        id: inputs
+        env:
+          GH_EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENVIRONMENT: ${{ github.event.inputs.environment }}
+          INPUT_ENABLE_OAUTH: ${{ github.event.inputs.enable_oauth }}
+          DEPLOY_SHA: ${{ github.sha }}
+          GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          GCP_REGION: ${{ vars.GCP_REGION }}
+          ARTIFACT_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          # Tag pushes always target prod with OAuth on. Manual dispatch passes
+          # the inputs through.
+          if [ "${GH_EVENT_NAME}" = "push" ]; then
+            environment="prod"
+            enable_oauth="true"
+          else
+            environment="${INPUT_ENVIRONMENT:-prod}"
+            enable_oauth="${INPUT_ENABLE_OAUTH:-true}"
+          fi
+          case "${environment}" in
+            staging)
+              service="instantml-staging-mcp"
+              oauth_issuer="https://modern-mustang-72.clerk.accounts.dev"
+              ;;
+            *)
+              service="instantml-mcp"
+              oauth_issuer="https://clerk.instantml.ai"
+              ;;
+          esac
+          region="${GCP_REGION:-us-central1}"
+          repo="${ARTIFACT_REPOSITORY:-instantml}"
+          short=$(echo "${DEPLOY_SHA}" | cut -c1-7)
+          image="${region}-docker.pkg.dev/${GCP_PROJECT}/${repo}/instantml-mcp:${short}"
+          env_vars="INSTANTML_API_URL=https://api.instantml.ai,INSTANTML_MCP_TRANSPORT=http,NODE_ENV=production"
+          if [ "${enable_oauth}" = "true" ]; then
+            env_vars="${env_vars},INSTANTML_MCP_OAUTH_AUTH_SERVER=${oauth_issuer}"
+          fi
+          {
+            echo "environment=${environment}"
+            echo "service=${service}"
+            echo "region=${region}"
+            echo "image=${image}"
+            echo "env_vars=${env_vars}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build And Push Image (Cloud Build)
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          IMAGE: ${{ steps.inputs.outputs.image }}
+        run: |
+          set -euo pipefail
+          echo "Building ${IMAGE} via Cloud Build."
+          gcloud --quiet --project "${GCP_PROJECT}" builds submit \
+            --config tools/cloudbuild.mcp.yaml \
+            --substitutions="_IMAGE=${IMAGE}" \
+            .
+
+      - name: Deploy To Cloud Run
+        env:
+          GCP_PROJECT: ${{ vars.GCP_PROJECT }}
+          SERVICE: ${{ steps.inputs.outputs.service }}
+          REGION: ${{ steps.inputs.outputs.region }}
+          IMAGE: ${{ steps.inputs.outputs.image }}
+          ENV_VARS: ${{ steps.inputs.outputs.env_vars }}
+        run: |
+          set -euo pipefail
+          gcloud --quiet --project "${GCP_PROJECT}" run deploy "${SERVICE}" \
+            --region "${REGION}" \
+            --platform managed \
+            --image "${IMAGE}" \
+            --allow-unauthenticated \
+            --max-instances 3 \
+            --cpu-boost \
+            --set-env-vars "${ENV_VARS}"
+
+      - name: Annotate Deploy Summary
+        if: always()
+        env:
+          ENVIRONMENT: ${{ steps.inputs.outputs.environment }}
+          SERVICE: ${{ steps.inputs.outputs.service }}
+          IMAGE: ${{ steps.inputs.outputs.image }}
+        run: |
+          {
+            echo "## MCP Server Deploy"
+            echo ""
+            echo "- environment: \`${ENVIRONMENT}\`"
+            echo "- service: \`${SERVICE}\`"
+            echo "- image: \`${IMAGE}\`"
+            echo "- triggered by: \`${GITHUB_EVENT_NAME}\` (\`${GITHUB_REF}\`)"
+            echo "- actor: \`${GITHUB_ACTOR}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

@@ -34,6 +34,23 @@ This dashboard flow is the preferred setup because it keeps key creation and
 agent configuration in one place. Use the manual snippets below when setting up
 an agent before opening the dashboard.
 
+## Browser sign-in (OAuth, preview)
+
+OAuth-capable clients can connect by URL alone and sign in through the browser
+instead of pasting a key. In the **Connect Agent** panel, choose **Browser
+sign-in** and copy the tokenless snippet, for example:
+
+```bash
+claude mcp add --transport http instantml https://mcp.instantml.ai/mcp
+```
+
+On first connect the client discovers the InstantML authorization server, opens
+a browser for you to approve access for your organization, and receives a
+short-lived token — there is no key to copy, rotate, or commit. Clients without
+OAuth support keep using the API-key snippets below.
+
+This path is in preview: when a workspace has not enabled OAuth, use an API key.
+
 ## Prerequisites
 
 - An InstantML API key with `export:read` for run-analysis tools.

@@ -1,15 +1,20 @@
 "use client";
 
-import { Bot, Copy, ExternalLink, PlugZap, TerminalSquare } from "lucide-react";
+import { Copy, TerminalSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { buildAgentSetupSnippets, type AgentClientId } from "./agent-setup-snippets";
+import { buildAgentSetupSnippets, type AgentAuthMode, type AgentClientId } from "./agent-setup-snippets";
+import { ClientLogo } from "./client-logos";
 
 type Props = {
   canManageOrg: boolean;
   newApiKey: string;
-  onCreateAgentKeyName: () => void;
 };
+
+const AUTH_MODES: { id: AgentAuthMode; label: string; preview?: boolean }[] = [
+  { id: "api-key", label: "API key" },
+  { id: "oauth", label: "Browser sign-in", preview: true },
+];
 
 async function copyText(value: string) {
   try {
@@ -21,12 +26,15 @@ async function copyText(value: string) {
   }
 }
 
-export function AgentSetupPanel({ canManageOrg, newApiKey, onCreateAgentKeyName }: Props) {
-  const snippets = useMemo(() => buildAgentSetupSnippets(canManageOrg ? newApiKey : ""), [canManageOrg, newApiKey]);
+export function AgentSetupPanel({ canManageOrg, newApiKey }: Props) {
+  const [authMode, setAuthMode] = useState<AgentAuthMode>("api-key");
   const [activeClient, setActiveClient] = useState<AgentClientId>("claude-code");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  const apiKey = canManageOrg ? newApiKey : "";
+  const snippets = useMemo(() => buildAgentSetupSnippets(apiKey, authMode), [apiKey, authMode]);
   const activeSnippet = snippets.find((snippet) => snippet.id === activeClient) ?? snippets[0]!;
-  const hasCopyOnceKey = Boolean(canManageOrg && newApiKey);
+  const hasCopyOnceKey = Boolean(apiKey);
 
   async function handleCopy() {
     const copied = await copyText(activeSnippet.body);
@@ -34,39 +42,54 @@ export function AgentSetupPanel({ canManageOrg, newApiKey, onCreateAgentKeyName 
     window.setTimeout(() => setCopyState("idle"), 1800);
   }
 
+  const note =
+    authMode === "oauth"
+      ? "Your agent opens a browser to sign in to InstantML on first connect — no key to copy, rotate, or commit."
+      : hasCopyOnceKey
+        ? "Using the copy-once key above. It is shown once, so store it in a secrets manager."
+        : canManageOrg
+          ? "Create an Agent MCP key above and this snippet fills in the key for you."
+          : "Use browser sign-in, or ask a workspace admin for an API key.";
+
   return (
     <section className="agent-setup-card" aria-label="Connect agent">
-      <div className="agent-setup-card__head">
-        <span className="agent-setup-card__icon"><Bot size={16} /></span>
-        <div>
-          <strong>Connect Agent</strong>
-          <p>{hasCopyOnceKey ? "Use the new copy-once key in one of these setup snippets." : "Create an Agent MCP key, then copy a setup snippet."}</p>
-        </div>
-      </div>
-      <div className="agent-setup-actions">
-        {canManageOrg ? (
-          <button className="secondary" type="button" onClick={onCreateAgentKeyName}>
-            <PlugZap size={14} /> Use Agent MCP key name
+      <header className="agent-setup-card__head">
+        <strong>Connect an agent</strong>
+        <p>Point your coding agent at the InstantML MCP server to inspect, compare, and report on runs.</p>
+      </header>
+
+      <div className="agent-auth-toggle" role="radiogroup" aria-label="Authentication method">
+        {AUTH_MODES.map((mode) => (
+          <button
+            aria-checked={authMode === mode.id}
+            className={authMode === mode.id ? "active" : ""}
+            key={mode.id}
+            onClick={() => setAuthMode(mode.id)}
+            role="radio"
+            type="button"
+          >
+            {mode.label}
+            {mode.preview ? <span className="agent-auth-toggle__tag">Preview</span> : null}
           </button>
-        ) : null}
-        <a className="secondary" href="/docs/sdk/agent-mcp">
-          <ExternalLink size={14} /> Docs
-        </a>
+        ))}
       </div>
-      <div className="agent-client-tabs" role="tablist" aria-label="Agent client setup">
+
+      <div className="agent-client-grid" role="tablist" aria-label="Agent client">
         {snippets.map((snippet) => (
           <button
             aria-selected={activeClient === snippet.id}
-            className={activeClient === snippet.id ? "active" : ""}
+            className={`agent-client-tile ${activeClient === snippet.id ? "active" : ""}`}
             key={snippet.id}
             onClick={() => setActiveClient(snippet.id)}
             role="tab"
             type="button"
           >
-            {snippet.label}
+            <ClientLogo client={snippet.id} size={22} />
+            <span>{snippet.label}</span>
           </button>
         ))}
       </div>
+
       <div className="agent-snippet-panel" role="tabpanel">
         <div className="agent-snippet-panel__bar">
           <span><TerminalSquare size={13} /> {activeSnippet.filename}</span>
@@ -76,6 +99,8 @@ export function AgentSetupPanel({ canManageOrg, newApiKey, onCreateAgentKeyName 
         </div>
         <pre>{activeSnippet.body}</pre>
       </div>
+
+      <p className="agent-setup-card__note">{note}</p>
     </section>
   );
 }

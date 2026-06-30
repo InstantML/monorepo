@@ -2171,70 +2171,121 @@ button.secondary.danger-action:hover:not(:disabled),
 
 .agent-setup-card {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
-  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, var(--surface-2)), var(--surface));
+  padding: 16px;
+  box-shadow: var(--shadow);
 }
 
 .agent-setup-card__head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
+  gap: 4px;
 }
 
-.agent-setup-card__icon {
+.agent-setup-card__head strong {
+  color: var(--text);
+  font: 650 var(--fs-body)/1.25 var(--font-sans);
+}
+
+.agent-setup-card__head p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-label);
+  line-height: 1.5;
+}
+
+/* Segmented auth-method control: API key vs browser sign-in (OAuth). */
+.agent-auth-toggle {
   display: inline-grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
+  grid-auto-flow: column;
+  gap: 2px;
+  width: fit-content;
+  padding: 3px;
   border: 1px solid var(--line);
-  border-radius: var(--control-radius);
-  color: var(--accent-strong);
+  border-radius: var(--radius-pill);
   background: var(--surface-soft);
 }
 
-.agent-setup-card strong {
-  display: block;
-  color: var(--text);
-  font: 650 13px/1.2 var(--font-sans);
-}
-
-.agent-setup-card p {
-  margin: 4px 0 0;
+.agent-auth-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-height: 28px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
   color: var(--text-2);
-  font-size: var(--fs-meta);
+  font: 650 var(--fs-label)/1 var(--font-sans);
+  cursor: pointer;
+  transition: color 0.12s var(--ease-snap), background 0.12s var(--ease-snap);
 }
 
-.agent-setup-actions {
-  display: flex;
-  flex-wrap: wrap;
+.agent-auth-toggle button:hover {
+  color: var(--text);
+}
+
+.agent-auth-toggle button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.agent-auth-toggle__tag {
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font: 700 9px/1.4 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Client picker: branded logo tiles. */
+.agent-client-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
   gap: 8px;
 }
 
-.agent-client-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.agent-client-tabs button {
+.agent-client-tile {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 7px;
   width: auto;
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 68px;
+  padding: 10px 6px;
   border: 1px solid var(--line);
   border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--text-2);
-  font: 650 12px/1 var(--font-sans);
+  font: 600 var(--fs-label)/1.15 var(--font-sans);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.12s var(--ease-snap), background 0.12s var(--ease-snap);
 }
 
-.agent-client-tabs button.active,
-.agent-client-tabs button[aria-selected="true"] {
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
-  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+.agent-client-tile:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.agent-client-tile.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  color: var(--text);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.agent-client-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
   color: var(--text);
 }
 
@@ -2243,7 +2294,7 @@ button.secondary.danger-action:hover:not(:disabled),
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--control-radius);
   background: var(--surface-soft);
 }
 
@@ -2254,7 +2305,7 @@ button.secondary.danger-action:hover:not(:disabled),
   gap: 10px;
   min-width: 0;
   border-bottom: 1px solid var(--line-soft);
-  padding: 8px 10px;
+  padding: 8px 12px;
 }
 
 .agent-snippet-panel__bar span {
@@ -2263,7 +2314,7 @@ button.secondary.danger-action:hover:not(:disabled),
   gap: 6px;
   min-width: 0;
   color: var(--text-2);
-  font: 650 12px/1.2 var(--font-sans);
+  font: 650 var(--fs-data)/1.2 var(--font-sans);
   overflow-wrap: anywhere;
 }
 
@@ -2275,6 +2326,13 @@ button.secondary.danger-action:hover:not(:disabled),
   background: transparent;
   font-size: 11px;
   overflow: auto;
+}
+
+.agent-setup-card__note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-label);
+  line-height: 1.5;
 }
 
 .admin-stack,

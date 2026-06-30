@@ -56,12 +56,15 @@ import {
 import { buildTools } from "./mcp-server-tools.mjs";
 
 export const DEFAULT_API_URL = "https://api.instantml.ai";
+export const DEFAULT_MCP_PUBLIC_URL = "https://mcp.instantml.ai";
 const JSON_CONTENT_TYPE = "application/json";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers":
     "Authorization, Content-Type, Accept, Mcp-Session-Id, Last-Event-ID",
+  // Browser-based MCP clients read the OAuth challenge to start discovery.
+  "Access-Control-Expose-Headers": "WWW-Authenticate, Mcp-Session-Id",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -98,6 +101,69 @@ export function parseCliOptions(argv = process.argv.slice(2), env = process.env)
       (transport === "http" && hasCloudRunPort ? "0.0.0.0" : "127.0.0.1"),
     port: Number.isFinite(port) ? port : 8080,
   };
+}
+
+/**
+ * OAuth discovery config for the hosted MCP server.
+ *
+ * Opt-in: returns `null` unless `INSTANTML_MCP_OAUTH_AUTH_SERVER` is set, so the
+ * default (API-key bearer) behavior is unchanged. When configured, the server
+ * advertises RFC 9728 protected-resource metadata and challenges
+ * unauthenticated requests so OAuth-capable clients (Claude Code, Cursor,
+ * VS Code) can run the browser sign-in flow against the authorization server.
+ *
+ * The authorization server (issuer URL) is expected to own client
+ * registration, consent, PKCE, and token issuance — InstantML delegates this to
+ * its existing identity provider rather than minting tokens here.
+ */
+export function parseOAuthConfig(env = process.env) {
+  const authServer = String(env.INSTANTML_MCP_OAUTH_AUTH_SERVER ?? "")
+    .trim()
+    .replace(/\/+$/, "");
+  if (!authServer) return null;
+  const publicUrl = String(env.INSTANTML_MCP_PUBLIC_URL ?? DEFAULT_MCP_PUBLIC_URL)
+    .trim()
+    .replace(/\/+$/, "");
+  const resource = String(env.INSTANTML_MCP_OAUTH_RESOURCE ?? `${publicUrl}/mcp`).trim();
+  const scopes = String(env.INSTANTML_MCP_OAUTH_SCOPES ?? "export:read reports:write")
+    .split(/[\s,]+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+  return {
+    authServer,
+    publicUrl,
+    resource,
+    scopes,
+    metadataUrl: `${publicUrl}/.well-known/oauth-protected-resource`,
+  };
+}
+
+export function protectedResourceMetadata(oauth) {
+  return {
+    resource: oauth.resource,
+    authorization_servers: [oauth.authServer],
+    scopes_supported: oauth.scopes,
+    bearer_methods_supported: ["header"],
+    resource_name: "InstantML",
+    resource_documentation: "https://instantml.ai/docs/sdk/agent-mcp",
+  };
+}
+
+function wwwAuthenticateChallenge(oauth) {
+  return [
+    "Bearer",
+    `resource_metadata="${oauth.metadataUrl}"`,
+    'error="invalid_token"',
+    'error_description="Sign in with OAuth or provide an InstantML API key."',
+  ].join(" ");
+}
+
+function isProtectedResourceMetadataPath(path) {
+  // Some clients append the resource path segment to the well-known URL.
+  return (
+    path === "/.well-known/oauth-protected-resource" ||
+    path === "/.well-known/oauth-protected-resource/mcp"
+  );
 }
 
 function createMcpServer({ apiUrl, apiKey }) {
@@ -145,12 +211,17 @@ function writeJson(res, statusCode, value, headers = {}) {
   res.end(JSON.stringify(value));
 }
 
-function writeJsonRpcError(res, statusCode, code, message) {
-  writeJson(res, statusCode, {
-    jsonrpc: "2.0",
-    error: { code, message },
-    id: null,
-  });
+function writeJsonRpcError(res, statusCode, code, message, headers = {}) {
+  writeJson(
+    res,
+    statusCode,
+    {
+      jsonrpc: "2.0",
+      error: { code, message },
+      id: null,
+    },
+    headers,
+  );
 }
 
 async function startStdio({ apiUrl, apiKey }) {
@@ -164,7 +235,7 @@ async function startStdio({ apiUrl, apiKey }) {
   console.error(`instantml-mcp listening (transport=stdio, api=${apiUrl})`);
 }
 
-async function handleHttpMcpRequest(req, res, { apiUrl }) {
+async function handleHttpMcpRequest(req, res, { apiUrl, oauth = null }) {
   if (req.method === "OPTIONS") {
     writeJson(res, 204, {});
     return;
@@ -174,6 +245,15 @@ async function handleHttpMcpRequest(req, res, { apiUrl }) {
     return;
   }
   const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+  // RFC 9728 protected-resource metadata — only advertised when OAuth is on.
+  if (oauth && isProtectedResourceMetadataPath(path)) {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      writeJson(res, 405, { error: "method_not_allowed" });
+      return;
+    }
+    writeJson(res, 200, protectedResourceMetadata(oauth));
+    return;
+  }
   if (path !== "/mcp") {
     writeJson(res, 404, { error: "not_found" });
     return;
@@ -185,6 +265,19 @@ async function handleHttpMcpRequest(req, res, { apiUrl }) {
 
   const apiKey = bearerTokenFromHeader(req.headers.authorization);
   if (!apiKey) {
+    // With OAuth enabled, challenge the client so it can discover the
+    // authorization server and run browser sign-in. Otherwise keep the
+    // original API-key-only response.
+    if (oauth) {
+      writeJsonRpcError(
+        res,
+        401,
+        -32001,
+        "Authentication required: sign in with OAuth or provide an API key.",
+        { "WWW-Authenticate": wwwAuthenticateChallenge(oauth) },
+      );
+      return;
+    }
     writeJsonRpcError(res, 401, -32001, "Missing Authorization bearer token.");
     return;
   }
@@ -226,15 +319,16 @@ async function startHttp(options) {
   });
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : options.port;
+  const authMode = options.oauth ? `oauth+api-key (as=${options.oauth.authServer})` : "api-key";
   console.error(
-    `instantml-mcp listening (transport=http, host=${options.host}, port=${port}, api=${options.apiUrl})`,
+    `instantml-mcp listening (transport=http, host=${options.host}, port=${port}, api=${options.apiUrl}, auth=${authMode})`,
   );
 }
 
 export async function main(argv = process.argv.slice(2), env = process.env) {
   const options = parseCliOptions(argv, env);
   if (options.transport === "http") {
-    await startHttp(options);
+    await startHttp({ ...options, oauth: parseOAuthConfig(env) });
     return;
   }
   await startStdio(options);

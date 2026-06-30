@@ -44,8 +44,19 @@ test("API tab includes gated Connect Agent setup snippets", () => {
   assert.match(tabPane, /<AgentSetupPanel/);
   assert.match(tabPane, /newApiKey=\{visibleNewApiKey\}/);
   assert.match(panel, /aria-label="Connect agent"/);
-  assert.match(panel, /onCreateAgentKeyName/);
+  // Client picker renders brand logos; auth method can be an API key or OAuth.
+  assert.match(panel, /ClientLogo/);
+  assert.match(panel, /Browser sign-in/);
   assert.match(snippets, /https:\/\/mcp\.instantml\.ai\/mcp/);
   assert.match(snippets, /claude mcp add --transport http/);
   assert.match(snippets, /mcp-remote/);
+});
+
+test("Connect Agent snippets support tokenless OAuth (browser sign-in)", () => {
+  const snippets = read("apps/web/app/dashboard/api/agent-setup-snippets.ts");
+
+  // OAuth mode connects by URL only — no Bearer token in the generated config.
+  assert.match(snippets, /type AgentAuthMode = "api-key" \| "oauth"/);
+  assert.match(snippets, /function oauthSnippets\(\)/);
+  assert.match(snippets, /browser to sign in/i);
 });
