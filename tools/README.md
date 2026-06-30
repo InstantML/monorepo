@@ -34,6 +34,27 @@ Useful overrides:
 - `INSTANTML_MCP_HOST`: HTTP bind host. Defaults to `127.0.0.1`, or
   `0.0.0.0` when `PORT` is set for a hosted runtime.
 - `INSTANTML_MCP_PORT` / `PORT`: HTTP port. Default: `8080`.
+- `INSTANTML_MCP_OAUTH_AUTH_SERVER`: OAuth authorization-server (issuer) URL.
+  Opt-in; when set, the server advertises RFC 9728 protected-resource metadata
+  and challenges unauthenticated requests so clients can run browser sign-in.
+  Unset (default) keeps API-key bearer auth only.
+
+### Deploying the hosted MCP server
+
+The hosted `instantml-mcp` Cloud Run service is built from `tools/mcp.Dockerfile`
+(a small Node image with only `@modelcontextprotocol/sdk`, separate from the
+repo-root Rust Dockerfile) and deployed by `tools/deploy-mcp.mjs`:
+
+```bash
+npm run deploy:mcp                 # build + deploy prod (instantml-mcp)
+npm run deploy:mcp -- --dry-run    # print the gcloud commands without running
+npm run deploy:mcp:staging         # instantml-staging-mcp
+```
+
+CI/CD runs the same build/deploy via the **Deploy MCP Server** GitHub Action
+(`.github/workflows/deploy-mcp.yml`), using Workload Identity Federation like the
+Cloud Run deploy. The deploy sets `INSTANTML_MCP_OAUTH_AUTH_SERVER` (prod:
+`https://clerk.instantml.ai`) unless `--no-oauth` / `enable_oauth: false`.
 
 ## Local ClickHouse Helper
 

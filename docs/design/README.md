@@ -111,6 +111,11 @@ Current implemented design sequence, continued:
 
 Current draft designs:
 
+- `2026-06-30-mcp-oauth.md`: draft MCP OAuth authentication plan; opt-in RFC 9728
+  protected-resource discovery and a `WWW-Authenticate` challenge are
+  implemented on the hosted MCP server, with the authorization-server (Clerk
+  DCR/consent) config and the Rust token-acceptance bridge gated on a fresh auth
+  review.
 - `2026-06-30-zero-friction-mcp-setup.md`: draft phased plan for making
   `https://mcp.instantml.ai/mcp` easier to connect from agent clients through a
   dashboard setup panel, registry metadata, an npm installer scaffold, and a
