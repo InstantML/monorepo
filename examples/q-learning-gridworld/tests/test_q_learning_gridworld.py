@@ -69,7 +69,7 @@ def test_train_seed_logs_metrics_and_artifacts(monkeypatch):
         calls.append(("init", kwargs))
         return FakeRun()
 
-    monkeypatch.setattr(train.ro, "init", fake_init)
+    monkeypatch.setattr(train.im, "init", fake_init)
     train.train_seed("http://server", seed=5, episodes=4)
 
     assert calls[0][0] == "init"
@@ -90,7 +90,7 @@ def test_train_seed_marks_run_failed_on_exception(monkeypatch):
         def finish(self, status="finished"):
             calls.append(("finish", status))
 
-    monkeypatch.setattr(train.ro, "init", lambda **kwargs: BrokenRun())
+    monkeypatch.setattr(train.im, "init", lambda **kwargs: BrokenRun())
 
     try:
         train.train_seed("http://server", seed=5, episodes=1)
