@@ -4924,20 +4924,50 @@ def test_system_metrics_sampler_crash_is_contained(monkeypatch, recwarn):
 
 
 def test_system_metrics_fallback_defensive_branches(monkeypatch):
-    import resource
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_resource(name, *args, **kwargs):
+        if name == "resource":
+            raise ImportError("no resource on this platform")
+        return real_import(name, *args, **kwargs)
 
     def boom(*args, **kwargs):
         raise OSError("denied")
 
-    # Every stdlib signal source fails or is empty; the fallback degrades to an
-    # empty dict without ever raising.
-    monkeypatch.setattr(resource, "getrusage", boom)
-    monkeypatch.setattr(client_module.os, "getloadavg", boom)
+    # Simulate a platform without `resource` (e.g. Windows) plus a denied load
+    # average and an unknown CPU count: the fallback degrades to {} and never
+    # raises. Driven entirely by monkeypatches so this zero-dependency, OS-
+    # independent core test never imports `resource` itself.
+    monkeypatch.setattr(builtins, "__import__", no_resource)
+    monkeypatch.setattr(client_module.os, "getloadavg", boom, raising=False)
     monkeypatch.setattr(client_module.os, "cpu_count", lambda: None)
     assert _collect_system_metrics_fallback() == {}
 
-    # psutil present is loaded (covers the import-success branch of _load_psutil).
-    assert _load_psutil() is not None
+
+def test_load_psutil_handles_present_and_absent(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+    sentinel = object()
+
+    def import_present(name, *args, **kwargs):
+        if name == "psutil":
+            return sentinel
+        return real_import(name, *args, **kwargs)
+
+    def import_absent(name, *args, **kwargs):
+        if name == "psutil":
+            raise ImportError("no psutil installed")
+        return real_import(name, *args, **kwargs)
+
+    # Cover both branches without requiring the optional `instantml[system]`
+    # extra (psutil) to actually be installed in the test environment.
+    monkeypatch.setattr(builtins, "__import__", import_present)
+    assert _load_psutil() is sentinel
+    monkeypatch.setattr(builtins, "__import__", import_absent)
+    assert _load_psutil() is None
 
 
 def test_async_init_with_system_metrics_does_not_deadlock_on_run_id_property(monkeypatch):
