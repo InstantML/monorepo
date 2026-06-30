@@ -35,7 +35,9 @@ pub async fn overview(
             let data = store.data.lock().await;
             data.runs
                 .values()
-                .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
+                .filter(|run| {
+                    run.org_id == ctx.org_id && run_matches_lifecycle_filter(&data, query, run)
+                })
                 .fold(
                     (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
                     |(total, active, failed, stopping, stopped), run| {
@@ -83,7 +85,7 @@ pub async fn overview(
                     .filter(|run| {
                         run.org_id == ctx.org_id
                             && run.project == project
-                            && is_visible_run(&data, run)
+                            && run_matches_lifecycle_filter(&data, query, run)
                     })
                     .fold(
                         (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
@@ -246,19 +248,28 @@ pub async fn runs_summary(
     let next_offset = offset + page_runs.len();
     let has_next = next_offset < total;
     if selection_projection {
-        let controls = {
+        let (controls, lifecycles) = {
             let data = store.data.lock().await;
-            page_runs
+            let controls = page_runs
                 .iter()
                 .map(|run| (run.id, run_control_for(&data, run).cloned()))
-                .collect::<HashMap<_, _>>()
+                .collect::<HashMap<_, _>>();
+            let lifecycles = page_runs
+                .iter()
+                .map(|run| (run.id, run_lifecycle_summary(&data, run)))
+                .collect::<HashMap<_, _>>();
+            (controls, lifecycles)
         };
         return Ok(json!({
             "runs": page_runs
                 .into_iter()
                 .map(|run| {
                     let control = controls.get(&run.id).and_then(Option::as_ref);
-                    selection_run_value(run, control)
+                    let lifecycle = lifecycles
+                        .get(&run.id)
+                        .cloned()
+                        .unwrap_or_else(|| json!({ "state": "active" }));
+                    selection_run_value(run, control, lifecycle)
                 })
                 .collect::<AppResult<Vec<_>>>()?,
             "metric_keys": [],
@@ -363,7 +374,9 @@ async fn collect_filtered_runs_map<T>(
         return Ok(data
             .runs
             .values()
-            .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
+            .filter(|run| {
+                run.org_id == ctx.org_id && run_matches_lifecycle_filter(&data, query, run)
+            })
             .filter(|run| {
                 ctx.auth
                     .as_ref()
@@ -382,7 +395,9 @@ async fn collect_filtered_runs_map<T>(
         let data = store.data.lock().await;
         data.runs
             .values()
-            .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
+            .filter(|run| {
+                run.org_id == ctx.org_id && run_matches_lifecycle_filter(&data, query, run)
+            })
             .filter(|run| {
                 ctx.auth
                     .as_ref()
@@ -693,7 +708,11 @@ fn indexed_run_total(
     query: &HashMap<String, String>,
     search: &CompiledRunSearch,
 ) -> usize {
-    if search.is_empty() && !has_status_filter(query) && !has_display_status_filter(query) {
+    if search.is_empty()
+        && !has_status_filter(query)
+        && !has_display_status_filter(query)
+        && lifecycle_filter(query) == "active"
+    {
         if let Some(project_id) = ctx.auth.as_ref().and_then(|auth| auth.project_id) {
             let Some(project) = data.projects.get(&project_id) else {
                 return 0;
@@ -758,6 +777,7 @@ fn run_filter_cache_key(
         status: query.get("status").cloned().unwrap_or_default(),
         display_status: query.get("display_status").cloned().unwrap_or_default(),
         q: query.get("q").cloned().unwrap_or_default(),
+        lifecycle: lifecycle_filter(query),
     }
 }
 
@@ -771,7 +791,7 @@ fn run_matches_indexed_query(
     if run.org_id != ctx.org_id {
         return false;
     }
-    if !is_visible_run(data, run) {
+    if !run_matches_lifecycle_filter(data, query, run) {
         return false;
     }
     if ctx

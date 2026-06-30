@@ -24,6 +24,8 @@ export function RunFilterBar({
   overview,
   status,
   onStatus,
+  lifecycle,
+  onLifecycle,
   query,
   onQuery,
   sortBy,
@@ -52,6 +54,8 @@ export function RunFilterBar({
   overview: Overview;
   status: string;
   onStatus: (status: string) => void;
+  lifecycle: "active" | "archived" | "all";
+  onLifecycle: (lifecycle: "active" | "archived" | "all") => void;
   query: string;
   onQuery: (value: string) => void;
   sortBy: string;
@@ -105,6 +109,7 @@ export function RunFilterBar({
   const activeFilters = [
     project ? { key: "project", label: `Project: ${project}`, onClear: () => onProject("") } : null,
     status ? { key: "status", label: `Status: ${status}`, onClear: () => onStatus("") } : null,
+    lifecycle !== "active" ? { key: "lifecycle", label: lifecycle === "archived" ? "Lifecycle: archived" : "Lifecycle: active + archived", onClear: () => onLifecycle("active") } : null,
     query.trim() ? { key: "search", label: `Search: ${query.trim()}`, onClear: () => onQuery("") } : null,
     sortBy !== "created" ? { key: "sort", label: `Sort: ${sortBy.replace("-", " ")}`, onClear: () => onSortBy("created") } : null,
   ].filter((item): item is { key: string; label: string; onClear: () => void } => Boolean(item));
@@ -155,6 +160,18 @@ export function RunFilterBar({
         value={status}
         onChange={onStatus}
         options={statusOptions}
+      />
+      <CustomSelect
+        className="compact"
+        id="lifecycle-filter"
+        label="Lifecycle"
+        onChange={(value) => onLifecycle(value === "archived" || value === "all" ? value : "active")}
+        options={[
+          { value: "active", label: "Active" },
+          { value: "archived", label: "Archived" },
+          { value: "all", label: "Active + archived" },
+        ]}
+        value={lifecycle}
       />
       <span className="workbar-divider" aria-hidden="true" />
       <div

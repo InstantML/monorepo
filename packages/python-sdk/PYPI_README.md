@@ -23,6 +23,24 @@ instantml whoami    # confirm who you're logged in as
 instantml logout    # clear the cached credential
 ```
 
+## Local source-checkout stack
+
+In a source checkout, the CLI can manage the repo's Docker Compose
+Rust/ClickHouse stack and write project-local loopback credentials:
+
+```bash
+instantml local init
+instantml local up
+instantml local status
+instantml local down
+```
+
+The generated `.instantml/local/credentials` file uses `api_key = "local"`.
+The SDK treats that sentinel as unauthenticated only for loopback API bases, so
+hosted logging still requires `instantml login`, `INSTANTML_API_KEY`, or an
+explicit `api_key=...`. Standalone packaged Compose templates for PyPI-only
+local startup are a follow-up; this slice expects a repository checkout.
+
 ## Log a run
 
 ```python

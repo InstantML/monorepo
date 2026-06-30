@@ -1,13 +1,13 @@
 "use client";
 
-import { Activity, Copy, Database, GitBranch, GitFork, Square, X } from "lucide-react";
+import { Activity, Archive, Copy, Database, GitBranch, GitFork, RotateCcw, Square, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { ApiError, isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
 import { defaultForkRunName } from "../../../src/checkpoints.js";
 import { smoothSeries } from "../../../src/charts.js";
-import { canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, preferredMetricKey } from "../../../src/state.js";
+import { canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, lifecycleStateForRun, metricGoal, preferredMetricKey } from "../../../src/state.js";
 import { compactValue, formatRunTime } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { RunEvidenceExplorer, RunGraphPanel, RunLogsPanel, RunSystemPanel } from "../components/run-workspace";
@@ -41,6 +41,7 @@ type Props = {
   onChartPointHover: (point: HoverPoint) => void;
   onChartZoomRangeChange: (range: ChartZoomRange) => void;
   onForkCheckpoint?: (artifact: Artifact, options: ForkCheckpointOptions) => Promise<void>;
+  onRequestLifecycle?: (runIds: string[], action: "archive" | "restore" | "delete") => void;
   onRequestStop?: (runIds: string[]) => void;
   onRunMetadataSave?: (runId: string, patch: { tags: string[]; notes: string }) => Promise<void>;
   onWorkspaceTabChange: (tab: RunWorkspaceTabId) => void;
@@ -442,6 +443,7 @@ export function DetailTabPane({
   onChartPointHover,
   onChartZoomRangeChange,
   onForkCheckpoint,
+  onRequestLifecycle,
   onRequestStop,
   onRunMetadataSave,
   onWorkspaceTabChange,
@@ -833,6 +835,10 @@ export function DetailTabPane({
 
   const artifactCount = artifactCountForRun(run, visibleArtifacts.length);
   const canStop = Boolean(run && onRequestStop && canRequestStop(run, canControlRuns));
+  const lifecycleState = lifecycleStateForRun(run);
+  const canArchive = Boolean(run && onRequestLifecycle && canControlRuns && lifecycleState === "active");
+  const canRestore = Boolean(run && onRequestLifecycle && canControlRuns && lifecycleState === "archived");
+  const canDelete = Boolean(run && onRequestLifecycle && canControlRuns && lifecycleState !== "deleted");
   const owner = runOwner(run);
   const started = startedUtcLabel(run.started_at ?? run.created_at);
   const seed = run.config?.seed;
@@ -842,6 +848,11 @@ export function DetailTabPane({
   function confirmStop() {
     if (!run || !onRequestStop) return;
     onRequestStop([run.id]);
+  }
+
+  function requestLifecycle(action: "archive" | "restore" | "delete") {
+    if (!run || !onRequestLifecycle) return;
+    onRequestLifecycle([run.id], action);
   }
 
   // Comparison now lives in the Runs → Table view. Make sure this run is in the
@@ -896,6 +907,21 @@ export function DetailTabPane({
           {canStop ? (
             <button className="pd-btn pd-btn--stop" onClick={confirmStop} type="button">
               <Square size={12} /> Request stop
+            </button>
+          ) : null}
+          {canArchive ? (
+            <button className="pd-btn pd-btn--ghost" onClick={() => requestLifecycle("archive")} type="button">
+              <Archive size={13} /> Archive
+            </button>
+          ) : null}
+          {canRestore ? (
+            <button className="pd-btn pd-btn--ghost" onClick={() => requestLifecycle("restore")} type="button">
+              <RotateCcw size={13} /> Restore
+            </button>
+          ) : null}
+          {canDelete ? (
+            <button className="pd-btn pd-btn--stop" onClick={() => requestLifecycle("delete")} type="button">
+              <Trash2 size={13} /> Delete
             </button>
           ) : null}
         </div>

@@ -13,6 +13,10 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve bounded GPU/system usage insights at `GET /api/insights/system-usage`. The route requires `usage:read` plus org-scoped access, aggregates existing logged system metrics over a capped time window and visible run set, and returns observed, non-billing usage summaries with coverage and attribution confidence for the dashboard Insights view.
 - Accept Import v2 migration jobs for local W&B/Neptune/MLflow/TensorBoard translators. The job API stores redacted canonical chunks, exposes dry-run summaries and warnings, commits only after a final chunk arrives, records external provenance in run metadata, and dedupes already-imported external runs by source/project/run identity.
 - Keep projects and runs workspace-public in v1: every active browser-session member of an organization can read all visible projects and runs in that organization. There is no per-user or private project/run ownership layer; API-key project restrictions only constrain that individual key and do not make the underlying project private from workspace members.
+- Manage run lifecycle state separately from training status. Archive, restore,
+  delete, and batch lifecycle writes append operational records, require
+  `runs:control`, and keep ordinary summaries/search/export views active-only
+  unless a lifecycle filter explicitly includes archived runs.
 - Store raw and versioned artifact bytes on the local filesystem for development or in private per-org Cloudflare R2 buckets when `INSTANTML_ARTIFACT_BACKEND=r2`, while ClickHouse stores artifact metadata, opaque R2 references, exact byte counts, hashes, MIME types, aliases, retention/delete state, and lineage edges. Artifact byte downloads always add defensive `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and `Content-Security-Policy: sandbox` headers because artifact MIME metadata is user-provided.
 - Serve the authoritative run search language for `/runs`, `/api/overview`,
   `/api/runs/summary`, selection projection, and `/api/export`. Bare `q` text
@@ -146,6 +150,30 @@ rows are durable; run APIs and dashboard lists hide those incomplete rows.
 TensorBoard re-syncs append scalar points to an existing complete imported
 TensorBoard run when source identity matches and the original import contained
 no attributes or artifact references.
+
+## Run Lifecycle
+
+Run lifecycle state is separate from the training `status` field. Active runs
+are returned by default. Archived runs are hidden from default summaries,
+overview, search, selection projection, and export responses, but remain
+readable by exact run ID and can be included with `lifecycle=archived`,
+`lifecycle=all`, or `include_archived=true` on supported list/export routes.
+Deleted runs are soft-deleted tombstones for this slice and are hidden from
+normal product read paths.
+
+Control routes:
+
+- `POST /api/runs/:run_id/archive`
+- `POST /api/runs/:run_id/restore`
+- `POST /api/runs/:run_id/delete`
+- `POST /api/runs/batch-lifecycle`
+
+Archive and restore accept an optional `{ "reason": "..." }` body. Delete
+requires `{ "confirm": "delete" }`; batch requests cap `run_ids` at 100 and
+return per-run updated/error results. Repeating archive on an archived run,
+restore on an active run, or delete on a deleted run is idempotent; restoring a
+deleted run returns a lifecycle conflict. Archived and deleted runs reject
+cooperative stop-control writes.
 
 ## Iframe Run Embeds
 

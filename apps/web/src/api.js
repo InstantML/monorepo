@@ -429,13 +429,16 @@ function safeKnownRouteSegments(segments) {
     }
   }
   if (segments[1] === "runs") {
+    if (segments.length === 3 && segments[2] === "batch-lifecycle") {
+      return ["api", "runs", "batch-lifecycle"];
+    }
     if (segments.length === 3 && segments[2] === "stop") {
       return ["api", "runs", "stop"];
     }
     if (segments.length === 3 && ["summary", "side-by-side"].includes(segments[2])) {
       return ["api", "runs", segments[2]];
     }
-    if (segments.length === 4 && ["stop", "stop-ack", "stop-signal"].includes(segments[3])) {
+    if (segments.length === 4 && ["archive", "delete", "restore", "stop", "stop-ack", "stop-signal"].includes(segments[3])) {
       return ["api", "runs", ":run_id", segments[3]];
     }
     if (segments.length === 4 && segments[2] !== "rank-metrics" && ["forks", "lineage", "logs", "attributes", "objects", "artifacts", "artifact-uploads", "artifact-inputs", "artifact-edges"].includes(segments[3])) {
@@ -522,6 +525,7 @@ const STATIC_API_ROUTE_KEYS = new Set([
   "metrics/series",
   "overview",
   "runs/summary",
+  "runs/batch-lifecycle",
   "runs/side-by-side",
   "artifact-collections",
   "artifact-versions/resolve",

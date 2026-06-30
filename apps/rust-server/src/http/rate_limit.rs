@@ -342,9 +342,14 @@ fn is_control_poll_route(method: &Method, path: &str) -> bool {
 fn is_run_control_route(method: &Method, path: &str) -> bool {
     is_control_poll_route(method, path)
         || (*method == Method::POST && path == "/api/runs/stop")
+        || (*method == Method::POST && path == "/api/runs/batch-lifecycle")
         || (*method == Method::POST
             && path.starts_with("/api/runs/")
-            && (path.ends_with("/stop") || path.ends_with("/stop-ack")))
+            && (path.ends_with("/stop")
+                || path.ends_with("/stop-ack")
+                || path.ends_with("/archive")
+                || path.ends_with("/restore")
+                || path.ends_with("/delete")))
 }
 
 fn is_ingest_route(method: &Method, path: &str) -> bool {

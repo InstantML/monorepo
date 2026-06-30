@@ -296,13 +296,22 @@
 }
 
 .runs-table-view .runs-dtable .col-stop {
-  width: 36px;
+  width: 112px;
   padding-left: 4px;
   padding-right: 8px;
   text-align: right;
 }
 
-.runs-table-view .run-row-stop-button {
+.runs-table-view .runs-dtable .col-actions {
+  min-width: 112px;
+}
+
+.runs-table-view .runs-dtable .col-actions button + button {
+  margin-left: 4px;
+}
+
+.runs-table-view .run-row-stop-button,
+.runs-table-view .run-row-action-button {
   width: 26px;
   height: 26px;
   border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
@@ -313,10 +322,24 @@
 }
 
 .runs-table-view .run-row-stop-button:hover,
-.runs-table-view .run-row-stop-button:focus-visible {
+.runs-table-view .run-row-stop-button:focus-visible,
+.runs-table-view .run-row-action-button.danger:hover,
+.runs-table-view .run-row-action-button.danger:focus-visible {
   border-color: color-mix(in srgb, var(--danger) 54%, var(--line));
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.runs-table-view .run-row-action-button:not(.danger) {
+  border-color: var(--line);
+  color: var(--text-2);
+}
+
+.runs-table-view .run-row-action-button:not(.danger):hover,
+.runs-table-view .run-row-action-button:not(.danger):focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .runs-table-view .runs-dtable .td-num {

@@ -207,6 +207,30 @@ The device-login key is org-scoped for SDK ingestion, artifact uploads,
 Import v2 writes, and exports, so the same login supports dry-run imports,
 TensorBoard sync, and normal training-loop logging.
 
+## CLI: Local source-checkout stack
+
+From a repository checkout, the CLI can create project-local loopback
+credentials and manage the existing Docker Compose Rust/ClickHouse service:
+
+```bash
+PYTHONPATH=packages/python-sdk instantml local init
+PYTHONPATH=packages/python-sdk instantml local up
+PYTHONPATH=packages/python-sdk instantml local status
+PYTHONPATH=packages/python-sdk instantml local down
+```
+
+`instantml local init` writes `.instantml/local/config.toml` plus
+`.instantml/local/credentials` with `api_key = "local"` and a loopback
+`api_host`. Those credentials are intentionally project-local and are resolved
+before `~/.instantml/credentials` when training scripts run from that checkout.
+The `local` sentinel suppresses the Authorization header only for loopback API
+bases such as `http://127.0.0.1:8000`; hosted URLs still require a real API key.
+
+This first local lifecycle slice adapts the repo-root `docker-compose.yml` and
+starts the `instantml` service. It does not yet package a standalone Compose
+template or web image for PyPI-only users; use the repo checkout path for local
+stack development until that follow-up lands.
+
 ## CLI: Imports And TensorBoard Sync
 
 Import commands are intentionally local-first. They read source exports or
@@ -264,8 +288,9 @@ TensorBoard run when source identity matches.
 
 1. Explicit `api_key=` kwarg.
 2. `INSTANTML_API_KEY` environment variable.
-3. `~/.instantml/credentials` file (written by `instantml login`).
-4. No credentials → `init()` raises `InstantMLError` immediately with a message directing you to `instantml login` or `INSTANTML_API_KEY`.
+3. Project-local `.instantml/local/credentials` when present.
+4. `~/.instantml/credentials` file (written by `instantml login`).
+5. No credentials → `init()` raises `InstantMLError` immediately with a message directing you to `instantml login` or `INSTANTML_API_KEY`.
 
 ```python
 # Option 1: explicit kwarg

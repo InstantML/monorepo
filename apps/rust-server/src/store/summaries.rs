@@ -18,11 +18,28 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
             .map(|run| (run.id, run_control_for(&data, run).cloned()))
             .collect::<HashMap<_, _>>()
     };
+    let lifecycles = {
+        let data = store.data.lock().await;
+        runs.iter()
+            .map(|run| (run.id, run_lifecycle_summary(&data, run)))
+            .collect::<HashMap<_, _>>()
+    };
     runs.into_iter()
         .map(|run| {
             let control = controls.get(&run.id).and_then(Option::as_ref);
             let series = series_by_run.get(&run.id).map(Vec::as_slice).unwrap_or(&[]);
-            summarize_run(run, control, RunControlPrivacy::Public, series, &counts)
+            let lifecycle = lifecycles
+                .get(&run.id)
+                .cloned()
+                .unwrap_or_else(|| json!({ "state": "active" }));
+            summarize_run(
+                run,
+                control,
+                lifecycle,
+                RunControlPrivacy::Public,
+                series,
+                &counts,
+            )
         })
         .collect::<AppResult<Vec<_>>>()
 }
@@ -43,7 +60,11 @@ pub(super) async fn run_summary_value(
         let data = store.data.lock().await;
         run_control_for(&data, &run).cloned()
     };
-    summarize_run(run, control.as_ref(), privacy, &series, &counts)
+    let lifecycle = {
+        let data = store.data.lock().await;
+        run_lifecycle_summary(&data, &run)
+    };
+    summarize_run(run, control.as_ref(), lifecycle, privacy, &series, &counts)
 }
 
 pub(super) async fn summarize_runs_for_metric_keys(
@@ -70,11 +91,28 @@ pub(super) async fn summarize_runs_for_metric_keys(
             .map(|run| (run.id, run_control_for(&data, run).cloned()))
             .collect::<HashMap<_, _>>()
     };
+    let lifecycles = {
+        let data = store.data.lock().await;
+        runs.iter()
+            .map(|run| (run.id, run_lifecycle_summary(&data, run)))
+            .collect::<HashMap<_, _>>()
+    };
     runs.into_iter()
         .map(|run| {
             let control = controls.get(&run.id).and_then(Option::as_ref);
             let series = series_by_run.get(&run.id).map(Vec::as_slice).unwrap_or(&[]);
-            summarize_run(run, control, RunControlPrivacy::Public, series, &counts)
+            let lifecycle = lifecycles
+                .get(&run.id)
+                .cloned()
+                .unwrap_or_else(|| json!({ "state": "active" }));
+            summarize_run(
+                run,
+                control,
+                lifecycle,
+                RunControlPrivacy::Public,
+                series,
+                &counts,
+            )
         })
         .collect::<AppResult<Vec<_>>>()
 }
@@ -82,6 +120,7 @@ pub(super) async fn summarize_runs_for_metric_keys(
 pub(super) fn selection_run_value(
     run: RunRow,
     control: Option<&RunControlRow>,
+    lifecycle: Value,
 ) -> AppResult<Value> {
     let mut value = serde_json::to_value(&run)
         .map_err(|_| AppError::internal("run selection serialization failed"))?;
@@ -101,6 +140,25 @@ pub(super) fn selection_run_value(
             "run_control".to_string(),
             run_control_summary(&run, control, RunControlPrivacy::Public),
         );
+        let lifecycle_state = lifecycle
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("active")
+            .to_string();
+        map.insert("lifecycle".to_string(), lifecycle.clone());
+        map.insert("lifecycle_state".to_string(), json!(lifecycle_state));
+        map.insert(
+            "lifecycle_updated_at".to_string(),
+            lifecycle.get("updated_at").cloned().unwrap_or(Value::Null),
+        );
+        map.insert(
+            "archived_at".to_string(),
+            lifecycle.get("archived_at").cloned().unwrap_or(Value::Null),
+        );
+        map.insert(
+            "deleted_at".to_string(),
+            lifecycle.get("deleted_at").cloned().unwrap_or(Value::Null),
+        );
     }
     Ok(value)
 }
@@ -108,6 +166,7 @@ pub(super) fn selection_run_value(
 pub(super) fn summarize_run(
     run: RunRow,
     control: Option<&RunControlRow>,
+    lifecycle: Value,
     privacy: RunControlPrivacy,
     series: &[MetricSeriesRow],
     artifact_counts: &HashMap<Uuid, BTreeMap<String, i64>>,
@@ -145,6 +204,25 @@ pub(super) fn summarize_run(
         map.insert(
             "run_control".to_string(),
             run_control_summary(&run, control, privacy),
+        );
+        let lifecycle_state = lifecycle
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or("active")
+            .to_string();
+        map.insert("lifecycle".to_string(), lifecycle.clone());
+        map.insert("lifecycle_state".to_string(), json!(lifecycle_state));
+        map.insert(
+            "lifecycle_updated_at".to_string(),
+            lifecycle.get("updated_at").cloned().unwrap_or(Value::Null),
+        );
+        map.insert(
+            "archived_at".to_string(),
+            lifecycle.get("archived_at").cloned().unwrap_or(Value::Null),
+        );
+        map.insert(
+            "deleted_at".to_string(),
+            lifecycle.get("deleted_at").cloned().unwrap_or(Value::Null),
         );
         map.insert("latest_metrics".to_string(), Value::Object(latest));
         map.insert("metric_aggregates".to_string(), Value::Object(aggregates));

@@ -761,6 +761,9 @@ fn known_route_template(segments: &[&str]) -> Option<String> {
         ["runs", _, "rank-metrics"] => vec!["runs", ":run_id", "rank-metrics"],
         ["api", "runs", _, "forks"] => vec!["api", "runs", ":run_id", "forks"],
         ["api", "runs", _, "lineage"] => vec!["api", "runs", ":run_id", "lineage"],
+        ["api", "runs", _, "archive"] => vec!["api", "runs", ":run_id", "archive"],
+        ["api", "runs", _, "restore"] => vec!["api", "runs", ":run_id", "restore"],
+        ["api", "runs", _, "delete"] => vec!["api", "runs", ":run_id", "delete"],
         ["api", "runs", _, "rank-metrics", "summary"] => {
             vec!["api", "runs", ":run_id", "rank-metrics", "summary"]
         }
@@ -777,6 +780,7 @@ fn known_route_template(segments: &[&str]) -> Option<String> {
         ["api", "overview"] => vec!["api", "overview"],
         ["api", "runs", "summary"] => vec!["api", "runs", "summary"],
         ["api", "runs", "side-by-side"] => vec!["api", "runs", "side-by-side"],
+        ["api", "runs", "batch-lifecycle"] => vec!["api", "runs", "batch-lifecycle"],
         ["api", "export"] => vec!["api", "export"],
         ["api", "usage"] => vec!["api", "usage"],
         ["api", "usage", "export"] => vec!["api", "usage", "export"],

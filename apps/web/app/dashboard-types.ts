@@ -5,6 +5,15 @@ type GeneratedArtifactVersion = components["schemas"]["PublicArtifactVersionRow"
 type GeneratedArtifactManifestEntry = components["schemas"]["PublicArtifactManifestEntryRow"];
 export type RunControlSummary = components["schemas"]["RunControlSummary"];
 
+export type RunLifecycleState = "active" | "archived" | "deleted";
+
+export type RunLifecycleSummary = {
+  state?: RunLifecycleState | string;
+  updated_at?: string | null;
+  archived_at?: string | null;
+  deleted_at?: string | null;
+};
+
 export type RunSummary = {
   id: string;
   project: string;
@@ -23,6 +32,11 @@ export type RunSummary = {
   metric_aggregates: Record<string, Record<string, number>>;
   artifact_counts: { checkpoint: number; rollout: number; file: number };
   run_control?: RunControlSummary | null;
+  lifecycle?: RunLifecycleSummary | null;
+  lifecycle_state?: RunLifecycleState | string | null;
+  lifecycle_updated_at?: string | null;
+  archived_at?: string | null;
+  deleted_at?: string | null;
 };
 
 export type Summary = {

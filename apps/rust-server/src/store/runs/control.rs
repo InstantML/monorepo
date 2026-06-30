@@ -60,6 +60,13 @@ async fn request_run_stop_once(
     let reason = validate_stop_reason(input.reason.as_deref())?;
     let mut data = store.data.lock().await;
     let run = fetch_run_in_data(&data, ctx, run_id)?;
+    if run_lifecycle_state(&data, &run) != "active" {
+        return Err(AppError::with_code(
+            StatusCode::CONFLICT,
+            "run_lifecycle_conflict",
+            "run lifecycle state does not allow stop control",
+        ));
+    }
     let plan = prepare_stop_locked(&data, ctx, &run, reason);
     if plan.persist {
         store
@@ -155,6 +162,14 @@ async fn request_bulk_run_stop_once(
     for run_id in run_ids {
         match fetch_run_in_data(&data, ctx, run_id) {
             Ok(run) => {
+                if run_lifecycle_state(&data, &run) != "active" {
+                    results.push(json!({
+                        "run_id": run_id,
+                        "ok": false,
+                        "error": "run_lifecycle_conflict",
+                    }));
+                    continue;
+                }
                 let plan = prepare_stop_locked(&data, ctx, &run, reason.clone());
                 if plan.persist {
                     controls_to_persist.push(plan.control.clone());

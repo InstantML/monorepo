@@ -509,7 +509,7 @@ async fn export_runs(
         let data = store.data.lock().await;
         let mut runs = Vec::with_capacity(run_ids.len());
         for run_id in run_ids {
-            runs.push(export_selected_run_in_data(&data, ctx, run_id)?);
+            runs.push(export_selected_run_in_data(&data, ctx, query, run_id)?);
         }
         return Ok((runs, 0));
     }
@@ -538,12 +538,13 @@ fn parse_export_run_ids(query: &HashMap<String, String>) -> AppResult<Vec<Uuid>>
 fn export_selected_run_in_data(
     data: &StoreData,
     ctx: &RequestContext,
+    query: &HashMap<String, String>,
     run_id: Uuid,
 ) -> AppResult<RunRow> {
     let Some(run) = data.runs.get(&run_id).cloned() else {
         return Err(AppError::not_found("run not found"));
     };
-    if !is_visible_run(data, &run)
+    if !run_matches_lifecycle_filter(data, query, &run)
         || run.org_id != ctx.org_id
         || ctx
             .auth
@@ -1020,9 +1021,10 @@ mod tests {
         data.insert_run(hidden);
         data.insert_run(visible);
 
-        assert!(export_selected_run_in_data(&data, &ctx, hidden_id).is_err());
+        let query = HashMap::new();
+        assert!(export_selected_run_in_data(&data, &ctx, &query, hidden_id).is_err());
         assert_eq!(
-            export_selected_run_in_data(&data, &ctx, visible_id)
+            export_selected_run_in_data(&data, &ctx, &query, visible_id)
                 .unwrap()
                 .id,
             visible_id

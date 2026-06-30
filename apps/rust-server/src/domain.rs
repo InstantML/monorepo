@@ -1531,10 +1531,43 @@ pub struct StopRunsRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct RunLifecycleRequest {
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeleteRunRequest {
+    pub confirm: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BatchRunLifecycleRequest {
+    pub run_ids: Vec<Uuid>,
+    pub action: String,
+    pub confirm: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct StopAckRequest {
     pub stop_request_id: Uuid,
     pub state: String,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct RunLifecycleRow {
+    pub kind: String,
+    pub id: Uuid,
+    pub org_id: Uuid,
+    pub run_id: Uuid,
+    pub state: String,
+    pub reason: Option<String>,
+    pub actor_id: Option<String>,
+    pub actor_type: String,
+    pub idempotency_key: Option<String>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]

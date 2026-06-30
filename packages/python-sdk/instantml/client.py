@@ -276,7 +276,18 @@ def _sdk_metadata() -> dict[str, Any]:
 
 
 def _default_base_url() -> str:
-    return os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
+    env_base = os.environ.get("INSTANTML_API_BASE_URL")
+    if env_base:
+        return env_base
+    try:
+        from .cli import resolve_api_host_from_credentials
+
+        credential_host = resolve_api_host_from_credentials()
+        if credential_host:
+            return credential_host
+    except ImportError:
+        pass
+    return "https://api.instantml.ai"
 
 
 def _finish_drain_seconds(default: float) -> float:
@@ -587,7 +598,7 @@ class Client:
         cache = getattr(self, "_api_key_cache", _UNSET)
         if cache is not _UNSET:
             return cache
-        resolved = _resolve_api_key_from_env(self.api_key)
+        resolved = _resolve_api_key_from_env(self.api_key, self.base_url)
         object.__setattr__(self, "_api_key_cache", resolved)
         return resolved
 
@@ -1321,7 +1332,7 @@ class Api:
 
         url = f"{self.base_url.rstrip('/')}/api/artifacts/{urllib.parse.quote(artifact_id, safe='')}/download"
         headers = {"Accept": "application/octet-stream"}
-        api_key = _resolve_api_key_from_env(self.api_key)
+        api_key = _resolve_api_key_from_env(self.api_key, self.base_url)
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         request = urllib.request.Request(url, method="GET", headers=headers)
@@ -1375,7 +1386,7 @@ class Api:
         target.parent.mkdir(parents=True, exist_ok=True)
         url = f"{self.base_url.rstrip('/')}/api/artifact-entries/{urllib.parse.quote(entry_id, safe='')}/download"
         headers = {"Accept": "application/octet-stream"}
-        api_key = _resolve_api_key_from_env(self.api_key)
+        api_key = _resolve_api_key_from_env(self.api_key, self.base_url)
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         request = urllib.request.Request(url, method="GET", headers=headers)
@@ -3951,9 +3962,10 @@ def init(
     metadata artifacts to Weights & Biases for shadow→graduate pilots.
     """
     resolved_mode = _resolve_mode(mode)
+    resolved_base_url = base_url or _default_base_url()
     if resolved_mode == "online":
-        _check_credentials_or_raise(api_key)
-    return Client(base_url=base_url or _default_base_url(), timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
+        _check_credentials_or_raise(api_key, resolved_base_url)
+    return Client(base_url=resolved_base_url, timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
         project=project,
         name=name,
         config=config,
@@ -4001,9 +4013,10 @@ def attach_run(
 ) -> Run:
     """Attach SDK logging to an existing run, such as a UI-created fork."""
 
-    _check_credentials_or_raise(api_key)
+    resolved_base_url = base_url or _default_base_url()
+    _check_credentials_or_raise(api_key, resolved_base_url)
     return Client(
-        base_url=base_url or _default_base_url(),
+        base_url=resolved_base_url,
         timeout=timeout,
         offline_dir=offline_dir,
         api_key=api_key,

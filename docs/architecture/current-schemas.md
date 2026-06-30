@@ -567,6 +567,7 @@ ids match the routed org before adding the record to the in-process projection.
 | `project` | `ProjectRow.id` | `ProjectRow` | Project metadata. |
 | `project_delete` | `ProjectDeleteRecord.project_name` | `ProjectDeleteRecord` | Removes project, runs, attributes, artifacts, and table rows from the in-memory projection. |
 | `run` | `RunRow.id` | `RunRow` | Run metadata and status. |
+| `run_lifecycle` | `RunLifecycleRow.id` | `RunLifecycleRow` | Append-only archive/restore/delete state layered over a run; latest projected state controls list/export visibility. |
 | `attribute` | `AttributeRow.id` | `AttributeRow` | Typed attributes and rich logged objects. |
 | `artifact` | `ArtifactRow.id` | `ArtifactRow` | Artifact metadata, not hosted bytes. |
 | `artifact_collection` | `ArtifactCollectionRow.id` | `ArtifactCollectionRow` | Project-scoped versioned artifact namespace. |

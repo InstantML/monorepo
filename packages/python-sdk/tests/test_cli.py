@@ -28,7 +28,7 @@ from instantml.cli import (
     resolve_api_key_from_credentials,
     write_credentials,
 )
-from instantml.client import Client, InstantMLError
+from instantml.client import Client, InstantMLError, _check_credentials_or_raise
 
 
 # ---------------------------------------------------------------------------
@@ -128,9 +128,116 @@ def test_delete_credentials_returns_false_when_no_file(tmp_path, monkeypatch):
 def test_resolve_api_key_from_credentials(tmp_path, monkeypatch):
     cred_path = tmp_path / "credentials"
     monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", cred_path)
+    monkeypatch.chdir(tmp_path)
     assert resolve_api_key_from_credentials() is None
     write_credentials("instantml_MY_KEY", "host", "org", "user@example.com")
     assert resolve_api_key_from_credentials() == "instantml_MY_KEY"
+
+
+def test_local_init_writes_config_and_project_credentials(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", tmp_path / "global" / "credentials")
+
+    cli_module.cmd_local(
+        [
+            "init",
+            "--root",
+            str(tmp_path),
+            "--api-host",
+            "http://127.0.0.1:8123",
+            "--web-host",
+            "http://127.0.0.1:3001",
+        ]
+    )
+
+    config = cli_module.local_config_path(tmp_path)
+    creds = cli_module.local_credentials_path(tmp_path)
+    assert config.exists()
+    assert creds.exists()
+    assert cli_module._parse_toml_simple(config.read_text(encoding="utf-8")) == {
+        "api_host": "http://127.0.0.1:8123",
+        "web_host": "http://127.0.0.1:3001",
+        "compose_file": "docker-compose.yml",
+        "service": "instantml",
+    }
+    assert cli_module.load_local_credentials(tmp_path)["api_key"] == "local"
+    assert stat.S_IMODE(creds.stat().st_mode) == 0o600
+    assert "instantml local up" in capsys.readouterr().out
+
+
+def test_local_credentials_take_precedence_over_global_login(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    global_path = tmp_path / "global-credentials"
+    monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", global_path)
+    write_credentials("hosted-key", "https://api.instantml.ai", "org", "user@example.com")
+    cli_module.write_local_credentials(api_host="http://127.0.0.1:8000", root=tmp_path)
+
+    assert cli_module.load_effective_credentials()["api_key"] == "local"
+    assert cli_module.resolve_api_key_from_credentials() == "local"
+    assert cli_module.resolve_api_host_from_credentials() == "http://127.0.0.1:8000"
+
+
+def test_local_credentials_suppress_auth_only_for_loopback(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
+    monkeypatch.delenv("INSTANTML_API_BASE_URL", raising=False)
+    monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", tmp_path / "global" / "credentials")
+    cli_module.write_local_credentials(api_host="http://127.0.0.1:8000", root=tmp_path)
+
+    assert Client(base_url="http://127.0.0.1:8000", api_key=None)._resolve_api_key() is None
+    _check_credentials_or_raise(None, "http://127.0.0.1:8000")
+    assert Client(base_url="https://api.instantml.ai", api_key=None)._resolve_api_key() is None
+    with pytest.raises(InstantMLError, match="InstantML credentials"):
+        _check_credentials_or_raise(None, "https://api.instantml.ai")
+    with pytest.raises(InstantMLError, match="InstantML credentials"):
+        _check_credentials_or_raise("local", "https://api.instantml.ai")
+    monkeypatch.setenv("INSTANTML_API_KEY", "local")
+    with pytest.raises(InstantMLError, match="InstantML credentials"):
+        _check_credentials_or_raise(None, "https://api.instantml.ai")
+
+
+def test_default_base_url_uses_project_local_credentials(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("INSTANTML_API_BASE_URL", raising=False)
+    monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", tmp_path / "global" / "credentials")
+    cli_module.write_local_credentials(api_host="http://127.0.0.1:8123", root=tmp_path)
+
+    assert Client(api_key=None).base_url == "http://127.0.0.1:8123"
+
+
+def test_run_compose_uses_configured_compose_file(tmp_path, monkeypatch):
+    captured = {}
+    compose_file = tmp_path / "compose.dev.yml"
+    compose_file.write_text("services: {}\n", encoding="utf-8")
+
+    monkeypatch.setattr(cli_module, "_compose_command", lambda: ["docker", "compose"])
+
+    def fake_run(command, cwd=None):
+        captured["command"] = command
+        captured["cwd"] = cwd
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cli_module.subprocess, "run", fake_run)
+
+    rc = cli_module._run_compose(tmp_path, {"compose_file": "compose.dev.yml"}, ["up", "-d", "instantml"])
+
+    assert rc == 0
+    assert captured == {
+        "command": ["docker", "compose", "-f", str(compose_file), "up", "-d", "instantml"],
+        "cwd": tmp_path,
+    }
+
+
+def test_compose_command_falls_back_to_legacy_binary(monkeypatch):
+    calls = []
+
+    def fake_succeeds(command):
+        calls.append(command)
+        return command == ["docker-compose", "version"]
+
+    monkeypatch.setattr(cli_module, "_command_succeeds", fake_succeeds)
+
+    assert cli_module._compose_command() == ["docker-compose"]
+    assert calls == [["docker", "compose", "version"], ["docker-compose", "version"]]
 
 
 def test_cmd_import_transformed_json_dispatch(monkeypatch):
@@ -593,6 +700,7 @@ def test_main_dispatches_import_and_sync(monkeypatch):
 def test_resolve_api_key_kwarg_wins_over_everything(tmp_path, monkeypatch):
     cred_path = tmp_path / "credentials"
     monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", cred_path)
+    monkeypatch.chdir(tmp_path)
     write_credentials("from_file", "host", "org", "user@example.com")
     monkeypatch.setenv("INSTANTML_API_KEY", "from_env")
 
@@ -603,6 +711,7 @@ def test_resolve_api_key_kwarg_wins_over_everything(tmp_path, monkeypatch):
 def test_resolve_api_key_env_wins_over_file(tmp_path, monkeypatch):
     cred_path = tmp_path / "credentials"
     monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", cred_path)
+    monkeypatch.chdir(tmp_path)
     write_credentials("from_file", "host", "org", "user@example.com")
     monkeypatch.setenv("INSTANTML_API_KEY", "from_env")
 
@@ -613,6 +722,7 @@ def test_resolve_api_key_env_wins_over_file(tmp_path, monkeypatch):
 def test_resolve_api_key_file_used_when_no_kwarg_or_env(tmp_path, monkeypatch):
     cred_path = tmp_path / "credentials"
     monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", cred_path)
+    monkeypatch.chdir(tmp_path)
     write_credentials("from_file", "host", "org", "user@example.com")
     monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
 
@@ -622,6 +732,7 @@ def test_resolve_api_key_file_used_when_no_kwarg_or_env(tmp_path, monkeypatch):
 
 def test_resolve_api_key_returns_none_when_nothing_set(tmp_path, monkeypatch):
     monkeypatch.setattr(cli_module, "_CREDENTIALS_PATH", tmp_path / "credentials")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("INSTANTML_API_KEY", raising=False)
 
     client = Client(api_key=None)

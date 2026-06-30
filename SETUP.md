@@ -99,6 +99,20 @@ The local dev Google-style auth flow is only for a local Rust API. For normal
 dashboard/frontend work against staging, no local Rust server or local
 ClickHouse process is required.
 
+From a source checkout, `instantml local` can initialize project-local SDK
+credentials and manage the Docker Compose Rust/ClickHouse API service:
+
+```bash
+PYTHONPATH=packages/python-sdk instantml local init
+PYTHONPATH=packages/python-sdk instantml local up
+PYTHONPATH=packages/python-sdk instantml local status
+PYTHONPATH=packages/python-sdk instantml local down
+```
+
+The generated `.instantml/local/credentials` file is resolved before the global
+`~/.instantml/credentials` file only inside this checkout, and its `local`
+sentinel is accepted by the SDK only for loopback API URLs.
+
 When backend work needs disposable local API and ClickHouse state, start the
 primary Rust API from Terminal 1:
 
