@@ -3476,6 +3476,68 @@ mod tests {
         assert_eq!(err.status(), axum::http::StatusCode::NOT_FOUND);
     }
 
+    #[tokio::test]
+    async fn compare_matching_runs_status_evidence_uses_display_status() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let running_id = Uuid::from_u128(111);
+        let stopping_id = Uuid::from_u128(112);
+        let stopped_id = Uuid::from_u128(113);
+        {
+            let mut data = store.data.lock().await;
+            let mut running = replay_run(org_id, running_id, "running");
+            running.name = "running".to_string();
+            let mut stopping = replay_run(org_id, stopping_id, "running");
+            stopping.name = "stopping".to_string();
+            let mut stopped = replay_run(org_id, stopped_id, "failed");
+            stopped.name = "stopped".to_string();
+            data.insert_run(running);
+            data.insert_run(stopping);
+            data.insert_run(stopped);
+            data.insert_run_control(replay_run_control(org_id, stopping_id, "requested"));
+            data.insert_run_control(replay_run_control(org_id, stopped_id, "completed"));
+        }
+
+        let payload = compare_matching_runs(
+            &store,
+            &ctx,
+            CompareMatchingRunsRequest {
+                project: None,
+                q: None,
+                status: None,
+                display_status: None,
+                sort_by: Some("status".to_string()),
+                metric_key: None,
+                limit: Some(3),
+                reference_run_id: None,
+                diff_only: Some(false),
+                include_rows: Some(false),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            payload["selected_run_ids"],
+            json!([
+                running_id.to_string(),
+                stopped_id.to_string(),
+                stopping_id.to_string()
+            ])
+        );
+        let sort_values = payload["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|candidate| candidate["sort_value"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            sort_values,
+            vec![json!("running"), json!("stopped"), json!("stopping")]
+        );
+    }
+
     #[test]
     fn completed_control_does_not_expose_stopped_for_running_replay() {
         let org_id = Uuid::from_u128(1);

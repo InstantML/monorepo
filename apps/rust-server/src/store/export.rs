@@ -120,6 +120,20 @@ pub async fn compare_matching_runs(
     } else {
         HashMap::new()
     };
+    let display_statuses = if sort_by == "status" {
+        let data = store.data.lock().await;
+        selected
+            .iter()
+            .map(|run| {
+                (
+                    run.id,
+                    run_control_display_status(run, run_control_for(&data, run)).to_string(),
+                )
+            })
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
     let candidates = selected
         .iter()
         .enumerate()
@@ -130,6 +144,7 @@ pub async fn compare_matching_runs(
                 &sort_by,
                 metric_key.as_deref(),
                 metric_key.as_ref().and_then(|_| metric_series.get(&run.id)),
+                display_statuses.get(&run.id).map(String::as_str),
                 selection_reasons
                     .get(&run.id)
                     .map(String::as_str)
@@ -325,6 +340,7 @@ fn candidate_evidence(
     sort_by: &str,
     metric_key: Option<&str>,
     metric: Option<&MetricSeriesRow>,
+    display_status: Option<&str>,
     selection_reason: &str,
 ) -> Value {
     let sort_mode = match sort_by {
@@ -350,7 +366,7 @@ fn candidate_evidence(
             .map(Value::from)
             .unwrap_or(Value::Null),
         "name" => json!(run.name),
-        "status" => json!(run.status),
+        "status" => json!(display_status.unwrap_or(run.status.as_str())),
         _ => json!(run.created_at),
     };
     json!({
