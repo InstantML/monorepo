@@ -578,6 +578,7 @@ After it runs, open the UI, choose the `iris-classification` project, and compar
 - Log many scalar values in one `log_metrics(...)` call instead of making one call per metric.
 - Use stable run names that include the algorithm, dataset/environment, and seed.
 - Put important searchable identity in `tags` and `notes`; put structured hyperparameters in `config`.
+- Explore those hyperparameters in `Insights → Run Analysis`: the hyperparameter scatter and parallel-coordinate explorers plot config values against metrics, support a per-axis log scale (learning-rate axes default to log), and offer a `Chart`⇄`Table` toggle that exposes an accessible, screen-reader-friendly summary table of the same data.
 - Prefer metric namespaces such as `train/`, `val/`, `eval/`, `test/`, `system/`, `optimizer/`, and `model/`.
 - Upload small, high-signal artifacts directly. For large remote artifacts, log metadata and a stable URI.
 - The default SDK upload mode queues hot-path metric/log/status writes locally. Use `upload_mode="sync"` when you want foreground exceptions, or `upload_mode="spool"` for long training jobs where logging must not make post-init HTTP calls in the training process.
