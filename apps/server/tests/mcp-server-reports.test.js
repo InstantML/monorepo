@@ -84,6 +84,15 @@ test("MCP server exposes the report tool surface", () => {
     "tracker.list_metrics",
     "tracker.get_metric_series_batch",
     "tracker.compare_runs",
+    "tracker.get_run_lineage",
+    "tracker.list_run_artifacts",
+    "tracker.list_run_artifact_edges",
+    "tracker.list_artifact_collections",
+    "tracker.get_artifact_version",
+    "tracker.list_artifact_versions",
+    "tracker.resolve_artifact_version",
+    "tracker.list_artifact_manifest",
+    "tracker.get_artifact_lineage",
     "tracker.export_runs",
     "tracker.workspace_view_data",
     "tracker.list_reports",
@@ -322,6 +331,131 @@ test("tracker.compare_runs calls the side-by-side endpoint", async () => {
     assert.equal(url.searchParams.get("run_ids"), "run-1,run-2");
     assert.equal(url.searchParams.get("reference_run_id"), "run-1");
     assert.equal(url.searchParams.get("diff_only"), "true");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("artifact and lineage tools call read-only Rust endpoints", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /api/runs/run-1/lineage": { run_id: "run-1", parents: [], children: [] },
+    "GET /api/runs/run-1/artifacts": { artifacts: [{ id: "artifact-1" }] },
+    "GET /api/runs/run-1/artifact-edges": { edges: [{ direction: "output" }] },
+    "GET /api/artifact-collections": { collections: [{ id: "collection-1" }] },
+    "GET /api/artifact-versions/version-1": { artifact_version: { id: "version-1" } },
+    "GET /api/artifact-collections/collection-1/versions": {
+      versions: [{ id: "version-1" }],
+    },
+    "GET /api/artifact-versions/resolve": { artifact_version: { id: "version-1" } },
+    "GET /api/artifact-versions/version-1/manifest": {
+      entries: [{ path: "model.bin" }],
+    },
+    "GET /api/artifact-versions/version-1/lineage": { nodes: [], edges: [] },
+  });
+  try {
+    assert.equal(
+      parseTextResult(await findTool("tracker.get_run_lineage", tools).handler({ run_id: "run-1" }))
+        .run_id,
+      "run-1",
+    );
+    assert.equal(
+      parseTextResult(
+        await findTool("tracker.list_run_artifacts", tools).handler({
+          run_id: "run-1",
+          limit: 25,
+        }),
+      ).artifacts[0].id,
+      "artifact-1",
+    );
+    assert.equal(
+      parseTextResult(
+        await findTool("tracker.list_run_artifact_edges", tools).handler({
+          run_id: "run-1",
+          direction: "output",
+          limit: 10,
+        }),
+      ).edges[0].direction,
+      "output",
+    );
+    assert.equal(
+      parseTextResult(
+        await findTool("tracker.list_artifact_collections", tools).handler({
+          project: "cartpole",
+          kind: "checkpoint",
+          query: "policy",
+          limit: 5,
+          offset: 10,
+        }),
+      ).collections[0].id,
+      "collection-1",
+    );
+    assert.equal(
+      parseTextResult(
+        await findTool("tracker.get_artifact_version", tools).handler({
+          version_id: "version-1",
+        }),
+      ).artifact_version.id,
+      "version-1",
+    );
+    assert.equal(
+      parseTextResult(
+        await findTool("tracker.list_artifact_versions", tools).handler({
+          collection_id: "collection-1",
+          limit: 3,
+          offset: 1,
+        }),
+      ).versions[0].id,
+      "version-1",
+    );
+    assert.equal(
+      parseTextResult(
+        await findTool("tracker.resolve_artifact_version", tools).handler({
+          ref: "policy:latest",
+          type: "checkpoint",
+          project: "cartpole",
+        }),
+      ).artifact_version.id,
+      "version-1",
+    );
+    assert.equal(
+      parseTextResult(
+        await findTool("tracker.list_artifact_manifest", tools).handler({
+          version_id: "version-1",
+          path_prefix: "models/",
+          limit: 20,
+          offset: 2,
+        }),
+      ).entries[0].path,
+      "model.bin",
+    );
+    assert.deepEqual(
+      parseTextResult(
+        await findTool("tracker.get_artifact_lineage", tools).handler({
+          version_id: "version-1",
+          limit: 30,
+        }),
+      ).edges,
+      [],
+    );
+
+    const byPath = Object.fromEntries(calls.map((call) => [call.pathname, new URL(call.url)]));
+    assert.equal(byPath["/api/runs/run-1/artifacts"].searchParams.get("limit"), "25");
+    assert.equal(byPath["/api/runs/run-1/artifact-edges"].searchParams.get("direction"), "output");
+    assert.equal(byPath["/api/runs/run-1/artifact-edges"].searchParams.get("limit"), "10");
+    assert.equal(byPath["/api/artifact-collections"].searchParams.get("type"), "checkpoint");
+    assert.equal(byPath["/api/artifact-collections"].searchParams.get("q"), "policy");
+    assert.equal(byPath["/api/artifact-collections"].searchParams.get("offset"), "10");
+    assert.equal(
+      byPath["/api/artifact-collections/collection-1/versions"].searchParams.get("limit"),
+      "3",
+    );
+    assert.equal(byPath["/api/artifact-versions/resolve"].searchParams.get("ref"), "policy:latest");
+    assert.equal(
+      byPath["/api/artifact-versions/version-1/manifest"].searchParams.get("path_prefix"),
+      "models/",
+    );
+    assert.equal(byPath["/api/artifact-versions/version-1/lineage"].searchParams.get("limit"), "30");
   } finally {
     restoreFetch();
   }

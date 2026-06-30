@@ -24,6 +24,15 @@ node tools/mcp-server.mjs
 | `tracker.query_metrics` | Fetch bounded metric points for one run/key, optionally with `start_step`/`end_step`. Legacy `since_step`/`until_step` arguments are accepted by the tool and mapped to the Rust API. |
 | `tracker.get_metric_series_batch` | Fetch bounded series for one metric across many run IDs through `POST /api/metrics/series`. |
 | `tracker.compare_runs` | Compare up to 50 already selected runs through `GET /api/runs/side-by-side`. |
+| `tracker.get_run_lineage` | Fetch direct parent/fork lineage for one run. |
+| `tracker.list_run_artifacts` | List raw artifact metadata attached to one run. |
+| `tracker.list_run_artifact_edges` | List versioned artifact input/output edges for one run. |
+| `tracker.list_artifact_collections` | Discover versioned artifact collections by project, type, and name search; use `type: "checkpoint"` for checkpoints. |
+| `tracker.get_artifact_version` | Fetch one versioned artifact by UUID. |
+| `tracker.list_artifact_versions` | List available versions in an artifact collection. |
+| `tracker.resolve_artifact_version` | Resolve an artifact reference such as `policy:latest` or `checkpoint/policy:best`. |
+| `tracker.list_artifact_manifest` | Page manifest entries for a versioned artifact. |
+| `tracker.get_artifact_lineage` | Fetch versioned artifact producer/consumer lineage. |
 | `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV through `GET /api/export`. |
 | `tracker.workspace_view_data` | Resolve a portable workspace-view payload plus explicit run IDs into bounded panel data. |
 
@@ -47,7 +56,13 @@ node tools/mcp-server.mjs
 7. Call `tracker.compare_runs` only after narrowing to at most 50 exact run IDs.
    This endpoint is for detailed selected-run diffs, not broad project-wide
    ranking.
-8. Use `tracker.export_runs` when the user asks for portable evidence or wants
+8. Use artifact tools when the user asks about checkpoints, model files,
+   datasets, run inputs/outputs, or lineage:
+   `tracker.list_run_artifacts` for legacy run artifacts,
+   `tracker.list_artifact_collections` plus `tracker.list_artifact_versions`
+   for versioned checkpoints, and `tracker.get_artifact_lineage` or
+   `tracker.list_run_artifact_edges` for producer/consumer relationships.
+9. Use `tracker.export_runs` when the user asks for portable evidence or wants
    data for a notebook/spreadsheet.
 
 ## Search Examples
@@ -117,6 +132,21 @@ await call("tracker.get_metric_series_batch", {
   key: "eval/return_mean",
   limit: 500,
   buckets: 256,
+});
+```
+
+Find checkpoint lineage:
+
+```js
+const collections = await call("tracker.list_artifact_collections", {
+  project: "cartpole",
+  type: "checkpoint",
+  query: "policy",
+  limit: 10,
+});
+await call("tracker.list_artifact_versions", {
+  collection_id: collections.collections[0].id,
+  limit: 5,
 });
 ```
 
