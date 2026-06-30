@@ -28,7 +28,7 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Optionally write metric/log hot-path events to a per-run SQLite WAL queue and drain them with an SDK-managed background uploader process.
 - Capture metrics-focused timestamp snapshots with a defined dictionary shape.
 - Optionally keep a local SQLite audit store for attempted SDK events.
-- Optionally sample psutil/NVML system metrics during a run.
+- Automatically sample system/hardware metrics during a run (on by default, zero hard dependencies): a stdlib fallback (process RSS, load average, CPU count) with no extras installed, upgrading to full psutil CPU/memory/disk/network + NVML GPU telemetry when the `instantml[system]` extra is present. Opt out with `system_metrics=False` or `INSTANTML_DISABLE_SYSTEM_METRICS=1`.
 - Optionally wrap stdout/stderr and expose lightweight Torch, Hugging Face Trainer, Lightning, and Keras adapters.
 - Poll cooperative dashboard stop requests when training code calls
   `should_stop()`, `stop_request()`, or `raise_if_stop_requested()`, then
@@ -554,7 +554,7 @@ run = im.init(
 )
 ```
 
-The SQLite store records attempted SDK events before submit; it is not replay and not proof the server accepted the event. System metrics are enabled by default and log under `system/...` at the current step without incrementing it; pass `system_metrics=False` to disable. Console capture writes through to the original streams and logs non-empty lines under `console/stdout` and `console/stderr`.
+The SQLite store records attempted SDK events before submit; it is not replay and not proof the server accepted the event. System metrics are enabled by default: a background daemon thread samples every `system_metrics_interval` seconds and logs under `system/...` at the current step without incrementing it. With no extras installed it emits a stdlib fallback (`system/process_rss_bytes`, `system/load_average_{1m,5m,15m}`, `system/cpu_count`); installing `instantml[system]` upgrades it to full psutil CPU/memory/disk/network plus `system/gpu/{i}/...` NVML telemetry. Disable per-run with `system_metrics=False`, or fleet-wide with `INSTANTML_DISABLE_SYSTEM_METRICS=1` (and override the cadence with `INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS`). Console capture writes through to the original streams and logs non-empty lines under `console/stdout` and `console/stderr`.
 
 Framework adapters stay deliberately small:
 
