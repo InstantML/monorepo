@@ -2440,7 +2440,7 @@ button.secondary.danger-action:hover:not(:disabled),
  * key name is. The base .api-row flex/space-between layout left them ragged. */
 .admin-list .api-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
 }
@@ -2449,6 +2449,10 @@ button.secondary.danger-action:hover:not(:disabled),
 .admin-list .api-row code {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+/* Key names are human labels, not code — render them in the default sans face. */
+.admin-list .api-row strong {
+  font-family: var(--font-sans);
 }
 
 /* ── Settings: calm, well-segmented key/value lists ────────────────────────

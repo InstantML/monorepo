@@ -1,4 +1,4 @@
-import { Code2, Copy, KeyRound, Plus, RefreshCw, X } from "lucide-react";
+import { Code2, Copy, KeyRound, Plus, X } from "lucide-react";
 
 import { AgentSetupPanel } from "./agent-setup";
 import { ApiTable } from "./api-table";
@@ -22,7 +22,6 @@ type Props = {
   onApiKeyNameChange: (name: string) => void;
   onCopyNewApiKey: () => void;
   onCreateApiKey: () => void;
-  onLoadApiKeys: () => void;
   onRevokeApiKey: (id: string) => void;
   primaryRunId: string | null;
   project: string;
@@ -44,7 +43,6 @@ export function ApiTabPane({
   onApiKeyNameChange,
   onCopyNewApiKey,
   onCreateApiKey,
-  onLoadApiKeys,
   onRevokeApiKey,
   primaryRunId,
   project,
@@ -60,7 +58,6 @@ export function ApiTabPane({
         <section className="panel">
           <div className="panel-head">
             <h2><KeyRound size={15} /> API Keys</h2>
-            <button className="ghost" disabled={adminBusy || !canManageOrg} onClick={onLoadApiKeys} type="button"><RefreshCw size={14} /> Refresh</button>
           </div>
           <div className="panel-body admin-stack">
             {canManageOrg ? (

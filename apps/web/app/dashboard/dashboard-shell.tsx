@@ -4712,7 +4712,6 @@ function dismissTopOverlay() {
               onApiKeyNameChange={setApiKeyName}
               onCopyNewApiKey={copyNewApiKey}
               onCreateApiKey={createDashboardApiKey}
-              onLoadApiKeys={loadApiKeys}
               onRevokeApiKey={revokeDashboardApiKey}
               primaryRunId={primaryRun?.id ?? null}
               project={project}
