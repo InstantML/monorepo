@@ -1123,7 +1123,7 @@ mod tests {
     #[test]
     fn object_explorer_cursor_uses_stable_sort_tuple() {
         let run = run(10, "seed-10");
-        let mut rows = vec![
+        let mut rows = [
             ObjectExplorerCandidate {
                 row: attribute(1, run.id, "image", Some(1.0), 1),
                 run: run.clone(),
