@@ -454,6 +454,12 @@ Re-review:
   to create a throwaway workspace/run, archive it, restore it, soft-delete it,
   verify lifecycle-filtered summaries, and confirm exact reads return 404 after
   deletion.
+- 2026-06-30: Independent PR review found lifecycle accounting drift: deleted
+  runs still counted toward retained run usage/write gates, and active summary
+  totals could use raw run counters after archive/delete. Fixed by counting only
+  readable non-deleted runs for usage while keeping archived runs retained, and
+  by disabling the raw active-total fast path when an org has archived/deleted
+  lifecycle rows. Added regression tests for both paths.
 
 ## Coverage Exceptions
 

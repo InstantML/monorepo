@@ -712,6 +712,7 @@ fn indexed_run_total(
         && !has_status_filter(query)
         && !has_display_status_filter(query)
         && lifecycle_filter(query) == "active"
+        && !org_has_hidden_lifecycle_runs(data, ctx.org_id)
     {
         if let Some(project_id) = ctx.auth.as_ref().and_then(|auth| auth.project_id) {
             let Some(project) = data.projects.get(&project_id) else {
@@ -764,6 +765,12 @@ fn indexed_run_total(
             })
             .count()
     }
+}
+
+fn org_has_hidden_lifecycle_runs(data: &StoreData, org_id: Uuid) -> bool {
+    data.run_lifecycles.values().any(|lifecycle| {
+        lifecycle.org_id == org_id && matches!(lifecycle.state.as_str(), "archived" | "deleted")
+    })
 }
 
 fn run_filter_cache_key(
@@ -932,6 +939,51 @@ mod tests {
     }
 
     #[test]
+    fn created_index_total_is_lifecycle_aware_for_active_default() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: None,
+        };
+        let mut data = StoreData::default();
+        let active = run(1, "active", 1);
+        let archived = run(2, "archived", 2);
+        let deleted = run(3, "deleted", 3);
+        data.insert_run(active.clone());
+        data.insert_run(archived.clone());
+        data.insert_run(deleted.clone());
+        data.insert_run_lifecycle(lifecycle_row(&archived, "archived", 10));
+        data.insert_run_lifecycle(lifecycle_row(&deleted, "deleted", 11));
+        let search = CompiledRunSearch::empty();
+
+        let (active_total, active_page) =
+            created_index_page(&data, &ctx, &HashMap::new(), &search, 0, 25).unwrap();
+        assert_eq!(active_total, 1);
+        assert_eq!(
+            active_page.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![active.id]
+        );
+
+        let all_query = HashMap::from([("lifecycle".to_string(), "all".to_string())]);
+        let (all_total, all_page) =
+            created_index_page(&data, &ctx, &all_query, &search, 0, 25).unwrap();
+        assert_eq!(all_total, 2);
+        assert_eq!(
+            all_page.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![archived.id, active.id]
+        );
+
+        let archived_query = HashMap::from([("lifecycle".to_string(), "archived".to_string())]);
+        let (archived_total, archived_page) =
+            created_index_page(&data, &ctx, &archived_query, &search, 0, 25).unwrap();
+        assert_eq!(archived_total, 1);
+        assert_eq!(
+            archived_page.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![archived.id]
+        );
+    }
+
+    #[test]
     fn browser_session_created_index_includes_all_same_workspace_projects() {
         let org_id = Uuid::from_u128(1);
         let other_org_id = Uuid::from_u128(2);
@@ -1054,5 +1106,20 @@ mod tests {
 
         assert_eq!(duration_seconds(&finished), Some(30.0));
         assert_eq!(duration_seconds(&running), None);
+    }
+
+    fn lifecycle_row(run: &RunRow, state: &str, created_offset: i64) -> RunLifecycleRow {
+        RunLifecycleRow {
+            kind: "run_lifecycle".to_string(),
+            id: Uuid::new_v4(),
+            org_id: run.org_id,
+            run_id: run.id,
+            state: state.to_string(),
+            reason: None,
+            actor_id: None,
+            actor_type: "test".to_string(),
+            idempotency_key: None,
+            created_at: run.created_at + ChronoDuration::seconds(created_offset),
+        }
     }
 }
