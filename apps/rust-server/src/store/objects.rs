@@ -391,50 +391,19 @@ pub async fn list_objects_explorer(
         .collect::<HashMap<_, _>>();
 
     let data = store.data.lock().await;
-    let mut candidates = Vec::new();
-    for (run_id, run) in &run_by_id {
-        for attribute_id in data.attributes_by_run.get(run_id).into_iter().flatten() {
-            let Some(row) = data.attributes.get(&(ctx.org_id, *attribute_id)) else {
-                continue;
-            };
-            let Some(row_kind) = explorer_kind_for_row(&row.kind) else {
-                continue;
-            };
-            if kind
-                .as_ref()
-                .map(|value| row_kind != value)
-                .unwrap_or(false)
-            {
-                continue;
-            }
-            if key
-                .as_ref()
-                .map(|value| !row.path.contains(value))
-                .unwrap_or(false)
-            {
-                continue;
-            }
-            if !step_in_range(row.step, from_step, to_step) {
-                continue;
-            }
-            candidates.push(ObjectExplorerCandidate {
-                row: row.clone(),
-                run: run.clone(),
-            });
-        }
-    }
-    candidates.sort_by(compare_object_explorer_candidates);
-    let after_cursor = candidates
-        .into_iter()
-        .filter(|candidate| {
-            cursor
-                .as_ref()
-                .map(|cursor| compare_candidate_to_cursor(candidate, cursor) == Ordering::Greater)
-                .unwrap_or(true)
-        })
-        .collect::<Vec<_>>();
-    let has_next = after_cursor.len() > limit;
-    let page = after_cursor.into_iter().take(limit).collect::<Vec<_>>();
+    let explorer_page = object_explorer_page_from_index(
+        &data,
+        ctx,
+        &run_by_id,
+        &kind,
+        &key,
+        from_step,
+        to_step,
+        cursor.as_ref(),
+        limit,
+    );
+    let page = explorer_page.candidates;
+    let has_next = explorer_page.has_next;
     let next_cursor = if has_next {
         page.last()
             .map(encode_object_explorer_cursor)
@@ -457,6 +426,87 @@ pub async fn list_objects_explorer(
             "has_next_page": has_next
         }
     }))
+}
+
+struct ObjectExplorerPage {
+    candidates: Vec<ObjectExplorerCandidate>,
+    has_next: bool,
+    #[allow(dead_code)]
+    inspected_index_entries: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn object_explorer_page_from_index(
+    data: &StoreData,
+    ctx: &RequestContext,
+    run_by_id: &HashMap<Uuid, RunRow>,
+    kind: &Option<String>,
+    key: &Option<String>,
+    from_step: Option<f64>,
+    to_step: Option<f64>,
+    cursor: Option<&ObjectExplorerCursor>,
+    limit: usize,
+) -> ObjectExplorerPage {
+    let mut page = Vec::with_capacity(limit.saturating_add(1));
+    let mut inspected_index_entries = 0;
+    for index_key in data
+        .object_attributes_by_org
+        .get(&ctx.org_id)
+        .into_iter()
+        .flat_map(|keys| keys.iter())
+    {
+        inspected_index_entries += 1;
+        let Some(row) = data.attributes.get(&(ctx.org_id, index_key.attribute_id)) else {
+            continue;
+        };
+        let Some(run) = run_by_id.get(&row.run_id) else {
+            continue;
+        };
+        let Some(row_kind) = explorer_kind_for_row(&row.kind) else {
+            continue;
+        };
+        if kind
+            .as_ref()
+            .map(|value| row_kind != value)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if key
+            .as_ref()
+            .map(|value| !row.path.contains(value))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if !step_in_range(row.step, from_step, to_step) {
+            continue;
+        }
+        let candidate = ObjectExplorerCandidate {
+            row: row.clone(),
+            run: run.clone(),
+        };
+        if cursor
+            .as_ref()
+            .map(|cursor| compare_candidate_to_cursor(&candidate, cursor) != Ordering::Greater)
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        page.push(candidate);
+        if page.len() > limit {
+            break;
+        }
+    }
+    let has_next = page.len() > limit;
+    if has_next {
+        page.truncate(limit);
+    }
+    ObjectExplorerPage {
+        candidates: page,
+        has_next,
+        inspected_index_entries,
+    }
 }
 
 pub async fn list_object_rows(
@@ -605,6 +655,7 @@ fn step_in_range(step: Option<f64>, from_step: Option<f64>, to_step: Option<f64>
         && to_step.map(|to| step <= to).unwrap_or(true)
 }
 
+#[cfg(test)]
 fn compare_object_explorer_candidates(
     left: &ObjectExplorerCandidate,
     right: &ObjectExplorerCandidate,
@@ -692,7 +743,7 @@ fn object_explorer_value(data: &StoreData, candidate: &ObjectExplorerCandidate) 
             json!({
                 "id": artifact.id,
                 "name": artifact.name,
-                "uri": artifact.uri,
+                "uri": artifact.public_uri(),
                 "mime_type": artifact.mime_type,
                 "size_bytes": artifact.size_bytes,
                 "storage_backend": artifact.storage_backend
@@ -1159,6 +1210,34 @@ mod tests {
     }
 
     #[test]
+    fn object_explorer_page_stops_after_limit_lookahead_for_broad_reads() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: None,
+        };
+        let run = run(10, "seed-10");
+        let mut data = StoreData::default();
+        for id in 1..=150 {
+            data.insert_attribute(attribute(id, run.id, "image", Some(id as f64), id));
+        }
+        let run_by_id = HashMap::from([(run.id, run)]);
+        let page = object_explorer_page_from_index(
+            &data, &ctx, &run_by_id, &None, &None, None, None, None, 20,
+        );
+
+        assert!(page.has_next);
+        assert_eq!(page.inspected_index_entries, 21);
+        assert_eq!(
+            page.candidates
+                .iter()
+                .map(|candidate| candidate.row.id)
+                .collect::<Vec<_>>(),
+            (131..=150).rev().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn object_explorer_text_preview_is_bounded_on_utf8_boundary() {
         let long = format!(
             "{}{}",
@@ -1239,7 +1318,7 @@ mod tests {
             run_id: run.id,
             kind: "file".to_string(),
             name: "frame.png".to_string(),
-            uri: "instantml://artifacts/frame.png".to_string(),
+            uri: "instantml://artifacts/private-bucket/org/run/frame.png".to_string(),
             step: Some(3.0),
             size_bytes: Some(1024),
             sha256: Some("abc".to_string()),
@@ -1256,7 +1335,14 @@ mod tests {
 
         assert_eq!(value["object_id"], json!("attr:1"));
         assert_eq!(value["artifact"]["mime_type"], json!("image/png"));
+        assert_eq!(
+            value["artifact"]["uri"],
+            json!(format!("instantml://artifacts/{artifact_id}"))
+        );
         assert!(value["artifact"].get("storage_key").is_none());
         assert!(value["artifact"].get("storage_path").is_none());
+        assert!(!serde_json::to_string(&value)
+            .unwrap()
+            .contains("private-bucket"));
     }
 }

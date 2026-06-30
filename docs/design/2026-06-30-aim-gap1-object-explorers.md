@@ -208,8 +208,11 @@ Python SDK:
 
 Storage:
 
-- No migration planned. If benchmarks prove a projection/index is required, this
-  design must be amended before implementation continues.
+- No migration planned. The Rust store maintains an in-memory per-org
+  object-attribute projection keyed by the explorer cursor sort tuple so broad
+  first-page reads can walk already-sorted object IDs and stop after
+  `limit + 1`. A durable object manifest table remains deferred until hosted
+  profiling proves the in-process projection is insufficient.
 
 Docs:
 
@@ -220,6 +223,10 @@ Docs:
 
 - Default page size 50, maximum 100.
 - Access filtering happens before artifact joins and pagination.
+- Broad reads are backed by the per-org object-attribute projection and
+  materialize only one lookahead candidate beyond the requested page. More
+  selective key/project/search filters may inspect additional index entries but
+  do not sort or clone the full object corpus.
 - Initial tab load requests no artifact bytes.
 - Target local p95 under 150 ms for 1,000 matching objects in a 50-run project.
 - Target hosted p95 under 350 ms for sparse rich objects across 50,000 runs.
@@ -338,6 +345,11 @@ Re-review:
   all object kinds and caused a hydration warning. The Objects tab now syncs
   URL filters after hydration, preserves shareable params, and handles
   back/forward navigation.
+- 2026-06-30: Independent PR review found two object-explorer issues: media
+  artifact summaries exposed stored local/R2 URIs, and broad explorer reads
+  sorted the full candidate corpus before pagination. Fixed by returning
+  `ArtifactRow::public_uri()` and adding the per-org object-attribute projection
+  plus a `limit + 1` broad-read regression test.
 - 2026-06-30: Full `npm run rust:test` was attempted; non-object tests that use
   sqlx Postgres test harness failed because `DATABASE_URL` is not set in this
   local environment. Focused object tests passed.

@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     env,
     sync::Arc,
@@ -1393,6 +1394,7 @@ struct StoreData {
     run_filter_cache_order: VecDeque<RunFilterCacheKey>,
     attributes: BTreeMap<(Uuid, i64), AttributeRow>,
     attributes_by_run: HashMap<Uuid, Vec<i64>>,
+    object_attributes_by_org: HashMap<Uuid, BTreeSet<ObjectAttributeIndexKey>>,
     artifacts: BTreeMap<Uuid, ArtifactRow>,
     artifacts_by_run: HashMap<Uuid, Vec<Uuid>>,
     artifact_collections: BTreeMap<Uuid, ArtifactCollectionRow>,
@@ -1428,6 +1430,52 @@ struct StoreData {
     reports: BTreeMap<Uuid, ReportRow>,
     next_attribute_id_by_org: HashMap<Uuid, i64>,
     next_import_id_by_org: HashMap<Uuid, i64>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+struct ObjectAttributeIndexKey {
+    step_group: u8,
+    step_desc_key: u64,
+    created_desc: Reverse<DateTime<Utc>>,
+    id_desc: Reverse<i64>,
+    attribute_id: i64,
+}
+
+impl ObjectAttributeIndexKey {
+    fn from_attribute(attribute: &AttributeRow) -> Option<Self> {
+        if !matches!(
+            attribute.kind.as_str(),
+            "table"
+                | "image"
+                | "video"
+                | "audio"
+                | "histogram_series"
+                | "classification_eval"
+                | "string_series"
+        ) {
+            return None;
+        }
+        let (step_group, step_desc_key) = match attribute.step {
+            Some(step) if step.is_finite() => (0, u64::MAX - f64_total_order_key(step)),
+            Some(_) | None => (1, 0),
+        };
+        Some(Self {
+            step_group,
+            step_desc_key,
+            created_desc: Reverse(attribute.created_at),
+            id_desc: Reverse(attribute.id),
+            attribute_id: attribute.id,
+        })
+    }
+}
+
+fn f64_total_order_key(value: f64) -> u64 {
+    let bits = value.to_bits();
+    if (bits >> 63) != 0 {
+        !bits
+    } else {
+        bits ^ (1 << 63)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1716,6 +1764,13 @@ impl StoreData {
     }
 
     fn insert_attribute(&mut self, attribute: AttributeRow) {
+        if let Some(existing) = self
+            .attributes
+            .get(&(attribute.org_id, attribute.id))
+            .cloned()
+        {
+            self.remove_object_attribute_index(&existing);
+        }
         let next = self
             .next_attribute_id_by_org
             .entry(attribute.org_id)
@@ -1730,7 +1785,30 @@ impl StoreData {
             .or_default()
             .push(attribute.id);
         self.attributes
-            .insert((attribute.org_id, attribute.id), attribute);
+            .insert((attribute.org_id, attribute.id), attribute.clone());
+        self.insert_object_attribute_index(&attribute);
+    }
+
+    fn insert_object_attribute_index(&mut self, attribute: &AttributeRow) {
+        let Some(key) = ObjectAttributeIndexKey::from_attribute(attribute) else {
+            return;
+        };
+        self.object_attributes_by_org
+            .entry(attribute.org_id)
+            .or_default()
+            .replace(key);
+    }
+
+    fn remove_object_attribute_index(&mut self, attribute: &AttributeRow) {
+        let Some(key) = ObjectAttributeIndexKey::from_attribute(attribute) else {
+            return;
+        };
+        if let Some(keys) = self.object_attributes_by_org.get_mut(&attribute.org_id) {
+            keys.remove(&key);
+            if keys.is_empty() {
+                self.object_attributes_by_org.remove(&attribute.org_id);
+            }
+        }
     }
 
     fn insert_artifact(&mut self, artifact: ArtifactRow) {
@@ -1852,7 +1930,9 @@ impl StoreData {
             self.remove_run(run_id);
             if let Some(attribute_ids) = self.attributes_by_run.remove(&run_id) {
                 for id in attribute_ids {
-                    self.attributes.remove(&(delete.org_id, id));
+                    if let Some(attribute) = self.attributes.remove(&(delete.org_id, id)) {
+                        self.remove_object_attribute_index(&attribute);
+                    }
                     self.table_rows.remove(&(delete.org_id, id));
                 }
             }
