@@ -3265,8 +3265,10 @@ def _collect_system_metrics_fallback() -> dict[str, float]:
         import resource
 
         ru_maxrss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        # ru_maxrss is KiB on Linux, bytes on macOS/BSD.
-        metrics["system/process_rss_bytes"] = ru_maxrss if sys.platform == "darwin" else ru_maxrss * 1024.0
+        # ru_maxrss is KiB on Linux but bytes on the BSD-derived platforms
+        # (macOS, *BSD), so only scale KiB -> bytes off the BSD family.
+        rss_is_bytes = sys.platform == "darwin" or "bsd" in sys.platform
+        metrics["system/process_rss_bytes"] = ru_maxrss if rss_is_bytes else ru_maxrss * 1024.0
     except Exception:  # noqa: BLE001 - fallback must never raise
         pass
     try:
