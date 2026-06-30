@@ -10,6 +10,7 @@
 
 const BLOCK_SCHEMA_HINT =
   " The `blocks` array must match the shape returned by tracker.report_block_schema (heading / paragraph / markdown / code / callout / horizontal_rule / image / panel_grid).";
+const DEFAULT_WEB_URL = "https://instantml.ai";
 
 export const BLOCK_SCHEMA_EXAMPLE = {
   blocks: [
@@ -77,6 +78,11 @@ function reportFromPayload(payload) {
   return payload?.report ?? payload ?? null;
 }
 
+function baseUrl(value, fallback = DEFAULT_WEB_URL) {
+  const raw = typeof value === "string" && value.trim() ? value : fallback;
+  return raw.replace(/\/+$/, "");
+}
+
 function textResult(value) {
   return {
     content: [
@@ -122,7 +128,7 @@ function metricSummariesFromRunPayload(result) {
  * plain array — the MCP transport loop in mcp-server.mjs registers list/call
  * handlers against it.
  */
-export function buildTools({ apiUrl, apiKey }) {
+export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
   async function api(path, params = {}) {
     const url = new URL(path, apiUrl);
     for (const [key, value] of Object.entries(params)) {
@@ -551,10 +557,10 @@ export function buildTools({ apiUrl, apiKey }) {
         );
         const report = reportFromPayload(result);
         const token = report?.share_token ?? null;
-        const base = (apiUrl || "").replace(/\/+$/, "");
+        const webBase = baseUrl(webUrl);
         return textResult({
           share_token: token,
-          share_url: token ? `${base}/r/${token}` : null,
+          share_url: token ? `${webBase}/r/${token}` : null,
           report,
         });
       },

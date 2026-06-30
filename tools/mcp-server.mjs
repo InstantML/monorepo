@@ -57,6 +57,7 @@ import { buildTools } from "./mcp-server-tools.mjs";
 
 export const DEFAULT_API_URL = "https://api.instantml.ai";
 export const DEFAULT_MCP_PUBLIC_URL = "https://mcp.instantml.ai";
+export const DEFAULT_WEB_URL = "https://instantml.ai";
 const JSON_CONTENT_TYPE = "application/json";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -83,17 +84,31 @@ function normalizeTransport(value) {
   return "stdio";
 }
 
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return undefined;
+}
+
 export function parseCliOptions(argv = process.argv.slice(2), env = process.env) {
   const transport = normalizeTransport(
     getArgValue(argv, "--transport") ?? env.INSTANTML_MCP_TRANSPORT,
   );
   const apiUrl = getArgValue(argv, "--api-url") ?? env.INSTANTML_API_URL ?? DEFAULT_API_URL;
+  const webUrl =
+    firstNonEmpty(
+      getArgValue(argv, "--web-url"),
+      env.INSTANTML_WEB_URL,
+      env.INSTANTML_FRONTEND_BASE_URL,
+    ) ?? DEFAULT_WEB_URL;
   const portValue = getArgValue(argv, "--port") ?? env.INSTANTML_MCP_PORT ?? env.PORT ?? "8080";
   const port = Number.parseInt(portValue, 10);
   const hasCloudRunPort = Boolean(env.PORT);
   return {
     transport,
     apiUrl,
+    webUrl,
     apiKey: env.INSTANTML_API_KEY,
     host:
       getArgValue(argv, "--host") ??
@@ -166,8 +181,8 @@ function isProtectedResourceMetadataPath(path) {
   );
 }
 
-function createMcpServer({ apiUrl, apiKey }) {
-  const tools = buildTools({ apiUrl, apiKey });
+function createMcpServer({ apiUrl, apiKey, webUrl }) {
+  const tools = buildTools({ apiUrl, apiKey, webUrl });
 
   const server = new Server(
     { name: "instantml-mcp", version: "0.3.0" },
@@ -224,18 +239,18 @@ function writeJsonRpcError(res, statusCode, code, message, headers = {}) {
   );
 }
 
-async function startStdio({ apiUrl, apiKey }) {
+async function startStdio({ apiUrl, apiKey, webUrl }) {
   if (!apiKey) {
     console.error("ERROR: set INSTANTML_API_KEY for stdio MCP mode");
     process.exit(1);
   }
-  const server = createMcpServer({ apiUrl, apiKey });
+  const server = createMcpServer({ apiUrl, apiKey, webUrl });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(`instantml-mcp listening (transport=stdio, api=${apiUrl})`);
 }
 
-async function handleHttpMcpRequest(req, res, { apiUrl, oauth = null }) {
+async function handleHttpMcpRequest(req, res, { apiUrl, webUrl, oauth = null }) {
   if (req.method === "OPTIONS") {
     writeJson(res, 204, {});
     return;
@@ -282,7 +297,7 @@ async function handleHttpMcpRequest(req, res, { apiUrl, oauth = null }) {
     return;
   }
 
-  const server = createMcpServer({ apiUrl, apiKey });
+  const server = createMcpServer({ apiUrl, apiKey, webUrl });
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });

@@ -218,6 +218,7 @@ checkout instead of using the hosted endpoint:
       "args": ["/path/to/instantml/tools/mcp-server.mjs"],
       "env": {
         "INSTANTML_API_URL": "https://api.instantml.ai",
+        "INSTANTML_WEB_URL": "https://instantml.ai",
         "INSTANTML_API_KEY": "instantml_..."
       }
     }
@@ -226,8 +227,9 @@ checkout instead of using the hosted endpoint:
 ```
 
 The local fallback runs next to the agent over stdio. `INSTANTML_API_URL`
-defaults to `https://api.instantml.ai`, so consumers normally only need to set
-`INSTANTML_API_KEY`.
+defaults to `https://api.instantml.ai`, and `INSTANTML_WEB_URL` defaults to
+`https://instantml.ai` for report share links, so consumers normally only need
+to set `INSTANTML_API_KEY`.
 
 ## Available run tools
 

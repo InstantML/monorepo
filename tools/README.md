@@ -8,7 +8,8 @@ Use the root `../SETUP.md` for fresh-clone setup. Node helpers assume `npm ci` h
 
 `mcp-server.mjs` exposes InstantML run, metric, export, workspace-view, and
 report tools to MCP-compatible agents. The consumer API base defaults to
-`https://api.instantml.ai`.
+`https://api.instantml.ai`, and report share links default to the hosted web app
+at `https://instantml.ai`.
 
 Local stdio mode is useful for preview and clients that launch local MCP
 processes:
@@ -29,6 +30,9 @@ Useful overrides:
 
 - `INSTANTML_API_URL`: upstream InstantML API. Default:
   `https://api.instantml.ai`.
+- `INSTANTML_WEB_URL`: frontend origin used when MCP report tools return public
+  `/r/<share-token>` links. Defaults to `https://instantml.ai`; falls back to
+  `INSTANTML_FRONTEND_BASE_URL` when set. The CLI also accepts `--web-url`.
 - `INSTANTML_API_KEY`: API key for local stdio mode.
 - `INSTANTML_MCP_TRANSPORT`: `stdio` or `http`.
 - `INSTANTML_MCP_HOST`: HTTP bind host. Defaults to `127.0.0.1`, or
