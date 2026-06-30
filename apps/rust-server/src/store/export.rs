@@ -19,6 +19,195 @@ pub async fn side_by_side(
         .get("diff_only")
         .map(|value| value == "true")
         .unwrap_or(false);
+    build_side_by_side(
+        store,
+        ctx,
+        run_ids,
+        reference_run_id,
+        diff_only,
+        None,
+        false,
+    )
+    .await
+}
+
+pub async fn compare_matching_runs(
+    store: &Store,
+    ctx: &RequestContext,
+    input: CompareMatchingRunsRequest,
+) -> AppResult<Value> {
+    let limit = input.limit.unwrap_or(20);
+    if limit == 0 {
+        return Err(AppError::validation("limit must be at least 1"));
+    }
+    if limit > MAX_SIDE_BY_SIDE_RUNS {
+        return Err(AppError::validation(format!(
+            "limit cannot exceed {MAX_SIDE_BY_SIDE_RUNS}"
+        )));
+    }
+
+    let sort_by = validate_run_sort(input.sort_by.as_deref().unwrap_or("created"))?;
+    let metric_key = input
+        .metric_key
+        .as_deref()
+        .map(|value| validate_name(Some(value), "metric_key"))
+        .transpose()?
+        .or_else(|| {
+            matches!(sort_by.as_str(), "metric-latest" | "metric-best")
+                .then(|| "eval/return_mean".to_string())
+        });
+    let include_rows = input.include_rows.unwrap_or(true);
+    let diff_only = input.diff_only.unwrap_or(false);
+
+    let mut query = HashMap::new();
+    if let Some(project) = input.project.as_ref().filter(|value| !value.is_empty()) {
+        query.insert("project".to_string(), project.clone());
+    }
+    if let Some(q) = input.q.as_ref().filter(|value| !value.trim().is_empty()) {
+        query.insert("q".to_string(), q.clone());
+    }
+    if let Some(status) = input.status.as_ref().filter(|value| !value.is_empty()) {
+        query.insert("status".to_string(), status.clone());
+    }
+    if let Some(display_status) = input
+        .display_status
+        .as_ref()
+        .filter(|value| !value.is_empty())
+    {
+        query.insert("display_status".to_string(), display_status.clone());
+    }
+    query.insert("sort_by".to_string(), sort_by.clone());
+    if let Some(metric_key) = metric_key.as_ref() {
+        query.insert("metric_key".to_string(), metric_key.clone());
+    }
+
+    let ranked = filtered_runs(store, ctx, &query).await?;
+    let total_matching_runs = ranked.len();
+    let mut selected = ranked.iter().take(limit).cloned().collect::<Vec<_>>();
+    let mut selection_reasons = selected
+        .iter()
+        .map(|run| (run.id, "selected".to_string()))
+        .collect::<HashMap<_, _>>();
+
+    if let Some(reference_run_id) = input.reference_run_id {
+        if !selected.iter().any(|run| run.id == reference_run_id) {
+            let reference = ranked
+                .iter()
+                .find(|run| run.id == reference_run_id)
+                .cloned()
+                .ok_or_else(|| AppError::not_found("run not found"))?;
+            if selected.len() >= MAX_SIDE_BY_SIDE_RUNS {
+                if let Some(removed) = selected.pop() {
+                    selection_reasons.remove(&removed.id);
+                }
+            }
+            selection_reasons.insert(reference.id, "reference".to_string());
+            selected.push(reference);
+        }
+    }
+
+    let selected_run_ids = selected.iter().map(|run| run.id).collect::<Vec<_>>();
+    let effective_reference_run_id = input
+        .reference_run_id
+        .or_else(|| selected_run_ids.first().copied());
+    let metric_series = if let Some(metric_key) = metric_key.as_ref() {
+        let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+        metric_series_for_runs_key(&metric_store, ctx.org_id, &selected_run_ids, metric_key)
+            .await?
+            .into_iter()
+            .map(|row| (row.run_id, row))
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
+    let candidates = selected
+        .iter()
+        .enumerate()
+        .map(|(index, run)| {
+            candidate_evidence(
+                index + 1,
+                run,
+                &sort_by,
+                metric_key.as_deref(),
+                metric_key.as_ref().and_then(|_| metric_series.get(&run.id)),
+                selection_reasons
+                    .get(&run.id)
+                    .map(String::as_str)
+                    .unwrap_or("selected"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let summary_metric_keys = metric_key
+        .as_ref()
+        .map(|key| vec![key.clone()])
+        .unwrap_or_default();
+    let runs =
+        summarize_runs_for_metric_keys(store, selected.clone(), &summary_metric_keys).await?;
+    let rows_payload = if include_rows {
+        let row_metric_keys = metric_key
+            .as_ref()
+            .map(|key| vec![key.clone()])
+            .unwrap_or_default();
+        Some(
+            build_side_by_side(
+                store,
+                ctx,
+                selected_run_ids.clone(),
+                effective_reference_run_id,
+                diff_only,
+                Some(row_metric_keys),
+                true,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    let rows = rows_payload
+        .as_ref()
+        .and_then(|payload| payload.get("rows").cloned())
+        .unwrap_or_else(|| json!([]));
+    let rows_truncated = rows_payload
+        .as_ref()
+        .and_then(|payload| payload.get("truncated").and_then(Value::as_bool))
+        .unwrap_or(false);
+
+    Ok(json!({
+        "query": {
+            "project": input.project,
+            "q": input.q,
+            "status": input.status,
+            "display_status": input.display_status,
+            "sort_by": sort_by,
+            "metric_key": metric_key
+        },
+        "total_matching_runs": total_matching_runs,
+        "selected_run_ids": selected_run_ids,
+        "candidates": candidates,
+        "runs": runs,
+        "rows": rows,
+        "reference_run_id": effective_reference_run_id,
+        "limits": {
+            "runs": MAX_SIDE_BY_SIDE_RUNS,
+            "rows": MAX_SIDE_BY_SIDE_ROWS
+        },
+        "truncated": {
+            "runs": total_matching_runs > limit,
+            "rows": rows_truncated
+        }
+    }))
+}
+
+async fn build_side_by_side(
+    store: &Store,
+    ctx: &RequestContext,
+    run_ids: Vec<Uuid>,
+    reference_run_id: Option<Uuid>,
+    diff_only: bool,
+    metric_keys: Option<Vec<String>>,
+    prioritize_differences: bool,
+) -> AppResult<Value> {
     let (runs, attributes) = {
         let data = store.data.lock().await;
         let mut runs = Vec::new();
@@ -39,13 +228,21 @@ pub async fn side_by_side(
         (runs, attributes)
     };
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-    let series = metric_series_for_runs_limited(
-        &metric_store,
-        ctx.org_id,
-        &run_ids,
-        MAX_SIDE_BY_SIDE_ROWS as i64 + 1,
-    )
-    .await?;
+    let series = match metric_keys.as_ref() {
+        Some(keys) if keys.is_empty() => Vec::new(),
+        Some(keys) => {
+            metric_series_for_runs_keys(&metric_store, ctx.org_id, &run_ids, keys).await?
+        }
+        None => {
+            metric_series_for_runs_limited(
+                &metric_store,
+                ctx.org_id,
+                &run_ids,
+                MAX_SIDE_BY_SIDE_ROWS as i64 + 1,
+            )
+            .await?
+        }
+    };
     let mut values_by_run: HashMap<Uuid, BTreeMap<String, Value>> = HashMap::new();
     for run in &runs {
         let mut values = BTreeMap::new();
@@ -79,9 +276,8 @@ pub async fn side_by_side(
     for values in values_by_run.values() {
         paths.extend(values.keys().cloned());
     }
-    let rows = paths
+    let mut row_entries = paths
         .into_iter()
-        .take(MAX_SIDE_BY_SIDE_ROWS)
         .filter_map(|path| {
             let mut values = Map::new();
             for run in &runs {
@@ -102,12 +298,78 @@ pub async fn side_by_side(
             let reference = reference_run_id
                 .and_then(|id| values.get(&id.to_string()).cloned())
                 .unwrap_or(Value::Null);
-            Some(json!({ "path": path, "values": values, "reference_run_id": reference_run_id, "reference": reference, "different": different }))
+            Some((
+                path.clone(),
+                different,
+                json!({ "path": path, "values": values, "reference_run_id": reference_run_id, "reference": reference, "different": different }),
+            ))
         })
         .collect::<Vec<_>>();
+    if prioritize_differences {
+        row_entries.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    }
+    let truncated = row_entries.len() > MAX_SIDE_BY_SIDE_ROWS;
+    let rows = row_entries
+        .into_iter()
+        .take(MAX_SIDE_BY_SIDE_ROWS)
+        .map(|(_, _, row)| row)
+        .collect::<Vec<_>>();
     Ok(
-        json!({ "runs": runs, "reference_run_id": reference_run_id, "rows": rows, "truncated": false }),
+        json!({ "runs": runs, "reference_run_id": reference_run_id, "rows": rows, "truncated": truncated }),
     )
+}
+
+fn candidate_evidence(
+    rank: usize,
+    run: &RunRow,
+    sort_by: &str,
+    metric_key: Option<&str>,
+    metric: Option<&MetricSeriesRow>,
+    selection_reason: &str,
+) -> Value {
+    let sort_mode = match sort_by {
+        "metric-latest" => "latest",
+        "metric-best" if metric_key.map(is_minimize_metric).unwrap_or(false) => "min",
+        "metric-best" => "max",
+        other => other,
+    };
+    let sort_value = match sort_by {
+        "metric-latest" => metric
+            .and_then(|row| row.latest)
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        "metric-best" if metric_key.map(is_minimize_metric).unwrap_or(false) => metric
+            .and_then(|row| row.min)
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        "metric-best" => metric
+            .and_then(|row| row.max)
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        "duration" => duration_seconds_for_candidate(run)
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        "name" => json!(run.name),
+        "status" => json!(run.status),
+        _ => json!(run.created_at),
+    };
+    json!({
+        "rank": rank,
+        "run_id": run.id,
+        "sort_value": sort_value,
+        "sort_mode": sort_mode,
+        "metric_key": metric_key,
+        "metric_count": metric.map(|row| row.count),
+        "latest_step": metric.and_then(|row| row.latest_step),
+        "best_step": metric.and_then(|row| row.best_step),
+        "missing_metric": metric_key.is_some() && metric.is_none(),
+        "selection_reason": selection_reason
+    })
+}
+
+fn duration_seconds_for_candidate(run: &RunRow) -> Option<f64> {
+    run.finished_at
+        .map(|finished| (finished - run.started_at).num_milliseconds() as f64 / 1_000.0)
 }
 
 pub async fn export_data(

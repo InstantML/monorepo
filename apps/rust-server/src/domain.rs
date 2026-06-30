@@ -1095,6 +1095,21 @@ pub struct CreateRunForkRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct CompareMatchingRunsRequest {
+    pub project: Option<String>,
+    #[serde(default, alias = "query")]
+    pub q: Option<String>,
+    pub status: Option<String>,
+    pub display_status: Option<String>,
+    pub sort_by: Option<String>,
+    pub metric_key: Option<String>,
+    pub limit: Option<usize>,
+    pub reference_run_id: Option<Uuid>,
+    pub diff_only: Option<bool>,
+    pub include_rows: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateDashboardPreferencesRequest {
     pub selected_project: Option<String>,
 }

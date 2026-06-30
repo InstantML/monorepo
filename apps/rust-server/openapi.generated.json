@@ -5087,6 +5087,74 @@
         ]
       }
     },
+    "/api/runs/compare-query": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "compare_matching_runs",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompareMatchingRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Filtered run comparison with selected candidate evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JsonObjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid compare query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Reference run not found in the visible query scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/runs/side-by-side": {
       "get": {
         "tags": [
@@ -11920,6 +11988,73 @@
           },
           "status": {
             "type": "string"
+          }
+        }
+      },
+      "CompareMatchingRunsRequest": {
+        "type": "object",
+        "properties": {
+          "diff_only": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "display_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "include_rows": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "metric_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "q": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reference_run_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "sort_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

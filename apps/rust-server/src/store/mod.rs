@@ -81,12 +81,13 @@ use crate::{
         BillingUsageReportRecord, ClerkAuthRequest, ClickHouseConnectionCreateRequest,
         ClickHouseConnectionRotateCredentialsRequest, ClickHouseConnectionStatus,
         ClickHouseConnectionValidateRequest, ClickHouseConnectionValidationResponse,
-        CompleteArtifactUploadFile, CompleteArtifactUploadRequest, ConsoleLogInput,
-        CreateApiKeyRequest, CreateArtifactInputEdgeRequest, CreateArtifactRequest,
-        CreateAttributesRequest, CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest,
-        CreateEmbedSessionRequest, CreateEmbedSessionResponse, CreateInvitationRequest,
-        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
-        CreateRunForkRequest, CreateRunRequest, CreateUserRequest, CreatedAuthSession,
+        CompareMatchingRunsRequest, CompleteArtifactUploadFile, CompleteArtifactUploadRequest,
+        ConsoleLogInput, CreateApiKeyRequest, CreateArtifactInputEdgeRequest,
+        CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
+        CreateCurrentUserOrganizationRequest, CreateEmbedSessionRequest,
+        CreateEmbedSessionResponse, CreateInvitationRequest, CreateObjectRequest,
+        CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest, CreateRunForkRequest,
+        CreateRunRequest, CreateUserRequest, CreatedAuthSession,
         CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DataCellRow,
         DataCellWriterLeaseRow, DeleteArtifactAliasRequest, DeleteArtifactVersionRequest,
         DevGoogleAuthRequest, EmailDeliveryRow, EmbedAuthContext, EmbedCurrentSession,
@@ -3362,6 +3363,117 @@ mod tests {
             sorted.iter().map(|run| run.id).collect::<Vec<_>>(),
             vec![running_id, stopped_id, stopping_id]
         );
+    }
+
+    #[tokio::test]
+    async fn compare_matching_runs_appends_reference_within_filtered_scope() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let selected_id = Uuid::from_u128(101);
+        let reference_id = Uuid::from_u128(102);
+        let other_project_id = Uuid::from_u128(103);
+        {
+            let mut data = store.data.lock().await;
+            let mut selected = replay_run(org_id, selected_id, "finished");
+            selected.name = "new-candidate".to_string();
+            selected.project = "cartpole".to_string();
+            selected.created_at = epoch() + ChronoDuration::seconds(30);
+            selected.started_at = selected.created_at;
+            selected.config = json!({ "lr": 0.001 });
+
+            let mut reference = replay_run(org_id, reference_id, "finished");
+            reference.name = "old-reference".to_string();
+            reference.project = "cartpole".to_string();
+            reference.created_at = epoch() + ChronoDuration::seconds(10);
+            reference.started_at = reference.created_at;
+            reference.config = json!({ "lr": 0.01 });
+
+            let mut other_project = replay_run(org_id, other_project_id, "finished");
+            other_project.name = "wrong-project".to_string();
+            other_project.project = "iris".to_string();
+            other_project.created_at = epoch() + ChronoDuration::seconds(60);
+            other_project.started_at = other_project.created_at;
+
+            data.insert_run(selected);
+            data.insert_run(reference);
+            data.insert_run(other_project);
+        }
+
+        let payload = compare_matching_runs(
+            &store,
+            &ctx,
+            CompareMatchingRunsRequest {
+                project: Some("cartpole".to_string()),
+                q: None,
+                status: None,
+                display_status: None,
+                sort_by: Some("created".to_string()),
+                metric_key: None,
+                limit: Some(1),
+                reference_run_id: Some(reference_id),
+                diff_only: Some(true),
+                include_rows: Some(true),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(payload["total_matching_runs"], json!(2));
+        assert_eq!(
+            payload["selected_run_ids"],
+            json!([selected_id.to_string(), reference_id.to_string()])
+        );
+        assert_eq!(payload["truncated"]["runs"], json!(true));
+        assert_eq!(
+            payload["candidates"][1]["selection_reason"],
+            json!("reference")
+        );
+        let rows = payload["rows"].as_array().unwrap();
+        assert!(rows
+            .iter()
+            .any(|row| row["path"] == json!("config/lr") && row["different"] == json!(true)));
+
+        let summary_only = compare_matching_runs(
+            &store,
+            &ctx,
+            CompareMatchingRunsRequest {
+                project: Some("cartpole".to_string()),
+                q: None,
+                status: None,
+                display_status: None,
+                sort_by: Some("created".to_string()),
+                metric_key: None,
+                limit: Some(1),
+                reference_run_id: Some(reference_id),
+                diff_only: Some(false),
+                include_rows: Some(false),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(summary_only["reference_run_id"], json!(reference_id));
+        assert_eq!(summary_only["rows"], json!([]));
+
+        let err = compare_matching_runs(
+            &store,
+            &ctx,
+            CompareMatchingRunsRequest {
+                project: Some("cartpole".to_string()),
+                q: None,
+                status: None,
+                display_status: None,
+                sort_by: Some("created".to_string()),
+                metric_key: None,
+                limit: Some(1),
+                reference_run_id: Some(other_project_id),
+                diff_only: Some(false),
+                include_rows: Some(false),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.status(), axum::http::StatusCode::NOT_FOUND);
     }
 
     #[test]

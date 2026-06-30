@@ -35,11 +35,11 @@ use handlers::{
     auth_logout, auth_session, auth_switch_organization, billing_add_seat, billing_cancel,
     billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
     billing_report_storage_overage, billing_report_usage_overage, billing_status, billing_webhook,
-    cancel_import_job, commit_import_job, complete_artifact_upload, create_api_key,
-    create_artifact, create_artifact_input_edge, create_attributes, create_current_user_org,
-    create_customer_clickhouse_connection, create_embed_session, create_import_job,
-    create_invitation, create_object, create_org, create_project, create_report, create_run,
-    create_user, create_workspace_view, customer_clickhouse_connection_status,
+    cancel_import_job, commit_import_job, compare_matching_runs, complete_artifact_upload,
+    create_api_key, create_artifact, create_artifact_input_edge, create_attributes,
+    create_current_user_org, create_customer_clickhouse_connection, create_embed_session,
+    create_import_job, create_invitation, create_object, create_org, create_project, create_report,
+    create_run, create_user, create_workspace_view, customer_clickhouse_connection_status,
     delete_artifact_alias, delete_artifact_version, delete_report, delete_workspace_view,
     device_code_confirm, device_code_poll, device_code_start, disable_service_account,
     download_artifact, download_artifact_entry, embed_current_session, embed_frame_policy,
@@ -281,6 +281,7 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/api/overview", get(overview))
         .route("/api/runs/summary", get(runs_summary))
         .route("/api/runs/side-by-side", get(side_by_side))
+        .route("/api/runs/compare-query", post(compare_matching_runs))
         .route("/api/insights/system-usage", get(system_usage_insights))
         .route("/api/workspace-view-data", post(workspace_view_data))
         .route("/api/embed/sessions", post(create_embed_session))

@@ -1215,6 +1215,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/compare-query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["compare_matching_runs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/side-by-side": {
         parameters: {
             query?: never;
@@ -2685,6 +2701,19 @@ export interface components {
             required_egress_cidrs: string[];
             server_version?: string | null;
             status: string;
+        };
+        CompareMatchingRunsRequest: {
+            diff_only?: boolean | null;
+            display_status?: string | null;
+            include_rows?: boolean | null;
+            limit?: number | null;
+            metric_key?: string | null;
+            project?: string | null;
+            q?: string | null;
+            /** Format: uuid */
+            reference_run_id?: string | null;
+            sort_by?: string | null;
+            status?: string | null;
         };
         CompleteArtifactUploadFile: {
             content_base64?: string | null;
@@ -7667,6 +7696,57 @@ export interface operations {
                 };
             };
             /** @description Report not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    compare_matching_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompareMatchingRunsRequest"];
+            };
+        };
+        responses: {
+            /** @description Filtered run comparison with selected candidate evidence */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Invalid compare query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Reference run not found in the visible query scope */
             404: {
                 headers: {
                     [name: string]: unknown;

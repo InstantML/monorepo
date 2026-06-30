@@ -243,6 +243,73 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
       },
     },
     {
+      name: "tracker.compare_matching_runs",
+      description:
+        "Find matching runs with the same filters as list_runs, select the top candidates server-side, and optionally return side-by-side difference rows. Use this when the user asks to compare the best/latest matching runs without already providing run IDs.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project: {
+            type: "string",
+            description: "Project name/slug. Use this to keep ranking scoped to one project.",
+          },
+          project_id: {
+            type: "string",
+            description: "Legacy project slug/name alias. Project UUID filtering is enforced by project-scoped API keys.",
+          },
+          query: {
+            type: "string",
+            description: "Run search query. Same syntax as tracker.list_runs.",
+          },
+          status: { type: "string", description: "Optional run status filter." },
+          display_status: {
+            type: "string",
+            description: "Optional derived status filter: running, stopping, stopped, finished, or failed.",
+          },
+          sort_by: {
+            type: "string",
+            enum: ["created", "name", "status", "duration", "metric-latest", "metric-best"],
+            default: "created",
+          },
+          metric_key: {
+            type: "string",
+            description: "Metric used by metric-latest or metric-best sorting.",
+          },
+          limit: {
+            type: "integer",
+            default: 20,
+            maximum: 50,
+            description: "Number of ranked runs to compare. The server caps this at 50.",
+          },
+          reference_run_id: {
+            type: "string",
+            description: "Optional run UUID to pin as the comparison reference, even if it is outside the top candidates.",
+          },
+          diff_only: { type: "boolean", default: false },
+          include_rows: {
+            type: "boolean",
+            default: true,
+            description: "Return side-by-side rows. Set false when candidate evidence and summaries are enough.",
+          },
+        },
+      },
+      handler: async (args) => {
+        const result = await apiJson("POST", "/api/runs/compare-query", compactParams({
+          project: args.project ?? args.project_id,
+          q: args.query,
+          status: args.status,
+          display_status: args.display_status,
+          sort_by: args.sort_by,
+          metric_key: args.metric_key,
+          limit: args.limit ?? 20,
+          reference_run_id: args.reference_run_id,
+          diff_only: args.diff_only,
+          include_rows: args.include_rows,
+        }));
+        return textResult(result);
+      },
+    },
+    {
       name: "tracker.get_run",
       description:
         "Fetch full metadata for a single run UUID: name, status, config, tags, notes, metric summaries, start/end time, and source info. Use after list_runs identifies an interesting candidate.",

@@ -13,9 +13,9 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        CreateConsoleLogsRequest, CreateProjectRequest, CreateRunForkRequest, CreateRunRequest,
-        LogMetricsRequest, LogRankMetricsRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
-        UpdateRunRequest,
+        CompareMatchingRunsRequest, CreateConsoleLogsRequest, CreateProjectRequest,
+        CreateRunForkRequest, CreateRunRequest, LogMetricsRequest, LogRankMetricsRequest,
+        StopAckRequest, StopRunRequest, StopRunsRequest, UpdateRunRequest,
     },
     errors::{AppError, AppResult},
     store,
@@ -785,6 +785,33 @@ pub async fn side_by_side(
     let ctx = context(&state, &headers, true).await?;
     require_scope(&ctx, "export:read", &state)?;
     Ok(Json(store::side_by_side(&state.store, &ctx, &query).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/compare-query",
+    tag = "runs",
+    request_body = crate::domain::CompareMatchingRunsRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Filtered run comparison with selected candidate evidence", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Invalid compare query", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Reference run not found in the visible query scope", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn compare_matching_runs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
+    let input =
+        read_json::<CompareMatchingRunsRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    Ok(Json(
+        store::compare_matching_runs(&state.store, &ctx, input).await?,
+    ))
 }
 
 #[utoipa::path(
