@@ -2376,6 +2376,23 @@ button.secondary.danger-action:hover:not(:disabled),
   padding: 5px;
 }
 
+/* API-key list: lay each key out as three equal-width cells (status · name ·
+ * prefix) plus the revoke button, so the name and prefix columns line up across
+ * rows regardless of how wide the status badge ("Revoked" vs "Active") or the
+ * key name is. The base .api-row flex/space-between layout left them ragged. */
+.admin-list .api-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.admin-list .api-row span { justify-self: start; }
+.admin-list .api-row strong,
+.admin-list .api-row code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ── Settings: calm, well-segmented key/value lists ────────────────────────
  * The settings tab is a reference surface, not a telemetry wall. Render each
  * panel as one ruled list (sans label left, value right) instead of a stack of

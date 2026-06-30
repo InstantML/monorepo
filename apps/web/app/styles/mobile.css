@@ -713,6 +713,9 @@
   .api-row > * { width: auto; }
   .api-row > small { flex-basis: 100%; }
   .api-row > button { margin-left: auto; }
+  /* Override the desktop three-cell grid for API-key rows back to flex-wrap so
+   * the cells stack naturally on narrow screens. */
+  .admin-list .api-row { display: flex; }
   .agent-snippet-panel__bar {
     align-items: stretch;
     flex-direction: column;
