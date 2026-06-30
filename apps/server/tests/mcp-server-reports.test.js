@@ -76,6 +76,14 @@ test("MCP server exposes the report tool surface", () => {
   const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
   const names = tools.map((tool) => tool.name).sort();
   for (const expected of [
+    "tracker.list_runs",
+    "tracker.get_run",
+    "tracker.query_metrics",
+    "tracker.list_metrics",
+    "tracker.get_metric_series_batch",
+    "tracker.compare_runs",
+    "tracker.export_runs",
+    "tracker.workspace_view_data",
     "tracker.list_reports",
     "tracker.get_report",
     "tracker.create_report",
@@ -90,6 +98,217 @@ test("MCP server exposes the report tool surface", () => {
       names.includes(expected),
       `expected ${expected} in MCP tool surface (got ${names.join(", ")})`,
     );
+  }
+});
+
+test("tracker.list_runs maps project aliases and search options to Rust summary params", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /api/runs/summary": {
+      runs: [{ id: "run-1", name: "candidate" }],
+      metric_keys: ["eval/return_mean"],
+      total: 1,
+    },
+  });
+  try {
+    const tool = findTool("tracker.list_runs", tools);
+    const payload = parseTextResult(
+      await tool.handler({
+        project_id: "cartpole",
+        query: 'tag:baseline status:finished',
+        sort_by: "metric-best",
+        metric_key: "eval/return_mean",
+        cursor: "offset:25",
+        limit: 25,
+      }),
+    );
+    assert.equal(payload.total, 1);
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("project"), "cartpole");
+    assert.equal(url.searchParams.get("project_id"), null);
+    assert.equal(url.searchParams.get("q"), "tag:baseline status:finished");
+    assert.equal(url.searchParams.get("sort_by"), "metric-best");
+    assert.equal(url.searchParams.get("metric_key"), "eval/return_mean");
+    assert.equal(url.searchParams.get("cursor"), "offset:25");
+    assert.equal(url.searchParams.get("limit"), "25");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.query_metrics sends Rust step-window parameter names", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /runs/run-1/metrics": {
+      metrics: [{ key: "loss", step: 10, value: 0.5 }],
+    },
+  });
+  try {
+    const tool = findTool("tracker.query_metrics", tools);
+    const payload = parseTextResult(
+      await tool.handler({
+        run_id: "run-1",
+        key: "loss",
+        since_step: 10,
+        until_step: 20,
+        limit: 250,
+      }),
+    );
+    assert.equal(payload.metrics[0].step, 10);
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("key"), "loss");
+    assert.equal(url.searchParams.get("start_step"), "10");
+    assert.equal(url.searchParams.get("end_step"), "20");
+    assert.equal(url.searchParams.get("since_step"), null);
+    assert.equal(url.searchParams.get("until_step"), null);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.list_metrics extracts metric summaries from the run envelope", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  installFetchStub({
+    "GET /runs/run-1": {
+      run: {
+        id: "run-1",
+        metric_keys: ["loss", "eval/return_mean"],
+        latest_metrics: { loss: 0.4, "eval/return_mean": 1.2 },
+        metric_aggregates: {
+          loss: { min: 0.3, max: 2.0, mean: 0.8 },
+          "eval/return_mean": { min: 0.1, max: 1.4, mean: 0.9 },
+        },
+      },
+    },
+  });
+  try {
+    const tool = findTool("tracker.list_metrics", tools);
+    const metrics = parseTextResult(await tool.handler({ run_id: "run-1" }));
+    assert.deepEqual(metrics, [
+      { key: "loss", latest: 0.4, min: 0.3, max: 2, mean: 0.8 },
+      { key: "eval/return_mean", latest: 1.2, min: 0.1, max: 1.4, mean: 0.9 },
+    ]);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.get_metric_series_batch posts the batched series body", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "POST /api/metrics/series": ({ body }) => ({
+      series: body.run_ids.map((run_id) => ({ run_id, metrics: [] })),
+    }),
+  });
+  try {
+    const tool = findTool("tracker.get_metric_series_batch", tools);
+    const payload = parseTextResult(
+      await tool.handler({
+        run_ids: ["run-1", "run-2"],
+        key: "loss",
+        limit: 500,
+        start_step: 5,
+        end_step: 15,
+        buckets: 256,
+      }),
+    );
+    assert.equal(payload.series.length, 2);
+    assert.deepEqual(calls[0].body, {
+      key: "loss",
+      run_ids: ["run-1", "run-2"],
+      limit: 500,
+      start_step: 5,
+      end_step: 15,
+      buckets: 256,
+    });
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.compare_runs calls the side-by-side endpoint", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /api/runs/side-by-side": {
+      runs: [{ id: "run-1" }, { id: "run-2" }],
+      rows: [{ path: "config/lr", different: true }],
+    },
+  });
+  try {
+    const tool = findTool("tracker.compare_runs", tools);
+    const payload = parseTextResult(
+      await tool.handler({
+        run_ids: ["run-1", "run-2"],
+        reference_run_id: "run-1",
+        diff_only: true,
+      }),
+    );
+    assert.equal(payload.rows[0].path, "config/lr");
+    const url = new URL(calls[0].url);
+    assert.equal(url.searchParams.get("run_ids"), "run-1,run-2");
+    assert.equal(url.searchParams.get("reference_run_id"), "run-1");
+    assert.equal(url.searchParams.get("diff_only"), "true");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.export_runs supports selected JSON and CSV exports", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /api/export": ({ url }) => {
+      if (url.searchParams.get("format") === "csv") {
+        return "record_type,run_id\nrun,run-1\n";
+      }
+      return { runs: [{ id: "run-1" }], truncated: false };
+    },
+  });
+  try {
+    const tool = findTool("tracker.export_runs", tools);
+    const jsonPayload = parseTextResult(
+      await tool.handler({ run_ids: ["run-1"], format: "json" }),
+    );
+    const csvPayload = parseTextResult(
+      await tool.handler({ run_ids: ["run-1"], format: "csv" }),
+    );
+    assert.equal(jsonPayload.runs[0].id, "run-1");
+    assert.match(csvPayload, /record_type,run_id/);
+    assert.equal(new URL(calls[0].url).searchParams.get("run_ids"), "run-1");
+    assert.equal(new URL(calls[1].url).searchParams.get("format"), "csv");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.workspace_view_data posts view plus explicit run IDs", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "POST /api/workspace-view-data": ({ body }) => ({
+      view_data: {
+        schema_version: 1,
+        run_ids: body.run_ids,
+        panels: [],
+        warnings: [],
+      },
+    }),
+  });
+  try {
+    const tool = findTool("tracker.workspace_view_data", tools);
+    const payload = parseTextResult(
+      await tool.handler({
+        view: { metricKey: "loss" },
+        run_ids: ["run-1"],
+        options: { metric_point_limit: 200, max_panels: 5 },
+      }),
+    );
+    assert.deepEqual(payload.view_data.run_ids, ["run-1"]);
+    assert.deepEqual(calls[0].body, {
+      view: { metricKey: "loss" },
+      run_ids: ["run-1"],
+      options: { metric_point_limit: 200, max_panels: 5 },
+    });
+  } finally {
+    restoreFetch();
   }
 });
 

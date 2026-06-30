@@ -66,6 +66,7 @@
               "sdk/reliability",
               "sdk/cli-login",
               "sdk/querying-data",
+              "sdk/agent-mcp",
               "sdk/examples-patterns"
             ]
           }

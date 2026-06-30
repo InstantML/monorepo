@@ -4,6 +4,37 @@ Operational helper scripts for InstantML live here. Keep scripts small, dependen
 
 Use the root `../SETUP.md` for fresh-clone setup. Node helpers assume `npm ci` has been run from the repo root.
 
+## MCP Server
+
+`mcp-server.mjs` exposes InstantML run, metric, export, workspace-view, and
+report tools to MCP-compatible agents. The consumer API base defaults to
+`https://api.instantml.ai`.
+
+Local stdio mode is useful for preview and clients that launch local MCP
+processes:
+
+```bash
+INSTANTML_API_KEY=instantml_... node tools/mcp-server.mjs
+```
+
+Hosted Streamable HTTP mode is intended to run behind
+`https://mcp.instantml.ai/mcp`. It requires each MCP request to provide an
+InstantML API key as a bearer token and forwards tool calls to the hosted API:
+
+```bash
+node tools/mcp-server.mjs --transport http --host 0.0.0.0 --port 8080
+```
+
+Useful overrides:
+
+- `INSTANTML_API_URL`: upstream InstantML API. Default:
+  `https://api.instantml.ai`.
+- `INSTANTML_API_KEY`: API key for local stdio mode.
+- `INSTANTML_MCP_TRANSPORT`: `stdio` or `http`.
+- `INSTANTML_MCP_HOST`: HTTP bind host. Defaults to `127.0.0.1`, or
+  `0.0.0.0` when `PORT` is set for a hosted runtime.
+- `INSTANTML_MCP_PORT` / `PORT`: HTTP port. Default: `8080`.
+
 ## Local ClickHouse Helper
 
 `local-clickhouse.mjs` is shared by `dev-rust-api.mjs`, Rust service smokes, and Rust benchmarks. It first checks `CLICKHOUSE_URL`, then starts a local `clickhouse server` only for loopback URLs that use the default user with no password. The dev helper writes generated state under `.instantml/clickhouse` and logs under `.instantml/clickhouse-logs`; smoke and benchmark scripts use temporary directories and clean them up afterward.

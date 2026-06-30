@@ -10,6 +10,8 @@ const webRoot = path.join(__dirname, "..");
 test("product API calls stay behind ApiClient fetch instrumentation", () => {
   const allowedRawFetchFiles = new Set([
     path.join(webRoot, "src", "api.js"),
+    // Server-side auth bootstrap fetches the current session before ApiClient exists.
+    path.join(webRoot, "app", "server-auth.ts"),
     // Static docs markdown copy helper; not a product API call.
     path.join(webRoot, "app", "docs", "docs-agent-markdown-button.tsx"),
     // Embed routes use short-lived fragment tokens and must omit browser credentials.

@@ -88,6 +88,35 @@ function textResult(value) {
   };
 }
 
+function compactParams(params) {
+  const out = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+function commaList(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => item !== undefined && item !== null && item !== "").join(",");
+  }
+  return value;
+}
+
+function metricSummariesFromRunPayload(result) {
+  const run = result?.run ?? result ?? {};
+  const keys = Array.isArray(run.metric_keys) ? run.metric_keys : [];
+  const latest = run.latest_metrics ?? {};
+  const aggregates = run.metric_aggregates ?? {};
+  return keys.map((key) => ({
+    key,
+    latest: latest[key] ?? null,
+    ...(aggregates[key] ?? {}),
+  }));
+}
+
 /**
  * Build the tool registry bound to a specific API URL + API key. Returns a
  * plain array — the MCP transport loop in mcp-server.mjs registers list/call
@@ -109,6 +138,23 @@ export function buildTools({ apiUrl, apiKey }) {
       throw new Error(`API ${res.status}: ${body.slice(0, 500)}`);
     }
     return res.json();
+  }
+
+  async function apiText(path, params = {}) {
+    const url = new URL(path, apiUrl);
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        url.searchParams.set(key, String(value));
+      }
+    }
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: "text/csv, application/json" },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`API ${res.status}: ${text.slice(0, 500)}`);
+    }
+    return text;
   }
 
   async function apiJson(method, path, body = undefined) {
@@ -137,38 +183,54 @@ export function buildTools({ apiUrl, apiKey }) {
     {
       name: "tracker.list_runs",
       description:
-        "List runs in a project. Returns metadata, config, summary, status, tags for each run. Use this to scan a project, find runs by name/tag/config, or build the candidate set for further investigation.",
+        "List runs. Returns metadata, config, metric summaries, status, tags, and pagination info. Use this to scan a project, search by tag/name/config/notes, sort by a metric, or build a candidate set for deeper investigation.",
       inputSchema: {
         type: "object",
         properties: {
+          project: {
+            type: "string",
+            description: "Project name/slug. Prefer this for Rust-hosted summaries.",
+          },
           project_id: {
             type: "string",
-            description: "Project ID or slug. If omitted, lists across the user's accessible scope.",
+            description: "Legacy project slug/name alias. Project UUID filtering is only enforced by project-scoped API keys.",
           },
           query: {
             type: "string",
-            description: "Free-text search over run name, notes, tags, config keys.",
+            description: "Run search query. Supports bare terms, tag:/status:/name:/notes:/config: fields, booleans, grouping, and explicit re:/.../ regex on Rust.",
           },
-          limit: { type: "integer", default: 25, maximum: 100 },
+          status: { type: "string", description: "Optional run status filter." },
+          sort_by: {
+            type: "string",
+            enum: ["created", "name", "status", "duration", "metric-latest", "metric-best"],
+            default: "created",
+          },
+          metric_key: { type: "string", description: "Metric used by metric-latest or metric-best sorting." },
+          cursor: { type: "string", description: "Pagination cursor returned by a previous call." },
+          limit: { type: "integer", default: 25, maximum: 1000 },
         },
       },
       handler: async (args) => {
-        const result = await api("/api/runs/summary", {
-          project_id: args.project_id,
+        const result = await api("/api/runs/summary", compactParams({
+          project: args.project ?? args.project_id,
           q: args.query,
+          status: args.status,
+          sort_by: args.sort_by,
+          metric_key: args.metric_key,
+          cursor: args.cursor,
           limit: args.limit ?? 25,
-        });
+        }));
         return textResult(result);
       },
     },
     {
       name: "tracker.get_run",
       description:
-        "Fetch full metadata for a single run: name, status, config, tags, notes, summary, start/end time, source info. Use after list_runs identifies an interesting candidate.",
+        "Fetch full metadata for a single run UUID: name, status, config, tags, notes, metric summaries, start/end time, and source info. Use after list_runs identifies an interesting candidate.",
       inputSchema: {
         type: "object",
         properties: {
-          run_id: { type: "string", description: "Run ID (uuid) or human-readable name within a project." },
+          run_id: { type: "string", description: "Run UUID." },
         },
         required: ["run_id"],
       },
@@ -186,6 +248,8 @@ export function buildTools({ apiUrl, apiKey }) {
         properties: {
           run_id: { type: "string" },
           key: { type: "string", description: "Metric name, e.g. 'train/loss', 'train/gradient_norm'." },
+          start_step: { type: "number", description: "Inclusive lower bound on step." },
+          end_step: { type: "number", description: "Inclusive upper bound on step." },
           since_step: { type: "integer", description: "Inclusive lower bound on step." },
           until_step: { type: "integer", description: "Inclusive upper bound on step." },
           limit: { type: "integer", default: 1000, maximum: 5000 },
@@ -193,12 +257,12 @@ export function buildTools({ apiUrl, apiKey }) {
         required: ["run_id", "key"],
       },
       handler: async (args) => {
-        const result = await api(`/runs/${encodeURIComponent(args.run_id)}/metrics`, {
+        const result = await api(`/runs/${encodeURIComponent(args.run_id)}/metrics`, compactParams({
           key: args.key,
-          since_step: args.since_step,
-          until_step: args.until_step,
+          start_step: args.start_step ?? args.since_step,
+          end_step: args.end_step ?? args.until_step,
           limit: args.limit ?? 1000,
-        });
+        }));
         return textResult(result);
       },
     },
@@ -215,8 +279,117 @@ export function buildTools({ apiUrl, apiKey }) {
       },
       handler: async (args) => {
         const result = await api(`/runs/${encodeURIComponent(args.run_id)}`);
-        const metrics = result.summary?.metrics ?? result.metric_series ?? result.metrics ?? [];
-        return textResult(metrics);
+        return textResult(metricSummariesFromRunPayload(result));
+      },
+    },
+    {
+      name: "tracker.get_metric_series_batch",
+      description:
+        "Fetch bounded metric series for many runs and one metric key using the batched Rust endpoint. Use after list_runs selects candidates. The server caps run IDs and returned points.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          run_ids: { type: "array", items: { type: "string" }, description: "Run UUIDs, max 2,000." },
+          key: { type: "string", description: "Metric key to fetch." },
+          limit: { type: "integer", default: 1000, maximum: 5000 },
+          start_step: { type: "number" },
+          end_step: { type: "number" },
+          buckets: { type: "integer", description: "Optional M4 downsampling bucket count for full-series reads." },
+        },
+        required: ["run_ids", "key"],
+      },
+      handler: async (args) => {
+        const result = await apiJson("POST", "/api/metrics/series", compactParams({
+          key: args.key,
+          run_ids: args.run_ids ?? [],
+          limit: args.limit ?? 1000,
+          start_step: args.start_step,
+          end_step: args.end_step,
+          buckets: args.buckets,
+        }));
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.compare_runs",
+      description:
+        "Compare selected runs side by side. Returns rows for config, metadata, tags, attributes, and metric summary differences. Use after list_runs narrows to at most 50 run IDs.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          run_ids: { type: "array", items: { type: "string" }, description: "Run UUIDs, max 50." },
+          reference_run_id: { type: "string", description: "Optional run UUID to use as the comparison reference." },
+          diff_only: { type: "boolean", default: false },
+        },
+        required: ["run_ids"],
+      },
+      handler: async (args) => {
+        const result = await api("/api/runs/side-by-side", compactParams({
+          run_ids: commaList(args.run_ids),
+          reference_run_id: args.reference_run_id,
+          diff_only: args.diff_only,
+        }));
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.export_runs",
+      description:
+        "Export selected or filtered runs as bounded JSON or CSV. JSON includes runs, metric points, metric-series summaries, attributes, artifacts, and imports within server caps.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          run_ids: { type: "array", items: { type: "string" }, description: "Optional exact run UUIDs, max 100 for selected export." },
+          project: { type: "string" },
+          query: { type: "string", description: "Same run search query as tracker.list_runs." },
+          status: { type: "string" },
+          sort_by: { type: "string", enum: ["created", "name", "status", "duration", "metric-latest", "metric-best"] },
+          metric_key: { type: "string" },
+          format: { type: "string", enum: ["json", "csv"], default: "json" },
+        },
+      },
+      handler: async (args) => {
+        const params = compactParams({
+          run_ids: commaList(args.run_ids),
+          project: args.project,
+          q: args.query,
+          status: args.status,
+          sort_by: args.sort_by,
+          metric_key: args.metric_key,
+          format: args.format,
+        });
+        if (args.format === "csv") {
+          return textResult(await apiText("/api/export", params));
+        }
+        return textResult(await api("/api/export", params));
+      },
+    },
+    {
+      name: "tracker.workspace_view_data",
+      description:
+        "Resolve a portable workspace view plus explicit run IDs into bounded run summaries, panel summaries, and line-panel metric series. Use when an agent needs exactly the data a saved dashboard view would render.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          view: { type: "object", description: "Portable view export, workspace-view row-like object, or saved view payload." },
+          run_ids: { type: "array", items: { type: "string" }, description: "Run UUIDs, max 100." },
+          options: {
+            type: "object",
+            properties: {
+              metric_point_limit: { type: "integer", default: 500, maximum: 500 },
+              max_panels: { type: "integer", default: 20, maximum: 50 },
+            },
+          },
+        },
+        required: ["view", "run_ids"],
+      },
+      handler: async (args) => {
+        const result = await apiJson("POST", "/api/workspace-view-data", {
+          view: args.view,
+          run_ids: args.run_ids ?? [],
+          options: args.options ?? undefined,
+        });
+        return textResult(result);
       },
     },
     {

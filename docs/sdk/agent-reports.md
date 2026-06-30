@@ -1,8 +1,10 @@
 # Agent-authored reports
 
-The InstantML MCP server (`tools/mcp-server.mjs`) exposes the Reports surface
-to agents so they can compose a Notion-style document — prose, code, callouts,
-and live chart panels — the same way a human does in the dashboard.
+The InstantML MCP server exposes the Reports surface to agents so they can
+compose a Notion-style document — prose, code, callouts, and live chart panels —
+the same way a human does in the dashboard. Hosted consumers should connect to
+`https://mcp.instantml.ai/mcp`; local preview can run `tools/mcp-server.mjs`
+from a repository checkout.
 
 ## Tools
 
