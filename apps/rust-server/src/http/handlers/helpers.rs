@@ -134,11 +134,34 @@ pub async fn context(
                 .strip_prefix("Bearer ")
                 .or_else(|| header.strip_prefix("bearer "))
                 .ok_or_else(|| AppError::unauthorized("authorization must use bearer token"))?;
-            let auth = authenticate_api_key_with_auth_miss_refresh(state, token).await?;
-            RequestContext {
-                org_id: auth.org_id,
-                auth: Some(auth),
-                session: None,
+            // Third bearer tier (flag-gated, review-pending): a Clerk OAuth
+            // access token from the hosted MCP browser sign-in. Off by default,
+            // so the API-key path below is byte-identical in production. An
+            // InstantML API key always starts with `instantml_`, so a token
+            // without that prefix is the OAuth case. v1 is read-only.
+            // See docs/design/2026-06-30-mcp-oauth.md.
+            if mcp_oauth_enabled() && !token.starts_with("instantml_") {
+                let (org_id, user_id, role) = authenticate_mcp_oauth(state, token).await?;
+                RequestContext {
+                    org_id,
+                    auth: None,
+                    session: Some(SessionContext {
+                        session_id: Uuid::nil(),
+                        user_id,
+                        role,
+                        // v1 is read-only: reusing demo_read_only makes
+                        // require_session_scope allow only export:read. A
+                        // dedicated read_only flag + message is the follow-up.
+                        demo_read_only: true,
+                    }),
+                }
+            } else {
+                let auth = authenticate_api_key_with_auth_miss_refresh(state, token).await?;
+                RequestContext {
+                    org_id: auth.org_id,
+                    auth: Some(auth),
+                    session: None,
+                }
             }
         }
         None => {
@@ -221,6 +244,52 @@ async fn authenticate_session_with_auth_miss_refresh(
         }
         Err(error) => Err(error),
     }
+}
+
+/// Enable the MCP OAuth token bridge (hosted browser sign-in). Off by default,
+/// so `context()` is unchanged in production. Read from the environment directly
+/// for now; move to `Config` (config.rs `env_bool_optional`) when the bridge
+/// graduates from review-gated to default.
+fn mcp_oauth_enabled() -> bool {
+    match std::env::var("INSTANTML_MCP_OAUTH_ENABLED") {
+        Ok(value) => {
+            let value = value.trim();
+            value == "1" || value.eq_ignore_ascii_case("true")
+        }
+        Err(_) => false,
+    }
+}
+
+/// Authenticate a Clerk OAuth access token (hosted MCP browser sign-in) and
+/// resolve it to `(org_id, user_id, role)` for a read-only request context.
+///
+/// Gated behind `INSTANTML_MCP_OAUTH_ENABLED` (off by default) and pending a
+/// fresh auth review before production enablement (docs/design/2026-06-30-mcp-oauth.md):
+/// the verify-endpoint path and response schema still need confirming against a
+/// live Clerk token, and verification should be cached off the per-request hot
+/// path before real load.
+///
+/// 1. Verify the token via the Clerk Backend API using the configured Clerk
+///    secret key.
+/// 2. Map the Clerk user (`provider = "clerk"`, `provider_subject = subject`) to
+///    the internal user and resolve the org/role from active memberships
+///    (single membership only; multi-org is rejected until the caller names one).
+async fn authenticate_mcp_oauth(state: &AppState, token: &str) -> AppResult<(Uuid, Uuid, String)> {
+    let secret_key = state
+        .config
+        .clerk_secret_key
+        .as_deref()
+        .ok_or_else(|| AppError::unauthorized("OAuth is not configured"))?;
+    let principal = crate::managed_auth::verify_clerk_oauth_token(
+        secret_key,
+        &state.config.clerk_api_base,
+        token,
+    )
+    .await?;
+    // v1 grants read-only regardless of the granted `principal.scopes`; the
+    // caller sets demo_read_only so only export:read passes. Mirror-role is the
+    // reviewed follow-up.
+    store::authenticate_oauth_identity(&state.store, "clerk", &principal.subject).await
 }
 
 pub fn require_scope(ctx: &RequestContext, scope: &str, state: &AppState) -> AppResult<()> {

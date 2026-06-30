@@ -572,6 +572,51 @@ pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthS
     session_payload_from_data(&data, row)
 }
 
+/// Resolve a verified external identity (e.g. a Clerk OAuth subject) to an
+/// InstantML org and role using the in-memory control projection. Used by the
+/// MCP OAuth bridge; returns `(org_id, user_id, role)`.
+///
+/// The identity carries no InstantML org (InstantML orgs are not the IdP's
+/// orgs), so org selection is: exactly one active membership -> use it; more
+/// than one -> reject until the caller names an org.
+pub async fn authenticate_oauth_identity(
+    store: &Store,
+    provider: &str,
+    provider_subject: &str,
+) -> AppResult<(Uuid, Uuid, String)> {
+    let data = store.data.lock().await;
+    resolve_oauth_identity(&data, provider, provider_subject)
+}
+
+fn resolve_oauth_identity(
+    data: &StoreData,
+    provider: &str,
+    provider_subject: &str,
+) -> AppResult<(Uuid, Uuid, String)> {
+    let identity_key = (provider.to_string(), provider_subject.to_string());
+    let user_id =
+        data.identities.get(&identity_key).copied().ok_or_else(|| {
+            AppError::unauthorized("no InstantML account is linked to this identity")
+        })?;
+    if !data.users.contains_key(&user_id) {
+        return Err(AppError::not_found("user not found"));
+    }
+    let active = data
+        .memberships
+        .values()
+        .filter(|membership| membership.user_id == user_id && membership.status == "active")
+        .collect::<Vec<_>>();
+    match active.as_slice() {
+        [] => Err(AppError::forbidden(
+            "this account has no active organization membership",
+        )),
+        [membership] => Ok((membership.org_id, user_id, membership.role.clone())),
+        _ => Err(AppError::forbidden(
+            "this account belongs to multiple organizations; OAuth must name one",
+        )),
+    }
+}
+
 pub async fn revoke_session(store: &Store, token: &str) -> AppResult<()> {
     let token_hash = hash_secret(token);
     let Some(mut session) = ({
@@ -920,6 +965,58 @@ mod tests {
         // No pending invites either — the function should hit the existing-org
         // early return before ever consulting them.
         assert!(pending_invites_for_user(&data, user.id).is_empty());
+    }
+
+    #[test]
+    fn oauth_identity_resolves_single_active_membership() {
+        let user = user_row(Uuid::new_v4(), "tony@example.com");
+        let org_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities
+            .insert(("clerk".to_string(), "user_oauth".to_string()), user.id);
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id,
+            user_id: user.id,
+            role: "admin".to_string(),
+            status: "active".to_string(),
+            created_at: Utc::now(),
+        });
+
+        let (resolved_org, resolved_user, role) =
+            resolve_oauth_identity(&data, "clerk", "user_oauth").unwrap();
+        assert_eq!(resolved_org, org_id);
+        assert_eq!(resolved_user, user.id);
+        assert_eq!(role, "admin");
+    }
+
+    #[test]
+    fn oauth_identity_rejects_unknown_missing_and_multi_org() {
+        let user = user_row(Uuid::new_v4(), "multi@example.com");
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities
+            .insert(("clerk".to_string(), "user_multi".to_string()), user.id);
+
+        // Unknown identity -> rejected.
+        assert!(resolve_oauth_identity(&data, "clerk", "nobody").is_err());
+        // Known identity but no active membership -> rejected.
+        assert!(resolve_oauth_identity(&data, "clerk", "user_multi").is_err());
+
+        // Two active memberships -> ambiguous org, must be rejected (the
+        // cross-tenant safety property: never silently pick an org).
+        for _ in 0..2 {
+            data.insert_membership(MembershipRow {
+                id: Uuid::new_v4(),
+                org_id: Uuid::new_v4(),
+                user_id: user.id,
+                role: "member".to_string(),
+                status: "active".to_string(),
+                created_at: Utc::now(),
+            });
+        }
+        assert!(resolve_oauth_identity(&data, "clerk", "user_multi").is_err());
     }
 
     #[test]

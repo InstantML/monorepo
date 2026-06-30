@@ -276,9 +276,94 @@ fn now_epoch_seconds() -> AppResult<u64> {
         .map_err(|_| AppError::internal("system clock is before unix epoch"))
 }
 
+/// A verified Clerk OAuth access token: the authenticated user's Clerk id
+/// (`subject`) and the scopes the consent granted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClerkOauthPrincipal {
+    pub subject: String,
+    pub scopes: Vec<String>,
+    pub client_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClerkOauthVerifyResponse {
+    // Defensive: accept the user id under any name Clerk may use in the verify
+    // response. Confirm the exact field against a live token before enabling in
+    // production (see docs/design/2026-06-30-mcp-oauth.md).
+    #[serde(default)]
+    subject: Option<String>,
+    #[serde(default)]
+    sub: Option<String>,
+    #[serde(default)]
+    user_id: Option<String>,
+    #[serde(default)]
+    scopes: Option<Vec<String>>,
+    #[serde(default)]
+    client_id: Option<String>,
+}
+
+impl ClerkOauthVerifyResponse {
+    fn into_principal(self) -> AppResult<ClerkOauthPrincipal> {
+        let subject = self
+            .subject
+            .or(self.sub)
+            .or(self.user_id)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| AppError::unauthorized("OAuth token has no subject"))?;
+        Ok(ClerkOauthPrincipal {
+            subject,
+            scopes: self.scopes.unwrap_or_default(),
+            client_id: self.client_id,
+        })
+    }
+}
+
+/// Verify a Clerk OAuth access token via the Clerk Backend API and return the
+/// authenticated user's Clerk id and granted scopes.
+///
+/// Authenticates with the Clerk **secret key** — the same credential
+/// `verify_clerk_session_token` uses — so no separate OAuth client secret is
+/// required. The path uses the `/v1/` Backend API prefix, consistent with the
+/// JWKS and user lookups above; confirm it against a live token before enabling
+/// (see docs/design/2026-06-30-mcp-oauth.md).
+pub async fn verify_clerk_oauth_token(
+    secret_key: &str,
+    api_base: &str,
+    token: &str,
+) -> AppResult<ClerkOauthPrincipal> {
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/v1/oauth_applications/access_tokens/verify",
+            api_base.trim_end_matches('/')
+        ))
+        .bearer_auth(secret_key)
+        .json(&serde_json::json!({ "access_token": token }))
+        .send()
+        .await
+        .map_err(|err| {
+            AppError::unauthorized(format!("Clerk OAuth token verification failed: {err}"))
+        })?;
+    if !response.status().is_success() {
+        return Err(AppError::unauthorized("invalid OAuth access token"));
+    }
+    response
+        .json::<ClerkOauthVerifyResponse>()
+        .await
+        .map_err(|err| {
+            AppError::unauthorized(format!("Clerk OAuth token verification failed: {err}"))
+        })?
+        .into_principal()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
 
     fn claims() -> ClerkSessionClaims {
         ClerkSessionClaims {
@@ -362,5 +447,85 @@ mod tests {
         assert_eq!(principal.display_name.as_deref(), Some("Ada Lovelace"));
 
         assert!(clerk_user_to_principal(&claims, user("unverified")).is_err());
+    }
+
+    #[test]
+    fn oauth_verify_response_extracts_subject_and_scopes() {
+        let body: ClerkOauthVerifyResponse =
+            serde_json::from_str(r#"{"subject":"user_42","scopes":["export:read"]}"#).unwrap();
+        let principal = body.into_principal().unwrap();
+        assert_eq!(principal.subject, "user_42");
+        assert_eq!(principal.scopes, vec!["export:read".to_string()]);
+
+        // Tolerates the user id under `user_id` and missing scopes.
+        let alt: ClerkOauthVerifyResponse =
+            serde_json::from_str(r#"{"user_id":"user_7"}"#).unwrap();
+        let alt = alt.into_principal().unwrap();
+        assert_eq!(alt.subject, "user_7");
+        assert!(alt.scopes.is_empty());
+
+        // No subject at all -> rejected.
+        let empty: ClerkOauthVerifyResponse = serde_json::from_str(r#"{"scopes":[]}"#).unwrap();
+        assert!(empty.into_principal().is_err());
+    }
+
+    #[tokio::test]
+    async fn clerk_oauth_verifier_posts_token_to_backend_api() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            let header_end = loop {
+                let read = stream.read(&mut buffer).unwrap();
+                assert_ne!(read, 0, "client closed before sending request");
+                request.extend_from_slice(&buffer[..read]);
+                if let Some(position) = request.windows(4).position(|window| window == b"\r\n\r\n")
+                {
+                    break position + 4;
+                }
+            };
+            let header_text = String::from_utf8_lossy(&request[..header_end]);
+            let content_length = header_text
+                .lines()
+                .find_map(|line| {
+                    line.strip_prefix("content-length: ")
+                        .or_else(|| line.strip_prefix("Content-Length: "))
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                })
+                .unwrap_or(0);
+            while request.len() < header_end + content_length {
+                let read = stream.read(&mut buffer).unwrap();
+                assert_ne!(read, 0, "client closed before sending request body");
+                request.extend_from_slice(&buffer[..read]);
+            }
+            let request_text = String::from_utf8_lossy(&request);
+            let request_lower = request_text.to_lowercase();
+            assert!(request_text
+                .starts_with("POST /v1/oauth_applications/access_tokens/verify HTTP/1.1"));
+            assert!(request_lower.contains("authorization: bearer sk_test"));
+            assert!(request_text.contains(r#""access_token":"oauth_token_123""#));
+
+            let body =
+                r#"{"subject":"user_123","scopes":["profile","email"],"client_id":"client_123"}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+
+        let principal =
+            verify_clerk_oauth_token("sk_test", &format!("http://{addr}"), "oauth_token_123")
+                .await
+                .unwrap();
+
+        assert_eq!(principal.subject, "user_123");
+        assert_eq!(principal.scopes, vec!["profile", "email"]);
+        assert_eq!(principal.client_id.as_deref(), Some("client_123"));
+        server.join().unwrap();
     }
 }
