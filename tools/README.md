@@ -6,10 +6,10 @@ Use the root `../SETUP.md` for fresh-clone setup. Node helpers assume `npm ci` h
 
 ## MCP Server
 
-`mcp-server.mjs` exposes InstantML run, metric, export, workspace-view, and
-report tools to MCP-compatible agents. The consumer API base defaults to
-`https://api.instantml.ai`, and report share links default to the hosted web app
-at `https://instantml.ai`.
+`mcp-server.mjs` exposes InstantML project, run, metric, export,
+workspace-view, and report tools to MCP-compatible agents. The consumer API
+base defaults to `https://api.instantml.ai`, and report share links default to
+the hosted web app at `https://instantml.ai`.
 
 Local stdio mode is useful for preview and clients that launch local MCP
 processes:

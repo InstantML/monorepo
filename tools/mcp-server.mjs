@@ -7,6 +7,7 @@
  * decision (see product/wiki/decisions/ship-mcp-server-in-v1.md).
  *
  * Tracker tools (read-only over runs/metrics):
+ *   - tracker.list_projects()
  *   - tracker.list_runs(project?, query?, limit?, cursor?, sort_by?, metric_key?)
  *   - tracker.get_run(run_id)
  *   - tracker.query_metrics(run_id, key, since_step?, until_step?)

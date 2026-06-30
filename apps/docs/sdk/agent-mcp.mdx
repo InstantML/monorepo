@@ -187,8 +187,9 @@ Ask your agent:
 List my InstantML projects and show the latest five runs.
 ```
 
-The agent should discover the InstantML tools and call `tracker.list_runs`. For
-run analysis, try:
+The agent should discover the InstantML tools, call `tracker.list_projects` if
+it needs to choose a project, and then call `tracker.list_runs`. For run
+analysis, try:
 
 ```text
 Find the best finished cartpole runs tagged baseline, compare the top five by
@@ -235,6 +236,7 @@ to set `INSTANTML_API_KEY`.
 
 | Tool | Use it for |
 | --- | --- |
+| `tracker.list_projects` | Discover projects visible to the API key before choosing a run-search scope. |
 | `tracker.list_runs` | Search and page run summaries by project, query, status, metric sort, and cursor. |
 | `tracker.get_run` | Fetch one run summary by UUID. |
 | `tracker.list_metrics` | Discover metric keys and latest/min/max/mean summary values for a run. |
@@ -269,13 +271,14 @@ eval/return_mean, and summarize the config differences.
 
 The agent should usually call:
 
-1. `tracker.list_runs` with `project`, `query`, `sort_by: "metric-best"`, and
+1. `tracker.list_projects` if the project name is unknown.
+2. `tracker.list_runs` with `project`, `query`, `sort_by: "metric-best"`, and
    `metric_key`.
-2. `tracker.list_metrics` if the metric key is unknown.
-3. `tracker.get_metric_series_batch` for bounded curves across the selected run
+3. `tracker.list_metrics` if the metric key is unknown.
+4. `tracker.get_metric_series_batch` for bounded curves across the selected run
    IDs.
-4. `tracker.compare_runs` after narrowing to at most 50 run IDs.
-5. `tracker.export_runs` when you need portable evidence for a notebook or
+5. `tracker.compare_runs` after narrowing to at most 50 run IDs.
+6. `tracker.export_runs` when you need portable evidence for a notebook or
    spreadsheet.
 
 ## Search examples
