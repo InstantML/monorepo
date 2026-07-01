@@ -764,8 +764,15 @@ function ensureStaticEgress() {
     run(["compute", "networks", "create", network, "--subnet-mode", "custom"]);
   }
   if (!quiet(["compute", "networks", "subnets", "describe", subnet, "--region", region])) {
-    run(["compute", "networks", "subnets", "create", subnet, "--network", network, "--region", region, "--range", subnetRange]);
+    run(["compute", "networks", "subnets", "create", subnet, "--network", network, "--region", region, "--range", subnetRange, "--enable-private-ip-google-access"]);
   }
+  // Private Google Access is required for Cloud Run instances (which have no
+  // external IP) to reach Google APIs such as the Cloud SQL Admin API. Without
+  // it, cold starts hang on the control-plane Postgres connection even while the
+  // Cloud NAT is healthy — Google-API traffic never takes the NAT path (see the
+  // 2026-07-01 prod deploy incident). Enable it idempotently so pre-existing
+  // subnets are corrected too, not just newly created ones.
+  run(["compute", "networks", "subnets", "update", subnet, "--region", region, "--enable-private-ip-google-access"]);
   if (!quiet(["compute", "addresses", "describe", addressName, "--region", region])) {
     run(["compute", "addresses", "create", addressName, "--region", region]);
   }
