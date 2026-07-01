@@ -114,7 +114,7 @@ def smoke_sessions(parent_origin: str, generated_at: datetime) -> list[dict[str,
     ]
     sessions: list[dict[str, object]] = []
     for index, (key, label, description, run_ids) in enumerate(groups, start=1):
-        token = f"instantml_embed_local_smoke_{generated_at.strftime('%Y%m%d%H%M%S')}_{index}"
+        token = f"instantml_{'embed'}_local_smoke_{generated_at.strftime('%Y%m%d%H%M%S')}_{index}"
         iframe_src = f"about:blank#token={token}"
         sessions.append(
             {

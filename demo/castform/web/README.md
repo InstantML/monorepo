@@ -17,9 +17,7 @@ use the tunnel origin as `--parent-origin` when running `run_demo.py`.
 For local browser smoke without live credentials:
 
 ```bash
-python3 demo/castform/create_smoke_manifest.py
-python3 demo/castform/serve_web.py --port 5174
-node demo/castform/browser_verify.mjs --expect-runs 3 --expect-sessions 3
+python3 demo/castform/run_local_smoke.py
 ```
 
 ## Generated Manifest
@@ -32,3 +30,7 @@ URLs as visible text; it only assigns them to iframe `src` attributes.
 run IDs and `about:blank` iframe targets. It is only for checking the parent
 page render, tab switching, refresh flow, and visible-token safety before a
 live InstantML manifest is available.
+
+`run_local_smoke.py` wraps this path by starting the local server, running
+`verify_demo.py`, running `browser_verify.mjs` at desktop and mobile viewports,
+writing `run-output/local-smoke-report.json`, and shutting the server down.

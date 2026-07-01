@@ -33,6 +33,9 @@ Research date: 2026-06-30.
   parent-page browser verification without live credentials.
 - `browser_verify.mjs`: Playwright-based parent-page renderer and interaction
   verifier that redacts token-like diagnostics.
+- `run_local_smoke.py`: one-command local preflight that generates the smoke
+  manifest, starts the parent page, runs artifact verification, runs desktop and
+  mobile browser checks, writes an ignored safe report, and stops the server.
 - `verify_demo.py`: generated manifest and redacted-summary verifier.
 - `live-runbook.md`: operator runbook for the hosted call demo.
 
@@ -105,12 +108,16 @@ python3 demo/castform/verify_demo.py \
 Local browser smoke before live credentials:
 
 ```bash
-python3 demo/castform/create_smoke_manifest.py
-python3 demo/castform/serve_web.py --port 5174
-node demo/castform/browser_verify.mjs \
-  --url http://127.0.0.1:5174 \
-  --expect-runs 3 \
-  --expect-sessions 3
+python3 demo/castform/run_local_smoke.py
+```
+
+The smoke report is written to `run-output/local-smoke-report.json`, which is
+ignored by Git.
+
+If port 5174 is already in use, choose a free local port for the preflight:
+
+```bash
+python3 demo/castform/run_local_smoke.py --port 0
 ```
 
 ## Verification
@@ -119,7 +126,7 @@ The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```

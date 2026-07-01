@@ -17,13 +17,11 @@ only.
 Optional preflight before live credentials:
 
 ```bash
-python3 demo/castform/create_smoke_manifest.py
-python3 demo/castform/serve_web.py --port 5174
-node demo/castform/browser_verify.mjs \
-  --url http://127.0.0.1:5174 \
-  --expect-runs 3 \
-  --expect-sessions 3
+python3 demo/castform/run_local_smoke.py
 ```
+
+If port 5174 is already in use, pass `--port 0` to pick a free local port for
+the preflight.
 
 For the live hosted path, start or keep the parent page server running:
 

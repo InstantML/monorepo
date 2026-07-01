@@ -43,3 +43,6 @@ Create a full end-to-end demo that:
   credentials are used.
 - Reordered the responsive parent page so narrow screens start with the
   observability content instead of setup metadata.
+- Added a one-command local smoke orchestrator that starts the parent server,
+  runs manifest verification plus desktop/mobile browser checks, writes an
+  ignored safe report, and shuts the server down.
