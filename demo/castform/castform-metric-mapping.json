@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "source": "castform",
+  "research_date": "2026-06-30",
+  "run_identity": {
+    "instantml.project": "castform-demo",
+    "instantml.name": "castform run name or run id",
+    "instantml.tags": [
+      "castform",
+      "mirrored"
+    ],
+    "instantml.config.castform.run_id": "Castform run id",
+    "instantml.config.castform.url": "https://app.castform.com/train/<run_id>",
+    "instantml.config.castform.status": "Castform status",
+    "instantml.config.castform.launcher_args": "Castform launcherArgs",
+    "instantml.notes": "Castform source link plus mirror timestamp"
+  },
+  "scalar_prefix_rules": [
+    {
+      "castform_mode": "train",
+      "instantml_prefix": "train/"
+    },
+    {
+      "castform_mode": "eval",
+      "instantml_prefix": "eval/"
+    },
+    {
+      "castform_mode": "comp",
+      "instantml_prefix": "comp/"
+    }
+  ],
+  "canonical_metrics": {
+    "average reward": "train/reward_mean",
+    "max reward": "train/reward_max",
+    "solve rate": "train/solve_rate",
+    "pass@k": "train/solve_rate",
+    "response lengths": "train/response_tokens_mean",
+    "eval average reward": "eval/reward_mean",
+    "eval max reward": "eval/reward_max",
+    "eval solve rate": "eval/solve_rate"
+  },
+  "reward_component_rule": {
+    "castform_pattern": "<component> mean|max|solve_rate by mode",
+    "instantml_pattern": "<mode>/reward_components/<component>/<stat>",
+    "examples": {
+      "train correctness mean": "train/reward_components/correctness/mean",
+      "train citation mean": "train/reward_components/citation/mean",
+      "train conciseness mean": "train/reward_components/conciseness/mean",
+      "eval correctness mean": "eval/reward_components/correctness/mean"
+    }
+  },
+  "logs_and_events": {
+    "castform_events": {
+      "instantml_target": "log_text",
+      "key": "castform/events",
+      "notes": "Lifecycle, artifact, and diagnostic events, oldest first when available."
+    },
+    "environment_logs": {
+      "instantml_target": "log_stdout or log_text",
+      "key": "castform/environment_logs",
+      "notes": "Run-level logs by default; rollout_id-specific logs when available."
+    },
+    "rollout_log_excerpt": {
+      "instantml_target": "table artifact",
+      "columns": [
+        "rollout_id",
+        "step",
+        "level",
+        "message",
+        "created_at"
+      ]
+    }
+  },
+  "artifact_references": {
+    "env_metadata": "artifact type config",
+    "train_dataset": "artifact type dataset",
+    "eval_dataset": "artifact type dataset",
+    "checkpoint": "artifact type checkpoint",
+    "eval_summary": "artifact type eval"
+  }
+}
