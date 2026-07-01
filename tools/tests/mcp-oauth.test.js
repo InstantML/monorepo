@@ -18,7 +18,8 @@ test("parseOAuthConfig advertises the hosted resource and authorization server",
   assert.equal(config.publicUrl, "https://mcp.instantml.ai");
   assert.equal(config.resource, "https://mcp.instantml.ai/mcp");
   assert.equal(config.metadataUrl, "https://mcp.instantml.ai/.well-known/oauth-protected-resource");
-  assert.deepEqual(config.scopes, ["export:read", "reports:write"]);
+  // Clerk-compatible OIDC scopes only; custom scopes are rejected at registration.
+  assert.deepEqual(config.scopes, ["openid", "profile", "email", "offline_access"]);
 
   const metadata = protectedResourceMetadata(config);
   assert.equal(metadata.resource, "https://mcp.instantml.ai/mcp");

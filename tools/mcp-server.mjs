@@ -152,7 +152,13 @@ export function parseOAuthConfig(env = process.env) {
     .trim()
     .replace(/\/+$/, "");
   const resource = String(env.INSTANTML_MCP_OAUTH_RESOURCE ?? `${publicUrl}/mcp`).trim();
-  const scopes = String(env.INSTANTML_MCP_OAUTH_SCOPES ?? "export:read reports:write")
+  // Advertise scopes the authorization server actually supports. Clerk does not
+  // support custom OAuth scopes yet — it only allows the standard OIDC set
+  // (openid/profile/email/offline_access) — and rejects client registration when
+  // a client requests anything else. InstantML enforces permissions server-side
+  // (read-only v1, from the user's org membership), not from token scopes, so
+  // the OAuth grant only needs identity.
+  const scopes = String(env.INSTANTML_MCP_OAUTH_SCOPES ?? "openid profile email offline_access")
     .split(/[\s,]+/)
     .map((scope) => scope.trim())
     .filter(Boolean);
