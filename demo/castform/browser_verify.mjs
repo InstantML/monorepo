@@ -93,10 +93,13 @@ async function visibleText(page) {
   return page.locator("body").innerText({ timeout: 3000 });
 }
 
-async function waitForEmbedFrame(page, timeoutMs) {
+async function waitForEmbedFrame(page, timeoutMs, expectedPath = null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const frame = page.frames().find((candidate) => candidate.url().includes("/embed/runs/"));
+    const frame = page.frames().find((candidate) => {
+      const url = candidate.url();
+      return url.includes("/embed/runs/") && (!expectedPath || url.includes(expectedPath));
+    });
     if (frame) return frame;
     await page.waitForTimeout(100);
   }
@@ -220,7 +223,21 @@ async function main() {
       );
       const iframeTitle = await page.locator("iframe").first().getAttribute("title");
       assert(iframeTitle === secondLabel, "iframe title did not follow selected tab");
+      if (args.requireIframeContent) {
+        const iframeSrc = await page.locator("iframe").first().getAttribute("src");
+        const expectedPath = new URL(iframeSrc).pathname;
+        const selectedFrame = await waitForEmbedFrame(page, args.timeoutMs, expectedPath);
+        assert(selectedFrame, "selected InstantML embed frame was not attached");
+        await waitForEmbedText(selectedFrame, args.timeoutMs);
+        const selectedPanelCount = await waitForPanelCount(selectedFrame, args.timeoutMs);
+        assert(selectedPanelCount > 0, "selected embed frame did not render any InstantML panel elements");
+        iframeContent = `verified selected tab with ${selectedPanelCount} panels`;
+      }
       interaction = `selected tab: ${secondLabel}`;
+    }
+
+    if (args.screenshot) {
+      await page.screenshot({ path: args.screenshot, fullPage: false });
     }
 
     await page.locator("[data-refresh]").click();
@@ -236,10 +253,6 @@ async function main() {
     assert(consoleErrors.length === 0, `console errors: ${consoleErrors.map((issue) => issue.text).join("; ")}`);
     if (args.failOnWarnings) {
       assert(consoleWarnings.length === 0, `console warnings: ${consoleWarnings.map((issue) => issue.text).join("; ")}`);
-    }
-
-    if (args.screenshot) {
-      await page.screenshot({ path: args.screenshot, fullPage: false });
     }
 
     const result = {

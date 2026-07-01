@@ -115,3 +115,6 @@ Create a full end-to-end demo that:
   iframe path with 3 run cards, 3 session tabs, a rendered InstantML iframe, no
   visible embed token, and a successful `Best vs overfit` tab interaction. The
   screenshots are ignored local artifacts under `run-output/`.
+- Updated `run_local_real_iframe_e2e.py` to save desktop and mobile screenshot
+  evidence automatically under `run-output/local-real-iframe-screenshots/` and
+  surface the paths in its report.

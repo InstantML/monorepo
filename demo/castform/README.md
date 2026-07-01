@@ -231,8 +231,10 @@ disposable local API key, writes data through the InstantML SDK, creates real
 local embed sessions, reuses the same run IDs through `--instantml-run-id`
 without increasing the run count, serves the Castform parent page, and verifies
 that the InstantML iframe renders metric panels at desktop and mobile
-viewports. Do not run another `next dev` for `apps/web` at the same time; Next
-uses an app-level development lock even when this script chooses a free port.
+viewports. It also writes ignored screenshot evidence to
+`run-output/local-real-iframe-screenshots/`. Do not run another `next dev` for
+`apps/web` at the same time; Next uses an app-level development lock even when
+this script chooses a free port.
 
 When production run data exists but hosted embed sessions are not deployed,
 regenerate and verify the explicit blocked state with:

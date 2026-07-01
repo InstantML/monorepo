@@ -27,6 +27,7 @@ REPO_ROOT = HERE.parents[1]
 DEFAULT_REPORT = HERE / "run-output" / "local-real-iframe-e2e-report.json"
 DEFAULT_SUMMARY = HERE / "run-output" / "local-real-iframe-summary.json"
 DEFAULT_RESUME_SUMMARY = HERE / "run-output" / "local-real-iframe-resume-summary.json"
+DEFAULT_SCREENSHOT_DIR = HERE / "run-output" / "local-real-iframe-screenshots"
 TOKEN_RE = re.compile(r"instantml_(?:embed_)?(?!redacted\b)[A-Za-z0-9_-]{20,}")
 
 
@@ -262,6 +263,10 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
     path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def screenshot_path(screenshot_dir: Path, viewport: str) -> Path:
+    return screenshot_dir / f"local-real-iframe-{viewport}.png"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run local Castform -> real InstantML iframe E2E")
     parser.add_argument("--host", default="127.0.0.1")
@@ -276,6 +281,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--summary", type=Path, default=DEFAULT_SUMMARY)
     parser.add_argument("--resume-summary", type=Path, default=DEFAULT_RESUME_SUMMARY)
+    parser.add_argument("--screenshot-dir", type=Path, default=DEFAULT_SCREENSHOT_DIR)
     parser.add_argument("--skip-resume-check", action="store_true", help="Skip the existing-InstantML-run iframe resume check")
     parser.add_argument(
         "--keep-running",
@@ -447,7 +453,10 @@ def main() -> int:
 
         expect_sessions = 1 if args.runs == 1 else 3
         browser_process_timeout = max(args.timeout + 60.0, args.timeout * 2.0)
+        args.screenshot_dir.mkdir(parents=True, exist_ok=True)
+        report["screenshots"] = []
         for viewport in ("1366x900", "390x844"):
+            screenshot = screenshot_path(args.screenshot_dir, viewport)
             run_and_record(
                 report,
                 [
@@ -462,11 +471,14 @@ def main() -> int:
                     "--require-iframe-content",
                     "--viewport",
                     viewport,
+                    "--screenshot",
+                    str(screenshot),
                     "--timeout-ms",
                     str(round(args.timeout * 1000)),
                 ],
                 timeout=browser_process_timeout,
             )
+            report["screenshots"].append({"viewport": viewport, "path": str(screenshot)})
         _manifest, report["manifest"] = manifest_summary(manifest_path)
         report["processes"] = {
             "api_pid": api_process.pid if api_process else None,

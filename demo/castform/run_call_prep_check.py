@@ -101,6 +101,7 @@ def compact_report(path: Path) -> dict[str, Any] | None:
         "fake_api_final",
         "initial_manifest",
         "manifest",
+        "screenshots",
         "resume_run_total_before",
         "resume_run_total_after",
         "counts",

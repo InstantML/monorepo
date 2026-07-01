@@ -62,6 +62,10 @@ artifacts: production and staging still return 404 for
   `run-output/in-app-browser-local-real-iframe.png` and
   `run-output/in-app-browser-local-real-iframe-overfit-tab.png`. The tab
   interaction changed the selected tab and iframe title to `Best vs overfit`.
+- Automated screenshot evidence is now part of `run_local_real_iframe_e2e.py`;
+  each run writes desktop and mobile screenshots under
+  `run-output/local-real-iframe-screenshots/` and includes those paths in the
+  ignored JSON report.
 
 ## Operator Path
 

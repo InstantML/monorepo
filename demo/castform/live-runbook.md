@@ -57,8 +57,9 @@ generated page.
 is the complete no-secret proof: it starts a local Rust API, local ClickHouse,
 the local Next embed app, and the parent page; writes Castform-shaped runs
 through the SDK; creates real local embed sessions; and checks iframe panels at
-desktop and mobile viewports. Do not run another `next dev` for `apps/web` at
-the same time.
+desktop and mobile viewports. It writes ignored desktop/mobile screenshots to
+`run-output/local-real-iframe-screenshots/`. Do not run another `next dev` for
+`apps/web` at the same time.
 
 If a live InstantML API key is already exported and the goal is to rehearse the
 current production persisted-data page without duplicating runs, use:
