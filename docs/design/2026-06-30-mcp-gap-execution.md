@@ -20,7 +20,7 @@ files.
 | 1 | `codex/mcp-gap1-share-url` | Return frontend report share URLs from `tracker.share_report`. | Ready for PR |
 | 2 | `codex/mcp-gap2-list-projects` | Add `tracker.list_projects`. | Ready for PR |
 | 3 | `codex/mcp-gap3-compare-matching-runs` | Add server-side query comparison and MCP wrapper. | Ready for PR |
-| 4 | `codex/mcp-gap4-artifact-lineage-tools` | Add read-only artifact, checkpoint, and lineage MCP tools. | Pending |
+| 4 | `codex/mcp-gap4-artifact-lineage-tools` | Add read-only artifact, checkpoint, and lineage MCP tools. | Ready for PR |
 | 5 | `codex/mcp-gap5-report-markdown-export` | Add `tracker.export_report_markdown`. | Pending |
 
 ## Gap 1 Notes
@@ -55,6 +55,16 @@ files.
 - Expected result: agents no longer need to page `tracker.list_runs` manually
   before comparing the best or latest matching runs.
 
+## Gap 4 Notes
+
+- Classification: localized MCP wrappers over existing read-only Rust artifact
+  and lineage endpoints; no new backend route or storage contract.
+- Implementation: add tools for run lineage, raw run artifacts, run artifact
+  edges, artifact collections, artifact versions, artifact reference
+  resolution, manifests, and artifact-version lineage.
+- Expected result: agents can answer checkpoint, input/output artifact, and
+  producer/consumer lineage questions without exporting whole runs.
+
 ## Validation Log
 
 - 2026-06-30 gap 1: `node --test tools/tests/mcp-server-entrypoint.test.js apps/server/tests/mcp-server-reports.test.js` passed.
@@ -80,4 +90,10 @@ files.
 - 2026-06-30 gap 3: full `npm run rust:test` was attempted; non-Postgres tests
   ran, but 36 existing `sqlx::test` cases failed immediately because
   `DATABASE_URL` is unset in this shell.
+- 2026-06-30 gap 4: `node --test tools/tests/mcp-server-entrypoint.test.js apps/server/tests/mcp-server-reports.test.js` passed.
+- 2026-06-30 gap 4: real HTTP MCP `tools/call` against a fake upstream
+  `GET /api/artifact-collections` API returned checkpoint collection rows and
+  preserved project/type/query/limit params.
+- 2026-06-30 gap 4: `npm run docs:validate` passed.
+- 2026-06-30 gap 4: local diff review and `git diff --check` completed with no findings.
 - Pending: PR.

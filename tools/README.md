@@ -62,9 +62,11 @@ Cloud Run deploy. The deploy sets `INSTANTML_MCP_OAUTH_AUTH_SERVER` (prod:
 
 Run-analysis tools include `tracker.list_projects`, `tracker.list_runs`,
 `tracker.compare_matching_runs`, `tracker.compare_runs`, metric readers,
-bounded export, workspace-view data, and report helpers. Prefer
-`tracker.compare_matching_runs` when the agent needs to rank matching runs
-server-side before producing comparison evidence.
+artifact/checkpoint and lineage readers, bounded export, workspace-view data,
+and report helpers. Prefer `tracker.compare_matching_runs` when the agent needs
+to rank matching runs server-side before producing comparison evidence; prefer
+the artifact tools when the user asks about checkpoints, run outputs, or
+producer/consumer lineage.
 
 ## Local ClickHouse Helper
 

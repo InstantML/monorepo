@@ -419,6 +419,194 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
       },
     },
     {
+      name: "tracker.get_run_lineage",
+      description:
+        "Fetch the bounded direct run lineage graph for a run, including parent/fork context. Use when explaining how a candidate run was derived.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          run_id: { type: "string", description: "Run UUID." },
+        },
+        required: ["run_id"],
+      },
+      handler: async (args) => {
+        const result = await api(`/api/runs/${encodeURIComponent(args.run_id)}/lineage`);
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.list_run_artifacts",
+      description:
+        "List raw artifact metadata rows attached to one run. Use to inspect files, checkpoints, rollouts, and other run outputs without downloading bytes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          run_id: { type: "string", description: "Run UUID." },
+          limit: { type: "integer", default: 100, maximum: 1000 },
+        },
+        required: ["run_id"],
+      },
+      handler: async (args) => {
+        const result = await api(
+          `/api/runs/${encodeURIComponent(args.run_id)}/artifacts`,
+          compactParams({ limit: args.limit }),
+        );
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.list_run_artifact_edges",
+      description:
+        "List versioned artifact input/output edges for a run. Use to see which versioned artifacts a run consumed or produced.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          run_id: { type: "string", description: "Run UUID." },
+          direction: { type: "string", enum: ["input", "output", "both"], default: "both" },
+          limit: { type: "integer", default: 100, maximum: 1000 },
+        },
+        required: ["run_id"],
+      },
+      handler: async (args) => {
+        const result = await api(
+          `/api/runs/${encodeURIComponent(args.run_id)}/artifact-edges`,
+          compactParams({ direction: args.direction, limit: args.limit }),
+        );
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.list_artifact_collections",
+      description:
+        "List versioned artifact collections visible to the caller. Filter by project, type (for example checkpoint), or name search before resolving versions.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project: { type: "string", description: "Optional project name filter." },
+          type: { type: "string", description: "Optional collection type, e.g. checkpoint, model, dataset." },
+          kind: { type: "string", description: "Alias for type." },
+          query: { type: "string", description: "Case-insensitive collection name search." },
+          limit: { type: "integer", default: 50, maximum: 500 },
+          offset: { type: "integer", default: 0 },
+        },
+      },
+      handler: async (args) => {
+        const result = await api("/api/artifact-collections", compactParams({
+          project: args.project,
+          type: args.type ?? args.kind,
+          q: args.query,
+          limit: args.limit ?? 50,
+          offset: args.offset,
+        }));
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.get_artifact_version",
+      description:
+        "Fetch one versioned artifact by UUID, including collection context, aliases, source run, retention, and summary metadata.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          version_id: { type: "string", description: "Artifact version UUID." },
+        },
+        required: ["version_id"],
+      },
+      handler: async (args) => {
+        const result = await api(`/api/artifact-versions/${encodeURIComponent(args.version_id)}`);
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.list_artifact_versions",
+      description:
+        "List available versions in an artifact collection, newest version index first. Use after list_artifact_collections finds a checkpoint/model/dataset collection.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          collection_id: { type: "string", description: "Artifact collection UUID." },
+          limit: { type: "integer", default: 50, maximum: 1000 },
+          offset: { type: "integer", default: 0 },
+        },
+        required: ["collection_id"],
+      },
+      handler: async (args) => {
+        const result = await api(
+          `/api/artifact-collections/${encodeURIComponent(args.collection_id)}/versions`,
+          compactParams({ limit: args.limit ?? 50, offset: args.offset }),
+        );
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.resolve_artifact_version",
+      description:
+        "Resolve a human artifact reference such as name:latest, type/name:best, or project/type/name:v0 to a concrete artifact version.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ref: { type: "string", description: "Artifact reference." },
+          type: { type: "string", description: "Optional collection type disambiguator." },
+          project: { type: "string", description: "Optional project name disambiguator." },
+        },
+        required: ["ref"],
+      },
+      handler: async (args) => {
+        const result = await api("/api/artifact-versions/resolve", compactParams({
+          ref: args.ref,
+          type: args.type,
+          project: args.project,
+        }));
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.list_artifact_manifest",
+      description:
+        "List manifest entries for a versioned artifact, optionally filtered by path prefix. Use before downloading or citing specific files.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          version_id: { type: "string", description: "Artifact version UUID." },
+          path_prefix: { type: "string", description: "Optional manifest path prefix." },
+          limit: { type: "integer", default: 100, maximum: 1000 },
+          offset: { type: "integer", default: 0 },
+        },
+        required: ["version_id"],
+      },
+      handler: async (args) => {
+        const result = await api(
+          `/api/artifact-versions/${encodeURIComponent(args.version_id)}/manifest`,
+          compactParams({
+            path_prefix: args.path_prefix,
+            limit: args.limit ?? 100,
+            offset: args.offset,
+          }),
+        );
+        return textResult(result);
+      },
+    },
+    {
+      name: "tracker.get_artifact_lineage",
+      description:
+        "Fetch the bounded input/output lineage graph around a versioned artifact. Use to explain which runs produced or consumed a checkpoint/model/dataset.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          version_id: { type: "string", description: "Artifact version UUID." },
+          limit: { type: "integer", default: 100, maximum: 1000 },
+        },
+        required: ["version_id"],
+      },
+      handler: async (args) => {
+        const result = await api(
+          `/api/artifact-versions/${encodeURIComponent(args.version_id)}/lineage`,
+          compactParams({ limit: args.limit ?? 100 }),
+        );
+        return textResult(result);
+      },
+    },
+    {
       name: "tracker.export_runs",
       description:
         "Export selected or filtered runs as bounded JSON or CSV. JSON includes runs, metric points, metric-series summaries, attributes, artifacts, and imports within server caps.",

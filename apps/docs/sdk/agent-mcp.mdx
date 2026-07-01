@@ -244,6 +244,15 @@ to set `INSTANTML_API_KEY`.
 | `tracker.query_metrics` | Fetch bounded metric points for one run and one metric key. |
 | `tracker.get_metric_series_batch` | Fetch one metric across many run IDs through the batched series endpoint. |
 | `tracker.compare_runs` | Compare up to 50 already selected runs by config, metadata, tags, attributes, and metric summaries. |
+| `tracker.get_run_lineage` | Inspect direct parent/fork lineage for a run. |
+| `tracker.list_run_artifacts` | List raw artifact metadata attached to a run. |
+| `tracker.list_run_artifact_edges` | List versioned artifact input/output edges for a run. |
+| `tracker.list_artifact_collections` | Discover versioned artifact collections, including checkpoint collections via `type: "checkpoint"`. |
+| `tracker.get_artifact_version` | Fetch one versioned artifact by UUID. |
+| `tracker.list_artifact_versions` | List available versions in a collection. |
+| `tracker.resolve_artifact_version` | Resolve references such as `policy:latest` or `checkpoint/policy:best`. |
+| `tracker.list_artifact_manifest` | Page manifest entries for a versioned artifact. |
+| `tracker.get_artifact_lineage` | Inspect runs that produced or consumed a versioned artifact. |
 | `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV. |
 | `tracker.workspace_view_data` | Resolve a portable dashboard view plus explicit run IDs into bounded panel data. |
 
