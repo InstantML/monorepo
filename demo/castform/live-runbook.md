@@ -11,6 +11,9 @@ only.
   `export:read`.
 - An HTTPS parent origin is available for the local Castform page. Hosted
   InstantML embeds reject plain loopback HTTP origins.
+- As of 2026-07-01, production writes to `castform-live-demo` work, but hosted
+  embed-session routes are not deployed. Use the local real iframe E2E below to
+  show the complete iframe integration until production embed routes are live.
 
 ## 1. Start The Parent Page
 
@@ -19,14 +22,24 @@ Optional preflight before live credentials:
 ```bash
 python3 demo/castform/run_mocked_e2e.py
 python3 demo/castform/run_local_smoke.py
+python3 demo/castform/run_local_real_iframe_e2e.py \
+  --runs 3 \
+  --steps 40 \
+  --step-size 10 \
+  --timeout 180
 ```
 
 If port 5174 is already in use, pass `--port 0` to pick a free local port for
-the preflight.
+the lightweight smoke preflight.
 
 `run_mocked_e2e.py` is the stronger rehearsal: it executes the real hosted
 writer against a fake local InstantML API and browser-tests the generated page.
-`run_local_smoke.py` is the lighter parent-page smoke.
+`run_local_smoke.py` is the lighter parent-page smoke. `run_local_real_iframe_e2e.py`
+is the complete no-secret proof: it starts a local Rust API, local ClickHouse,
+the local Next embed app, and the parent page; writes Castform-shaped runs
+through the SDK; creates real local embed sessions; and checks iframe panels at
+desktop and mobile viewports. Do not run another `next dev` for `apps/web` at
+the same time.
 
 For the live hosted path, start or keep the parent page server running:
 
@@ -173,6 +186,17 @@ node demo/castform/browser_verify.mjs \
   --expect-runs 4 \
   --expect-sessions 0 \
   --allow-blocked-embeds
+```
+
+For the local real iframe E2E, the runner already invokes the stricter browser
+check:
+
+```bash
+node demo/castform/browser_verify.mjs \
+  --url http://127.0.0.1:<parent-port> \
+  --expect-runs 3 \
+  --expect-sessions 3 \
+  --require-iframe-content
 ```
 
 Open the HTTPS parent origin in Chrome and verify:

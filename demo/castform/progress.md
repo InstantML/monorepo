@@ -67,3 +67,9 @@ Create a full end-to-end demo that:
   return 404 for `POST /api/embed/sessions`, their OpenAPI documents omit embed
   paths, and dashboard pages are not frameable. Added a live blocked-embed page
   state and recorded details in `live-hosted-status.md`.
+- Added a local real InstantML iframe E2E runner that starts an isolated Rust
+  API, local ClickHouse, local Next embed app, and Castform parent page; mints a
+  disposable local API key; writes Castform-shaped runs through the SDK; creates
+  real local embed sessions; and browser-verifies iframe content on desktop and
+  mobile. Verified with 3 runs, 3 sessions, and 42 iframe panel elements at both
+  `1366x900` and `390x844`.

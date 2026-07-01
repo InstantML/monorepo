@@ -13,6 +13,7 @@ function parseArgs(argv) {
     screenshot: null,
     failOnWarnings: false,
     allowBlockedEmbeds: false,
+    requireIframeContent: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -31,6 +32,7 @@ function parseArgs(argv) {
     else if (arg === "--screenshot") args.screenshot = next();
     else if (arg === "--fail-on-warnings") args.failOnWarnings = true;
     else if (arg === "--allow-blocked-embeds") args.allowBlockedEmbeds = true;
+    else if (arg === "--require-iframe-content") args.requireIframeContent = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -72,6 +74,7 @@ Options:
   --screenshot <path>         Optional screenshot output path
   --fail-on-warnings          Treat console warnings as failures
   --allow-blocked-embeds      Accept the explicit hosted-embed-blocked state
+  --require-iframe-content    Verify the InstantML embed app rendered panels
   --timeout-ms <ms>           Navigation and selector timeout. Default: 15000
 `);
 }
@@ -88,6 +91,52 @@ function assert(condition, message) {
 
 async function visibleText(page) {
   return page.locator("body").innerText({ timeout: 3000 });
+}
+
+async function waitForEmbedFrame(page, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const frame = page.frames().find((candidate) => candidate.url().includes("/embed/runs/"));
+    if (frame) return frame;
+    await page.waitForTimeout(100);
+  }
+  return null;
+}
+
+async function waitForEmbedText(frame, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let lastText = "";
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const remaining = Math.max(1000, Math.min(3000, deadline - Date.now()));
+      const text = await frame.locator("body").innerText({ timeout: remaining });
+      lastText = text;
+      if (
+        text.includes("INSTANTML EMBED")
+        && text.includes("Run metrics")
+        && (text.includes("plotted") || text.includes("latest values"))
+      ) {
+        return text;
+      }
+    } catch (error) {
+      lastError = sanitize(error.message);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const excerpt = sanitize(lastText).slice(0, 500).replace(/\s+/g, " ");
+  throw new Error(`InstantML embed frame did not render expected text. Last text: ${excerpt || "empty"} ${lastError}`);
+}
+
+async function waitForPanelCount(frame, timeoutMs) {
+  const selector = ".embed-run-panel, [class*=embed-run-panel], .chart-area, svg, canvas";
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const panelCount = await frame.locator(selector).count().catch(() => 0);
+    if (panelCount > 0) return panelCount;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return 0;
 }
 
 async function main() {
@@ -127,6 +176,7 @@ async function main() {
     const iframes = await page.locator("iframe").count();
     const blockedPanels = await page.locator(".blocked-panel").count();
     const embedsBlocked = blockedPanels > 0;
+    let iframeContent = "not requested";
     assert(runCards >= args.expectRuns, `expected at least ${args.expectRuns} run cards, found ${runCards}`);
     if (embedsBlocked) {
       assert(args.allowBlockedEmbeds, "page rendered blocked embeds, but --allow-blocked-embeds was not set");
@@ -137,13 +187,25 @@ async function main() {
       assert(tabs >= args.expectSessions, `expected at least ${args.expectSessions} session tabs, found ${tabs}`);
       assert(iframes >= 1, "expected at least one iframe");
 
-      const iframeBox = await page.locator("iframe").first().boundingBox();
+      const iframe = page.locator("iframe").first();
+      await iframe.scrollIntoViewIfNeeded({ timeout: args.timeoutMs });
+      const iframeBox = await iframe.boundingBox();
       assert(iframeBox && iframeBox.width >= 280 && iframeBox.height >= 320, "iframe is not visibly sized");
-      const iframeHasToken = await page.locator("iframe").first().evaluate((frame) => {
+      const iframeHasToken = await iframe.evaluate((frame) => {
         const src = frame.getAttribute("src") || "";
         return /#token=instantml_embed_[A-Za-z0-9_-]+/.test(src);
       });
       assert(iframeHasToken, "iframe src was missing its embed token fragment");
+      if (args.requireIframeContent) {
+        const embedFrame = await waitForEmbedFrame(page, args.timeoutMs);
+        assert(embedFrame, "InstantML embed frame was not attached");
+        const embedText = await waitForEmbedText(embedFrame, args.timeoutMs);
+        const panelCount = await waitForPanelCount(embedFrame, args.timeoutMs);
+        assert(panelCount > 0, "embed frame did not render any InstantML panel elements");
+        assert(!LIVE_EMBED_TOKEN_RE.test(embedText), "live embed token appeared inside iframe text");
+        LIVE_EMBED_TOKEN_RE.lastIndex = 0;
+        iframeContent = `verified ${panelCount} panels`;
+      }
     }
 
     let interaction = "single session only";
@@ -189,6 +251,7 @@ async function main() {
       session_tabs: tabs,
       iframes,
       embeds_blocked: embedsBlocked,
+      iframe_content: iframeContent,
       interaction,
       console_warnings: consoleWarnings.length,
       screenshot: args.screenshot || undefined,

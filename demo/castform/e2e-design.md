@@ -59,6 +59,11 @@ Local-only InstantML mode remains available for development by overriding
 `--api-base-url`, `--instantml-web-base-url`, and `--parent-origin`, but it is
 not the call-prep default.
 
+Current deployment note, 2026-07-01: hosted production data writes work, but
+prod and staging currently return 404 for `POST /api/embed/sessions` and their
+OpenAPI documents omit embed routes. The local real iframe E2E below is the
+repeatable full iframe proof until the hosted embed API is deployed.
+
 ## Demo Runner Contract
 
 `run_demo.py` is the operator entrypoint.
@@ -192,14 +197,46 @@ visible text at desktop and mobile viewports. It does not replace the final
 hosted check because the local smoke uses `about:blank` iframe targets instead
 of live InstantML iframe content.
 
+## Real Local InstantML Iframe Path
+
+Use `run_local_real_iframe_e2e.py` when hosted iframes are unavailable or when a
+pre-call proof should avoid live secrets:
+
+```bash
+python3 demo/castform/run_local_real_iframe_e2e.py \
+  --runs 3 \
+  --steps 40 \
+  --step-size 10 \
+  --timeout 180
+```
+
+This starts an isolated local stack:
+
+- Rust API through `npm run dev:api` with embed routes enabled.
+- Local ClickHouse on free ports and ignored temporary state.
+- Next embed app from `apps/web` with explicit local API bases.
+- Castform parent page on a free loopback port.
+
+The runner then mints a disposable local API key, runs `run_demo.py` through the
+real Python SDK, creates real local embed sessions, runs `verify_demo.py`, and
+uses `browser_verify.mjs --require-iframe-content` at `1366x900` and `390x844`.
+The browser check requires `INSTANTML EMBED`, `Run metrics`, plotted/latest
+metric text, visible iframe sizing, tab switching, refresh behavior, and at
+least one rendered InstantML panel element inside the iframe. The ignored report
+is written to `run-output/local-real-iframe-e2e-report.json`.
+
+Do not run another `next dev` for `apps/web` while this command is running.
+Next holds an app-directory dev lock even when different ports are used.
+
 ## Verification
 
 Minimum checks before a commit:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/run_mocked_e2e.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
+python3 demo/castform/run_local_real_iframe_e2e.py --runs 3 --steps 40 --step-size 10 --timeout 180
 git diff --check
 ```
 

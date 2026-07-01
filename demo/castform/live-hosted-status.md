@@ -51,6 +51,23 @@ Conclusion: the live data side is complete, but persistent hosted iframes cannot
 be minted until the embed API route is deployed/enabled in the hosted
 environment.
 
+## Local Iframe Proof
+
+The full iframe integration was verified locally with real InstantML services:
+
+```bash
+python3 demo/castform/run_local_real_iframe_e2e.py \
+  --runs 3 \
+  --steps 40 \
+  --step-size 10 \
+  --timeout 180
+```
+
+The passing run started an isolated local Rust API, local ClickHouse, local Next
+embed app, and Castform parent page; wrote 3 Castform-shaped runs; created 3
+real local embed sessions; and verified 42 rendered iframe panel elements at
+both `1366x900` and `390x844`.
+
 ## Current Demo URL
 
 The local parent page was exposed at:

@@ -44,6 +44,10 @@ Research date: 2026-06-30.
   real hosted writer, records SDK traffic, creates mock embed sessions, serves
   the parent page, runs artifact verification, and runs desktop/mobile browser
   checks without live credentials.
+- `run_local_real_iframe_e2e.py`: one-command local real InstantML iframe E2E
+  that starts an isolated Rust API, ClickHouse, Next embed app, and parent page;
+  writes Castform-shaped runs through the SDK; creates real local embed
+  sessions; and verifies rendered iframe panels on desktop and mobile.
 - `verify_demo.py`: generated manifest and redacted-summary verifier.
 - `live-runbook.md`: operator runbook for the hosted call demo.
 - `live-hosted-status.md`: current live production run IDs, verification
@@ -149,6 +153,23 @@ python3 demo/castform/run_mocked_e2e.py
 This runs the real `run_demo.py` against a local fake InstantML API and writes
 `run-output/mocked-e2e-report.json`, which is ignored by Git.
 
+Full local real InstantML iframe E2E:
+
+```bash
+python3 demo/castform/run_local_real_iframe_e2e.py \
+  --runs 3 \
+  --steps 40 \
+  --step-size 10 \
+  --timeout 180
+```
+
+This starts an isolated local Rust API and local Next embed app, mints a
+disposable local API key, writes data through the InstantML SDK, creates real
+local embed sessions, serves the Castform parent page, and verifies that the
+InstantML iframe renders metric panels at desktop and mobile viewports. Do not
+run another `next dev` for `apps/web` at the same time; Next uses an app-level
+development lock even when this script chooses a free port.
+
 When production run data exists but hosted embed sessions are not deployed,
 verify the explicit blocked state with:
 
@@ -166,7 +187,7 @@ The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/run_mocked_e2e.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```
