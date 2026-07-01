@@ -51,6 +51,7 @@ type Props = {
   pinnedMetrics: string[];
   selectedRuns: RunSummary[];
   series: MetricSeries[];
+  seriesLoading: boolean;
   smoothing: number;
   sortedRuns: RunSummary[];
   visibleMetricCatalogRows: MetricCatalogRow[];
@@ -87,6 +88,7 @@ export function MetricsTabPane({
   pinnedMetrics,
   selectedRuns,
   series,
+  seriesLoading,
   smoothing,
   sortedRuns,
   visibleMetricCatalogRows,
@@ -199,21 +201,32 @@ export function MetricsTabPane({
               </button>
             </div>
             <div className="mx-chart-body">
-              <MetricChart
-                exportApiRef={exportApiRef}
-                exportFilenameBase={`instantml-${metricKey}`}
-                height={320}
-                metricKey={metricKey}
-                onPointHover={(point) => onPointHoverChange(point, metricKey)}
-                onLeave={onChartLeave}
-                onZoomRangeChange={onZoomRangeChange}
-                series={visibleSeries}
-                showExportActions={false}
-                showYAxisControls={false}
-                xMode={xMode}
-                yScale={yScale}
-                zoomRange={chartZoomRange}
-              />
+              {seriesLoading && !visibleSeries.length ? (
+                <div className="chart-area workspace-chart-loading" aria-label={`Loading ${metricKey || "metric"} series`}>
+                  <div className="chart-loading-frame">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <div className="empty">Loading metric series...</div>
+                </div>
+              ) : (
+                <MetricChart
+                  exportApiRef={exportApiRef}
+                  exportFilenameBase={`instantml-${metricKey}`}
+                  height={320}
+                  metricKey={metricKey}
+                  onPointHover={(point) => onPointHoverChange(point, metricKey)}
+                  onLeave={onChartLeave}
+                  onZoomRangeChange={onZoomRangeChange}
+                  series={visibleSeries}
+                  showExportActions={false}
+                  showYAxisControls={false}
+                  xMode={xMode}
+                  yScale={yScale}
+                  zoomRange={chartZoomRange}
+                />
+              )}
             </div>
             <ChartControls
               metricKey={metricKey}
