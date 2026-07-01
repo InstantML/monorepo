@@ -17,6 +17,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -267,6 +268,31 @@ def screenshot_path(screenshot_dir: Path, viewport: str) -> Path:
     return screenshot_dir / f"local-real-iframe-{viewport}.png"
 
 
+def open_presentation_url(url: str) -> dict[str, Any]:
+    if sys.platform == "darwin":
+        chrome_error = ""
+        try:
+            chrome = subprocess.run(
+                ["open", "-a", "Google Chrome", url],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if chrome.returncode == 0:
+                return {"ok": True, "method": "macos_google_chrome"}
+            chrome_error = (chrome.stderr or chrome.stdout or "").strip()
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            chrome_error = str(exc)
+        fallback = webbrowser.open(url, new=2)
+        return {
+            "ok": bool(fallback),
+            "method": "webbrowser_fallback",
+            "chrome_error": redact(chrome_error),
+        }
+    return {"ok": bool(webbrowser.open(url, new=2)), "method": "webbrowser"}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run local Castform -> real InstantML iframe E2E")
     parser.add_argument("--host", default="127.0.0.1")
@@ -288,11 +314,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Keep the local API/web/parent servers alive after verification until Ctrl-C, then stop them cleanly",
     )
+    parser.add_argument("--open-browser", action="store_true", help="Open the verified parent page after --keep-running verification")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.open_browser and not args.keep_running:
+        raise SystemExit("--open-browser requires --keep-running so the opened page stays reachable")
     api_port = args.api_port or free_port(args.host)
     web_port = args.web_port or free_port(args.host)
     parent_port = args.parent_port or free_port(args.host)
@@ -496,10 +525,15 @@ def main() -> int:
         report["ok"] = True
         print(f"local real iframe e2e passed: {parent_origin}")
         if args.keep_running:
+            if args.open_browser:
+                report["presentation"]["browser_open"] = open_presentation_url(parent_origin)
             write_report(args.report, report)
             print(f"Parent page: {parent_origin}")
             print(f"API: {api_base_url}")
             print(f"InstantML web: {web_base_url}")
+            if args.open_browser:
+                opened = report["presentation"].get("browser_open", {})
+                print(f"Browser open: {opened.get('method')} ok={opened.get('ok')}")
             print(f"Report: {args.report}")
             print("Press Ctrl-C to stop local services.")
             try:

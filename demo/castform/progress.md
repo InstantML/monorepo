@@ -140,3 +140,5 @@ Create a full end-to-end demo that:
 - Improved `run_local_real_iframe_e2e.py --keep-running` so it writes the
   verified presentation URL/report before waiting, making the full local iframe
   proof usable as a persistent screen-share demo.
+- Added `run_local_real_iframe_e2e.py --open-browser` so the verified local
+  iframe presentation page opens automatically after checks pass.

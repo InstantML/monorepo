@@ -69,12 +69,14 @@ python3 demo/castform/run_local_real_iframe_e2e.py \
   --steps 40 \
   --step-size 10 \
   --timeout 180 \
-  --keep-running
+  --keep-running \
+  --open-browser
 ```
 
 The runner writes the verified parent URL to its ignored report before waiting
 and keeps the local API, local InstantML web app, and Castform parent page alive
-until Ctrl-C.
+until Ctrl-C. `--open-browser` opens the verified parent page automatically
+after browser verification passes.
 
 If a live InstantML API key is already exported and the goal is to rehearse the
 current production persisted-data page without duplicating runs, use:
@@ -298,9 +300,8 @@ node demo/castform/browser_verify.mjs \
   --require-iframe-content
 ```
 
-For screen sharing, use the same runner with `--keep-running` and open the
-reported parent URL in Chrome. Press Ctrl-C in the runner terminal when the demo
-is finished.
+For screen sharing, use the same runner with `--keep-running --open-browser`.
+Press Ctrl-C in the runner terminal when the demo is finished.
 
 Open the HTTPS parent origin in Chrome and verify:
 

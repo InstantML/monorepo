@@ -272,7 +272,8 @@ iframe. The ignored report is written to
 
 With `--keep-running`, the runner writes the verified report before it waits and
 keeps the local API, local InstantML web app, and Castform parent page alive for
-screen sharing until Ctrl-C.
+screen sharing until Ctrl-C. With `--open-browser`, it opens the verified parent
+page after the browser checks pass.
 
 Do not run another `next dev` for `apps/web` while this command is running.
 Next holds an app-directory dev lock even when different ports are used.

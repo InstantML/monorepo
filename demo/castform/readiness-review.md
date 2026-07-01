@@ -89,6 +89,11 @@ artifacts: production and staging still return 404 for
   `browser_verify.mjs --require-iframe-content` check with 42 rendered panels,
   and then stopped local API, Next, parent, and ClickHouse services cleanly on
   Ctrl-C.
+- Browser handoff passed: `run_local_real_iframe_e2e.py --keep-running
+  --open-browser` opened the verified parent page in Chrome, Chrome showed the
+  Castform demo page with one iframe, and a frame-scoped Chrome check found
+  both `INSTANTML EMBED` and `Run metrics` inside the iframe before the tab was
+  closed and services were stopped.
 
 ## Operator Path
 
