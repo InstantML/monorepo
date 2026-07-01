@@ -149,12 +149,17 @@ No-secret bridge coverage:
 
 ```bash
 python3 demo/castform/run_castform_bridge_smoke.py
+python3 demo/castform/run_castform_sdk_e2e_smoke.py
 ```
 
 The smoke command runs the same bridge CLI against a temporary fake
 `benchmax.platform.client.TrainerClient`, verifies the uploaded asset paths,
 launcher args, API-key plumbing, returned Castform run ID, and output file, and
-does not persist the fake SDK key.
+does not persist the fake SDK key. The SDK E2E smoke goes further: it launches
+through the fake Benchmax SDK, mirrors fake Castform scalars, events, and logs
+through `castform_instantml_adapter.py` and the real InstantML SDK into a fake
+InstantML API, then reuses that mirrored run to create iframe sessions and
+browser-verify the parent page.
 
 ## Castform SDK-Shaped Training Fallback
 

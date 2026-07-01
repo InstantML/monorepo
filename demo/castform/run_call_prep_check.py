@@ -97,6 +97,8 @@ def compact_report(path: Path) -> dict[str, Any] | None:
         "client",
         "launch",
         "bridge_output",
+        "fake_api_after_mirror",
+        "fake_api_final",
         "initial_manifest",
         "manifest",
         "resume_run_total_before",
@@ -136,6 +138,7 @@ def main() -> int:
     try:
         castform_report = HERE / "run-output" / "castform-readiness-report.json"
         bridge_report = HERE / "run-output" / "castform-bridge-smoke-report.json"
+        sdk_e2e_report = HERE / "run-output" / "castform-sdk-e2e-smoke-report.json"
         mocked_report = HERE / "run-output" / "mocked-e2e-report.json"
         smoke_report = HERE / "run-output" / "local-smoke-report.json"
         real_report = HERE / "run-output" / "local-real-iframe-e2e-report.json"
@@ -160,6 +163,13 @@ def main() -> int:
             timeout=args.timeout,
         )
         report["reports"]["castform_bridge_smoke"] = compact_report(bridge_report)
+
+        record_command(
+            report,
+            [sys.executable, "demo/castform/run_castform_sdk_e2e_smoke.py", "--report", str(sdk_e2e_report)],
+            timeout=args.timeout,
+        )
+        report["reports"]["castform_sdk_e2e_smoke"] = compact_report(sdk_e2e_report)
 
         record_command(
             report,

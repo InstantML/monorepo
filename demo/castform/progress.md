@@ -107,3 +107,7 @@ Create a full end-to-end demo that:
   against a temporary fake Benchmax SDK, verifying the
   `TrainerClient.launch_training_run(...)` call shape without live Castform
   credentials or uploaded assets.
+- Added `run_castform_sdk_e2e_smoke.py` to stitch fake Benchmax launch, fake
+  Castform run reads, the real mirror adapter, real InstantML SDK, fake
+  InstantML API, iframe-session creation, local parent page, and browser
+  verification into one no-secret Castform SDK workflow rehearsal.

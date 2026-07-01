@@ -25,6 +25,7 @@ python3 demo/castform/check_castform_readiness.py \
   --allow-missing-live-inputs \
   --skip-network
 python3 demo/castform/run_castform_bridge_smoke.py
+python3 demo/castform/run_castform_sdk_e2e_smoke.py
 python3 demo/castform/run_mocked_e2e.py
 python3 demo/castform/run_local_smoke.py
 python3 demo/castform/run_local_real_iframe_e2e.py \
@@ -45,7 +46,10 @@ Castform API-key presence, uploaded asset arguments, and optional Castform app
 reachability without printing secrets. `run_castform_bridge_smoke.py` runs the
 live bridge CLI against a temporary fake Benchmax SDK so the
 `TrainerClient.launch_training_run(...)` call shape is covered without real
-Castform credentials. `run_mocked_e2e.py` is the stronger
+Castform credentials. `run_castform_sdk_e2e_smoke.py` stitches the fake
+Benchmax launch and fake Castform run-read API into the real mirror adapter,
+real InstantML SDK, fake InstantML API, parent page, and browser verifier.
+`run_mocked_e2e.py` is the stronger
 InstantML rehearsal: it executes the real hosted writer against a fake local
 InstantML API, verifies the existing-run recovery command, and browser-tests the
 generated page.
