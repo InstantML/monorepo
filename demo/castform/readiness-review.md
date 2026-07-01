@@ -83,6 +83,12 @@ artifacts: production and staging still return 404 for
   each run writes desktop and mobile screenshots under
   `run-output/local-real-iframe-screenshots/` and includes those paths in the
   ignored JSON report.
+- Persistent local iframe presentation mode passed: `run_local_real_iframe_e2e.py
+  --keep-running` wrote its verified parent/API/web URLs before waiting, kept a
+  real one-run iframe demo alive, passed an independent
+  `browser_verify.mjs --require-iframe-content` check with 42 rendered panels,
+  and then stopped local API, Next, parent, and ClickHouse services cleanly on
+  Ctrl-C.
 
 ## Operator Path
 

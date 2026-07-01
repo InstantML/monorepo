@@ -487,11 +487,20 @@ def main() -> int:
             "state_root": str(state_root),
             "keep_running": args.keep_running,
         }
+        report["presentation"] = {
+            "parent_url": parent_origin,
+            "api_base_url": api_base_url,
+            "instantml_web_base_url": web_base_url,
+            "report_path": str(args.report),
+        }
         report["ok"] = True
         print(f"local real iframe e2e passed: {parent_origin}")
         if args.keep_running:
+            write_report(args.report, report)
+            print(f"Parent page: {parent_origin}")
             print(f"API: {api_base_url}")
             print(f"InstantML web: {web_base_url}")
+            print(f"Report: {args.report}")
             print("Press Ctrl-C to stop local services.")
             try:
                 while True:

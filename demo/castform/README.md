@@ -250,6 +250,20 @@ viewports. It also writes ignored screenshot evidence to
 `apps/web` at the same time; Next uses an app-level development lock even when
 this script chooses a free port.
 
+For an actual screen-shared demo while hosted iframe sessions are unavailable,
+add `--keep-running`. The runner writes a report containing the live parent URL
+before it waits, then keeps the local API, local InstantML web app, and Castform
+parent page running until Ctrl-C:
+
+```bash
+python3 demo/castform/run_local_real_iframe_e2e.py \
+  --runs 3 \
+  --steps 40 \
+  --step-size 10 \
+  --timeout 180 \
+  --keep-running
+```
+
 When production run data exists but hosted embed sessions are not deployed,
 regenerate and verify the explicit blocked state with:
 

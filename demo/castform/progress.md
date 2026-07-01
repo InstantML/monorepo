@@ -137,3 +137,6 @@ Create a full end-to-end demo that:
 - Added `run_call_prep_check.py --live` so the one-command gate can include
   hosted readiness and the current live persisted-data blocked-embed browser
   smoke alongside the no-secret rehearsals and optional local real iframe E2E.
+- Improved `run_local_real_iframe_e2e.py --keep-running` so it writes the
+  verified presentation URL/report before waiting, making the full local iframe
+  proof usable as a persistent screen-share demo.

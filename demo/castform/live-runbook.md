@@ -61,6 +61,21 @@ desktop and mobile viewports. It writes ignored desktop/mobile screenshots to
 `run-output/local-real-iframe-screenshots/`. Do not run another `next dev` for
 `apps/web` at the same time.
 
+For the actual screen-shared local iframe demo, add `--keep-running`:
+
+```bash
+python3 demo/castform/run_local_real_iframe_e2e.py \
+  --runs 3 \
+  --steps 40 \
+  --step-size 10 \
+  --timeout 180 \
+  --keep-running
+```
+
+The runner writes the verified parent URL to its ignored report before waiting
+and keeps the local API, local InstantML web app, and Castform parent page alive
+until Ctrl-C.
+
 If a live InstantML API key is already exported and the goal is to rehearse the
 current production persisted-data page without duplicating runs, use:
 
@@ -282,6 +297,10 @@ node demo/castform/browser_verify.mjs \
   --expect-sessions 3 \
   --require-iframe-content
 ```
+
+For screen sharing, use the same runner with `--keep-running` and open the
+reported parent URL in Chrome. Press Ctrl-C in the runner terminal when the demo
+is finished.
 
 Open the HTTPS parent origin in Chrome and verify:
 

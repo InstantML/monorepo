@@ -270,6 +270,10 @@ refresh behavior, and at least one rendered InstantML panel element inside the
 iframe. The ignored report is written to
 `run-output/local-real-iframe-e2e-report.json`.
 
+With `--keep-running`, the runner writes the verified report before it waits and
+keeps the local API, local InstantML web app, and Castform parent page alive for
+screen sharing until Ctrl-C.
+
 Do not run another `next dev` for `apps/web` while this command is running.
 Next holds an app-directory dev lock even when different ports are used.
 
