@@ -4675,7 +4675,6 @@ function dismissTopOverlay() {
               onOpenBillingPortal={openBillingPortal}
               onChangeBillingPlan={changeBillingPlan}
               onCancelBilling={cancelBilling}
-              onLoadOrgSettings={loadOrgSettings}
               onMetricKey={setMetricKey}
               onXMode={setXMode}
               orgName={sessionPayload?.organization?.name ?? ""}

@@ -98,7 +98,6 @@ type Props = {
   onOpenBillingPortal: () => void;
   onChangeBillingPlan: (plan: "free" | "pro" | "premium") => void;
   onCancelBilling: () => void;
-  onLoadOrgSettings: () => void;
   onMetricKey: (key: string) => void;
   onXMode: (mode: string) => void;
   orgName: string;
@@ -148,7 +147,6 @@ export function SettingsTabPane({
   onOpenBillingPortal,
   onChangeBillingPlan,
   onCancelBilling,
-  onLoadOrgSettings,
   onMetricKey,
   onXMode,
   orgName,
@@ -246,7 +244,6 @@ export function SettingsTabPane({
         <section className="panel">
           <div className="panel-head">
             <h2><Gauge size={15} /> Plan Usage</h2>
-            <button className="ghost" disabled={adminBusy || !canManageOrg} onClick={onLoadOrgSettings} type="button"><RefreshCw size={14} /> Refresh</button>
           </div>
           <div className="panel-body settings-list">
             <SettingRow label="Plan" value={activePlan} tone="good" />
