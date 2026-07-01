@@ -168,8 +168,19 @@ session IDs and redacted URLs.
 
 ## Local Browser Smoke Path
 
-Before live keys or a tunnel are available, use `create_smoke_manifest.py` to
-write a synthetic manifest with the same schema and redaction behavior:
+Before live keys or a tunnel are available, use `run_mocked_e2e.py` to exercise
+the real hosted writer against a fake local InstantML API:
+
+```bash
+python3 demo/castform/run_mocked_e2e.py
+```
+
+This starts a fake API, runs `run_demo.py`, records SDK traffic, creates mock
+embed sessions, serves the parent page, verifies generated artifacts, and runs
+desktop/mobile browser checks. It proves the SDK-write -> embed-manifest ->
+parent-page loop without production credentials.
+
+For a lighter parent-page-only check, use `run_local_smoke.py`:
 
 ```bash
 python3 demo/castform/run_local_smoke.py
@@ -186,7 +197,7 @@ of live InstantML iframe content.
 Minimum checks before a commit:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/run_mocked_e2e.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 git diff --check

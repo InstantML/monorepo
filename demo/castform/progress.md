@@ -56,3 +56,7 @@ Create a full end-to-end demo that:
   generated paths, hosted parent-origin shape, optional parent URL reachability,
   live env var presence, and InstantML API health without writing data or
   printing secrets.
+- Added a mocked end-to-end rehearsal that runs the real `run_demo.py` against
+  a fake local InstantML API, verifies SDK metric/text/log traffic and mock
+  embed sessions, serves the parent page, and runs desktop/mobile browser
+  checks without live credentials.

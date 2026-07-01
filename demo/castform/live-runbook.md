@@ -17,11 +17,16 @@ only.
 Optional preflight before live credentials:
 
 ```bash
+python3 demo/castform/run_mocked_e2e.py
 python3 demo/castform/run_local_smoke.py
 ```
 
 If port 5174 is already in use, pass `--port 0` to pick a free local port for
 the preflight.
+
+`run_mocked_e2e.py` is the stronger rehearsal: it executes the real hosted
+writer against a fake local InstantML API and browser-tests the generated page.
+`run_local_smoke.py` is the lighter parent-page smoke.
 
 For the live hosted path, start or keep the parent page server running:
 

@@ -40,6 +40,10 @@ Research date: 2026-06-30.
   ignored generated paths, parent-origin shape, optional tunnel reachability,
   live env var presence, and `https://api.instantml.ai/health` without writing
   any data or printing secrets.
+- `run_mocked_e2e.py`: local fake-InstantML end-to-end rehearsal that runs the
+  real hosted writer, records SDK traffic, creates mock embed sessions, serves
+  the parent page, runs artifact verification, and runs desktop/mobile browser
+  checks without live credentials.
 - `verify_demo.py`: generated manifest and redacted-summary verifier.
 - `live-runbook.md`: operator runbook for the hosted call demo.
 
@@ -134,13 +138,22 @@ python3 demo/castform/check_hosted_readiness.py \
 For dry rehearsal before live secrets are exported, add
 `--allow-missing-live-inputs`.
 
+Full local writer rehearsal without live credentials:
+
+```bash
+python3 demo/castform/run_mocked_e2e.py
+```
+
+This runs the real `run_demo.py` against a local fake InstantML API and writes
+`run-output/mocked-e2e-report.json`, which is ignored by Git.
+
 ## Verification
 
 The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/run_mocked_e2e.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```
