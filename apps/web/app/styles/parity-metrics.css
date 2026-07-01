@@ -74,6 +74,11 @@
   white-space: nowrap;
 }
 .metrics-parity .mx-chart-title { text-transform: none; letter-spacing: 0.08em; }
+.metrics-parity .mx-browser-title {
+  font-family: var(--font-ui);
+  text-transform: none;
+  letter-spacing: normal;
+}
 .metrics-parity .mx-unit {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);

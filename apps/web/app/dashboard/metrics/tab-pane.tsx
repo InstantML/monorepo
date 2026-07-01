@@ -136,7 +136,7 @@ export function MetricsTabPane({
       <div className="mx-grid">
         <section className="mx-panel mx-browser" aria-label="Metric browser">
           <div className="mx-panel-head">
-            <span className="mx-mlabel">Metric browser</span>
+            <span className="mx-mlabel mx-browser-title">Metric browser</span>
             <span className="mx-unit">{formatNumber(metricCatalogRows.length, 0)}</span>
           </div>
           <div className="mx-search">
