@@ -55,7 +55,7 @@ Implement as a script or small service:
    text/console evidence.
 7. Finish the InstantML mirror run with a status derived from Castform status.
 
-Use `demo/castform_instantml_adapter.py` as the current planning artifact.
+Use `demo/castform/castform_instantml_adapter.py` as the current planning artifact.
 
 ## Phase 2: Partner-Grade Integration
 

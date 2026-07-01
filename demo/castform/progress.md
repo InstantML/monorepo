@@ -35,3 +35,5 @@ Create a full end-to-end demo that:
 - Added a live Castform/Benchmax SDK launch bridge and `run_demo.py
   --castform-run-id` mode so real Castform runs can be mirrored into the same
   hosted iframe demo flow when credentials and run IDs are available.
+- Corrected stale planning-doc command paths after the move into
+  `demo/castform/`.

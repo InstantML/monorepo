@@ -68,7 +68,7 @@ Evidence:
    Explain that we are not changing their launch path.
 
 2. Mirror one Castform run, 2 minutes.
-   Run `demo/castform_instantml_adapter.py` against a Castform run ID. The
+   Run `demo/castform/castform_instantml_adapter.py` against a Castform run ID. The
    script pulls metadata, scalar modes, lifecycle events, and environment logs,
    then logs them to an InstantML project.
 
@@ -104,7 +104,7 @@ Castform-shaped runs into InstantML:
 ```bash
 INSTANTML_API_KEY=instantml_... \
 PYTHONPATH=packages/python-sdk \
-python3 demo/seed_castform_demo.py --project castform-demo --runs 10
+python3 demo/castform/seed_castform_demo.py --project castform-demo --runs 10
 ```
 
 Then run the same InstantML UI flow. Be explicit that the data is synthetic but
