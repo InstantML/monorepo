@@ -281,6 +281,12 @@ test("deploy helper has cost-aware static egress knobs", () => {
   assert.match(source, /const enableNatLogging = boolValue\("INSTANTML_CLOUD_RUN_NAT_LOGGING", false\)/);
   assert.match(source, /if \(enableNatLogging\) args\.push\("--enable-logging", "--log-filter", "ERRORS_ONLY"\)/);
   assert.match(source, /"--vpc-egress", vpcEgress/);
+  // Private Google Access must be set on the subnet (both on create and via an
+  // idempotent update for pre-existing subnets). Without it, cold-starting
+  // Cloud Run instances cannot reach the Cloud SQL Admin API and hang on the
+  // control-plane Postgres connection (2026-07-01 prod incident).
+  assert.match(source, /"--range", subnetRange, "--enable-private-ip-google-access"/);
+  assert.match(source, /"subnets", "update", subnet, "--region", region, "--enable-private-ip-google-access"/);
 });
 
 test("deploy helper defaults hosted ClickHouse provisioning to database mode", () => {
