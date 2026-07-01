@@ -131,3 +131,6 @@ Create a full end-to-end demo that:
   the exact run IDs. The smoke regenerated the parent manifest from hosted run
   summaries, verified the blocked hosted-embed state, and passed desktop
   `1366x900` plus mobile `390x844` browser checks.
+- Added `demo_env.py` and wired the live operator entrypoints to load ignored
+  `demo/castform/.env` values without overriding exported variables, so the
+  call-prep commands can run directly after the production key is installed.

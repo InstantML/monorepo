@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from demo_env import load_demo_env
+
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
@@ -877,6 +879,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_demo_env()
     args = parse_args()
     if args.runs < 1:
         raise SystemExit("--runs must be at least 1")

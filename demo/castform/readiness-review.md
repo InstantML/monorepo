@@ -61,6 +61,11 @@ artifacts: production and staging still return 404 for
 - Secret hygiene passed: committed files scan clean for live
   `instantml_...` tokens; token-bearing generated manifests remain ignored
   under `demo/castform/web/public/` and `demo/castform/run-output/`.
+- Local secret ergonomics passed: the live scripts now load ignored
+  `demo/castform/.env` without overriding exported variables. A clean
+  environment readiness run found the production key through `.env`, and a
+  clean environment `run_live_blocked_smoke.py` pass regenerated the five-run
+  live manifest and passed desktop/mobile browser checks.
 - In-app browser visual handoff passed: the local real iframe page rendered 3
   run cards, 3 session tabs, and a real InstantML iframe at
   `http://127.0.0.1:61203` with no visible live token text. Screenshots were
@@ -85,7 +90,7 @@ For the current production hosted state, regenerate the live parent page from
 existing production runs without duplicating data:
 
 ```bash
-INSTANTML_API_KEY=... python3 demo/castform/run_live_blocked_smoke.py
+python3 demo/castform/run_live_blocked_smoke.py
 ```
 
 For a tunnel-specific manifest, use the lower-level command:

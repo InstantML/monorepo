@@ -109,11 +109,13 @@ python3 demo/castform/check_hosted_readiness.py \
   --parent-url https://your-demo-origin.example
 ```
 
-This command does not write to InstantML and does not print secrets. Missing
-live keys should appear as warnings in this dry pass. The command also checks
-whether hosted OpenAPI advertises `POST /api/embed/sessions`; while it is
-absent, the check warns and the operator should use the blocked hosted mode or
-local real iframe E2E.
+This command does not write to InstantML and does not print secrets. The live
+scripts automatically load ignored `demo/castform/.env` values when present
+and preserve explicitly exported shell variables. Missing live keys should
+appear as warnings in this dry pass. The command also checks whether hosted
+OpenAPI advertises `POST /api/embed/sessions`; while it is absent, the check
+warns and the operator should use the blocked hosted mode or local real iframe
+E2E.
 
 ## 4. Create A Live API Key
 
@@ -122,7 +124,8 @@ In Chrome:
 1. Open `https://instantml.ai/dashboard/api`.
 2. Create a key named `Castform live demo YYYY-MM-DD`.
 3. Copy the key once.
-4. Export it only in the shell that will run the demo:
+4. Export it only in the shell that will run the demo, or place it in ignored
+   `demo/castform/.env` for local call prep:
 
    ```bash
    export INSTANTML_API_KEY=instantml_...
@@ -156,8 +159,6 @@ If Castform credentials and a shared run are available, mirror the live run
 directly:
 
 ```bash
-CASTFORM_API_KEY=... \
-INSTANTML_API_KEY=... \
 python3 demo/castform/run_demo.py \
   --castform-run-id <castform-run-id> \
   --parent-origin https://your-demo-origin.example \

@@ -15,6 +15,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from demo_env import load_demo_env
+
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
@@ -200,6 +202,7 @@ def mirror_castform_run(
 
 
 def main() -> int:
+    load_demo_env()
     parser = argparse.ArgumentParser(description="Mirror one Castform run into InstantML")
     parser.add_argument("--castform-run-id", required=True)
     parser.add_argument("--instantml-project", default="castform-demo")

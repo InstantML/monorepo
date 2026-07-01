@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from demo_env import load_demo_env
+
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUTPUT = HERE / "run-output" / "castform-launch.json"
@@ -108,6 +110,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_demo_env()
     args = parse_args()
     launcher_args = dict(parse_launcher_arg(item) for item in args.launcher_arg)
     payload = launch_from_uploaded_assets(

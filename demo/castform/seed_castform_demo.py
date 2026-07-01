@@ -9,6 +9,8 @@ import os
 import random
 from datetime import datetime, timezone
 
+from demo_env import load_demo_env
+
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
@@ -195,6 +197,7 @@ def seed_runs(
 
 
 def main() -> int:
+    load_demo_env()
     parser = argparse.ArgumentParser(description="Seed synthetic Castform-shaped InstantML runs")
     parser.add_argument("--project", default="castform-demo")
     parser.add_argument("--runs", type=int, default=10)

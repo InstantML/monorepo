@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from demo_env import load_demo_env
+
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_REPORT = HERE / "run-output" / "castform-readiness-report.json"
@@ -95,6 +97,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_demo_env()
     args = parse_args()
     checks: list[dict[str, Any]] = [
         {

@@ -34,7 +34,7 @@ The demo must remain honest about what is real:
 
 ```text
 demo/castform/run_demo.py
-  -> read a live InstantML API key from the environment
+  -> read a live InstantML API key from the environment or ignored local .env
   -> mirror live Castform run IDs or run Castform SDK-shaped fallback trainer
   -> log metrics/text/console through packages/python-sdk
   -> POST /api/embed/sessions for selected run sets
@@ -94,9 +94,11 @@ Outputs:
   not include live bearer secrets.
 - console output with run IDs, created iframe session IDs, and next commands.
 
-The runner reads `INSTANTML_API_KEY` from the environment. The key must include
-`sdk:ingest` and `export:read`; `artifacts:write` is useful but not required for
-this demo slice.
+The runner reads `INSTANTML_API_KEY` from the environment, after first loading
+ignored local `demo/castform/.env` values when that file exists. Explicitly
+exported environment variables win over `.env`. The key must include
+`sdk:ingest` and `export:read`; `artifacts:write` is useful but not required
+for this demo slice.
 
 When `--instantml-run-id` is used, the runner calls `GET /api/runs/summary` for
 each run ID, reconstructs the Castform run-card metadata from the stored config
@@ -276,7 +278,7 @@ Next holds an app-directory dev lock even when different ports are used.
 Minimum checks before a commit:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py
+python3 -m py_compile demo/castform/demo_env.py demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 python3 demo/castform/run_call_prep_check.py --full

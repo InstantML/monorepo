@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from demo_env import load_demo_env
 from run_demo import DEFAULT_API_BASE_URL, DEFAULT_INSTANTML_WEB_BASE_URL, DEFAULT_PROJECT
 from verify_demo import VerificationError, check_parent_page as verify_parent_page, normalize_origin
 
@@ -247,6 +248,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    load_demo_env()
     args = parse_args()
     statuses: list[dict[str, Any]] = []
     report = {

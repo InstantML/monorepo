@@ -16,6 +16,8 @@ Research date: 2026-06-30.
 - `call-agenda.md`: suggested call structure and discovery questions.
 - `castform-metric-mapping.json`: proposed Castform-to-InstantML field and metric
   mapping.
+- `demo_env.py`: dependency-free loader for ignored local `.env` values used by
+  live operator scripts.
 - `castform_instantml_adapter.py`: illustrative pull-sync script using
   Benchmax's public run-read client and the InstantML SDK.
 - `seed_castform_demo.py`: deterministic synthetic Castform-shaped data seeder
@@ -125,16 +127,18 @@ sequence.
 
 2. Expose port 5174 through an HTTPS tunnel.
 
-3. In a separate shell, export a live InstantML API key with `sdk:ingest` and
-   `export:read`, then write the demo data. To mirror a real Castform run, also
-   export `CASTFORM_API_KEY` and pass `--castform-run-id <id>`.
+3. In a separate shell, provide a live InstantML API key with `sdk:ingest` and
+   `export:read`, then write the demo data. The live scripts automatically load
+   ignored `demo/castform/.env` values when present and preserve variables
+   already exported in the shell. To mirror a real Castform run, also provide
+   `CASTFORM_API_KEY` and pass `--castform-run-id <id>`.
 
    ```bash
    INSTANTML_API_KEY=instantml_... \
-python3 demo/castform/run_demo.py \
-  --parent-origin https://your-demo-origin.example \
-  --allow-embed-blocked
-```
+   python3 demo/castform/run_demo.py \
+     --parent-origin https://your-demo-origin.example \
+     --allow-embed-blocked
+   ```
 
 `run_demo.py` writes the untracked token-bearing iframe manifest to
 `web/public/demo-manifest.json` and a redacted review summary to
@@ -245,7 +249,6 @@ When production run data exists but hosted embed sessions are not deployed,
 regenerate and verify the explicit blocked state with:
 
 ```bash
-INSTANTML_API_KEY=instantml_... \
 python3 demo/castform/run_live_blocked_smoke.py
 ```
 
@@ -253,7 +256,9 @@ This command reads the existing production run summaries, confirms the hosted
 embed route is still blocked, serves the parent page locally, and runs desktop
 plus mobile browser checks. If you already have an HTTPS tunnel running and
 want the manifest to use that exact origin, pass
-`--parent-origin https://your-demo-origin.example`.
+`--parent-origin https://your-demo-origin.example`. It can use
+`demo/castform/.env` directly, so exporting `INSTANTML_API_KEY` is optional
+when that ignored file already exists.
 
 For an already served HTTPS origin, the direct browser verifier is:
 
@@ -271,7 +276,7 @@ The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py demo/castform/run_live_blocked_smoke.py demo/castform/run_castform_bridge_smoke.py demo/castform/run_castform_sdk_e2e_smoke.py
+python3 -m py_compile demo/castform/demo_env.py demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py demo/castform/run_live_blocked_smoke.py demo/castform/run_castform_bridge_smoke.py demo/castform/run_castform_sdk_e2e_smoke.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```
