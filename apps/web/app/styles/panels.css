@@ -1096,7 +1096,9 @@ kbd {
 }
 
 .settings-nav-item.active {
-  background: var(--surface-selected);
+  /* A neutral step-darker gray (the app's standard raised-fill token), not the
+     green selected tint, so the active row reads as a plain gray chip. */
+  background: var(--surface-3);
   font-weight: 640;
 }
 
