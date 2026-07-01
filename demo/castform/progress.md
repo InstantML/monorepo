@@ -78,3 +78,7 @@ Create a full end-to-end demo that:
   embed routes are deployed. The local real iframe E2E now verifies this resume
   path by checking the run count remains unchanged before and after session
   creation.
+- Upgraded the mocked E2E rehearsal to cover the same existing-run recovery
+  command against a fake InstantML API, so the fast no-credential check now
+  proves fresh ingestion, resume session creation, manifest verification, and
+  desktop/mobile parent-page rendering.

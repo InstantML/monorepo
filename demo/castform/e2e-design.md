@@ -189,9 +189,11 @@ python3 demo/castform/run_mocked_e2e.py
 ```
 
 This starts a fake API, runs `run_demo.py`, records SDK traffic, creates mock
-embed sessions, serves the parent page, verifies generated artifacts, and runs
-desktop/mobile browser checks. It proves the SDK-write -> embed-manifest ->
-parent-page loop without production credentials.
+embed sessions, reruns `run_demo.py --instantml-run-id` against the mock run
+IDs without increasing the run count, serves the parent page, verifies generated
+artifacts, and runs desktop/mobile browser checks. It proves the SDK-write ->
+embed-manifest -> parent-page loop and the existing-run recovery command without
+production credentials.
 
 For a lighter parent-page-only check, use `run_local_smoke.py`:
 

@@ -42,8 +42,9 @@ Research date: 2026-06-30.
   any data or printing secrets.
 - `run_mocked_e2e.py`: local fake-InstantML end-to-end rehearsal that runs the
   real hosted writer, records SDK traffic, creates mock embed sessions, serves
-  the parent page, runs artifact verification, and runs desktop/mobile browser
-  checks without live credentials.
+  the parent page, verifies the existing-run resume path without increasing the
+  run count, runs artifact verification, and runs desktop/mobile browser checks
+  without live credentials.
 - `run_local_real_iframe_e2e.py`: one-command local real InstantML iframe E2E
   that starts an isolated Rust API, ClickHouse, Next embed app, and parent page;
   writes Castform-shaped runs through the SDK; creates real local embed
@@ -165,7 +166,8 @@ python3 demo/castform/run_mocked_e2e.py
 ```
 
 This runs the real `run_demo.py` against a local fake InstantML API and writes
-`run-output/mocked-e2e-report.json`, which is ignored by Git.
+`run-output/mocked-e2e-report.json`, which is ignored by Git. It covers both
+fresh SDK ingestion and the `--instantml-run-id` recovery command.
 
 Full local real InstantML iframe E2E:
 

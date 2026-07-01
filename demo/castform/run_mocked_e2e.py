@@ -24,6 +24,7 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 DEFAULT_REPORT = HERE / "run-output" / "mocked-e2e-report.json"
+DEFAULT_RESUME_SUMMARY = HERE / "run-output" / "mocked-e2e-resume-summary.json"
 TOKEN_RE = re.compile(r"instantml_embed_(?!redacted\b)[A-Za-z0-9_-]+")
 
 
@@ -82,6 +83,61 @@ class FakeInstantMLState:
         self.embed_sessions.append(session)
         return {"embed_session": session, "warnings": []}
 
+    def latest_metrics_for_run(self, run_id: str) -> dict[str, float]:
+        latest: dict[str, tuple[int, float]] = {}
+        for batch in self.metrics:
+            if batch.get("run_id") != run_id:
+                continue
+            step = batch.get("step")
+            metrics = batch.get("metrics")
+            if not isinstance(step, (int, float)) or not isinstance(metrics, dict):
+                continue
+            for key, value in metrics.items():
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    continue
+                previous = latest.get(str(key))
+                if previous is None or int(step) >= previous[0]:
+                    latest[str(key)] = (int(step), float(value))
+        return {key: value for key, (_step, value) in latest.items()}
+
+    def runs_summary(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        project = (query.get("project") or [""])[0]
+        search = (query.get("q") or [""])[0]
+        id_filter = search.removeprefix("id:") if search.startswith("id:") else ""
+        rows = []
+        for run_id, run in self.runs.items():
+            if project and run.get("project") != project:
+                continue
+            if id_filter and run_id != id_filter:
+                continue
+            latest_metrics = self.latest_metrics_for_run(run_id)
+            rows.append(
+                {
+                    **run,
+                    "latest_metrics": latest_metrics,
+                    "metric_aggregates": {
+                        key: {
+                            "latest": value,
+                            "min": value,
+                            "max": value,
+                            "mean": value,
+                            "variance": 0.0,
+                            "count": 1,
+                            "best_step": None,
+                        }
+                        for key, value in latest_metrics.items()
+                    },
+                    "metric_keys": sorted(latest_metrics),
+                }
+            )
+        return {
+            "runs": rows,
+            "metric_keys": sorted({key for row in rows for key in row.get("metric_keys", [])}),
+            "total": len(rows),
+            "next_cursor": None,
+            "page_info": {"pagination": "cursor", "has_next_page": False},
+        }
+
     def summary(self) -> dict[str, Any]:
         metric_keys = sorted({key for item in self.metrics for key in item.get("metrics", {})})
         return {
@@ -137,10 +193,14 @@ def make_handler(state: FakeInstantMLState) -> type[http.server.BaseHTTPRequestH
             return
 
         def do_GET(self) -> None:
-            path = urllib.parse.urlsplit(self.path).path
+            parsed = urllib.parse.urlsplit(self.path)
+            path = parsed.path
             state.requests.append({"method": "GET", "path": path})
             if path == "/health":
                 write_json(self, 200, {"status": "ok"})
+                return
+            if path == "/api/runs/summary":
+                write_json(self, 200, state.runs_summary(urllib.parse.parse_qs(parsed.query)))
                 return
             if path.startswith("/embed/runs/"):
                 write_html(
@@ -339,6 +399,29 @@ def main() -> int:
         if set(summary["run_statuses"].values()) != {"finished"}:
             raise MockE2EError(f"runs did not all finish: {summary['run_statuses']}")
 
+        resume_command = [
+            sys.executable,
+            "demo/castform/run_demo.py",
+            "--api-base-url",
+            api_base_url,
+            "--instantml-web-base-url",
+            api_base_url,
+            "--parent-origin",
+            web_base_url,
+            "--project",
+            "castform-mocked-e2e",
+            "--summary",
+            str(DEFAULT_RESUME_SUMMARY),
+        ]
+        for run_id in state.runs:
+            resume_command.extend(["--instantml-run-id", run_id])
+        report["commands"].append(run_command(resume_command, env=env, timeout=args.timeout))
+        resume_summary = state.summary()
+        if resume_summary["runs"] != summary["runs"]:
+            raise MockE2EError(f"resume path changed run count from {summary['runs']} to {resume_summary['runs']}")
+        if resume_summary["embed_sessions"] <= summary["embed_sessions"]:
+            raise MockE2EError("resume path did not create additional embed sessions")
+
         web_server = subprocess.Popen(
             [sys.executable, "demo/castform/serve_web.py", "--host", args.host, "--port", str(web_port)],
             cwd=REPO_ROOT,
@@ -349,10 +432,19 @@ def main() -> int:
         wait_for_url(web_base_url, timeout=args.timeout)
         report["commands"].append(
             run_command(
-                [sys.executable, "demo/castform/verify_demo.py", "--local", "--parent-url", web_base_url],
+                [
+                    sys.executable,
+                    "demo/castform/verify_demo.py",
+                    "--local",
+                    "--parent-url",
+                    web_base_url,
+                    "--summary",
+                    str(DEFAULT_RESUME_SUMMARY),
+                ],
                 timeout=args.timeout,
             )
         )
+        expect_sessions = "1" if args.runs == 1 else "3"
         for viewport in (args.desktop_viewport, args.mobile_viewport):
             report["commands"].append(
                 run_command(
@@ -364,14 +456,15 @@ def main() -> int:
                         "--expect-runs",
                         str(args.runs),
                         "--expect-sessions",
-                        "1",
+                        expect_sessions,
                         "--viewport",
                         viewport,
                     ],
                     timeout=args.timeout,
                 )
             )
-        report["fake_api"] = summary
+        report["fake_api"] = resume_summary
+        report["initial_fake_api"] = summary
         report["ok"] = True
         print(f"mocked e2e passed: api={api_base_url} web={web_base_url}")
         return_code = 0
