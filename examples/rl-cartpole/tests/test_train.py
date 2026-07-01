@@ -42,7 +42,7 @@ def test_main_logs_expected_steps(monkeypatch):
             ".tmp/spool",
         ],
     )
-    monkeypatch.setattr(train.ro, "init", fake_init)
+    monkeypatch.setattr(train.im, "init", fake_init)
 
     train.main()
 

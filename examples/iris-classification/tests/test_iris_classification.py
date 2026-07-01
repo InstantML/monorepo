@@ -204,7 +204,7 @@ def test_run_experiment_logs_sdk_workflow(monkeypatch, tmp_path):
         calls.append(("init", kwargs))
         return FakeRun()
 
-    monkeypatch.setattr(train.ro, "init", fake_init)
+    monkeypatch.setattr(train.im, "init", fake_init)
 
     result = train.run_experiment(
         dataset,
@@ -236,7 +236,7 @@ def test_run_experiment_marks_failed_on_exception(monkeypatch, tmp_path):
         def finish(self, status="finished"):
             calls.append(("finish", status))
 
-    monkeypatch.setattr(train.ro, "init", lambda **kwargs: FakeRun())
+    monkeypatch.setattr(train.im, "init", lambda **kwargs: FakeRun())
     monkeypatch.setattr(train, "train_model", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
 
     with pytest.raises(RuntimeError, match="boom"):

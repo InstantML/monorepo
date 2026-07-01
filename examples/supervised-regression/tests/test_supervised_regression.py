@@ -73,7 +73,7 @@ def test_run_experiment_logs_metrics_and_artifacts(monkeypatch):
         calls.append(("init", kwargs))
         return FakeRun()
 
-    monkeypatch.setattr(train.ro, "init", fake_init)
+    monkeypatch.setattr(train.im, "init", fake_init)
 
     result = train.run_experiment(
         ExperimentConfig(name="tiny", learning_rate=0.04, l2=0.001, epochs=4, features=3),
@@ -106,7 +106,7 @@ def test_run_experiment_can_skip_artifact_metadata(monkeypatch):
         def finish(self):
             pass
 
-    monkeypatch.setattr(train.ro, "init", lambda **kwargs: FakeRun())
+    monkeypatch.setattr(train.im, "init", lambda **kwargs: FakeRun())
 
     result = train.run_experiment(
         ExperimentConfig(name="tiny", learning_rate=0.04, l2=0.001, epochs=2, features=3),
@@ -127,7 +127,7 @@ def test_run_experiment_marks_failed_on_exception(monkeypatch):
         def finish(self, status="finished"):
             calls.append(("finish", status))
 
-    monkeypatch.setattr(train.ro, "init", lambda **kwargs: FakeRun())
+    monkeypatch.setattr(train.im, "init", lambda **kwargs: FakeRun())
     monkeypatch.setattr(train, "train_one_epoch", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")))
 
     with pytest.raises(RuntimeError, match="boom"):
