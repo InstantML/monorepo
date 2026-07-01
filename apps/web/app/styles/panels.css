@@ -1066,9 +1066,7 @@ kbd {
   padding: 4px 10px 8px;
   color: var(--muted);
   font-size: var(--fs-data);
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .settings-nav-item {
