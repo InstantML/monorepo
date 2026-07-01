@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from run_castform_sdk_e2e_smoke import CASTFORM_API_KEY, CASTFORM_RUN_ID, redacted_json_value, write_fake_benchmax
+
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
@@ -247,6 +249,23 @@ def local_run_total(api_base_url: str, api_key: str, project: str, *, timeout: f
     return total
 
 
+def local_run_ids(api_base_url: str, api_key: str, project: str, *, timeout: float) -> list[str]:
+    query = urllib.parse.urlencode({"project": project, "limit": 100})
+    payload, _headers = http_json(
+        "GET",
+        f"{api_base_url}/api/runs/summary?{query}",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=timeout,
+    )
+    rows = payload.get("runs")
+    if not isinstance(rows, list):
+        raise LocalRealIframeError("local run summary did not return a runs array")
+    ids = [str(row.get("id")) for row in rows if isinstance(row, dict) and row.get("id")]
+    if not ids:
+        raise LocalRealIframeError(f"no local runs found in project {project}")
+    return ids
+
+
 def manifest_summary(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     manifest = json.loads(path.read_text(encoding="utf-8"))
     runs = manifest.get("runs") or []
@@ -266,6 +285,10 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
 
 def screenshot_path(screenshot_dir: Path, viewport: str) -> Path:
     return screenshot_dir / f"local-real-iframe-{viewport}.png"
+
+
+def read_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def open_presentation_url(url: str) -> dict[str, Any]:
@@ -300,6 +323,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--web-port", type=int, default=0)
     parser.add_argument("--parent-port", type=int, default=0)
     parser.add_argument("--project", default="castform-local-real-iframe")
+    parser.add_argument("--source", choices=("fallback", "castform-sdk"), default="fallback", help="Training source to mirror into local InstantML")
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--steps", type=int, default=40)
     parser.add_argument("--step-size", type=int, default=10)
@@ -339,6 +363,7 @@ def main() -> int:
         "instantml_web_base_url": web_base_url,
         "parent_origin": parent_origin,
         "project": args.project,
+        "source": args.source,
         "commands": [],
         "processes": {},
     }
@@ -401,9 +426,71 @@ def main() -> int:
             "INSTANTML_API_KEY": api_key,
             "PYTHONPATH": str(REPO_ROOT / "packages" / "python-sdk"),
         }
-        run_and_record(
-            report,
-            [
+        actual_runs = args.runs
+        if args.source == "castform-sdk":
+            with tempfile.TemporaryDirectory(prefix="castform-sdk-local-real-") as temp_name:
+                temp_root = Path(temp_name)
+                call_log = temp_root / "benchmax-calls.json"
+                bridge_output = state_root / "castform-sdk-bridge-output.json"
+                write_fake_benchmax(temp_root, call_log)
+                castform_env = {
+                    **os.environ,
+                    "CASTFORM_API_KEY": CASTFORM_API_KEY,
+                    "INSTANTML_API_KEY": api_key,
+                    "CASTFORM_SDK_E2E_CALL_LOG": str(call_log),
+                    "PYTHONPATH": f"{temp_root}{os.pathsep}{REPO_ROOT / 'packages' / 'python-sdk'}",
+                }
+                run_and_record(
+                    report,
+                    [
+                        sys.executable,
+                        "demo/castform/castform_live_bridge.py",
+                        "--training-run-type",
+                        "simple",
+                        "--env-cls-path",
+                        "envs/castform-demo/env-cls.pkl",
+                        "--env-metadata-path",
+                        "envs/castform-demo/env-metadata.json",
+                        "--train-dataset-path",
+                        "datasets/castform-demo/train.jsonl",
+                        "--eval-dataset-path",
+                        "datasets/castform-demo/eval.jsonl",
+                        "--name",
+                        "castform-local-real-iframe-sdk",
+                        "--launcher-arg",
+                        'model="Qwen/Qwen3.5-4B"',
+                        "--launcher-arg",
+                        "learning_rate=0.00001",
+                        "--output",
+                        str(bridge_output),
+                    ],
+                    env=castform_env,
+                    timeout=args.timeout,
+                )
+                bridge_payload = read_json(bridge_output)
+                if not isinstance(bridge_payload, dict) or bridge_payload.get("castform_run_id") != CASTFORM_RUN_ID:
+                    raise LocalRealIframeError("Castform SDK bridge did not return the expected run ID")
+                run_and_record(
+                    report,
+                    [
+                        sys.executable,
+                        "demo/castform/castform_instantml_adapter.py",
+                        "--castform-run-id",
+                        CASTFORM_RUN_ID,
+                        "--instantml-project",
+                        args.project,
+                        "--instantml-base-url",
+                        api_base_url,
+                        "--castform-base-url",
+                        "https://api.castform.local",
+                    ],
+                    env=castform_env,
+                    timeout=args.timeout,
+                )
+                report["benchmax_calls"] = redacted_json_value(read_json(call_log))
+            sdk_run_ids = local_run_ids(api_base_url, api_key, args.project, timeout=args.timeout)
+            before_total = local_run_total(api_base_url, api_key, args.project, timeout=args.timeout)
+            session_command = [
                 sys.executable,
                 "demo/castform/run_demo.py",
                 "--api-base-url",
@@ -414,18 +501,43 @@ def main() -> int:
                 parent_origin,
                 "--project",
                 args.project,
-                "--runs",
-                str(args.runs),
-                "--steps",
-                str(args.steps),
-                "--step-size",
-                str(args.step_size),
                 "--summary",
                 str(args.summary),
-            ],
-            env=writer_env,
-            timeout=args.timeout,
-        )
+            ]
+            for run_id in sdk_run_ids:
+                session_command.extend(["--instantml-run-id", run_id])
+            run_and_record(report, session_command, env=writer_env, timeout=args.timeout)
+            after_total = local_run_total(api_base_url, api_key, args.project, timeout=args.timeout)
+            if after_total != before_total:
+                raise LocalRealIframeError(f"Castform SDK session creation changed run count from {before_total} to {after_total}")
+            actual_runs = len(sdk_run_ids)
+            report["castform_sdk_run_ids"] = sdk_run_ids
+        else:
+            run_and_record(
+                report,
+                [
+                    sys.executable,
+                    "demo/castform/run_demo.py",
+                    "--api-base-url",
+                    api_base_url,
+                    "--instantml-web-base-url",
+                    web_base_url,
+                    "--parent-origin",
+                    parent_origin,
+                    "--project",
+                    args.project,
+                    "--runs",
+                    str(args.runs),
+                    "--steps",
+                    str(args.steps),
+                    "--step-size",
+                    str(args.step_size),
+                    "--summary",
+                    str(args.summary),
+                ],
+                env=writer_env,
+                timeout=args.timeout,
+            )
         run_and_record(
             report,
             [sys.executable, "demo/castform/verify_demo.py", "--local", "--parent-url", parent_origin],
@@ -441,8 +553,8 @@ def main() -> int:
                 for run in initial_manifest.get("runs") or []
                 if isinstance(run, dict) and run.get("instantml_run_id")
             ]
-            if len(run_ids) != args.runs:
-                raise LocalRealIframeError(f"expected {args.runs} run IDs for resume check, found {len(run_ids)}")
+            if len(run_ids) != actual_runs:
+                raise LocalRealIframeError(f"expected {actual_runs} run IDs for resume check, found {len(run_ids)}")
             before_total = local_run_total(api_base_url, api_key, args.project, timeout=args.timeout)
             resume_command = [
                 sys.executable,
@@ -480,7 +592,7 @@ def main() -> int:
                 timeout=args.timeout,
             )
 
-        expect_sessions = 1 if args.runs == 1 else 3
+        expect_sessions = 1 if actual_runs == 1 else 3
         browser_process_timeout = max(args.timeout + 60.0, args.timeout * 2.0)
         args.screenshot_dir.mkdir(parents=True, exist_ok=True)
         report["screenshots"] = []
@@ -494,7 +606,7 @@ def main() -> int:
                     "--url",
                     parent_origin,
                     "--expect-runs",
-                    str(args.runs),
+                    str(actual_runs),
                     "--expect-sessions",
                     str(expect_sessions),
                     "--require-iframe-content",

@@ -109,6 +109,9 @@ def compact_report(path: Path) -> dict[str, Any] | None:
         "parent_origin",
         "parent_url",
         "run_ids",
+        "source",
+        "castform_sdk_run_ids",
+        "benchmax_calls",
     ):
         if key in payload:
             summary[key] = payload[key]
@@ -129,6 +132,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--real-runs", type=int, default=3)
     parser.add_argument("--real-steps", type=int, default=40)
     parser.add_argument("--real-step-size", type=int, default=10)
+    parser.add_argument("--real-source", choices=("fallback", "castform-sdk"), default="fallback", help="Training source for the --full local real iframe E2E")
     return parser.parse_args()
 
 
@@ -139,6 +143,7 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "full": args.full,
         "live": args.live,
+        "real_source": args.real_source,
         "commands": [],
         "reports": {},
     }
@@ -228,6 +233,8 @@ def main() -> int:
                 [
                     sys.executable,
                     "demo/castform/run_local_real_iframe_e2e.py",
+                    "--source",
+                    args.real_source,
                     "--runs",
                     str(args.real_runs),
                     "--steps",

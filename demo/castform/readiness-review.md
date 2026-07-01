@@ -54,14 +54,12 @@ artifacts: production and staging still return 404 for
   stitches fake Benchmax launch and fake Castform run reads into the real mirror
   adapter, real InstantML SDK, fake InstantML API, iframe-session recovery,
   parent-page serving, and browser verification.
-- Call-prep gate passed: `run_call_prep_check.py --full --timeout 240` passed,
-  and the later fast gate passed after compact-report hardening. The gate now
-  also supports `--live` to include hosted readiness plus the live
-  persisted-data blocked-embed browser smoke in the same report. A clean
-  environment `run_call_prep_check.py --full --live --timeout 240` pass ran 8
-  commands, confirmed hosted readiness, regenerated the five-run live manifest,
-  browser-verified the blocked page, and reran the local real iframe E2E with
-  desktop/mobile screenshots.
+- Call-prep gate passed: a clean-environment
+  `run_call_prep_check.py --full --live --real-source castform-sdk --timeout
+  240` run loaded the ignored `.env`, ran 8 commands, confirmed hosted
+  readiness, regenerated the five-run live manifest, browser-verified the
+  blocked production page, and ran the SDK-backed local real iframe E2E with
+  one mirrored run/session plus desktop/mobile screenshots.
 - Process hygiene passed: post-run checks found no lingering Rust API, Next,
   parent-page, tunnel, or E2E runner processes.
 - Secret hygiene passed: committed files scan clean for live
@@ -94,13 +92,19 @@ artifacts: production and staging still return 404 for
   Castform demo page with one iframe, and a frame-scoped Chrome check found
   both `INSTANTML EMBED` and `Run metrics` inside the iframe before the tab was
   closed and services were stopped.
+- Castform-SDK-backed local iframe E2E passed:
+  `run_local_real_iframe_e2e.py --source castform-sdk --runs 1 --steps 10
+  --step-size 10 --timeout 180` launched the fake Benchmax/Castform SDK path,
+  mirrored one run through the real adapter and InstantML SDK into the local
+  Rust API, created one real local iframe session, verified resume did not
+  duplicate runs, and passed desktop plus mobile iframe browser checks.
 
 ## Operator Path
 
 Before the call:
 
 ```bash
-python3 demo/castform/run_call_prep_check.py --full --live --timeout 240
+python3 demo/castform/run_call_prep_check.py --full --live --real-source castform-sdk --timeout 240
 ```
 
 For the current production hosted state, regenerate the live parent page from

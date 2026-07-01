@@ -20,7 +20,7 @@ only.
 Optional preflight before live credentials:
 
 ```bash
-python3 demo/castform/run_call_prep_check.py --full
+python3 demo/castform/run_call_prep_check.py --full --real-source castform-sdk
 python3 demo/castform/check_castform_readiness.py \
   --allow-missing-live-inputs \
   --skip-network
@@ -38,13 +38,17 @@ python3 demo/castform/run_local_real_iframe_e2e.py \
 If port 5174 is already in use, pass `--port 0` to pick a free local port for
 the lightweight smoke preflight.
 
-`run_call_prep_check.py --full` is the no-secret walk-up gate for the demo: it runs the
-safe Castform readiness dry check, mocked InstantML recovery rehearsal,
-parent-page smoke, and full local real iframe E2E. `check_castform_readiness.py`
-is the safe live-Castform preflight by itself: it checks SDK importability,
-Castform API-key presence, uploaded asset arguments, and optional Castform app
-reachability without printing secrets. `run_castform_bridge_smoke.py` runs the
-live bridge CLI against a temporary fake Benchmax SDK so the
+`run_call_prep_check.py --full --real-source castform-sdk` is the no-secret
+walk-up gate for the demo: it runs the safe Castform readiness dry check,
+mocked InstantML recovery rehearsal, parent-page smoke, and full local real
+iframe E2E. The `--real-source castform-sdk` path starts from a fake
+Benchmax/Castform SDK launch, mirrors that Castform run through the real
+adapter and InstantML SDK, and then creates real local iframe sessions for the
+mirrored local run. `check_castform_readiness.py` is the safe live-Castform
+preflight by itself: it checks SDK importability, Castform API-key presence,
+uploaded asset arguments, and optional Castform app reachability without
+printing secrets. `run_castform_bridge_smoke.py` runs the live bridge CLI
+against a temporary fake Benchmax SDK so the
 `TrainerClient.launch_training_run(...)` call shape is covered without real
 Castform credentials. `run_castform_sdk_e2e_smoke.py` stitches the fake
 Benchmax launch and fake Castform run-read API into the real mirror adapter,
@@ -65,8 +69,9 @@ For the actual screen-shared local iframe demo, add `--keep-running`:
 
 ```bash
 python3 demo/castform/run_local_real_iframe_e2e.py \
-  --runs 3 \
-  --steps 40 \
+  --source castform-sdk \
+  --runs 1 \
+  --steps 10 \
   --step-size 10 \
   --timeout 180 \
   --keep-running \
@@ -82,7 +87,7 @@ If a live InstantML API key is already exported and the goal is to rehearse the
 current production persisted-data page without duplicating runs, use:
 
 ```bash
-python3 demo/castform/run_call_prep_check.py --full --live
+python3 demo/castform/run_call_prep_check.py --full --live --real-source castform-sdk
 ```
 
 That command runs the no-secret gate plus hosted readiness and the live
@@ -295,13 +300,16 @@ check:
 ```bash
 node demo/castform/browser_verify.mjs \
   --url http://127.0.0.1:<parent-port> \
-  --expect-runs 3 \
-  --expect-sessions 3 \
+  --expect-runs 1 \
+  --expect-sessions 1 \
   --require-iframe-content
 ```
 
-For screen sharing, use the same runner with `--keep-running --open-browser`.
-Press Ctrl-C in the runner terminal when the demo is finished.
+Those counts match the `--source castform-sdk` command above. If you omit that
+source and use the fallback synthetic writer for comparison visuals, expect
+three runs and three sessions. For screen sharing, use the same runner with
+`--keep-running --open-browser`. Press Ctrl-C in the runner terminal when the
+demo is finished.
 
 Open the HTTPS parent origin in Chrome and verify:
 

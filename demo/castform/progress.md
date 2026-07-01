@@ -142,3 +142,12 @@ Create a full end-to-end demo that:
   proof usable as a persistent screen-share demo.
 - Added `run_local_real_iframe_e2e.py --open-browser` so the verified local
   iframe presentation page opens automatically after checks pass.
+- Added `run_local_real_iframe_e2e.py --source castform-sdk` and
+  `run_call_prep_check.py --real-source castform-sdk` so the local real iframe
+  proof can start from a fake Benchmax/Castform SDK launch, mirror through the
+  real adapter and InstantML SDK into the local Rust API, then render real local
+  InstantML iframes for the mirrored run.
+- Verified `run_call_prep_check.py --full --live --real-source castform-sdk`
+  from a clean environment. It ran the no-secret rehearsals, hosted readiness,
+  live persisted-data blocked-iframe browser smoke, and SDK-backed local real
+  iframe E2E in one eight-command gate.

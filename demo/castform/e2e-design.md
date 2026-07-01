@@ -247,8 +247,9 @@ pre-call proof should avoid live secrets:
 
 ```bash
 python3 demo/castform/run_local_real_iframe_e2e.py \
-  --runs 3 \
-  --steps 40 \
+  --source castform-sdk \
+  --runs 1 \
+  --steps 10 \
   --step-size 10 \
   --timeout 180
 ```
@@ -260,14 +261,18 @@ This starts an isolated local stack:
 - Next embed app from `apps/web` with explicit local API bases.
 - Castform parent page on a free loopback port.
 
-The runner then mints a disposable local API key, runs `run_demo.py` through the
-real Python SDK, creates real local embed sessions, runs `verify_demo.py`, reruns
-`run_demo.py --instantml-run-id` against the same run IDs, verifies the local run
-count is unchanged, and uses `browser_verify.mjs --require-iframe-content` at
-`1366x900` and `390x844`. The browser check requires `INSTANTML EMBED`, `Run
-metrics`, plotted/latest metric text, visible iframe sizing, tab switching,
-refresh behavior, and at least one rendered InstantML panel element inside the
-iframe. The ignored report is written to
+The runner then mints a disposable local API key. With `--source castform-sdk`,
+it uses a temporary fake Benchmax SDK to run the same Castform bridge CLI shape
+as a live launch, mirrors the fake Castform run through the real adapter and
+InstantML SDK, creates real local embed sessions for the mirrored run, runs
+`verify_demo.py`, reruns `run_demo.py --instantml-run-id` against the same run
+ID, verifies the local run count is unchanged, and uses
+`browser_verify.mjs --require-iframe-content` at `1366x900` and `390x844`.
+Without `--source castform-sdk`, the runner uses the fallback synthetic writer
+for denser three-run comparison visuals. The browser check requires `INSTANTML
+EMBED`, `Run metrics`, plotted/latest metric text, visible iframe sizing, tab
+switching, refresh behavior, and at least one rendered InstantML panel element
+inside the iframe. The ignored report is written to
 `run-output/local-real-iframe-e2e-report.json`.
 
 With `--keep-running`, the runner writes the verified report before it waits and
@@ -286,9 +291,9 @@ Minimum checks before a commit:
 python3 -m py_compile demo/castform/demo_env.py demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
-python3 demo/castform/run_call_prep_check.py --full
+python3 demo/castform/run_call_prep_check.py --full --real-source castform-sdk
 # With live InstantML key/.env installed:
-python3 demo/castform/run_call_prep_check.py --full --live
+python3 demo/castform/run_call_prep_check.py --full --live --real-source castform-sdk
 git diff --check
 ```
 

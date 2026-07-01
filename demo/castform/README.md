@@ -214,19 +214,22 @@ python3 demo/castform/run_castform_sdk_e2e_smoke.py
 Full local writer rehearsal without live credentials:
 
 ```bash
-python3 demo/castform/run_call_prep_check.py --full
+python3 demo/castform/run_call_prep_check.py --full --real-source castform-sdk
 python3 demo/castform/run_mocked_e2e.py
 ```
 
 `run_call_prep_check.py --full` is the walk-up gate: it runs the Castform
 readiness dry check, the Benchmax bridge smoke, the fake Castform SDK
 launch-to-mirror workflow, the mocked InstantML E2E, the local parent-page
-smoke, and the full local real iframe E2E. After a live InstantML key is
-available in the environment or ignored `.env`, use
-`python3 demo/castform/run_call_prep_check.py --full --live` to include hosted
-readiness and the current production persisted-data browser smoke in the same
-report. `run_mocked_e2e.py` alone runs the real `run_demo.py` against a local
-fake InstantML API and writes
+smoke, and the full local real iframe E2E. Add `--real-source castform-sdk` to
+make that iframe proof start from a fake Benchmax/Castform SDK launch, mirror it
+through the real adapter, and create iframe sessions for the mirrored local
+InstantML run. After a live InstantML key is available in the environment or
+ignored `.env`, use
+`python3 demo/castform/run_call_prep_check.py --full --live --real-source castform-sdk`
+to include hosted readiness and the current production persisted-data browser
+smoke in the same report. `run_mocked_e2e.py` alone runs the real `run_demo.py`
+against a local fake InstantML API and writes
 `run-output/mocked-e2e-report.json`, which is ignored by Git. It covers both
 fresh SDK ingestion and the `--instantml-run-id` recovery command.
 
@@ -234,18 +237,22 @@ Full local real InstantML iframe E2E:
 
 ```bash
 python3 demo/castform/run_local_real_iframe_e2e.py \
-  --runs 3 \
-  --steps 40 \
+  --source castform-sdk \
+  --runs 1 \
+  --steps 10 \
   --step-size 10 \
   --timeout 180
 ```
 
 This starts an isolated local Rust API and local Next embed app, mints a
-disposable local API key, writes data through the InstantML SDK, creates real
-local embed sessions, reuses the same run IDs through `--instantml-run-id`
-without increasing the run count, serves the Castform parent page, and verifies
-that the InstantML iframe renders metric panels at desktop and mobile
-viewports. It also writes ignored screenshot evidence to
+disposable local API key, launches the fake Castform SDK workflow, mirrors the
+Castform run through the real adapter and InstantML SDK, creates real local
+embed sessions, reuses the same run IDs through `--instantml-run-id` without
+increasing the run count, serves the Castform parent page, and verifies that the
+InstantML iframe renders metric panels at desktop and mobile viewports. Omit
+`--source castform-sdk` to use the fallback synthetic writer when you want three
+comparison runs instead of the single SDK-launched run. It also writes ignored
+screenshot evidence to
 `run-output/local-real-iframe-screenshots/`. Do not run another `next dev` for
 `apps/web` at the same time; Next uses an app-level development lock even when
 this script chooses a free port.
@@ -258,8 +265,9 @@ page automatically after the checks pass:
 
 ```bash
 python3 demo/castform/run_local_real_iframe_e2e.py \
-  --runs 3 \
-  --steps 40 \
+  --source castform-sdk \
+  --runs 1 \
+  --steps 10 \
   --step-size 10 \
   --timeout 180 \
   --keep-running \
