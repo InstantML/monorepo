@@ -705,6 +705,7 @@ export function DashboardShell({
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
   const [primaryRunId, setPrimaryRunId] = useState("");
   const [series, setSeries] = useState<MetricSeries[]>([]);
+  const [seriesLoading, setSeriesLoading] = useState(false);
   const [liveSeriesTick, setLiveSeriesTick] = useState(0);
   const [panelSeries, setPanelSeries] = useState<Record<string, MetricSeries[]>>({});
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
@@ -2011,19 +2012,31 @@ export function DashboardShell({
       const runsForFetch = seriesFetchRuns;
       if (!shouldLoad || !metricKey || !runsForFetch.length) {
         if (hasSeriesRef.current) setSeries([]);
+        setSeriesLoading(false);
         return;
       }
       // Live refreshes (only the tick changed) keep the current curve on screen
       // and swap in the new points atomically; selection/metric changes clear
-      // first and stream chunks for responsiveness.
-      if (!isLiveRefresh && hasSeriesRef.current) setSeries([]);
+      // first and stream chunks for responsiveness. Flag the clear-and-refetch
+      // so the chart shows a loading skeleton instead of flashing its empty
+      // state in the gap before the first chunk lands.
+      if (!isLiveRefresh) {
+        if (hasSeriesRef.current) setSeries([]);
+        setSeriesLoading(true);
+      }
       const metricPayloads = await fetchBatchedMetricSeries(api, metricKey, runsForFetch, controller.signal, isLiveRefresh ? undefined : (patch) => {
         if (!cancelled) setSeries(patch);
       });
-      if (!cancelled) setSeries(metricPayloads);
+      if (!cancelled) {
+        setSeries(metricPayloads);
+        setSeriesLoading(false);
+      }
     }
     loadMetricSeries().catch((error) => {
-      if (!cancelled && !isAbortError(error)) setMessage(error instanceof Error ? error.message : "Unable to load metric series.");
+      if (!cancelled && !isAbortError(error)) {
+        setSeriesLoading(false);
+        setMessage(error instanceof Error ? error.message : "Unable to load metric series.");
+      }
     });
     return () => {
       cancelled = true;
@@ -4536,6 +4549,7 @@ function dismissTopOverlay() {
               pinnedMetrics={pinnedMetrics}
               selectedRuns={metricSeriesRuns}
               series={displaySeries}
+              seriesLoading={seriesLoading}
               smoothing={smoothing}
               sortedRuns={sortedRuns}
               visibleMetricCatalogRows={visibleMetricCatalogRows}
