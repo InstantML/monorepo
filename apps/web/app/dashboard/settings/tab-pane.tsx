@@ -269,6 +269,7 @@ export function SettingsTabPane({
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
     >
       <div className="settings-modal-card">
+        <button className="icon-button settings-modal-close" type="button" aria-label="Close workspace settings" onClick={onClose}><X size={16} /></button>
         <nav className="settings-nav" aria-label="Settings sections">
           <span className="settings-nav-title">Settings</span>
           {SECTIONS.map(({ id, label, Icon }) => (
@@ -286,7 +287,6 @@ export function SettingsTabPane({
         <div className="settings-pane">
           <div className="settings-pane-head">
             <h2>{activeSection.label}</h2>
-            <button className="icon-button" type="button" aria-label="Close workspace settings" onClick={onClose}><X size={16} /></button>
           </div>
           <div className="settings-pane-body settings-grid">
             {section === "usage" ? (
