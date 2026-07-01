@@ -111,3 +111,7 @@ Create a full end-to-end demo that:
   Castform run reads, the real mirror adapter, real InstantML SDK, fake
   InstantML API, iframe-session creation, local parent page, and browser
   verification into one no-secret Castform SDK workflow rehearsal.
+- Captured in-app browser visual handoff evidence for the full local real
+  iframe path with 3 run cards, 3 session tabs, a rendered InstantML iframe, no
+  visible embed token, and a successful `Best vs overfit` tab interaction. The
+  screenshots are ignored local artifacts under `run-output/`.

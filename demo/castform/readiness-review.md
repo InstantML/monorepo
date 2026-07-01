@@ -55,6 +55,13 @@ artifacts: production and staging still return 404 for
 - Secret hygiene passed: committed files scan clean for live
   `instantml_...` tokens; token-bearing generated manifests remain ignored
   under `demo/castform/web/public/` and `demo/castform/run-output/`.
+- In-app browser visual handoff passed: the local real iframe page rendered 3
+  run cards, 3 session tabs, and a real InstantML iframe at
+  `http://127.0.0.1:61203` with no visible live token text. Screenshots were
+  saved to ignored local evidence files:
+  `run-output/in-app-browser-local-real-iframe.png` and
+  `run-output/in-app-browser-local-real-iframe-overfit-tab.png`. The tab
+  interaction changed the selected tab and iframe title to `Best vs overfit`.
 
 ## Operator Path
 
