@@ -36,6 +36,10 @@ Research date: 2026-06-30.
 - `run_local_smoke.py`: one-command local preflight that generates the smoke
   manifest, starts the parent page, runs artifact verification, runs desktop and
   mobile browser checks, writes an ignored safe report, and stops the server.
+- `check_hosted_readiness.py`: hosted preflight that checks dependencies,
+  ignored generated paths, parent-origin shape, optional tunnel reachability,
+  live env var presence, and `https://api.instantml.ai/health` without writing
+  any data or printing secrets.
 - `verify_demo.py`: generated manifest and redacted-summary verifier.
 - `live-runbook.md`: operator runbook for the hosted call demo.
 
@@ -120,13 +124,23 @@ If port 5174 is already in use, choose a free local port for the preflight:
 python3 demo/castform/run_local_smoke.py --port 0
 ```
 
+Hosted readiness check before writing to InstantML:
+
+```bash
+python3 demo/castform/check_hosted_readiness.py \
+  --parent-origin https://your-demo-origin.example
+```
+
+For dry rehearsal before live secrets are exported, add
+`--allow-missing-live-inputs`.
+
 ## Verification
 
 The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```

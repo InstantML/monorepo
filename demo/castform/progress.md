@@ -52,3 +52,7 @@ Create a full end-to-end demo that:
 - Inspected the public RAG example train/eval tabs and updated the demo metric
   mapping from `conciseness` to Castform's observed `search_efficiency` reward
   component.
+- Added a hosted readiness checker that validates local dependencies, ignored
+  generated paths, hosted parent-origin shape, optional parent URL reachability,
+  live env var presence, and InstantML API health without writing data or
+  printing secrets.

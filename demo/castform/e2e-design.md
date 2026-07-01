@@ -186,7 +186,7 @@ of live InstantML iframe content.
 Minimum checks before a commit:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 git diff --check
@@ -198,8 +198,10 @@ Full local demo check:
    running the demo;
 2. start the Castform parent page locally;
 3. expose it through an HTTPS tunnel and pass that origin as `--parent-origin`;
-4. run `python3 demo/castform/run_demo.py --parent-origin <https-origin>`;
-5. open the HTTPS parent page in Chrome and confirm hosted iframe content loads.
+4. run `python3 demo/castform/check_hosted_readiness.py --parent-origin
+   <https-origin> --parent-url <https-origin>`;
+5. run `python3 demo/castform/run_demo.py --parent-origin <https-origin>`;
+6. open the HTTPS parent page in Chrome and confirm hosted iframe content loads.
 
 ## Risks And Constraints
 

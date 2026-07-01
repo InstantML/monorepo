@@ -46,7 +46,22 @@ If localtunnel shows its "Tunnel website ahead" page, clear it in Chrome before
 using that origin for the final browser demo. A tunnel without an interstitial is
 better for the call.
 
-## 3. Create A Live API Key
+## 3. Dry Hosted Readiness Check
+
+Before creating or exporting live secrets, confirm local dependencies, generated
+path safety, parent-origin shape, and hosted API health:
+
+```bash
+python3 demo/castform/check_hosted_readiness.py \
+  --allow-missing-live-inputs \
+  --parent-origin https://your-demo-origin.example \
+  --parent-url https://your-demo-origin.example
+```
+
+This command does not write to InstantML and does not print secrets. Missing
+live keys should appear as warnings in this dry pass.
+
+## 4. Create A Live API Key
 
 In Chrome:
 
@@ -62,7 +77,15 @@ In Chrome:
 Do not paste the key into committed files, terminal history documents, or the
 demo webpage.
 
-## 4. Write Hosted Runs And Iframes
+After exporting the key, rerun the strict readiness gate:
+
+```bash
+python3 demo/castform/check_hosted_readiness.py \
+  --parent-origin https://your-demo-origin.example \
+  --parent-url https://your-demo-origin.example
+```
+
+## 5. Write Hosted Runs And Iframes
 
 ### Option A: Mirror A Real Castform Run
 
@@ -115,7 +138,7 @@ The runner writes:
   ignored by Git;
 - `run-output/latest-summary.json`: redacted review summary, ignored by Git.
 
-## 5. Verify Generated Artifacts
+## 6. Verify Generated Artifacts
 
 ```bash
 python3 demo/castform/verify_demo.py \
@@ -125,7 +148,7 @@ python3 demo/castform/verify_demo.py \
 The verifier must report run/session counts and `redacted_summary=ok`. It fails
 if the parent URL is still behind a localtunnel warning page.
 
-## 6. Browser Check
+## 7. Browser Check
 
 Run the automated parent-page check against the HTTPS origin:
 
@@ -145,7 +168,7 @@ Open the HTTPS parent origin in Chrome and verify:
   `Best vs verbose regression`;
 - the InstantML dashboard project `castform-live-demo` lists the created runs.
 
-## 7. Cleanup
+## 8. Cleanup
 
 After the call, revoke the demo API key from `https://instantml.ai/dashboard/api`
 unless the key is intentionally retained for more partner prep.
