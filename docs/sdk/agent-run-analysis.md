@@ -16,6 +16,7 @@ node tools/mcp-server.mjs
 
 | Tool | Purpose |
 | --- | --- |
+| `tracker.list_projects` | List projects visible to the caller before choosing a project for run searches. |
 | `tracker.list_runs` | Search and page run summaries. Use `project`, `query`, `status`, `sort_by`, `metric_key`, `cursor`, and `limit`. |
 | `tracker.get_run` | Fetch one run summary by UUID. |
 | `tracker.list_metrics` | List a run's metric keys with latest/min/max/mean summary values. |
@@ -27,18 +28,20 @@ node tools/mcp-server.mjs
 
 ## Recommended Flow
 
-1. Call `tracker.list_runs` with a narrow `project`, `query`, and `sort_by`.
+1. Call `tracker.list_projects` when the user has not named a project or when
+   you need to confirm project names.
+2. Call `tracker.list_runs` with a narrow `project`, `query`, and `sort_by`.
    For best-run searches, use `sort_by: "metric-best"` plus `metric_key`.
-2. Read the returned `runs[]`, `metric_keys`, `total`, and `next_cursor`.
+3. Read the returned `runs[]`, `metric_keys`, `total`, and `next_cursor`.
    Follow `next_cursor` only when the first page does not contain enough
    candidates.
-3. Call `tracker.list_metrics` on one or two representative runs when the
+4. Call `tracker.list_metrics` on one or two representative runs when the
    metric key is unknown.
-4. Call `tracker.get_metric_series_batch` for the selected metric and candidate
+5. Call `tracker.get_metric_series_batch` for the selected metric and candidate
    run IDs. Keep `limit` modest unless the user asked for curve detail.
-5. Call `tracker.compare_runs` only after narrowing to at most 50 run IDs. This
+6. Call `tracker.compare_runs` only after narrowing to at most 50 run IDs. This
    endpoint is for detailed selected-run diffs, not broad project-wide ranking.
-6. Use `tracker.export_runs` when the user asks for portable evidence or wants
+7. Use `tracker.export_runs` when the user asks for portable evidence or wants
    data for a notebook/spreadsheet.
 
 ## Search Examples

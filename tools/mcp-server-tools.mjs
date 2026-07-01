@@ -187,6 +187,19 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
 
   return [
     {
+      name: "tracker.list_projects",
+      description:
+        "List projects visible to the caller's InstantML API key. Use this first when the user has not named a project, or to discover valid project names before run searches.",
+      inputSchema: {
+        type: "object",
+        properties: {},
+      },
+      handler: async () => {
+        const result = await api("/projects");
+        return textResult(result);
+      },
+    },
+    {
       name: "tracker.list_runs",
       description:
         "List runs. Returns metadata, config, metric summaries, status, tags, and pagination info. Use this to scan a project, search by tag/name/config/notes, sort by a metric, or build a candidate set for deeper investigation.",

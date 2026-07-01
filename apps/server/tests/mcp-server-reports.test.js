@@ -76,6 +76,7 @@ test("MCP server exposes the report tool surface", () => {
   const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
   const names = tools.map((tool) => tool.name).sort();
   for (const expected of [
+    "tracker.list_projects",
     "tracker.list_runs",
     "tracker.get_run",
     "tracker.query_metrics",
@@ -98,6 +99,29 @@ test("MCP server exposes the report tool surface", () => {
       names.includes(expected),
       `expected ${expected} in MCP tool surface (got ${names.join(", ")})`,
     );
+  }
+});
+
+test("tracker.list_projects calls the Rust projects endpoint", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /projects": {
+      projects: [
+        { id: "project-1", name: "cartpole" },
+        { id: "project-2", name: "iris" },
+      ],
+    },
+  });
+  try {
+    const tool = findTool("tracker.list_projects", tools);
+    const payload = parseTextResult(await tool.handler({}));
+    assert.equal(payload.projects.length, 2);
+    assert.equal(payload.projects[0].name, "cartpole");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "GET");
+    assert.equal(calls[0].pathname, "/projects");
+  } finally {
+    restoreFetch();
   }
 });
 
