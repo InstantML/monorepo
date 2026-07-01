@@ -28,3 +28,5 @@ Create a full end-to-end demo that:
 - Revised the design to write to hosted InstantML by default under
   `castform-live-demo`; hosted iframe embeds require an HTTPS parent origin, so
   the local parent page needs a tunnel for the call.
+- Added the hosted demo runner and static Castform parent page. Generated live
+  manifests and summaries are ignored so bearer iframe URLs are not committed.

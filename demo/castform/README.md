@@ -23,6 +23,10 @@ Research date: 2026-06-30.
 - `e2e-design.md`: accepted local architecture for the runnable Castform to
   InstantML iframe demo.
 - `assets/ui-concept.png`: generated visual concept for the local parent page.
+- `run_demo.py`: hosted end-to-end writer that streams Castform-shaped training
+  observations into InstantML and creates iframe embed sessions.
+- `serve_web.py` and `web/`: local Castform-facing parent page for the hosted
+  iframe embeds.
 
 ## Demo Paths
 
@@ -58,11 +62,32 @@ hosted iframe embed sessions that persist through the call. The local Castform
 parent page must be served through an HTTPS tunnel because hosted InstantML
 embeds require an exact HTTPS, non-InstantML parent origin.
 
+1. Start the parent page:
+
+   ```bash
+   python3 demo/castform/serve_web.py --port 5174
+   ```
+
+2. Expose port 5174 through an HTTPS tunnel.
+
+3. In a separate shell, export a live InstantML API key with `sdk:ingest` and
+   `export:read`, then write the demo data:
+
+   ```bash
+   INSTANTML_API_KEY=instantml_... \
+   python3 demo/castform/run_demo.py \
+     --parent-origin https://your-demo-origin.example
+   ```
+
+`run_demo.py` writes the untracked token-bearing iframe manifest to
+`web/public/demo-manifest.json` and a redacted review summary to
+`run-output/latest-summary.json`.
+
 ## Verification
 
 The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/serve_web.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
 ```
