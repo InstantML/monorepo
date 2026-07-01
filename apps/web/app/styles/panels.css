@@ -1029,7 +1029,28 @@ kbd {
    section into the pane at a time, so nothing is spread across columns. */
 .settings-modal {
   align-items: start;
+  animation: settings-modal-blur-in 0.2s ease forwards;
   padding-top: max(30px, calc(var(--topbar-height) + 24px));
+}
+
+@keyframes settings-modal-blur-in {
+  from {
+    background: rgba(9, 14, 20, 0);
+    -webkit-backdrop-filter: blur(0) saturate(100%);
+    backdrop-filter: blur(0) saturate(100%);
+  }
+
+  to {
+    background: rgba(9, 14, 20, 0.48);
+    -webkit-backdrop-filter: blur(12px) saturate(115%);
+    backdrop-filter: blur(12px) saturate(115%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-modal {
+    animation-duration: 1ms;
+  }
 }
 
 .settings-modal-card {
