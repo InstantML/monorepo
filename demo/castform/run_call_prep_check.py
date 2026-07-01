@@ -92,6 +92,7 @@ def compact_report(path: Path) -> dict[str, Any] | None:
     for key in (
         "initial_fake_api",
         "fake_api",
+        "blocked_fake_api",
         "initial_manifest",
         "manifest",
         "resume_run_total_before",

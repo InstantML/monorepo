@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 DEFAULT_REPORT = HERE / "run-output" / "mocked-e2e-report.json"
 DEFAULT_RESUME_SUMMARY = HERE / "run-output" / "mocked-e2e-resume-summary.json"
+DEFAULT_BLOCKED_SUMMARY = HERE / "run-output" / "mocked-e2e-blocked-summary.json"
 TOKEN_RE = re.compile(r"instantml_embed_(?!redacted\b)[A-Za-z0-9_-]+")
 
 
@@ -39,6 +40,7 @@ class ReusableTCPServer(socketserver.TCPServer):
 class FakeInstantMLState:
     def __init__(self, instantml_web_base_url: str) -> None:
         self.instantml_web_base_url = instantml_web_base_url.rstrip("/")
+        self.embed_sessions_enabled = True
         self.runs: dict[str, dict[str, Any]] = {}
         self.metrics: list[dict[str, Any]] = []
         self.attributes: list[dict[str, Any]] = []
@@ -248,6 +250,9 @@ def make_handler(state: FakeInstantMLState) -> type[http.server.BaseHTTPRequestH
                     write_json(self, 200, {"ok": True})
                     return
                 if path == "/api/embed/sessions":
+                    if not state.embed_sessions_enabled:
+                        write_json(self, 404, {"error": "route not found"})
+                        return
                     write_json(self, 200, state.create_embed_session(body))
                     return
                 write_json(self, 404, {"error": f"unknown path: {path}"})
@@ -463,8 +468,65 @@ def main() -> int:
                     timeout=args.timeout,
                 )
             )
+
+        state.embed_sessions_enabled = False
+        blocked_command = [
+            sys.executable,
+            "demo/castform/run_demo.py",
+            "--api-base-url",
+            api_base_url,
+            "--instantml-web-base-url",
+            api_base_url,
+            "--parent-origin",
+            web_base_url,
+            "--project",
+            "castform-mocked-e2e",
+            "--summary",
+            str(DEFAULT_BLOCKED_SUMMARY),
+            "--allow-embed-blocked",
+        ]
+        for run_id in state.runs:
+            blocked_command.extend(["--instantml-run-id", run_id])
+        blocked_sessions_before = len(state.embed_sessions)
+        report["commands"].append(run_command(blocked_command, env=env, timeout=args.timeout))
+        if len(state.embed_sessions) != blocked_sessions_before:
+            raise MockE2EError("blocked embed path unexpectedly created an embed session")
+        report["commands"].append(
+            run_command(
+                [
+                    sys.executable,
+                    "demo/castform/verify_demo.py",
+                    "--local",
+                    "--parent-url",
+                    web_base_url,
+                    "--summary",
+                    str(DEFAULT_BLOCKED_SUMMARY),
+                    "--allow-blocked-embeds",
+                ],
+                timeout=args.timeout,
+            )
+        )
+        report["commands"].append(
+            run_command(
+                [
+                    "node",
+                    "demo/castform/browser_verify.mjs",
+                    "--url",
+                    web_base_url,
+                    "--expect-runs",
+                    str(args.runs),
+                    "--expect-sessions",
+                    "0",
+                    "--allow-blocked-embeds",
+                    "--viewport",
+                    args.desktop_viewport,
+                ],
+                timeout=args.timeout,
+            )
+        )
         report["fake_api"] = resume_summary
         report["initial_fake_api"] = summary
+        report["blocked_fake_api"] = state.summary()
         report["ok"] = True
         print(f"mocked e2e passed: api={api_base_url} web={web_base_url}")
         return_code = 0

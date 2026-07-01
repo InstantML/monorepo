@@ -39,6 +39,7 @@ DEFAULT_PROJECT = "castform-live-demo"
 DEFAULT_MANIFEST = HERE / "web" / "public" / "demo-manifest.json"
 DEFAULT_SUMMARY = HERE / "run-output" / "latest-summary.json"
 CASTFORM_APP_HOME = "https://app.castform.com/home"
+TOKEN_RE = re.compile(r"instantml_(?:embed_)?(?!redacted\b)[A-Za-z0-9_-]{20,}")
 
 
 @dataclass(frozen=True)
@@ -713,6 +714,33 @@ def http_json(
     return decoded
 
 
+def can_render_blocked_embed_state(error: RuntimeError) -> bool:
+    message = str(error).lower()
+    return "/api/embed/sessions" in message and (" 404:" in message or "route not found" in message)
+
+
+def redact_token_text(value: str) -> str:
+    return TOKEN_RE.sub("instantml_redacted", value)
+
+
+def blocked_embed_status(error: RuntimeError) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "message": "Live data is persisted, but hosted InstantML embed-session creation is blocked for this environment.",
+        "evidence": [
+            {"name": "run data", "status": "persisted"},
+            {"name": "embed-session API", "status": "404"},
+            {"name": "operator action", "status": "use local real iframe E2E or redeploy hosted embeds"},
+        ],
+        "detail": redact_token_text(str(error)),
+    }
+
+
+def dashboard_url(instantml_web_base_url: str, project: str) -> str:
+    query = urllib.parse.urlencode({"project": project})
+    return f"{instantml_web_base_url.rstrip('/')}/dashboard/runs?{query}"
+
+
 def build_manifest(
     *,
     project: str,
@@ -721,14 +749,16 @@ def build_manifest(
     parent_origin: str,
     runs: list[MirroredRun],
     sessions: list[dict[str, Any]],
+    embed_status: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    manifest: dict[str, Any] = {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": project,
         "api_base_url": api_base_url,
         "instantml_web_base_url": instantml_web_base_url,
         "parent_origin": parent_origin,
+        "dashboard_url": dashboard_url(instantml_web_base_url, project),
         "castform": {
             "app_home": CASTFORM_APP_HOME,
             "workflow": ["uv tool install -U castform", "castform setup", "castform launch"],
@@ -751,6 +781,9 @@ def build_manifest(
             "The page displays only redacted URLs while passing iframe_src to iframe elements.",
         ],
     }
+    if embed_status is not None:
+        manifest["embed_status"] = embed_status
+    return manifest
 
 
 def redacted_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -836,6 +869,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--instantml-run-id", action="append", default=[], help="Reuse an existing InstantML run ID and only mint iframe sessions")
     parser.add_argument("--castform-base-url", default=os.environ.get("CASTFORM_BASE_URL"))
     parser.add_argument("--no-castform-logs", action="store_true", help="Skip Castform environment logs in live mirror mode")
+    parser.add_argument("--allow-embed-blocked", action="store_true", help="Write a blocked-iframe manifest when /api/embed/sessions is not deployed")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--summary", type=Path, default=DEFAULT_SUMMARY)
@@ -891,14 +925,22 @@ def main() -> int:
             step_size=args.step_size,
             stream_delay=args.stream_delay,
         )
-    sessions = create_embed_sessions(
-        api_key=api_key,
-        api_base_url=args.api_base_url,
-        instantml_web_base_url=args.instantml_web_base_url,
-        parent_origin=parent_origin,
-        runs=runs,
-        timeout=args.timeout,
-    )
+    embed_status = None
+    try:
+        sessions = create_embed_sessions(
+            api_key=api_key,
+            api_base_url=args.api_base_url,
+            instantml_web_base_url=args.instantml_web_base_url,
+            parent_origin=parent_origin,
+            runs=runs,
+            timeout=args.timeout,
+        )
+    except RuntimeError as exc:
+        if not (args.allow_embed_blocked and can_render_blocked_embed_state(exc)):
+            raise
+        sessions = []
+        embed_status = blocked_embed_status(exc)
+        print(f"Embed sessions blocked; writing blocked-state manifest: {redact_token_text(str(exc))}")
     manifest = build_manifest(
         project=args.project,
         api_base_url=args.api_base_url,
@@ -906,6 +948,7 @@ def main() -> int:
         parent_origin=parent_origin,
         runs=runs,
         sessions=sessions,
+        embed_status=embed_status,
     )
     write_json(args.manifest, manifest)
     write_json(args.summary, redacted_manifest(manifest))

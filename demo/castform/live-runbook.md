@@ -157,6 +157,7 @@ Use the HTTPS tunnel origin as `--parent-origin`:
 python3 demo/castform/run_demo.py \
   --parent-origin https://your-demo-origin.example \
   --project castform-live-demo \
+  --allow-embed-blocked \
   --runs 5 \
   --steps 240
 ```
@@ -170,6 +171,7 @@ without creating duplicates:
 python3 demo/castform/run_demo.py \
   --parent-origin https://your-demo-origin.example \
   --project castform-live-demo \
+  --allow-embed-blocked \
   --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
   --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
   --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
@@ -177,7 +179,10 @@ python3 demo/castform/run_demo.py \
 ```
 
 This reads run summaries from InstantML, reconstructs the local manifest cards,
-and only creates iframe sessions.
+and only creates iframe sessions. While hosted embed routes still return 404,
+`--allow-embed-blocked` writes a blocked-state manifest with the persisted run
+cards and no iframe tokens; after the route is deployed, the same command mints
+real hosted sessions.
 
 The runner writes:
 
@@ -189,11 +194,14 @@ The runner writes:
 
 ```bash
 python3 demo/castform/verify_demo.py \
-  --parent-url https://your-demo-origin.example
+  --parent-url https://your-demo-origin.example \
+  --allow-blocked-embeds
 ```
 
 The verifier must report run/session counts and `redacted_summary=ok`. It fails
-if the parent URL is still behind a localtunnel warning page.
+if the parent URL is still behind a localtunnel warning page. In the current
+blocked hosted state it reports `embed_status=blocked` and `blocked_summary=ok`
+instead of session counts.
 
 ## 7. Browser Check
 

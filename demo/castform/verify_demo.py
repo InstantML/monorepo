@@ -36,7 +36,7 @@ class VerificationError(RuntimeError):
     pass
 
 
-def verify_manifest(manifest: dict[str, Any], *, hosted: bool) -> list[str]:
+def verify_manifest(manifest: dict[str, Any], *, hosted: bool, allow_blocked_embeds: bool = False) -> list[str]:
     notes: list[str] = []
     if manifest.get("schema_version") != 1:
         raise VerificationError("manifest schema_version must be 1")
@@ -48,7 +48,8 @@ def verify_manifest(manifest: dict[str, Any], *, hosted: bool) -> list[str]:
     sessions = _list(manifest.get("embed_sessions"), "embed_sessions")
     if not runs:
         raise VerificationError("manifest must include at least one run")
-    if not sessions:
+    embeds_blocked = not sessions and _dict(manifest.get("embed_status")).get("status") == "blocked"
+    if not sessions and not (allow_blocked_embeds and embeds_blocked):
         raise VerificationError("manifest must include at least one embed session")
     run_ids = {_string(run.get("instantml_run_id"), "run.instantml_run_id") for run in runs if isinstance(run, dict)}
     if len(run_ids) != len(runs):
@@ -81,15 +82,20 @@ def verify_manifest(manifest: dict[str, Any], *, hosted: bool) -> list[str]:
     notes.append(f"project={project}")
     notes.append(f"runs={len(runs)}")
     notes.append(f"embed_sessions={len(sessions)}")
+    if embeds_blocked:
+        notes.append("embed_status=blocked")
     notes.append(f"parent_origin={parent_origin}")
     return notes
 
 
-def verify_summary(summary: dict[str, Any]) -> list[str]:
+def verify_summary(summary: dict[str, Any], *, allow_blocked_embeds: bool = False) -> list[str]:
     encoded = json.dumps(summary, sort_keys=True)
     if LIVE_EMBED_TOKEN_RE.search(encoded):
         raise VerificationError("summary appears to contain a live embed token")
     if "instantml_embed_redacted" not in encoded:
+        embeds_blocked = not summary.get("embed_sessions") and _dict(summary.get("embed_status")).get("status") == "blocked"
+        if allow_blocked_embeds and embeds_blocked:
+            return ["blocked_summary=ok"]
         raise VerificationError("summary does not include redacted embed URLs")
     return ["redacted_summary=ok"]
 
@@ -147,11 +153,16 @@ def _list(value: Any, name: str) -> list[Any]:
     return value
 
 
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Verify Castform demo generated artifacts")
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--summary", type=Path, default=DEFAULT_SUMMARY)
     parser.add_argument("--local", action="store_true", help="Allow local non-HTTPS parent origins")
+    parser.add_argument("--allow-blocked-embeds", action="store_true", help="Allow a blocked hosted-embed manifest with persisted runs and zero sessions")
     parser.add_argument("--parent-url", help="Optional parent page URL to fetch")
     parser.add_argument("--timeout", type=float, default=10.0)
     return parser.parse_args()
@@ -160,9 +171,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     hosted = not args.local
-    notes = verify_manifest(load_json(args.manifest), hosted=hosted)
+    notes = verify_manifest(load_json(args.manifest), hosted=hosted, allow_blocked_embeds=args.allow_blocked_embeds)
     if args.summary.exists():
-        notes.extend(verify_summary(load_json(args.summary)))
+        notes.extend(verify_summary(load_json(args.summary), allow_blocked_embeds=args.allow_blocked_embeds))
     else:
         notes.append(f"summary_missing={args.summary}")
     if args.parent_url:

@@ -94,3 +94,8 @@ Create a full end-to-end demo that:
   Castform readiness dry check, mocked recovery rehearsal, parent-page smoke,
   and optional full local real iframe E2E, then writes a consolidated ignored
   report.
+- Added `run_demo.py --allow-embed-blocked` and verifier support for
+  blocked-state manifests so operators can regenerate the live parent page from
+  existing production run IDs while hosted embed routes still return 404.
+- Added `readiness-review.md` as the dedicated review pass with evidence,
+  operator path, and residual blockers.

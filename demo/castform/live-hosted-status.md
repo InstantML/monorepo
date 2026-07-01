@@ -91,11 +91,14 @@ runs without duplicating data:
 INSTANTML_API_KEY=... python3 demo/castform/run_demo.py \
   --parent-origin https://your-fresh-demo-origin.example \
   --project castform-live-demo \
+  --allow-embed-blocked \
   --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
   --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
   --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
   --instantml-run-id 2abdb990-1305-47ee-be70-c0716ac0f1c4
 ```
 
-That command calls `GET /api/runs/summary` for those IDs, mints fresh embed
-sessions, and writes a new manifest for the parent page.
+That command calls `GET /api/runs/summary` for those IDs and writes a new
+manifest for the parent page. With hosted embed routes still absent,
+`--allow-embed-blocked` produces the blocked live-data page instead of
+duplicating runs; after the route is deployed it mints fresh embed sessions.

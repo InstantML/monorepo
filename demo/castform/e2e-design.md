@@ -62,7 +62,10 @@ not the call-prep default.
 Current deployment note, 2026-07-01: hosted production data writes work, but
 prod and staging currently return 404 for `POST /api/embed/sessions` and their
 OpenAPI documents omit embed routes. The local real iframe E2E below is the
-repeatable full iframe proof until the hosted embed API is deployed.
+repeatable full iframe proof until the hosted embed API is deployed. The hosted
+runner supports `--allow-embed-blocked` so an operator can still generate a
+live-run parent page with zero iframe sessions and an explicit deployment
+blocker after production data has been written or recovered by run ID.
 
 ## Demo Runner Contract
 

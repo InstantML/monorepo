@@ -59,6 +59,8 @@ Research date: 2026-06-30.
 - `live-runbook.md`: operator runbook for the hosted call demo.
 - `live-hosted-status.md`: current live production run IDs, verification
   evidence, and the hosted iframe deployment blocker observed on 2026-07-01.
+- `readiness-review.md`: dedicated review pass covering call readiness,
+  verification evidence, operator commands, and residual blockers.
 
 ## Demo Paths
 
@@ -117,13 +119,17 @@ sequence.
 
    ```bash
    INSTANTML_API_KEY=instantml_... \
-   python3 demo/castform/run_demo.py \
-     --parent-origin https://your-demo-origin.example
-   ```
+python3 demo/castform/run_demo.py \
+  --parent-origin https://your-demo-origin.example \
+  --allow-embed-blocked
+```
 
 `run_demo.py` writes the untracked token-bearing iframe manifest to
 `web/public/demo-manifest.json` and a redacted review summary to
-`run-output/latest-summary.json`.
+`run-output/latest-summary.json`. While hosted embed routes are still absent,
+`--allow-embed-blocked` writes a no-token blocked-state manifest after the run
+data is persisted, so the parent page can show the live run cards and the
+explicit deployment blocker instead of failing before the browser demo.
 
 After hosted embed routes are deployed, reuse already-written InstantML runs
 without duplicating data:
@@ -133,6 +139,7 @@ INSTANTML_API_KEY=instantml_... \
 python3 demo/castform/run_demo.py \
   --parent-origin https://your-demo-origin.example \
   --project castform-live-demo \
+  --allow-embed-blocked \
   --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
   --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
   --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
@@ -143,7 +150,8 @@ Verify generated artifacts without exposing live tokens:
 
 ```bash
 python3 demo/castform/verify_demo.py \
-  --parent-url https://your-demo-origin.example
+  --parent-url https://your-demo-origin.example \
+  --allow-blocked-embeds
 ```
 
 Local browser smoke before live credentials:
