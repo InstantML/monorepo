@@ -1,7 +1,7 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { LineChart, Plus, Table2, X } from "lucide-react";
+import { useId, useMemo, useState } from "react";
 
 import {
   evaluationCards,
@@ -9,11 +9,16 @@ import {
   insightsRunUniverse,
   insightsScopeLabel,
   kMeansClusters,
+  looksLogarithmicField,
   numericFieldRows,
   parallelAxisDomains,
+  parallelSummaryRows,
   partitionEvaluationCards,
   runGroupingKeyLabel,
+  scatterGeometry,
+  scatterSummaryRows,
 } from "../../../src/research-insights.js";
+import { formatAxisTick, formatMetricValue } from "../../../src/charts.js";
 import { formatNumber, metricGoal, metricGoalValue } from "../../../src/state.js";
 import { metricTitle } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
@@ -152,7 +157,7 @@ function RunAnalysisInsightsPane({
               metricKey={metricKey}
               onAxesChange={setParallelAxes}
               onSelectRun={onSelectRun}
-              rows={numeric.rows.slice(0, 80)}
+              rows={numeric.rows}
               selectedAxes={parallelAxes}
             />
           </section>
@@ -234,6 +239,8 @@ function EvaluationCardGrid({ cards, total }: { cards: any[]; total: number }) {
   );
 }
 
+const SCATTER_MAX_DRAWN = 500;
+
 function ScatterCard({
   allFields,
   fields,
@@ -254,40 +261,100 @@ function ScatterCard({
   onYAxisChange: (value: string) => void;
 }) {
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const [xScaleOverride, setXScaleOverride] = useState<"linear" | "log" | null>(null);
+  const [yScaleOverride, setYScaleOverride] = useState<"linear" | "log" | null>(null);
+  const tableId = useId();
+
   const points = rows
     .map((row) => ({ run: row.run, x: row.values[fields[0]], y: row.values[fields[1]] }))
     .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
-  const geometry = pointGeometry(points);
-  const visiblePoints = points.slice(0, 500);
-  const activePoint = activeRunId ? points.find((point) => point.run.id === activeRunId) : null;
+  // Auto-default a learning-rate-like axis to log; respect an explicit override.
+  const xScale = xScaleOverride ?? (looksLogarithmicField(fields[0]) ? "log" : "linear");
+  const yScale = yScaleOverride ?? (looksLogarithmicField(fields[1]) ? "log" : "linear");
+  const geometry = scatterGeometry(points, { xScale, yScale });
+  const plotted = geometry && !geometry.empty ? geometry.points : [];
+  const visiblePoints = plotted.slice(0, SCATTER_MAX_DRAWN);
+  // The table is the accessible alternative and shows every run with both
+  // fields, independent of any log-axis drop, so a screen-reader user never
+  // loses rows a visual log scale can't place.
+  const summaryRows = scatterSummaryRows(points);
+  const activePoint = activeRunId ? plotted.find((point) => point.run.id === activeRunId) : null;
   const missingCount = Math.max(0, rows.length - points.length);
-  const plottedNote = visiblePoints.length < points.length
-    ? `${formatNumber(visiblePoints.length, 0)} shown of ${formatNumber(points.length, 0)} runs with both fields`
-    : `${formatNumber(points.length, 0)} runs with both fields`;
+  const droppedCount = geometry?.dropped ?? 0;
+  const truncated = visiblePoints.length < plotted.length;
+  const scaleNote = `${xScale === "log" ? "log" : "linear"} x · ${yScale === "log" ? "log" : "linear"} y`;
+  const plottedNote = `${truncated ? `${formatNumber(visiblePoints.length, 0)} shown of ` : ""}${formatNumber(plotted.length, 0)} run${plotted.length === 1 ? "" : "s"} with both fields`;
+  const coverageLabel = truncated ? `${visiblePoints.length} of ${plotted.length}` : `${plotted.length}`;
+  const hasPlot = fields.length >= 2 && geometry && !geometry.empty;
   const help = (
     <>
       <strong>Relationship between two numeric fields across loaded runs.</strong>
       <br />
       Each dot is one run, positioned by the selected X and Y fields. Auto uses
-      the most-varied config field against the active metric. Hover a dot for
-      exact values, or focus the chart for a representative run readout.
+      the most-varied config field against the active metric. Toggle log scaling
+      per axis (learning rate defaults to log), hover a dot for exact values, or
+      open the table view for an accessible, sortable readout.
     </>
   );
   return (
     <AnalysisCard title="Hyperparameter scatter" badge={fields.length >= 2 ? `${shortLabel(fields[0])} × ${shortLabel(fields[1])}` : undefined} help={help}>
-      <AxisPairControls
-        allFields={allFields}
-        idPrefix="insights-scatter"
-        xAxis={xAxis}
-        xDefault={fields[0]}
-        xLabel="X axis"
-        yAxis={yAxis}
-        yDefault={fields[1]}
-        yLabel="Y axis"
-        onXAxisChange={onXAxisChange}
-        onYAxisChange={onYAxisChange}
-      />
-      {fields.length < 2 || !geometry ? <div className="empty compact-empty">Need two numeric fields.</div> : (
+      <div className="analysis-controls-row">
+        <AxisPairControls
+          allFields={allFields}
+          idPrefix="insights-scatter"
+          xAxis={xAxis}
+          xDefault={fields[0]}
+          xLabel="X axis"
+          yAxis={yAxis}
+          yDefault={fields[1]}
+          yLabel="Y axis"
+          onXAxisChange={onXAxisChange}
+          onYAxisChange={onYAxisChange}
+        />
+        <div className="analysis-control-aside">
+          <div className="analysis-scale-controls" role="group" aria-label="Axis scale">
+            <span className="analysis-scale-label">Scale</span>
+            <button
+              aria-pressed={xScale === "log"}
+              className={`analysis-scale-button${xScale === "log" ? " active" : ""}`}
+              onClick={() => setXScaleOverride(xScale === "log" ? "linear" : "log")}
+              title="Toggle a logarithmic X axis"
+              type="button"
+            >X: {xScale === "log" ? "log" : "linear"}</button>
+            <button
+              aria-pressed={yScale === "log"}
+              className={`analysis-scale-button${yScale === "log" ? " active" : ""}`}
+              onClick={() => setYScaleOverride(yScale === "log" ? "linear" : "log")}
+              title="Toggle a logarithmic Y axis"
+              type="button"
+            >Y: {yScale === "log" ? "log" : "linear"}</button>
+          </div>
+          <SegmentedToggle
+            ariaLabel="Scatter view"
+            className="analysis-view-switch"
+            onChange={setView}
+            options={[
+              { value: "chart", label: "Chart", icon: LineChart },
+              { value: "table", label: "Table", icon: Table2 },
+            ]}
+            value={view}
+          />
+        </div>
+      </div>
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {view === "table" ? "Scatter summary table selected." : "Scatter chart selected."}
+      </span>
+      {fields.length < 2 ? (
+        <div className="empty compact-empty">Need two numeric fields.</div>
+      ) : view === "table" ? (summaryRows.length ? (
+        <>
+          <ScatterSummaryTable rows={summaryRows} tableId={tableId} xLabel={shortLabel(fields[0])} yLabel={shortLabel(fields[1])} />
+          <p className="analysis-note">{formatNumber(summaryRows.length, 0)} runs · ranked by {shortLabel(fields[1])}</p>
+        </>
+      ) : (
+        <div className="empty compact-empty">No runs have both selected fields.</div>
+      )) : hasPlot ? (
         <>
           <div className="analysis-chart-frame analysis-chart-frame--scatter">
             <svg
@@ -297,30 +364,30 @@ function ScatterCard({
               role="img"
               tabIndex={0}
               viewBox="0 0 520 232"
-              aria-label={`Hyperparameter scatter plotting ${fields[0]} against ${fields[1]} for ${points.length} runs`}
+              aria-label={`Hyperparameter scatter plotting ${fields[0]} (${xScale}) against ${fields[1]} (${yScale}) for ${coverageLabel} runs`}
             >
               <line className="analysis-axis-line" x1="48" x2="488" y1="200" y2="200" />
               <line className="analysis-axis-line" x1="48" x2="48" y1="16" y2="200" />
               {geometry.xDegenerate ? (
-                <text className="analysis-tick" x="268" y="214" textAnchor="middle">{formatNumber(geometry.minX, 3)}</text>
+                <text className="analysis-tick" x="268" y="214" textAnchor="middle">{formatAxisTick(geometry.minX)}</text>
               ) : (
                 <>
-                  <text className="analysis-tick" x="48" y="214">{formatNumber(geometry.minX, 3)}</text>
-                  <text className="analysis-tick" x="488" y="214" textAnchor="end">{formatNumber(geometry.maxX, 3)}</text>
+                  <text className="analysis-tick" x="48" y="214">{formatAxisTick(geometry.minX)}</text>
+                  <text className="analysis-tick" x="488" y="214" textAnchor="end">{formatAxisTick(geometry.maxX)}</text>
                 </>
               )}
               {geometry.yDegenerate ? (
-                <text className="analysis-tick" x="44" y="112" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
+                <text className="analysis-tick" x="44" y="112" textAnchor="end">{formatAxisTick(geometry.minY)}</text>
               ) : (
                 <>
-                  <text className="analysis-tick" x="44" y="200" textAnchor="end">{formatNumber(geometry.minY, 2)}</text>
-                  <text className="analysis-tick" x="44" y="24" textAnchor="end">{formatNumber(geometry.maxY, 2)}</text>
+                  <text className="analysis-tick" x="44" y="200" textAnchor="end">{formatAxisTick(geometry.minY)}</text>
+                  <text className="analysis-tick" x="44" y="24" textAnchor="end">{formatAxisTick(geometry.maxY)}</text>
                 </>
               )}
-              <text className="analysis-axis-title" x="270" y="228" textAnchor="middle">{shortLabel(fields[0])}</text>
-              <text className="analysis-axis-title" x="16" y="108" textAnchor="middle" transform="rotate(-90 16 108)">{shortLabel(fields[1])}</text>
+              <text className="analysis-axis-title" x="270" y="228" textAnchor="middle">{shortLabel(fields[0])}{xScale === "log" ? " (log)" : ""}</text>
+              <text className="analysis-axis-title" x="16" y="108" textAnchor="middle" transform="rotate(-90 16 108)">{shortLabel(fields[1])}{yScale === "log" ? " (log)" : ""}</text>
               {visiblePoints.map((point) => {
-                const label = `${point.run.name}: ${fields[0]}=${formatNumber(point.x, 3)}, ${fields[1]}=${formatNumber(point.y, 3)}`;
+                const label = `${point.run.name}: ${fields[0]}=${formatMetricValue(point.x)}, ${fields[1]}=${formatMetricValue(point.y)}`;
                 const active = activeRunId === point.run.id;
                 return (
                   <circle
@@ -343,14 +410,42 @@ function ScatterCard({
           {activePoint ? (
             <p className="analysis-readout" aria-live="polite">
               <strong>{activePoint.run.name}</strong>
-              <span>{shortLabel(fields[0])} {formatNumber(activePoint.x, 3)}</span>
-              <span>{shortLabel(fields[1])} {formatNumber(activePoint.y, 3)}</span>
+              <span>{shortLabel(fields[0])} {formatMetricValue(activePoint.x)}</span>
+              <span>{shortLabel(fields[1])} {formatMetricValue(activePoint.y)}</span>
             </p>
           ) : null}
-          <p className="analysis-note">{plottedNote}{missingCount ? ` · ${formatNumber(missingCount, 0)} missing one axis` : ""} · linear axes</p>
+          <p className="analysis-note">{plottedNote}{missingCount ? ` · ${formatNumber(missingCount, 0)} missing one axis` : ""}{droppedCount ? ` · ${formatNumber(droppedCount, 0)} hidden by log scale` : ""} · {scaleNote}</p>
         </>
+      ) : (
+        <div className="empty compact-empty">No points to plot — switch a log axis back to linear or pick different fields.</div>
       )}
     </AnalysisCard>
+  );
+}
+
+function ScatterSummaryTable({ rows, tableId, xLabel, yLabel }: { rows: any[]; tableId: string; xLabel: string; yLabel: string }) {
+  return (
+    <div className="chart-summary-table-wrap analysis-summary-table-wrap">
+      <table className="chart-summary-table" id={tableId}>
+        <caption>Scatter values: {xLabel} and {yLabel} per run, ranked by {yLabel}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            <th scope="col">{xLabel}</th>
+            <th scope="col">{yLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id || row.name}>
+              <th scope="row" title={row.name}>{row.name}</th>
+              <td>{formatMetricValue(row.x)}</td>
+              <td>{formatMetricValue(row.y)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -472,6 +567,8 @@ const PARALLEL_AXIS_TOP = 32;
 const PARALLEL_AXIS_BOTTOM = 220;
 const PARALLEL_AXIS_MID = (PARALLEL_AXIS_TOP + PARALLEL_AXIS_BOTTOM) / 2;
 
+const PARALLEL_MAX_DRAWN = 200;
+
 function ParallelCoordinatesCard({
   allFields,
   fields,
@@ -489,6 +586,10 @@ function ParallelCoordinatesCard({
   onAxesChange: (fields: string[]) => void;
   onSelectRun: (runId: string) => void;
 }) {
+  const [view, setView] = useState<"chart" | "table">("chart");
+  const [focusRunId, setFocusRunId] = useState<string | null>(null);
+  const tableId = useId();
+
   if (fields.length < 2) {
     return (
       <AnalysisCard title="Parallel coordinates" help={parallelHelp}>
@@ -497,7 +598,11 @@ function ParallelCoordinatesCard({
       </AnalysisCard>
     );
   }
-  const domains = parallelAxisDomains(rows, fields);
+  // Cap drawn lines so a 1000-run universe doesn't paint 1000 SVG polylines, and
+  // disclose the cap honestly (the prior silent slice(0, 80) read as "80 runs").
+  const drawnRows = rows.slice(0, PARALLEL_MAX_DRAWN);
+  const truncated = rows.length > drawnRows.length;
+  const domains = parallelAxisDomains(drawnRows, fields);
   const xFor = (index: number) => 50 + (index / Math.max(1, fields.length - 1)) * 640;
   const yFor = (value: number, index: number) => {
     const domain = domains[index];
@@ -512,68 +617,139 @@ function ParallelCoordinatesCard({
   // min for loss). Sorting ascending unconditionally would highlight the worst
   // run for maximize metrics.
   const minimize = metricGoal(metricKey) === "minimize";
-  const bestRunId = rows
+  const bestRunId: string | undefined = drawnRows
     .map((row) => ({ id: row.run.id, value: metricGoalValue(row.run, metricKey) }))
     .filter((row) => Number.isFinite(row.value))
     .sort((a, b) => minimize ? (a.value ?? 0) - (b.value ?? 0) : (b.value ?? 0) - (a.value ?? 0))[0]?.id;
+  const summaryRows = parallelSummaryRows(drawnRows, fields, bestRunId);
+  const coverageNote = `${truncated ? `${formatNumber(drawnRows.length, 0)} shown of ${formatNumber(rows.length, 0)}` : formatNumber(rows.length, 0)} run${rows.length === 1 ? "" : "s"} · best for ${metricTitle(metricKey)} highlighted`;
+  const focusRun = focusRunId ? drawnRows.find((row) => row.run.id === focusRunId) : null;
+  const chartAriaLabel = `Parallel coordinate chart with axes ${fields.map((field) => shortLabel(field)).join(", ")} for ${truncated ? `${drawnRows.length} of ${rows.length}` : drawnRows.length} runs. Activate to read the best run.`;
   return (
     <AnalysisCard title="Parallel coordinates" badge={`${fields.length} fields`} help={parallelHelp}>
-      <ParallelAxisControls allFields={allFields} fields={fields} onAxesChange={onAxesChange} selectedAxes={selectedAxes} />
-      <div className="analysis-chart-frame analysis-chart-frame--wide">
-        <svg className="parallel-chart" viewBox="0 0 720 264" role="img" aria-label={`Parallel coordinate chart with axes ${fields.join(", ")}`}>
-          {fields.map((field, index) => {
-            const anchor = edgeAwareTextAnchor(index, fields.length);
-            const domain = domains[index];
-            const constant = Boolean(domain.constant);
-            return (
-              <g key={field}>
-                <line className={`parallel-axis${constant ? " constant" : ""}`} x1={xFor(index)} x2={xFor(index)} y1={PARALLEL_AXIS_TOP} y2={PARALLEL_AXIS_BOTTOM} />
-                {constant ? (
-                  // Run the constant readout vertically along its own axis so
-                  // neighbouring constant labels can't collide horizontally — with
-                  // every config field constant (a single hyperparameter sweep)
-                  // the old horizontal labels overran each other.
-                  <text
-                    className="analysis-tick constant"
-                    x={xFor(index) - 4}
-                    y={PARALLEL_AXIS_MID}
-                    textAnchor="middle"
-                    transform={`rotate(-90 ${xFor(index) - 4} ${PARALLEL_AXIS_MID})`}
-                  >
-                    constant · {formatNumber(domain.max, 2)}
-                  </text>
-                ) : (
-                  <>
-                    <text className="analysis-tick" x={xFor(index)} y="26" textAnchor={anchor}>{formatNumber(domain.max, 2)}</text>
-                    <text className="analysis-tick" x={xFor(index)} y="234" textAnchor={anchor}>{formatNumber(domain.min, 2)}</text>
-                  </>
-                )}
-                <text className="analysis-axis-title" x={xFor(index)} y="252" textAnchor={anchor}>
-                  <title>{field}</title>
-                  {shortLabel(field, 14)}
-                </text>
-              </g>
-            );
-          })}
-          {rows.map((row) => {
-            const coords = fields.map((field, index) => [xFor(index), yFor(row.values[field], index)]);
-            if (coords.some(([, y]) => !Number.isFinite(y))) return null;
-            const highlight = row.run.id === bestRunId;
-            return (
-              <polyline
-                className={`parallel-line ${highlight ? "highlight" : ""}`}
-                key={row.run.id}
-                onClick={() => onSelectRun(row.run.id)}
-                points={coords.map(([x, y]) => `${x},${y}`).join(" ")}
-              >
-                <title>{row.run.name}</title>
-              </polyline>
-            );
-          })}
-        </svg>
+      <div className="analysis-controls-row">
+        <ParallelAxisControls allFields={allFields} fields={fields} onAxesChange={onAxesChange} selectedAxes={selectedAxes} />
+        <div className="analysis-control-aside">
+          <SegmentedToggle
+            ariaLabel="Parallel coordinates view"
+            className="analysis-view-switch"
+            onChange={(next) => { setView(next); if (next === "table") setFocusRunId(null); }}
+            options={[
+              { value: "chart", label: "Chart", icon: LineChart },
+              { value: "table", label: "Table", icon: Table2 },
+            ]}
+            value={view}
+          />
+        </div>
       </div>
-      <p className="analysis-note">{formatNumber(rows.length, 0)} runs · best run for {metricTitle(metricKey)} highlighted</p>
+      <span className="visually-hidden" role="status" aria-live="polite">
+        {view === "table" ? "Parallel coordinates summary table selected." : "Parallel coordinates chart selected."}
+      </span>
+      {view === "table" ? (
+        <>
+          <ParallelSummaryTable fields={fields} rows={summaryRows} tableId={tableId} />
+          <p className="analysis-note">{coverageNote}</p>
+        </>
+      ) : (
+        <>
+          <div className="analysis-chart-frame analysis-chart-frame--wide">
+            <svg
+              className="parallel-chart"
+              viewBox="0 0 720 264"
+              role="img"
+              tabIndex={0}
+              aria-label={chartAriaLabel}
+              onFocus={() => setFocusRunId(bestRunId ?? drawnRows[0]?.run.id ?? null)}
+              onBlur={() => setFocusRunId(null)}
+            >
+              {fields.map((field, index) => {
+                const anchor = edgeAwareTextAnchor(index, fields.length);
+                const domain = domains[index];
+                const constant = Boolean(domain.constant);
+                return (
+                  <g key={field}>
+                    <line className={`parallel-axis${constant ? " constant" : ""}`} x1={xFor(index)} x2={xFor(index)} y1={PARALLEL_AXIS_TOP} y2={PARALLEL_AXIS_BOTTOM} />
+                    {constant ? (
+                      // Run the constant readout vertically along its own axis so
+                      // neighbouring constant labels can't collide horizontally — with
+                      // every config field constant (a single hyperparameter sweep)
+                      // the old horizontal labels overran each other.
+                      <text
+                        className="analysis-tick constant"
+                        x={xFor(index) - 4}
+                        y={PARALLEL_AXIS_MID}
+                        textAnchor="middle"
+                        transform={`rotate(-90 ${xFor(index) - 4} ${PARALLEL_AXIS_MID})`}
+                      >
+                        constant · {formatAxisTick(domain.max)}
+                      </text>
+                    ) : (
+                      <>
+                        <text className="analysis-tick" x={xFor(index)} y="26" textAnchor={anchor}>{formatAxisTick(domain.max)}</text>
+                        <text className="analysis-tick" x={xFor(index)} y="234" textAnchor={anchor}>{formatAxisTick(domain.min)}</text>
+                      </>
+                    )}
+                    <text className="analysis-axis-title" x={xFor(index)} y="252" textAnchor={anchor}>
+                      <title>{field}</title>
+                      {shortLabel(field, 14)}
+                    </text>
+                  </g>
+                );
+              })}
+              {drawnRows.map((row) => {
+                const coords = fields.map((field, index) => [xFor(index), yFor(row.values[field], index)]);
+                if (coords.some(([, y]) => !Number.isFinite(y))) return null;
+                const highlight = row.run.id === bestRunId;
+                return (
+                  <polyline
+                    className={`parallel-line ${highlight ? "highlight" : ""}`}
+                    key={row.run.id}
+                    onClick={() => onSelectRun(row.run.id)}
+                    points={coords.map(([x, y]) => `${x},${y}`).join(" ")}
+                  >
+                    <title>{row.run.name}</title>
+                  </polyline>
+                );
+              })}
+            </svg>
+          </div>
+          {focusRun ? (
+            <p className="analysis-readout" aria-live="polite">
+              <strong>{focusRun.run.name}</strong>
+              {focusRun.run.id === bestRunId ? <span>best for {metricTitle(metricKey)}</span> : null}
+              {fields.slice(0, 3).map((field) => (
+                <span key={field}>{shortLabel(field)} {Number.isFinite(focusRun.values[field]) ? formatMetricValue(focusRun.values[field]) : "—"}</span>
+              ))}
+            </p>
+          ) : null}
+          <p className="analysis-note">{coverageNote}</p>
+        </>
+      )}
     </AnalysisCard>
+  );
+}
+
+function ParallelSummaryTable({ fields, rows, tableId }: { fields: string[]; rows: any[]; tableId: string }) {
+  return (
+    <div className="chart-summary-table-wrap analysis-summary-table-wrap">
+      <table className="chart-summary-table" id={tableId}>
+        <caption>Parallel coordinates values per run across {fields.length} axes</caption>
+        <thead>
+          <tr>
+            <th scope="col">Run</th>
+            {fields.map((field) => <th scope="col" key={field}>{shortLabel(field)}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id || row.name} className={row.best ? "is-best" : undefined}>
+              <th scope="row" title={row.name}>{row.best ? "★ " : ""}{row.name}</th>
+              {fields.map((field) => <td key={field}>{row.values[field] == null ? "—" : formatMetricValue(row.values[field])}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

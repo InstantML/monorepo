@@ -62,6 +62,108 @@ export function parallelAxisDomains(rows, fields) {
   });
 }
 
+// Heuristic for auto-defaulting an axis to a log scale. Learning rate is the
+// canonical case: a 1e-5..1e-2 sweep is unreadable on a linear axis. Kept
+// conservative (learning-rate / lr only) so metrics that legitimately cross
+// zero (e.g. rewards, deltas) are never silently log-scaled.
+export function looksLogarithmicField(field) {
+  return /learning[\s_./:-]*rate|(^|[\s_./:-])lr($|[\s_./:-])/i.test(String(field ?? ""));
+}
+
+// Scatter geometry generalized over per-axis linear/log scales. Preserves the
+// exact SVG pixel layout the scatter card has always used (x 48..488, y 200..24,
+// degenerate axis centered) so the linear path is visually unchanged, but maps
+// values through log10 when an axis is logarithmic. A log axis cannot place
+// values <= 0, so those points drop from the plotted set (counted in `dropped`)
+// while the axis still scales against the positive extremes.
+const SCATTER_X_LEFT = 48;
+const SCATTER_X_RIGHT = 488;
+const SCATTER_X_MID = 268;
+const SCATTER_Y_BOTTOM = 200;
+const SCATTER_Y_TOP = 24;
+const SCATTER_Y_MID = 108;
+
+export function scatterGeometry(points, options = {}) {
+  const xScale = options.xScale === "log" ? "log" : "linear";
+  const yScale = options.yScale === "log" ? "log" : "linear";
+  const finite = (Array.isArray(points) ? points : []).filter(
+    (point) => isFiniteNumber(point?.x) && isFiniteNumber(point?.y),
+  );
+  const plottable = finite.filter(
+    (point) => (xScale !== "log" || point.x > 0) && (yScale !== "log" || point.y > 0),
+  );
+  if (!plottable.length) {
+    // Keep a uniform shape (x/y present) so consumers see one object type, not a
+    // union; nothing is drawn when empty so these mappers are never called.
+    return {
+      xScale, yScale, minX: 0, maxX: 0, minY: 0, maxY: 0,
+      xDegenerate: true, yDegenerate: true,
+      points: [], dropped: finite.length, empty: true,
+      x: () => SCATTER_X_MID,
+      y: () => SCATTER_Y_MID,
+    };
+  }
+  const sx = (value) => (xScale === "log" ? Math.log10(value) : value);
+  const sy = (value) => (yScale === "log" ? Math.log10(value) : value);
+  const xs = plottable.map((point) => point.x);
+  const ys = plottable.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const xDegenerate = maxX - minX < 1e-12;
+  const yDegenerate = maxY - minY < 1e-12;
+  const sMinX = sx(minX);
+  const sSpanX = Math.max(1e-12, sx(maxX) - sMinX);
+  const sMinY = sy(minY);
+  const sSpanY = Math.max(1e-12, sy(maxY) - sMinY);
+  return {
+    xScale,
+    yScale,
+    minX,
+    maxX,
+    minY,
+    maxY,
+    xDegenerate,
+    yDegenerate,
+    points: plottable,
+    dropped: finite.length - plottable.length,
+    empty: false,
+    x: (value) => (xDegenerate ? SCATTER_X_MID : SCATTER_X_LEFT + ((sx(value) - sMinX) / sSpanX) * (SCATTER_X_RIGHT - SCATTER_X_LEFT)),
+    y: (value) => (yDegenerate ? SCATTER_Y_MID : SCATTER_Y_BOTTOM - ((sy(value) - sMinY) / sSpanY) * (SCATTER_Y_BOTTOM - SCATTER_Y_TOP)),
+  };
+}
+
+// Accessible summary rows for the scatter explorer: one row per plotted run,
+// ranked by the Y field (descending) so the table mirrors "best at top". The
+// component formats values; this stays pure for unit coverage.
+export function scatterSummaryRows(points) {
+  return (Array.isArray(points) ? points : [])
+    .filter((point) => isFiniteNumber(point?.x) && isFiniteNumber(point?.y))
+    .map((point) => ({ id: point.run?.id ?? "", name: point.run?.name ?? "", x: point.x, y: point.y }))
+    .sort((left, right) => right.y - left.y || String(left.name).localeCompare(String(right.name)));
+}
+
+// Accessible summary rows for the parallel-coordinates explorer: one row per
+// drawn run with its raw value on each axis, plus a flag for the best run on the
+// active metric. `fields` is the axis order; missing values surface as null so
+// the table can render "—".
+/** @param {string | null | undefined} [bestRunId] */
+export function parallelSummaryRows(rows, fields, bestRunId = null) {
+  const safeFields = Array.isArray(fields) ? fields : [];
+  return (Array.isArray(rows) ? rows : []).map((row) => ({
+    id: row?.run?.id ?? "",
+    name: row?.run?.name ?? "",
+    best: bestRunId != null && row?.run?.id === bestRunId,
+    values: Object.fromEntries(
+      safeFields.map((field) => {
+        const value = row?.values?.[field];
+        return [field, isFiniteNumber(value) ? value : null];
+      }),
+    ),
+  }));
+}
+
 export function groupedRunReducers(runs, metricKey) {
   const groupField = chooseGroupField(runs);
   const groups = new Map();

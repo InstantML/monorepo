@@ -1175,3 +1175,63 @@
   .axis-control-grid.two { grid-template-columns: minmax(0, 1fr); }
   .axis-add-button { width: 100%; }
 }
+
+/* ── Explorer controls: axis scale + chart/table view + summary tables ─────── */
+.analysis-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.analysis-controls-row > .axis-control-grid,
+.analysis-controls-row > .parallel-axis-controls {
+  flex: 1 1 280px;
+  margin-bottom: 0;
+}
+.analysis-control-aside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.analysis-scale-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.analysis-scale-label {
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.analysis-scale-button {
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius, 6px);
+  background: var(--surface-2);
+  color: var(--muted);
+  font: 600 11px/1 var(--font-mono);
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.analysis-scale-button:hover {
+  color: var(--text);
+  border-color: var(--line-strong, var(--line));
+}
+.analysis-scale-button.active {
+  background: var(--surface-3, var(--surface-2));
+  border-color: var(--accent, #15a35d);
+  color: var(--text);
+}
+.analysis-view-switch { flex: 0 0 auto; }
+.analysis-summary-table-wrap {
+  margin-top: 4px;
+  max-height: 360px;
+  overflow: auto;
+}
+.chart-summary-table tr.is-best th[scope="row"] {
+  color: var(--accent, #15a35d);
+  font-weight: 700;
+}
