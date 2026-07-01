@@ -32,6 +32,9 @@ from instantml.client import (
     _classify_log_payload,
     _coerce_numeric_values,
     _collect_system_metrics,
+    _collect_system_metrics_fallback,
+    _load_psutil,
+    _resolve_system_metrics,
     _environment_metadata,
     _finish_drain_seconds,
     _git_metadata,
@@ -4840,6 +4843,133 @@ def test_system_metrics_collection_and_sampler_lifecycle(monkeypatch):
         Run(client=FakeClient(), run_id="run-2").start_system_metrics(interval=0)
 
 
+def test_system_metrics_env_opt_out_and_interval_override(monkeypatch):
+    events = []
+
+    def fake_request(self, method, path, body=None, idempotency_key=None):
+        return {"run": {"id": "run-env"}}
+
+    monkeypatch.setattr(Client, "_request", fake_request)
+    monkeypatch.setattr(Run, "start_system_metrics", lambda self, interval=15.0: events.append(("system", interval)))
+
+    # Opt out: the automatic sampler must not start regardless of the kwarg, so
+    # an operator can silence it fleet-wide without touching training code.
+    monkeypatch.setenv("INSTANTML_DISABLE_SYSTEM_METRICS", "1")
+    im.attach_run("run-env", api_key="key", base_url="http://example.test",
+                  system_metrics=True, system_metrics_interval=3.0, upload_mode="sync")
+    assert events == []
+
+    # Interval override via env wins over the kwarg.
+    monkeypatch.delenv("INSTANTML_DISABLE_SYSTEM_METRICS", raising=False)
+    monkeypatch.setenv("INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS", "2.0")
+    im.attach_run("run-env", api_key="key", base_url="http://example.test",
+                  system_metrics=True, system_metrics_interval=3.0, upload_mode="sync")
+    assert events == [("system", 2.0)]
+
+
+def test_resolve_system_metrics_env(monkeypatch):
+    monkeypatch.delenv("INSTANTML_DISABLE_SYSTEM_METRICS", raising=False)
+    monkeypatch.delenv("INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS", raising=False)
+    assert _resolve_system_metrics(True, 15.0) == (True, 15.0)
+    monkeypatch.setenv("INSTANTML_DISABLE_SYSTEM_METRICS", "yes")
+    assert _resolve_system_metrics(True, 15.0) == (False, 15.0)
+    monkeypatch.delenv("INSTANTML_DISABLE_SYSTEM_METRICS", raising=False)
+    monkeypatch.setenv("INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS", "0.5")
+    assert _resolve_system_metrics(True, 15.0) == (True, 0.5)
+    monkeypatch.setenv("INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS", "-3")
+    with pytest.warns(RuntimeWarning, match="INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS"):
+        assert _resolve_system_metrics(True, 15.0) == (True, 15.0)
+    # Non-numeric value (ValueError branch) is also ignored, not fatal.
+    monkeypatch.setenv("INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS", "not-a-number")
+    with pytest.warns(RuntimeWarning, match="INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS"):
+        assert _resolve_system_metrics(True, 15.0) == (True, 15.0)
+
+
+def test_collect_system_metrics_stdlib_fallback(monkeypatch):
+    fallback = _collect_system_metrics_fallback()
+    assert "system/cpu_count" in fallback  # os.cpu_count() is near-universal
+    assert all(isinstance(value, float) for value in fallback.values())
+    assert all(key.startswith("system/") for key in fallback)
+
+    # When psutil is unavailable, _collect_system_metrics rides the fallback and
+    # never emits the psutil-only system/cpu_percent key — telemetry still
+    # appears with zero hard dependencies.
+    monkeypatch.setattr(client_module, "_load_psutil", lambda: None)
+    metrics = _collect_system_metrics()
+    assert "system/cpu_percent" not in metrics
+    assert "system/cpu_count" in metrics
+    assert all(isinstance(value, float) for value in metrics.values())
+
+
+def test_system_metrics_sampler_crash_is_contained(monkeypatch, recwarn):
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            return {}
+
+    def boom():
+        raise RuntimeError("collector exploded")
+
+    monkeypatch.setattr(client_module, "_collect_system_metrics", boom)
+    run = Run(client=FakeClient(), run_id="crash")
+    run.start_system_metrics(interval=0.01)
+    sampler = run._system_sampler
+    time.sleep(0.1)
+    # The loop caught the exception, warned, and exited; the daemon thread is no
+    # longer running, so a faulty collector never wedges the training run.
+    assert sampler is not None and not sampler._thread.is_alive()
+    run.finish()
+    assert any("stopped after error" in str(w.message) for w in recwarn.list)
+
+
+def test_system_metrics_fallback_defensive_branches(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_resource(name, *args, **kwargs):
+        if name == "resource":
+            raise ImportError("no resource on this platform")
+        return real_import(name, *args, **kwargs)
+
+    def boom(*args, **kwargs):
+        raise OSError("denied")
+
+    # Simulate a platform without `resource` (e.g. Windows) plus a denied load
+    # average and an unknown CPU count: the fallback degrades to {} and never
+    # raises. Driven entirely by monkeypatches so this zero-dependency, OS-
+    # independent core test never imports `resource` itself.
+    monkeypatch.setattr(builtins, "__import__", no_resource)
+    monkeypatch.setattr(client_module.os, "getloadavg", boom, raising=False)
+    monkeypatch.setattr(client_module.os, "cpu_count", lambda: None)
+    assert _collect_system_metrics_fallback() == {}
+
+
+def test_load_psutil_handles_present_and_absent(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+    sentinel = object()
+
+    def import_present(name, *args, **kwargs):
+        if name == "psutil":
+            return sentinel
+        return real_import(name, *args, **kwargs)
+
+    def import_absent(name, *args, **kwargs):
+        if name == "psutil":
+            raise ImportError("no psutil installed")
+        return real_import(name, *args, **kwargs)
+
+    # Cover both branches without requiring the optional `instantml[system]`
+    # extra (psutil) to actually be installed in the test environment.
+    monkeypatch.setattr(builtins, "__import__", import_present)
+    assert _load_psutil() is sentinel
+    monkeypatch.setattr(builtins, "__import__", import_absent)
+    assert _load_psutil() is None
+
+
 def test_async_init_with_system_metrics_does_not_deadlock_on_run_id_property(monkeypatch):
     """Regression: _SystemMetricsSampler.__init__ must not read run.run_id (the
     property), which blocks on _init_done. _resolve_init() calls
@@ -5280,7 +5410,11 @@ def test_numeric_coercion_and_system_metric_error_branches(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", fail_psutil)
-    assert _collect_system_metrics() == {}
+    # psutil missing now degrades to the stdlib fallback, not an empty dict, so
+    # telemetry still appears without the optional `instantml[system]` extra.
+    no_psutil_metrics = _collect_system_metrics()
+    assert "system/cpu_percent" not in no_psutil_metrics
+    assert "system/cpu_count" in no_psutil_metrics
 
     class GoodPsutil:
         @staticmethod

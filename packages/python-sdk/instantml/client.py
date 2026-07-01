@@ -193,6 +193,7 @@ class Client:
         stop_check_interval_seconds: float = 30.0,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
+        system_metrics, system_metrics_interval = _resolve_system_metrics(system_metrics, system_metrics_interval)
         if metadata and "_rlobs" in metadata:
             raise ValueError("metadata key '_rlobs' is reserved for SDK-owned metadata")
         source_settings = _normalize_source_tracking(source_tracking)
@@ -309,6 +310,7 @@ class Client:
 
         run_id = _validate_text(run_id, "run id")
         _validate_upload_mode(upload_mode)
+        system_metrics, system_metrics_interval = _resolve_system_metrics(system_metrics, system_metrics_interval)
         if not isinstance(validate, bool):
             raise TypeError("validate must be a bool")
         if validate:
@@ -3205,28 +3207,105 @@ class InstantMLKerasCallback:
             self.run.finish("finished")
 
 
-def _collect_system_metrics(psutil_module: Any | None = None, pynvml_module: Any | None = None) -> dict[str, float]:
-    psutil = psutil_module
-    if psutil is None:
+def _env_truthy(name: str) -> bool:
+    value = os.environ.get(name)
+    return value is not None and value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_system_metrics(enabled: bool, interval: float) -> tuple[bool, float]:
+    """Apply env overrides to the automatic system-metrics settings.
+
+    ``INSTANTML_DISABLE_SYSTEM_METRICS`` (truthy) force-disables the automatic
+    sampler regardless of the ``system_metrics=`` kwarg, so an operator can
+    silence it fleet-wide without touching training code.
+    ``INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS`` overrides the sample interval
+    when it parses to a finite positive float. This governs only the automatic
+    default — an explicit ``run.start_system_metrics(...)`` call is never gated.
+    """
+
+    if _env_truthy("INSTANTML_DISABLE_SYSTEM_METRICS"):
+        enabled = False
+    raw_interval = os.environ.get("INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS")
+    if raw_interval is not None and raw_interval.strip():
         try:
-            import psutil as psutil
-        except ImportError:
-            return {}
+            candidate = float(raw_interval)
+        except ValueError:
+            candidate = float("nan")
+        if math.isfinite(candidate) and candidate > 0:
+            interval = candidate
+        else:
+            warnings.warn(
+                f"ignoring invalid INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS={raw_interval!r}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+    return enabled, interval
+
+
+def _load_psutil() -> "Any | None":
+    """Import psutil if available, else return None (injectable for tests)."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+    return psutil
+
+
+def _collect_system_metrics_fallback() -> dict[str, float]:
+    """Best-effort stdlib telemetry when psutil is unavailable (zero hard deps).
+
+    Reports honest signals — process RSS (via ``resource``), load average and
+    CPU count (via ``os``) — rather than a faked instantaneous cpu_percent.
+    Never raises; unavailable signals are simply omitted (e.g. Windows lacks
+    both ``resource`` and ``os.getloadavg``).
+    """
+
     metrics: dict[str, float] = {}
     try:
-        metrics["system/cpu_percent"] = float(psutil.cpu_percent(interval=None))
-        virtual_memory = psutil.virtual_memory()
-        metrics["system/memory_percent"] = float(virtual_memory.percent)
-        metrics["system/memory_used_bytes"] = float(virtual_memory.used)
-        process = psutil.Process(os.getpid())
-        metrics["system/process_rss_bytes"] = float(process.memory_info().rss)
-        disk = psutil.disk_usage(os.getcwd())
-        metrics["system/disk_percent"] = float(disk.percent)
-        network = psutil.net_io_counters()
-        metrics["system/network_bytes_sent"] = float(network.bytes_sent)
-        metrics["system/network_bytes_recv"] = float(network.bytes_recv)
-    except Exception as exc:
-        warnings.warn(f"system metrics collection failed: {exc}", RuntimeWarning, stacklevel=2)
+        import resource
+
+        ru_maxrss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        # ru_maxrss is KiB on Linux but bytes on the BSD-derived platforms
+        # (macOS, *BSD), so only scale KiB -> bytes off the BSD family.
+        rss_is_bytes = sys.platform == "darwin" or "bsd" in sys.platform
+        metrics["system/process_rss_bytes"] = ru_maxrss if rss_is_bytes else ru_maxrss * 1024.0
+    except Exception:  # noqa: BLE001 - fallback must never raise
+        pass
+    try:
+        load1, load5, load15 = os.getloadavg()
+        metrics["system/load_average_1m"] = float(load1)
+        metrics["system/load_average_5m"] = float(load5)
+        metrics["system/load_average_15m"] = float(load15)
+    except (OSError, AttributeError):
+        pass
+    cpu_count = os.cpu_count()
+    if cpu_count:
+        metrics["system/cpu_count"] = float(cpu_count)
+    return metrics
+
+
+def _collect_system_metrics(psutil_module: Any | None = None, pynvml_module: Any | None = None) -> dict[str, float]:
+    psutil = psutil_module if psutil_module is not None else _load_psutil()
+    metrics: dict[str, float] = {}
+    if psutil is None:
+        # Zero-hard-dep path: emit a small set of stdlib signals so telemetry
+        # still appears without the optional `instantml[system]` extra.
+        metrics.update(_collect_system_metrics_fallback())
+    else:
+        try:
+            metrics["system/cpu_percent"] = float(psutil.cpu_percent(interval=None))
+            virtual_memory = psutil.virtual_memory()
+            metrics["system/memory_percent"] = float(virtual_memory.percent)
+            metrics["system/memory_used_bytes"] = float(virtual_memory.used)
+            process = psutil.Process(os.getpid())
+            metrics["system/process_rss_bytes"] = float(process.memory_info().rss)
+            disk = psutil.disk_usage(os.getcwd())
+            metrics["system/disk_percent"] = float(disk.percent)
+            network = psutil.net_io_counters()
+            metrics["system/network_bytes_sent"] = float(network.bytes_sent)
+            metrics["system/network_bytes_recv"] = float(network.bytes_recv)
+        except Exception as exc:
+            warnings.warn(f"system metrics collection failed: {exc}", RuntimeWarning, stacklevel=2)
     nvml = pynvml_module
     if nvml is None:
         try:

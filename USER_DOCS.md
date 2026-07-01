@@ -139,6 +139,10 @@ optimizer/grad_norm
 
 The UI uses these namespaces to group panels and make metric search easier. Unit-bounded metrics such as accuracy, precision, recall, F1, and AUC use normalized `0..1` y-axes in charts; return, reward, and loss metrics auto-scale to their observed values.
 
+## Automatic System Metrics
+
+Every run automatically samples `system/...` hardware telemetry in the background (no logging code needed) — these show up alongside your metrics in Run Detail. With no extras installed you get a stdlib fallback (`system/process_rss_bytes`, `system/load_average_1m`, `system/cpu_count`); installing `instantml[system]` (psutil + NVML) upgrades to full CPU/memory/disk/network and per-GPU `system/gpu/{i}/...` telemetry. Turn it off per run with `system_metrics=False`, or everywhere with the `INSTANTML_DISABLE_SYSTEM_METRICS=1` environment variable; tune the cadence with `system_metrics_interval=<seconds>` or `INSTANTML_SYSTEM_METRICS_INTERVAL_SECONDS`.
+
 ## Context Manager Pattern
 
 Use a context manager when you want interrupted runs to be marked as failed automatically:
