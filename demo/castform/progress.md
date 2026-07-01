@@ -90,3 +90,7 @@ Create a full end-to-end demo that:
   Cloudflare tunnel or unavailable hosted embed routes for current working
   infrastructure. The docs now distinguish the live persisted-data proof from
   the local real iframe proof.
+- Added `run_call_prep_check.py` as a one-command walk-up gate that runs the
+  Castform readiness dry check, mocked recovery rehearsal, parent-page smoke,
+  and optional full local real iframe E2E, then writes a consolidated ignored
+  report.

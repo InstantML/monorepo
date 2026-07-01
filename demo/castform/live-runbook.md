@@ -20,6 +20,7 @@ only.
 Optional preflight before live credentials:
 
 ```bash
+python3 demo/castform/run_call_prep_check.py --full
 python3 demo/castform/check_castform_readiness.py \
   --allow-missing-live-inputs \
   --skip-network
@@ -35,12 +36,15 @@ python3 demo/castform/run_local_real_iframe_e2e.py \
 If port 5174 is already in use, pass `--port 0` to pick a free local port for
 the lightweight smoke preflight.
 
-`check_castform_readiness.py` is the safe live-Castform preflight: it checks SDK
-importability, Castform API-key presence, uploaded asset arguments, and optional
-Castform app reachability without printing secrets. `run_mocked_e2e.py` is the
-stronger InstantML rehearsal: it executes the real hosted writer against a fake
-local InstantML API, verifies the existing-run recovery command, and
-browser-tests the generated page.
+`run_call_prep_check.py --full` is the walk-up gate for the demo: it runs the
+safe Castform readiness dry check, mocked InstantML recovery rehearsal,
+parent-page smoke, and full local real iframe E2E. `check_castform_readiness.py`
+is the safe live-Castform preflight by itself: it checks SDK importability,
+Castform API-key presence, uploaded asset arguments, and optional Castform app
+reachability without printing secrets. `run_mocked_e2e.py` is the stronger
+InstantML rehearsal: it executes the real hosted writer against a fake local
+InstantML API, verifies the existing-run recovery command, and browser-tests the
+generated page.
 `run_local_smoke.py` is the lighter parent-page smoke. `run_local_real_iframe_e2e.py`
 is the complete no-secret proof: it starts a local Rust API, local ClickHouse,
 the local Next embed app, and the parent page; writes Castform-shaped runs

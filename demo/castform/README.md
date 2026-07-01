@@ -36,6 +36,9 @@ Research date: 2026-06-30.
 - `run_local_smoke.py`: one-command local preflight that generates the smoke
   manifest, starts the parent page, runs artifact verification, runs desktop and
   mobile browser checks, writes an ignored safe report, and stops the server.
+- `run_call_prep_check.py`: one-command operator gate that runs the safe
+  Castform readiness check, mocked E2E recovery rehearsal, parent-page smoke,
+  and optionally the full local real iframe E2E under `--full`.
 - `check_hosted_readiness.py`: hosted preflight that checks dependencies,
   ignored generated paths, parent-origin shape, optional tunnel reachability,
   live env var presence, and `https://api.instantml.ai/health` without writing
@@ -179,10 +182,14 @@ python3 demo/castform/check_castform_readiness.py \
 Full local writer rehearsal without live credentials:
 
 ```bash
+python3 demo/castform/run_call_prep_check.py --full
 python3 demo/castform/run_mocked_e2e.py
 ```
 
-This runs the real `run_demo.py` against a local fake InstantML API and writes
+`run_call_prep_check.py --full` is the walk-up gate: it runs the Castform
+readiness dry check, the mocked InstantML E2E, the local parent-page smoke, and
+the full local real iframe E2E. `run_mocked_e2e.py` alone runs the real
+`run_demo.py` against a local fake InstantML API and writes
 `run-output/mocked-e2e-report.json`, which is ignored by Git. It covers both
 fresh SDK ingestion and the `--instantml-run-id` recovery command.
 
@@ -221,7 +228,7 @@ The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```
