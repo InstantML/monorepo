@@ -37,3 +37,9 @@ Create a full end-to-end demo that:
   hosted iframe demo flow when credentials and run IDs are available.
 - Corrected stale planning-doc command paths after the move into
   `demo/castform/`.
+- Added a deterministic local smoke manifest generator and Playwright browser
+  verifier so the parent page can be checked for render health, tab switching,
+  refresh behavior, iframe sizing, and visible-token safety before live
+  credentials are used.
+- Reordered the responsive parent page so narrow screens start with the
+  observability content instead of setup metadata.

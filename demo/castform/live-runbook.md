@@ -14,6 +14,19 @@ only.
 
 ## 1. Start The Parent Page
 
+Optional preflight before live credentials:
+
+```bash
+python3 demo/castform/create_smoke_manifest.py
+python3 demo/castform/serve_web.py --port 5174
+node demo/castform/browser_verify.mjs \
+  --url http://127.0.0.1:5174 \
+  --expect-runs 3 \
+  --expect-sessions 3
+```
+
+For the live hosted path, start or keep the parent page server running:
+
 ```bash
 python3 demo/castform/serve_web.py --port 5174
 ```
@@ -115,6 +128,15 @@ The verifier must report run/session counts and `redacted_summary=ok`. It fails
 if the parent URL is still behind a localtunnel warning page.
 
 ## 6. Browser Check
+
+Run the automated parent-page check against the HTTPS origin:
+
+```bash
+node demo/castform/browser_verify.mjs \
+  --url https://your-demo-origin.example \
+  --expect-runs 5 \
+  --expect-sessions 3
+```
 
 Open the HTTPS parent origin in Chrome and verify:
 

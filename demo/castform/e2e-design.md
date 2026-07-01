@@ -166,13 +166,33 @@ The page must not expose the embed token as visible text. The iframe `src`
 contains the fragment token by necessity, but summaries and cards display only
 session IDs and redacted URLs.
 
+## Local Browser Smoke Path
+
+Before live keys or a tunnel are available, use `create_smoke_manifest.py` to
+write a synthetic manifest with the same schema and redaction behavior:
+
+```bash
+python3 demo/castform/create_smoke_manifest.py
+python3 demo/castform/serve_web.py --port 5174
+node demo/castform/browser_verify.mjs \
+  --url http://127.0.0.1:5174 \
+  --expect-runs 3 \
+  --expect-sessions 3
+```
+
+This proves the Castform parent page loads, displays run cards, switches iframe
+tabs, refreshes the manifest, and keeps `instantml_embed_...` tokens out of
+visible text. It does not replace the final hosted check because the local smoke
+uses `about:blank` iframe targets instead of live InstantML iframe content.
+
 ## Verification
 
 Minimum checks before a commit:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py
 node --check demo/castform/web/app.js
+node --check demo/castform/browser_verify.mjs
 git diff --check
 ```
 

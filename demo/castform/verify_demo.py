@@ -107,7 +107,13 @@ def check_parent_page(parent_url: str, *, timeout: float) -> list[str]:
         raise VerificationError(f"parent page fetch failed: {exc}") from exc
     if "Tunnel website ahead" in body:
         raise VerificationError("parent page is behind a localtunnel browser warning")
-    if "Castform InstantML demo page" not in body and "Castform -> InstantML" not in body:
+    expected_markers = (
+        "Castform InstantML Demo",
+        "Loading Castform demo manifest",
+        "Castform InstantML demo page",
+        "Castform -> InstantML",
+    )
+    if not any(marker in body for marker in expected_markers):
         raise VerificationError("parent page did not look like the Castform demo")
     return [f"parent_page={final_url}"]
 

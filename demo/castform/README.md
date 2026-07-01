@@ -29,6 +29,10 @@ Research date: 2026-06-30.
   Castform training assets.
 - `serve_web.py` and `web/`: local Castform-facing parent page for the hosted
   iframe embeds.
+- `create_smoke_manifest.py`: deterministic local manifest generator for
+  parent-page browser verification without live credentials.
+- `browser_verify.mjs`: Playwright-based parent-page renderer and interaction
+  verifier that redacts token-like diagnostics.
 - `verify_demo.py`: generated manifest and redacted-summary verifier.
 - `live-runbook.md`: operator runbook for the hosted call demo.
 
@@ -98,12 +102,24 @@ python3 demo/castform/verify_demo.py \
   --parent-url https://your-demo-origin.example
 ```
 
+Local browser smoke before live credentials:
+
+```bash
+python3 demo/castform/create_smoke_manifest.py
+python3 demo/castform/serve_web.py --port 5174
+node demo/castform/browser_verify.mjs \
+  --url http://127.0.0.1:5174 \
+  --expect-runs 3 \
+  --expect-sessions 3
+```
+
 ## Verification
 
 The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py
 node --check demo/castform/web/app.js
+node --check demo/castform/browser_verify.mjs
 ```
