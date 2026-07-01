@@ -110,7 +110,10 @@ python3 demo/castform/check_hosted_readiness.py \
 ```
 
 This command does not write to InstantML and does not print secrets. Missing
-live keys should appear as warnings in this dry pass.
+live keys should appear as warnings in this dry pass. The command also checks
+whether hosted OpenAPI advertises `POST /api/embed/sessions`; while it is
+absent, the check warns and the operator should use the blocked hosted mode or
+local real iframe E2E.
 
 ## 4. Create A Live API Key
 
@@ -134,6 +137,15 @@ After exporting the key, rerun the strict readiness gate:
 python3 demo/castform/check_hosted_readiness.py \
   --parent-origin https://your-demo-origin.example \
   --parent-url https://your-demo-origin.example
+```
+
+When hosted embed routes are expected to be live, make that expectation strict:
+
+```bash
+python3 demo/castform/check_hosted_readiness.py \
+  --parent-origin https://your-demo-origin.example \
+  --parent-url https://your-demo-origin.example \
+  --require-hosted-embeds
 ```
 
 ## 5. Write Hosted Runs And Iframes

@@ -152,6 +152,56 @@ def check_api_health(statuses: list[dict[str, Any]], api_base_url: str, *, timeo
     check(statuses, "instantml_api_health", "ok", "InstantML hosted API health check passed", url=url, elapsed_ms=elapsed_ms, response=body)
 
 
+def fetch_json(url: str, *, timeout: float) -> dict[str, Any]:
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read(1_000_000).decode("utf-8", errors="replace")
+    payload = json.loads(body)
+    if not isinstance(payload, dict):
+        raise ValueError(f"{url} did not return a JSON object")
+    return payload
+
+
+def check_hosted_embed_route(
+    statuses: list[dict[str, Any]],
+    api_base_url: str,
+    *,
+    timeout: float,
+    skip_network: bool,
+    required: bool,
+) -> None:
+    if skip_network:
+        check(statuses, "hosted_embed_route", "skip", "hosted embed OpenAPI check skipped")
+        return
+    url = api_base_url.rstrip("/") + "/openapi.json"
+    try:
+        payload = fetch_json(url, timeout=timeout)
+    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+        status = "fail" if required else "warn"
+        check(statuses, "hosted_embed_route", status, f"could not inspect hosted OpenAPI: {exc}", url=url)
+        return
+    paths = payload.get("paths")
+    if not isinstance(paths, dict):
+        status = "fail" if required else "warn"
+        check(statuses, "hosted_embed_route", status, "hosted OpenAPI does not include a paths object", url=url)
+        return
+    path = paths.get("/api/embed/sessions")
+    post_present = isinstance(path, dict) and "post" in {str(method).lower() for method in path}
+    if post_present:
+        check(statuses, "hosted_embed_route", "ok", "hosted embed-session API route is advertised", url=url, route="/api/embed/sessions")
+        return
+    status = "fail" if required else "warn"
+    check(
+        statuses,
+        "hosted_embed_route",
+        status,
+        "hosted embed-session API route is not advertised; use blocked hosted mode or local real iframe E2E",
+        url=url,
+        route="/api/embed/sessions",
+        embed_paths=[key for key in sorted(paths) if "embed" in key.lower()][:20],
+    )
+
+
 def check_live_secrets(
     statuses: list[dict[str, Any]],
     *,
@@ -189,7 +239,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project", default=os.environ.get("CASTFORM_DEMO_PROJECT", DEFAULT_PROJECT))
     parser.add_argument("--castform-run-id", action="append", default=[])
     parser.add_argument("--allow-missing-live-inputs", action="store_true", help="Downgrade missing secrets/origin to warnings for dry preflight")
-    parser.add_argument("--skip-network", action="store_true", help="Skip InstantML /health network check")
+    parser.add_argument("--skip-network", action="store_true", help="Skip hosted InstantML network checks")
+    parser.add_argument("--require-hosted-embeds", action="store_true", help="Fail if the hosted embed-session API route is not deployed")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     return parser.parse_args()
@@ -216,6 +267,13 @@ def main() -> int:
     check_node_and_playwright(statuses, timeout=args.timeout)
     check_ignored_paths(statuses, timeout=args.timeout)
     check_api_health(statuses, args.api_base_url, timeout=args.timeout, skip_network=args.skip_network)
+    check_hosted_embed_route(
+        statuses,
+        args.api_base_url,
+        timeout=args.timeout,
+        skip_network=args.skip_network,
+        required=args.require_hosted_embeds,
+    )
     check_parent_page(statuses, args.parent_url, timeout=args.timeout)
 
     failures = [item for item in statuses if item["status"] == "fail"]

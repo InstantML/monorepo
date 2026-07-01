@@ -189,7 +189,11 @@ python3 demo/castform/check_hosted_readiness.py \
 ```
 
 For dry rehearsal before live secrets are exported, add
-`--allow-missing-live-inputs`.
+`--allow-missing-live-inputs`. The readiness check also inspects hosted
+OpenAPI for `POST /api/embed/sessions`; while the route is absent it reports a
+warning and operators should use `--allow-embed-blocked` or the local real
+iframe E2E. Add `--require-hosted-embeds` when you expect real hosted iframes
+and want the check to fail until that route is deployed.
 
 Live Castform SDK readiness check before launching through uploaded assets:
 

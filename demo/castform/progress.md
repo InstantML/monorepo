@@ -118,3 +118,6 @@ Create a full end-to-end demo that:
 - Updated `run_local_real_iframe_e2e.py` to save desktop and mobile screenshot
   evidence automatically under `run-output/local-real-iframe-screenshots/` and
   surface the paths in its report.
+- Updated `check_hosted_readiness.py` to inspect hosted OpenAPI for
+  `POST /api/embed/sessions`, warning during blocked hosted mode and failing
+  under `--require-hosted-embeds` when real hosted iframes are expected.

@@ -31,6 +31,9 @@ artifacts: production and staging still return 404 for
   points, no active/failed runs, and best `eval/reward_mean` evidence.
 - Hosted iframe blocker is explicit: prod, app-domain, and staging
   `/api/embed/sessions` calls returned 404; dashboard routes are not frameable.
+  `check_hosted_readiness.py` now inspects hosted OpenAPI for
+  `POST /api/embed/sessions` and can fail strictly with
+  `--require-hosted-embeds`.
 - Full local iframe E2E passed: `run_local_real_iframe_e2e.py` produced 3 runs,
   3 embed sessions, verified iframe content in desktop/mobile browsers, and
   confirmed the existing-run resume path left run count unchanged at 3.
