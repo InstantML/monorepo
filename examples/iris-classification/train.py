@@ -15,6 +15,8 @@ from typing import Any
 import numpy as np
 import instantml as im
 
+ro = im
+
 DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data"
 FEATURE_NAMES = ("sepal_length_cm", "sepal_width_cm", "petal_length_cm", "petal_width_cm")
 DEFAULT_CLASSES = ("Iris-setosa", "Iris-versicolor", "Iris-virginica")

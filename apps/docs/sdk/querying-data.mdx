@@ -1,12 +1,13 @@
 ---
-title: "Query runs and download artifacts"
-description: "Use the raw API helper for run summaries, bounded pages, and artifact downloads."
+title: "Query runs, metrics, and objects"
+description: "Use the SDK query API for bounded notebook and automation reads."
 ---
 
-# Query runs and download artifacts
+# Query runs, metrics, and objects
 
 Most training scripts only write data. Use `im.Api(...)` when a script or
-notebook needs to query runs, export data, or restore artifacts.
+notebook needs to query runs, fetch bounded metric series, inspect logged
+objects, export data, or restore artifacts.
 
 ## Create an API helper
 
@@ -21,16 +22,19 @@ api = im.Api(
 
 The key needs a read scope such as `export:read` for tenant read routes.
 
-## List run summaries
+## Query run summaries
 
 ```python
-page = api.runs(
+runs = api.query_runs(
     project="cartpole",
-    q="seed 13",
+    q="tag:baseline status:finished",
     sort_by="metric-best",
     metric_key="eval/return_mean",
     limit=25,
 )
+
+for run in runs.items:
+    print(run["id"], run.get("name"))
 ```
 
 Accepted filters:
@@ -38,17 +42,21 @@ Accepted filters:
 | Parameter | Meaning |
 | --- | --- |
 | `project` | Project name. Omit or use `all` for all projects. |
-| `project_id` | Legacy SDK compatibility parameter. Rust-hosted run summaries do not expose it as a query filter; use `project` or a project-scoped API key. |
 | `status` | `running`, `finished`, `failed`, or `all`. |
 | `q` | Shared run search query. Bare text remains implicit `AND`; field filters, exact tags/status, ID prefixes, uppercase booleans, phrases, grouping, field/group exclusion such as `-tag:debug`, and explicit Rust `re:/.../` regex are supported. |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, or `metric-best`. |
 | `metric_key` | Metric used for metric sorts. |
-| `limit` | Page size. |
-| `cursor` | Cursor returned by the previous page. |
-| `offset` | Offset pagination for compatibility paths. |
+| `limit` | Page size, 1..100. |
+| `cursor` | Cursor returned by the previous `Page`. |
+| `max_pages` | Number of pages to read into one `Page`; defaults to 1. |
 
-Do not combine `cursor` with a nonzero `offset`; the helper raises
-`ValueError`.
+`query_runs()` returns `Page(items, next_cursor, raw, limit)` and preserves the
+server's order exactly. Use `iter_runs()` when you want lazy pagination:
+
+```python
+for run in api.iter_runs(project="cartpole", q="tag:candidate", page_size=50, max_pages=2):
+    print(run["id"])
+```
 
 Useful `q` examples:
 
@@ -59,6 +67,63 @@ name:"long context" -tag:debug
 (tag:baseline OR tag:candidate) notes:ablated
 re:/seed-(13|14)/
 ```
+
+`Api.runs()` remains available as the raw compatibility helper. It returns the
+decoded `/api/runs/summary` payload as a dictionary and also accepts legacy
+`project_id` and `offset` parameters. Prefer the typed query helpers for new
+notebook and automation code.
+
+## Fetch metric series
+
+```python
+series = api.query_metrics(
+    [run["id"] for run in runs.items],
+    ["eval/return_mean", "train/loss"],
+    step_min=0,
+    step_max=1000,
+    point_limit=1000,
+    buckets=400,
+)
+
+for item in series.series:
+    print(item["run_id"], item["key"], len(item["metrics"]))
+```
+
+`query_metrics()` accepts 1..100 run IDs and 1..25 keys. The SDK calls the
+bounded metric-series route once per key, preserves caller run order and caller
+key order, omits empty run/key pairs, and keeps each run/key bounded by
+`point_limit` before server-side effective caps. `buckets` requests the same
+M4 downsampling used by high-density dashboard charts.
+
+Metric timestamp windows are not exposed by the current Rust route. The SDK
+accepts the future-facing parameters but raises `ValueError` if `time_min`,
+`time_max`, or `x_axis="time"` are used, so notebooks do not silently receive a
+different slice than requested.
+
+## Query rich objects
+
+```python
+objects = api.query_objects(
+    project="cartpole",
+    kind="table",
+    key="eval/samples",
+    limit=25,
+)
+
+rows = api.object_rows(objects.items[0]["id"], limit=100)
+```
+
+`query_objects()` uses the cross-run `GET /api/objects/explorer` route when the
+backend exposes it. On older backends it falls back only when you pass a single
+`run_id`:
+
+```python
+objects = api.query_objects(run_id="run-id", kind="table", key="eval/samples")
+```
+
+The SDK does not emulate cross-run object search by paging every matching run.
+That keeps notebook code from accidentally turning a small query into an
+unbounded fan-out.
 
 ## Download artifact bytes
 
@@ -77,8 +142,10 @@ same restore primitive used by checkpoint resume snippets in the dashboard.
 
 InstantML keeps list and series reads bounded:
 
-- Run summary pages default to 100 rows.
+- Run summary and rich-object pages default to 100 rows.
 - Raw metric history is requested through metric-specific series endpoints.
+- Metric query inputs are capped at 100 run IDs and 25 metric keys.
+- Table row reads are capped at 1,000 rows per request.
 - Artifact lists are capped.
 - Export responses include truncation metadata when limits are hit.
 
