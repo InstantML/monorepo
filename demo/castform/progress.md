@@ -60,3 +60,10 @@ Create a full end-to-end demo that:
   a fake local InstantML API, verifies SDK metric/text/log traffic and mock
   embed sessions, serves the parent page, and runs desktop/mobile browser
   checks without live credentials.
+- Created production InstantML API key `Castform live demo 2026-07-01`, wrote
+  four live Castform-shaped runs to project `castform-live-demo`, and verified
+  the project has 4 runs and 576 metric points.
+- Hosted iframe session creation is blocked in production: prod and staging
+  return 404 for `POST /api/embed/sessions`, their OpenAPI documents omit embed
+  paths, and dashboard pages are not frameable. Added a live blocked-embed page
+  state and recorded details in `live-hosted-status.md`.

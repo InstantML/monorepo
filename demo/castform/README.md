@@ -46,6 +46,8 @@ Research date: 2026-06-30.
   checks without live credentials.
 - `verify_demo.py`: generated manifest and redacted-summary verifier.
 - `live-runbook.md`: operator runbook for the hosted call demo.
+- `live-hosted-status.md`: current live production run IDs, verification
+  evidence, and the hosted iframe deployment blocker observed on 2026-07-01.
 
 ## Demo Paths
 
@@ -146,6 +148,17 @@ python3 demo/castform/run_mocked_e2e.py
 
 This runs the real `run_demo.py` against a local fake InstantML API and writes
 `run-output/mocked-e2e-report.json`, which is ignored by Git.
+
+When production run data exists but hosted embed sessions are not deployed,
+verify the explicit blocked state with:
+
+```bash
+node demo/castform/browser_verify.mjs \
+  --url https://your-demo-origin.example \
+  --expect-runs 4 \
+  --expect-sessions 0 \
+  --allow-blocked-embeds
+```
 
 ## Verification
 

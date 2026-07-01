@@ -160,17 +160,29 @@ Run the automated parent-page check against the HTTPS origin:
 ```bash
 node demo/castform/browser_verify.mjs \
   --url https://your-demo-origin.example \
-  --expect-runs 5 \
+  --expect-runs 4 \
   --expect-sessions 3
+```
+
+If production run data exists but hosted embed sessions are not deployed, verify
+the explicit blocked state instead:
+
+```bash
+node demo/castform/browser_verify.mjs \
+  --url https://your-demo-origin.example \
+  --expect-runs 4 \
+  --expect-sessions 0 \
+  --allow-blocked-embeds
 ```
 
 Open the HTTPS parent origin in Chrome and verify:
 
 - the Castform parent page loads from the exact HTTPS origin;
 - no live `instantml_embed_...` token text is visible in the page;
-- the InstantML iframe renders run charts;
+- the InstantML iframe renders run charts, or the page shows the explicit
+  hosted embed deployment blocker from `live-hosted-status.md`;
 - the tabs switch between `All Castform candidates`, `Best vs overfit`, and
-  `Best vs verbose regression`;
+  `Best vs verbose regression` when iframe sessions exist;
 - the InstantML dashboard project `castform-live-demo` lists the created runs.
 
 ## 8. Cleanup

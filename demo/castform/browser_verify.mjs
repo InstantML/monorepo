@@ -12,6 +12,7 @@ function parseArgs(argv) {
     viewport: { width: 1366, height: 900 },
     screenshot: null,
     failOnWarnings: false,
+    allowBlockedEmbeds: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -29,6 +30,7 @@ function parseArgs(argv) {
     else if (arg === "--viewport") args.viewport = parseViewport(next());
     else if (arg === "--screenshot") args.screenshot = next();
     else if (arg === "--fail-on-warnings") args.failOnWarnings = true;
+    else if (arg === "--allow-blocked-embeds") args.allowBlockedEmbeds = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -39,8 +41,11 @@ function parseArgs(argv) {
   if (!Number.isFinite(args.expectRuns) || args.expectRuns < 1) {
     throw new Error("--expect-runs must be a positive integer");
   }
-  if (!Number.isFinite(args.expectSessions) || args.expectSessions < 1) {
-    throw new Error("--expect-sessions must be a positive integer");
+  if (!Number.isFinite(args.expectSessions) || args.expectSessions < 0) {
+    throw new Error("--expect-sessions must be a non-negative integer");
+  }
+  if (!args.allowBlockedEmbeds && args.expectSessions < 1) {
+    throw new Error("--expect-sessions must be at least 1 unless --allow-blocked-embeds is set");
   }
   if (!Number.isFinite(args.timeoutMs) || args.timeoutMs < 1000) {
     throw new Error("--timeout-ms must be at least 1000");
@@ -66,6 +71,7 @@ Options:
   --viewport <WIDTHxHEIGHT>   Browser viewport. Default: 1366x900
   --screenshot <path>         Optional screenshot output path
   --fail-on-warnings          Treat console warnings as failures
+  --allow-blocked-embeds      Accept the explicit hosted-embed-blocked state
   --timeout-ms <ms>           Navigation and selector timeout. Default: 15000
 `);
 }
@@ -119,20 +125,29 @@ async function main() {
     const runCards = await page.locator(".run-card").count();
     const tabs = await page.locator(".tab").count();
     const iframes = await page.locator("iframe").count();
+    const blockedPanels = await page.locator(".blocked-panel").count();
+    const embedsBlocked = blockedPanels > 0;
     assert(runCards >= args.expectRuns, `expected at least ${args.expectRuns} run cards, found ${runCards}`);
-    assert(tabs >= args.expectSessions, `expected at least ${args.expectSessions} session tabs, found ${tabs}`);
-    assert(iframes >= 1, "expected at least one iframe");
+    if (embedsBlocked) {
+      assert(args.allowBlockedEmbeds, "page rendered blocked embeds, but --allow-blocked-embeds was not set");
+      assert(iframes === 0, `blocked embed state should not render iframes, found ${iframes}`);
+      assert(bodyText.includes("Live data is persisted"), "blocked embed state did not show live-data evidence");
+      assert(bodyText.includes("production currently returns 404"), "blocked embed state did not show the production route failure");
+    } else {
+      assert(tabs >= args.expectSessions, `expected at least ${args.expectSessions} session tabs, found ${tabs}`);
+      assert(iframes >= 1, "expected at least one iframe");
 
-    const iframeBox = await page.locator("iframe").first().boundingBox();
-    assert(iframeBox && iframeBox.width >= 280 && iframeBox.height >= 320, "iframe is not visibly sized");
-    const iframeHasToken = await page.locator("iframe").first().evaluate((frame) => {
-      const src = frame.getAttribute("src") || "";
-      return /#token=instantml_embed_[A-Za-z0-9_-]+/.test(src);
-    });
-    assert(iframeHasToken, "iframe src was missing its embed token fragment");
+      const iframeBox = await page.locator("iframe").first().boundingBox();
+      assert(iframeBox && iframeBox.width >= 280 && iframeBox.height >= 320, "iframe is not visibly sized");
+      const iframeHasToken = await page.locator("iframe").first().evaluate((frame) => {
+        const src = frame.getAttribute("src") || "";
+        return /#token=instantml_embed_[A-Za-z0-9_-]+/.test(src);
+      });
+      assert(iframeHasToken, "iframe src was missing its embed token fragment");
+    }
 
     let interaction = "single session only";
-    if (tabs > 1) {
+    if (!embedsBlocked && tabs > 1) {
       const secondTab = page.locator(".tab").nth(1);
       const secondLabel = (await secondTab.innerText()).trim();
       await secondTab.click();
@@ -173,6 +188,7 @@ async function main() {
       run_cards: runCards,
       session_tabs: tabs,
       iframes,
+      embeds_blocked: embedsBlocked,
       interaction,
       console_warnings: consoleWarnings.length,
       screenshot: args.screenshot || undefined,

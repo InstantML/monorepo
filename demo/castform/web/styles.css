@@ -102,6 +102,15 @@ select {
   white-space: nowrap;
 }
 
+.status-pill.warn {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.status-pill.warn .dot {
+  background: var(--amber);
+}
+
 .dot {
   width: 8px;
   height: 8px;
@@ -155,6 +164,11 @@ select {
   color: var(--teal);
   font-size: 12px;
   font-weight: 800;
+}
+
+.step-state.warn {
+  background: var(--amber-soft);
+  color: var(--amber);
 }
 
 .metric-row {
@@ -364,6 +378,35 @@ iframe {
   background: #fff;
 }
 
+.blocked-panel {
+  min-height: 650px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+  gap: 18px;
+  align-items: start;
+  padding: 18px;
+}
+
+.blocked-panel h3 {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.blocked-panel p {
+  margin: 9px 0 16px;
+  max-width: 760px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.blocked-checks {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 8px 12px;
+}
+
 .evidence {
   display: grid;
   gap: 14px;
@@ -462,5 +505,10 @@ code {
 
   iframe {
     height: 620px;
+  }
+
+  .blocked-panel {
+    min-height: 520px;
+    grid-template-columns: 1fr;
   }
 }

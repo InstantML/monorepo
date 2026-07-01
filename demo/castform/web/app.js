@@ -26,7 +26,12 @@ function renderMetricCode(metric) {
 }
 
 function activeSession(manifest, key) {
-  return manifest.embed_sessions.find((session) => session.key === key) || manifest.embed_sessions[0];
+  const sessions = manifest.embed_sessions || [];
+  return sessions.find((session) => session.key === key) || sessions[0] || null;
+}
+
+function embedStatus(manifest) {
+  return manifest.embed_status || {};
 }
 
 function renderRunCard(run) {
@@ -49,11 +54,13 @@ function renderRunCard(run) {
 function renderSidebar(manifest) {
   const runCount = manifest.runs?.length || 0;
   const sessionCount = manifest.embed_sessions?.length || 0;
+  const status = embedStatus(manifest);
+  const embedsBlocked = sessionCount === 0 && status.status === "blocked";
   return `
     <aside class="sidebar">
       <div class="brand">
         <h1>Castform -> InstantML</h1>
-        <span class="status-pill"><span class="dot"></span>Live</span>
+        <span class="status-pill${embedsBlocked ? " warn" : ""}"><span class="dot"></span>${embedsBlocked ? "Live data" : "Live"}</span>
       </div>
 
       <section class="side-card">
@@ -63,7 +70,7 @@ function renderSidebar(manifest) {
           <li><span class="step-state">ok</span><span>castform setup</span><strong>ready</strong></li>
           <li><span class="step-state">ok</span><span>castform launch</span><strong>mirrored</strong></li>
           <li><span class="step-state">ok</span><span>InstantML sync</span><strong>${runCount} runs</strong></li>
-          <li><span class="step-state">ok</span><span>iframe sessions</span><strong>${sessionCount}</strong></li>
+          <li><span class="step-state${embedsBlocked ? " warn" : ""}">${embedsBlocked ? "!" : "ok"}</span><span>iframe sessions</span><strong>${embedsBlocked ? "blocked" : sessionCount}</strong></li>
         </ol>
       </section>
 
@@ -87,12 +94,13 @@ function renderSidebar(manifest) {
 function renderApp(manifest, selectedKey) {
   const selected = activeSession(manifest, selectedKey);
   const runs = manifest.runs || [];
-  const tabs = manifest.embed_sessions.map((session) => `
+  const sessions = manifest.embed_sessions || [];
+  const tabs = sessions.map((session) => `
     <button
       class="tab"
       type="button"
       data-session-key="${escapeHtml(session.key)}"
-      aria-selected="${session.key === selected.key ? "true" : "false"}"
+      aria-selected="${session.key === selected?.key ? "true" : "false"}"
     >${escapeHtml(session.label)}</button>
   `).join("");
   app.innerHTML = `
@@ -103,8 +111,8 @@ function renderApp(manifest, selectedKey) {
           <div>
             <h2>Castform training observability</h2>
             <p>
-              Live InstantML project data for a Castform-shaped training workflow. The panels below are hosted
-              InstantML read-only iframes created from the runs streamed by the demo runner.
+              Live InstantML project data for a Castform-shaped training workflow. Hosted iframe panels render
+              here when the InstantML embed API is available for the target environment.
             </p>
           </div>
           <div class="top-actions">
@@ -118,33 +126,14 @@ function renderApp(manifest, selectedKey) {
         </section>
 
         <section class="content-grid">
-          <div class="panel">
-            <div class="panel-header">
-              <div>
-                <h2>InstantML embeds</h2>
-                <p>${escapeHtml(selected.description || "")}</p>
-              </div>
-              <span class="status-pill"><span class="dot"></span>${escapeHtml(shortExpiry(selected.expires_at))}</span>
-            </div>
-            <div class="tabs" role="tablist" aria-label="Embed sessions">${tabs}</div>
-            <div class="iframe-wrap">
-              <div class="iframe-shell">
-                <iframe
-                  title="${escapeAttr(selected.label)}"
-                  src="${escapeAttr(selected.iframe_src)}"
-                  sandbox="allow-scripts allow-same-origin"
-                  referrerpolicy="no-referrer"
-                ></iframe>
-              </div>
-            </div>
-          </div>
+          ${selected ? renderIframePanel(selected, tabs) : renderBlockedEmbedPanel(manifest)}
 
           <aside class="evidence">
             <section class="side-card">
               <h2>Source mapping</h2>
               <div class="metric-row"><span>Runs</span><strong>${runs.length}</strong></div>
-              <div class="metric-row"><span>Session ID</span><strong>${escapeHtml(String(selected.id || "n/a"))}</strong></div>
-              <div class="metric-row"><span>Run count</span><strong>${escapeHtml(String(selected.run_count || "n/a"))}</strong></div>
+              <div class="metric-row"><span>Session ID</span><strong>${escapeHtml(String(selected?.id || "n/a"))}</strong></div>
+              <div class="metric-row"><span>Run count</span><strong>${escapeHtml(String(selected?.run_count || "n/a"))}</strong></div>
             </section>
             <section class="side-card">
               <h2>Metric focus</h2>
@@ -165,6 +154,66 @@ function renderApp(manifest, selectedKey) {
     </div>
   `;
   bind(manifest);
+}
+
+function renderIframePanel(selected, tabs) {
+  return `
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>InstantML embeds</h2>
+          <p>${escapeHtml(selected.description || "")}</p>
+        </div>
+        <span class="status-pill"><span class="dot"></span>${escapeHtml(shortExpiry(selected.expires_at))}</span>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Embed sessions">${tabs}</div>
+      <div class="iframe-wrap">
+        <div class="iframe-shell">
+          <iframe
+            title="${escapeAttr(selected.label)}"
+            src="${escapeAttr(selected.iframe_src)}"
+            sandbox="allow-scripts allow-same-origin"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderBlockedEmbedPanel(manifest) {
+  const status = embedStatus(manifest);
+  const checks = status.evidence || [];
+  const dashboardUrl = manifest.dashboard_url || "https://instantml.ai/dashboard/runs";
+  return `
+    <div class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>InstantML embeds</h2>
+          <p>${escapeHtml(status.message || "Hosted iframe session creation is blocked for this environment.")}</p>
+        </div>
+        <span class="status-pill warn"><span class="dot"></span>blocked</span>
+      </div>
+      <div class="blocked-panel">
+        <div>
+          <h3>Live data is persisted</h3>
+          <p>
+            The demo writer streamed these Castform-shaped runs into the live InstantML warehouse,
+            but production currently returns 404 for the embed-session API needed to mint read-only iframes.
+          </p>
+          <a class="button primary" href="${escapeAttr(dashboardUrl)}" target="_blank" rel="noreferrer">Open InstantML dashboard</a>
+        </div>
+        <div class="blocked-checks">
+          ${checks.map((item) => `
+            <div class="metric-row">
+              <span>${escapeHtml(item.name || "check")}</span>
+              <strong>${escapeHtml(item.status || "n/a")}</strong>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function bind(manifest) {
