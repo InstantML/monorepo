@@ -131,7 +131,7 @@ class TrainerClient:
     def get_run_details(self, run_id):
         append_call("get_run_details", {{"run_id": run_id}})
         return {{
-            "modes": ["train", "eval"],
+            "modes": ["train", "eval", "comp"],
             "environment": "CompanyDocsSearchEnv",
             "reward_version": "rag-reward-v2"
         }}
@@ -153,6 +153,21 @@ class TrainerClient:
                 "Response Length": [
                     {{"step": 0, "value": 1050}},
                     {{"step": 20, "value": 760}}
+                ]
+            }}
+        if mode == "comp":
+            return {{
+                "Reward Comparison": [
+                    {{"step": 20, "value": 0.08}}
+                ],
+                "Inference Cost Comparison": [
+                    {{"step": 20, "value": 0.55}}
+                ],
+                "Baseline Inference Cost": [
+                    {{"step": 20, "value": 2.90}}
+                ],
+                "Cost Reduction": [
+                    {{"step": 20, "value": 81.0}}
                 ]
             }}
         return {{
@@ -264,7 +279,8 @@ def validate_state(state: FakeInstantMLState) -> dict[str, Any]:
     summary = state.summary()
     if summary["runs"] != 1:
         raise CastformSdkE2EError(f"expected 1 mirrored InstantML run, saw {summary['runs']}")
-    if "train/reward_mean" not in summary["metric_keys"] or "eval/solve_rate" not in summary["metric_keys"]:
+    required_metrics = {"train/reward_mean", "eval/solve_rate", "comp/inference_cost_index"}
+    if not required_metrics.issubset(set(summary["metric_keys"])):
         raise CastformSdkE2EError(f"mirrored metrics missing expected keys: {summary['metric_keys']}")
     if summary["log_batches"] < 1:
         raise CastformSdkE2EError("expected Castform logs to be mirrored")

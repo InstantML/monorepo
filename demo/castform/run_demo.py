@@ -126,6 +126,10 @@ class LocalCastformTrainer:
             search_efficiency = max(0.0, min(1.0, 1.0 - response_tokens / 1500.0 + rng.uniform(-0.025, 0.025)))
             kl = max(0.003, 0.042 * math.exp(-step / max(1, steps * 0.30)) + rng.uniform(-0.002, 0.002))
             policy_loss = -0.012 - (train_reward * 0.035) + rng.uniform(-0.006, 0.006)
+            baseline_reward = max(0.0, min(1.0, 0.50 + spec.stability * 0.14 + progress * 0.035))
+            trained_cost_index = _inference_cost_index(spec.model, response_tokens)
+            baseline_cost_index = _inference_cost_index(spec.baseline_model, response_tokens * 1.18)
+            cost_reduction_pct = max(0.0, min(100.0, (1.0 - trained_cost_index / max(baseline_cost_index, 0.001)) * 100.0))
 
             lifecycle_events = []
             environment_logs = []
@@ -161,6 +165,10 @@ class LocalCastformTrainer:
                         "eval/reward_max": min(1.0, eval_reward + 0.09 + rng.uniform(0.0, 0.020)),
                         "eval/solve_rate": eval_solve,
                         "eval/response_tokens_mean": response_tokens * (1.0 + rng.uniform(-0.025, 0.025)),
+                        "comp/reward_delta_vs_baseline": eval_reward - baseline_reward,
+                        "comp/inference_cost_index": trained_cost_index,
+                        "comp/baseline_inference_cost_index": baseline_cost_index,
+                        "comp/cost_reduction_pct": cost_reduction_pct,
                         "train/reward_components/correctness/mean": correctness,
                         "train/reward_components/citation/mean": citation,
                         "train/reward_components/search_efficiency/mean": search_efficiency,
@@ -178,6 +186,20 @@ class LocalCastformTrainer:
 def _learning_curve(step: int, *, ceiling: float, speed: float, rng: random.Random, noise: float) -> float:
     value = ceiling * (1.0 - math.exp(-step / max(1.0, speed)))
     return max(0.0, min(1.0, value + rng.uniform(-noise, noise)))
+
+
+def _inference_cost_index(model: str, response_tokens: float) -> float:
+    """Demo-only relative cost index; not a public pricing claim."""
+    model_lower = model.lower()
+    if "8b" in model_lower:
+        multiplier = 1.35
+    elif "4b" in model_lower or "qwen" in model_lower:
+        multiplier = 0.72
+    elif "gpt" in model_lower:
+        multiplier = 3.80
+    else:
+        multiplier = 1.00
+    return max(0.001, multiplier * max(response_tokens, 1.0) / 1000.0)
 
 
 def _profiles(count: int) -> list[CastformTrainingSpec]:
@@ -774,6 +796,9 @@ def build_manifest(
             "eval/reward_mean",
             "eval/solve_rate",
             "train/response_tokens_mean",
+            "comp/reward_delta_vs_baseline",
+            "comp/inference_cost_index",
+            "comp/cost_reduction_pct",
             "train/reward_components/correctness/mean",
             "train/reward_components/citation/mean",
             "train/reward_components/search_efficiency/mean",

@@ -98,6 +98,18 @@ artifacts: production and staging still return 404 for
   mirrored one run through the real adapter and InstantML SDK into the local
   Rust API, created one real local iframe session, verified resume did not
   duplicate runs, and passed desktop plus mobile iframe browser checks.
+- Castform app reconnaissance passed: Chrome opened
+  `https://app.castform.com/home` and the public `telestich poet` example. The
+  visible app had overview/train/eval/compare/playground/config tabs and
+  exposed reward curves, rollout deepdives, reward comparison, and inference
+  cost comparison, which are now represented in the demo mapping and synthetic
+  writer.
+- Compare-cost metric coverage passed: the fake Castform SDK E2E mirrored
+  train, eval, and comp scalar modes and the fake InstantML summary contained
+  `comp/reward_delta_vs_baseline`, `comp/inference_cost_index`,
+  `comp/baseline_inference_cost_index`, and `comp/cost_reduction_pct`. The
+  follow-up clean-environment call-prep run with `--full --live --real-source
+  castform-sdk --timeout 240` still passed the eight-command gate.
 
 ## Operator Path
 

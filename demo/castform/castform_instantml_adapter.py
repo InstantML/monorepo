@@ -46,6 +46,13 @@ def _normalize_metric_key(mode: str, source_name: str) -> str:
         "pass@k": "solve_rate",
         "response lengths": "response_tokens_mean",
         "response length": "response_tokens_mean",
+        "reward comparison": "reward_delta_vs_baseline",
+        "reward delta": "reward_delta_vs_baseline",
+        "inference cost comparison": "inference_cost_index",
+        "inference cost": "inference_cost_index",
+        "baseline inference cost": "baseline_inference_cost_index",
+        "cost reduction": "cost_reduction_pct",
+        "cost savings": "cost_reduction_pct",
     }
     normalized = aliases.get(name.lower(), _safe_metric_part(name))
     return f"{_safe_metric_part(mode)}/{normalized}"

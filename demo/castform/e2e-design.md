@@ -26,7 +26,9 @@ The demo must remain honest about what is real:
 - Castform training can use a live Castform/Benchmax SDK run when credentials,
   uploaded assets, and quota are available. The deterministic local
   Castform-shaped fallback remains the default call-prep path when a live
-  launch is not appropriate.
+  launch is not appropriate. The fallback mirrors the public Castform run tabs
+  observed on 2026-07-01: train/eval reward curves, rollout deepdives, reward
+  comparison, and inference-cost comparison.
 - The existing `castform_instantml_adapter.py` remains the live-read path when a
   real Benchmax/Castform API key and run ID are available.
 

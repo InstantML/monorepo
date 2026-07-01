@@ -55,11 +55,13 @@ Those public examples support the current demo profile choices: a RAG run, a
 trace-based support run, and failure-mode comparisons around reward, solve
 rate, and response length.
 
-The public `company docs search (rag)` run's train tab showed chart panels for
-average reward, response lengths, max reward, and solve rate, plus reward
-component groups named `citation`, `correctness`, and `search_efficiency`. The
-train and eval tabs both showed rollout deepdive tables with prompt, preview,
-step, and reward columns.
+The public examples showed Castform tabs for `overview`, `train`, `eval`,
+`compare`, `playground`, and `config`. A fresh Chrome check of the public
+`telestich poet` example on 2026-07-01 showed chart panels for average reward,
+response lengths, max reward, solve rate, train/eval rollout deepdives, reward
+comparison, and inference cost comparison. Earlier public RAG examples also
+showed reward component groups named `citation`, `correctness`, and
+`search_efficiency`.
 
 ## Training And SDK Touchpoints
 
@@ -96,6 +98,8 @@ deepdives, and rollout logs. Important metrics and concepts from the docs:
 - response lengths
 - max reward
 - solve rate / pass@k
+- reward comparison
+- inference cost comparison
 - per-component reward curves
 - train-vs-eval divergence and plateau detection
 - rollout messages, tool calls, tool results, and environment logs
@@ -120,6 +124,8 @@ Demo capabilities to show:
 - Mirror scalar curves under normalized metric names such as
   `train/reward_mean`, `train/solve_rate`, `eval/reward_mean`, and
   `train/reward_components/search_efficiency/mean`.
+- Mirror comparison metrics under `comp/*`, including reward delta and
+  inference cost index, so the InstantML board can echo Castform's compare tab.
 - Store environment logs and lifecycle events as searchable console/text
   evidence.
 - Compare 5-10 runs by model, group size, learning rate, reward components, and

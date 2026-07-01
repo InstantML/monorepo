@@ -24,6 +24,20 @@ def _curve(step: int, *, ceiling: float, speed: float, noise: float, rng: random
     return max(0.0, min(1.0, base + rng.uniform(-noise, noise)))
 
 
+def _inference_cost_index(model: str, response_tokens: float) -> float:
+    """Demo-only relative cost index; not a public pricing claim."""
+    model_lower = model.lower()
+    if "8b" in model_lower:
+        multiplier = 1.35
+    elif "4b" in model_lower or "qwen" in model_lower:
+        multiplier = 0.72
+    elif "gpt" in model_lower:
+        multiplier = 3.80
+    else:
+        multiplier = 1.00
+    return max(0.001, multiplier * max(response_tokens, 1.0) / 1000.0)
+
+
 def _run_profile(index: int) -> dict[str, object]:
     profiles = [
         {
@@ -143,6 +157,10 @@ def seed_runs(
             solve_rate = _curve(step, ceiling=min(0.95, reward_ceiling + 0.06), speed=70, noise=0.02, rng=rng)
             eval_solve = max(0.0, min(1.0, solve_rate - eval_gap + rng.uniform(-0.02, 0.02)))
             response_tokens = 820 + int(260 * math.exp(-step / 120)) + int(length_drift * step)
+            baseline_reward = max(0.0, min(1.0, 0.58 + (step / max(1, steps)) * 0.035))
+            trained_cost_index = _inference_cost_index(str(profile["model"]), response_tokens)
+            baseline_cost_index = _inference_cost_index("gpt-5.4-nano", response_tokens * 1.18)
+            cost_reduction_pct = max(0.0, min(100.0, (1.0 - trained_cost_index / max(baseline_cost_index, 0.001)) * 100.0))
 
             correctness = max(0.0, min(1.0, train_reward + rng.uniform(-0.02, 0.02)))
             citation = max(0.0, min(1.0, train_reward - 0.10 + rng.uniform(-0.03, 0.03)))
@@ -157,6 +175,10 @@ def seed_runs(
                     "eval/reward_mean": eval_reward,
                     "eval/reward_max": min(1.0, eval_reward + 0.09),
                     "eval/solve_rate": eval_solve,
+                    "comp/reward_delta_vs_baseline": eval_reward - baseline_reward,
+                    "comp/inference_cost_index": trained_cost_index,
+                    "comp/baseline_inference_cost_index": baseline_cost_index,
+                    "comp/cost_reduction_pct": cost_reduction_pct,
                     "train/reward_components/correctness/mean": correctness,
                     "train/reward_components/citation/mean": citation,
                     "train/reward_components/search_efficiency/mean": search_efficiency,

@@ -107,6 +107,9 @@ Important choices:
 - Expect environment-specific reward component names. The public RAG example
   uses `citation`, `correctness`, and `search_efficiency`, but other
   environments may expose different components.
+- Mirror Castform compare-tab scalars under `comp/*`; the public examples show
+  reward comparison and inference cost comparison as first-class decision
+  signals.
 - Use tags for workflow filtering, not one-off details.
 - Keep raw rollout inspection in Castform; mirror selected logs and summaries in
   InstantML.

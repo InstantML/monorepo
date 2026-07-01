@@ -151,3 +151,15 @@ Create a full end-to-end demo that:
   from a clean environment. It ran the no-secret rehearsals, hosted readiness,
   live persisted-data blocked-iframe browser smoke, and SDK-backed local real
   iframe E2E in one eight-command gate.
+- Checked `https://app.castform.com/home` and the public `telestich poet`
+  example in Chrome. The live public UI exposes overview/train/eval/compare/
+  playground/config tabs plus reward curves, rollout deepdives, reward
+  comparison, and inference-cost comparison, so the demo mapping now includes
+  `comp/*` reward and cost decision metrics.
+- Verified the compare-cost metric slice with
+  `run_castform_sdk_e2e_smoke.py --timeout 90`, which mirrored train/eval/comp
+  modes and produced `comp/reward_delta_vs_baseline`,
+  `comp/inference_cost_index`, `comp/baseline_inference_cost_index`, and
+  `comp/cost_reduction_pct`. Then reran
+  `run_call_prep_check.py --full --live --real-source castform-sdk --timeout
+  240`, which passed the eight-command live/local gate.

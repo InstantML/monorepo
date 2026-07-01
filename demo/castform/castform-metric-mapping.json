@@ -37,7 +37,11 @@
     "response lengths": "train/response_tokens_mean",
     "eval average reward": "eval/reward_mean",
     "eval max reward": "eval/reward_max",
-    "eval solve rate": "eval/solve_rate"
+    "eval solve rate": "eval/solve_rate",
+    "reward comparison": "comp/reward_delta_vs_baseline",
+    "inference cost comparison": "comp/inference_cost_index",
+    "baseline inference cost": "comp/baseline_inference_cost_index",
+    "cost reduction": "comp/cost_reduction_pct"
   },
   "reward_component_rule": {
     "castform_pattern": "<component> mean|max|solve_rate by mode",

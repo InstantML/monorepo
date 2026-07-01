@@ -41,6 +41,10 @@ Metrics:
 - `eval/reward_mean`
 - `eval/reward_max`
 - `eval/solve_rate`
+- `comp/reward_delta_vs_baseline`
+- `comp/inference_cost_index`
+- `comp/baseline_inference_cost_index`
+- `comp/cost_reduction_pct`
 - `train/reward_components/correctness/mean`
 - `train/reward_components/citation/mean`
 - `train/reward_components/search_efficiency/mean`
@@ -124,6 +128,7 @@ Charts:
 - Eval reward mean against train reward mean.
 - Solve rate by step.
 - Response length by step.
+- Reward and inference-cost comparison against baseline/frontier models.
 - Reward component breakdown: correctness, citation, search efficiency.
 
 Run detail:
@@ -136,7 +141,8 @@ Compare:
 
 - Reference the selected best run.
 - Diff launcher args: model, learning rate, group size, max turns.
-- Show metric deltas and identify the likely decision.
+- Show metric deltas, reward lift, cost-reduction index, and identify the
+  likely decision.
 
 ## Success Criteria
 
