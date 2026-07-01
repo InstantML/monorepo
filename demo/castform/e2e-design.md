@@ -78,6 +78,8 @@ Inputs:
 - `--runs`, default `5`
 - `--steps`, default `240`
 - `--castform-run-id`, optional and repeatable for live Castform mirror mode
+- `--instantml-run-id`, optional and repeatable to reuse existing InstantML runs
+  and only mint iframe sessions
 - `--manifest`, default `demo/castform/web/public/demo-manifest.json`
 
 Outputs:
@@ -90,6 +92,12 @@ Outputs:
 The runner reads `INSTANTML_API_KEY` from the environment. The key must include
 `sdk:ingest` and `export:read`; `artifacts:write` is useful but not required for
 this demo slice.
+
+When `--instantml-run-id` is used, the runner calls `GET /api/runs/summary` for
+each run ID, reconstructs the Castform run-card metadata from the stored config
+and latest metrics, and then creates only new embed sessions. It must not create
+duplicate runs. This is the recovery path for the already-written production
+`castform-live-demo` run IDs once hosted embed routes are available.
 
 The manifest includes iframe URLs because browser iframes need the token-bearing
 fragment. Treat the manifest as local-only generated state; it is ignored by
@@ -218,12 +226,14 @@ This starts an isolated local stack:
 - Castform parent page on a free loopback port.
 
 The runner then mints a disposable local API key, runs `run_demo.py` through the
-real Python SDK, creates real local embed sessions, runs `verify_demo.py`, and
-uses `browser_verify.mjs --require-iframe-content` at `1366x900` and `390x844`.
-The browser check requires `INSTANTML EMBED`, `Run metrics`, plotted/latest
-metric text, visible iframe sizing, tab switching, refresh behavior, and at
-least one rendered InstantML panel element inside the iframe. The ignored report
-is written to `run-output/local-real-iframe-e2e-report.json`.
+real Python SDK, creates real local embed sessions, runs `verify_demo.py`, reruns
+`run_demo.py --instantml-run-id` against the same run IDs, verifies the local run
+count is unchanged, and uses `browser_verify.mjs --require-iframe-content` at
+`1366x900` and `390x844`. The browser check requires `INSTANTML EMBED`, `Run
+metrics`, plotted/latest metric text, visible iframe sizing, tab switching,
+refresh behavior, and at least one rendered InstantML panel element inside the
+iframe. The ignored report is written to
+`run-output/local-real-iframe-e2e-report.json`.
 
 Do not run another `next dev` for `apps/web` while this command is running.
 Next holds an app-directory dev lock even when different ports are used.

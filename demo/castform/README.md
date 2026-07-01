@@ -112,6 +112,20 @@ sequence.
 `web/public/demo-manifest.json` and a redacted review summary to
 `run-output/latest-summary.json`.
 
+After hosted embed routes are deployed, reuse already-written InstantML runs
+without duplicating data:
+
+```bash
+INSTANTML_API_KEY=instantml_... \
+python3 demo/castform/run_demo.py \
+  --parent-origin https://your-demo-origin.example \
+  --project castform-live-demo \
+  --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
+  --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
+  --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
+  --instantml-run-id 2abdb990-1305-47ee-be70-c0716ac0f1c4
+```
+
 Verify generated artifacts without exposing live tokens:
 
 ```bash
@@ -165,10 +179,11 @@ python3 demo/castform/run_local_real_iframe_e2e.py \
 
 This starts an isolated local Rust API and local Next embed app, mints a
 disposable local API key, writes data through the InstantML SDK, creates real
-local embed sessions, serves the Castform parent page, and verifies that the
-InstantML iframe renders metric panels at desktop and mobile viewports. Do not
-run another `next dev` for `apps/web` at the same time; Next uses an app-level
-development lock even when this script chooses a free port.
+local embed sessions, reuses the same run IDs through `--instantml-run-id`
+without increasing the run count, serves the Castform parent page, and verifies
+that the InstantML iframe renders metric panels at desktop and mobile
+viewports. Do not run another `next dev` for `apps/web` at the same time; Next
+uses an app-level development lock even when this script chooses a free port.
 
 When production run data exists but hosted embed sessions are not deployed,
 verify the explicit blocked state with:

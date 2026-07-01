@@ -150,6 +150,24 @@ python3 demo/castform/run_demo.py \
   --steps 240
 ```
 
+### Option D: Reuse Existing InstantML Runs
+
+After hosted embed routes are deployed, reuse already-written production runs
+without creating duplicates:
+
+```bash
+python3 demo/castform/run_demo.py \
+  --parent-origin https://your-demo-origin.example \
+  --project castform-live-demo \
+  --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
+  --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
+  --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
+  --instantml-run-id 2abdb990-1305-47ee-be70-c0716ac0f1c4
+```
+
+This reads run summaries from InstantML, reconstructs the local manifest cards,
+and only creates iframe sessions.
+
 The runner writes:
 
 - `web/public/demo-manifest.json`: live iframe URLs with bearer fragments,

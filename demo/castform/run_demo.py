@@ -15,6 +15,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import time
 import urllib.error
@@ -461,6 +462,122 @@ def mirror_existing_castform_runs(
     return mirrored
 
 
+def mirror_existing_instantml_runs(
+    *,
+    instantml_run_ids: list[str],
+    api_key: str,
+    api_base_url: str,
+    project: str,
+    timeout: float,
+) -> list[MirroredRun]:
+    mirrored: list[MirroredRun] = []
+    for run_id in instantml_run_ids:
+        print(f"Reusing existing InstantML run: {run_id}")
+        query = urllib.parse.urlencode({"project": project, "q": f"id:{run_id}", "limit": 10})
+        payload = http_json(
+            "GET",
+            f"/api/runs/summary?{query}",
+            api_base_url=api_base_url,
+            api_key=api_key,
+            timeout=timeout,
+        )
+        rows = payload.get("runs")
+        if not isinstance(rows, list):
+            raise RuntimeError("InstantML run summary response did not include a runs array")
+        row = next((candidate for candidate in rows if isinstance(candidate, dict) and str(candidate.get("id")) == run_id), None)
+        if row is None:
+            raise RuntimeError(f"InstantML run {run_id} was not found in project {project}")
+        mirrored.append(mirrored_run_from_summary(row))
+    return mirrored
+
+
+def mirrored_run_from_summary(row: dict[str, Any]) -> MirroredRun:
+    config = _dict(row.get("config"))
+    castform = _dict(config.get("castform"))
+    launcher_args = _dict(config.get("launcher_args"))
+    environment = _dict(config.get("environment"))
+    run_id = str(row.get("id") or "")
+    name = str(row.get("name") or run_id)
+    castform_run_id = str(castform.get("run_id") or f"instantml-{run_id}")
+    profile_spec = next((spec for spec in _profiles(5) if spec.castform_run_id == castform_run_id), None)
+    profile_slug = profile_spec.slug if profile_spec else infer_profile_slug(name, castform_run_id)
+    title = profile_spec.title if profile_spec else infer_title(name, profile_slug)
+    tags = [str(tag) for tag in row.get("tags") or [] if isinstance(tag, str)]
+    castform_url = str(castform.get("run_url") or "")
+    if not castform_url:
+        castform_url = castform_run_url(castform_run_id) if not castform_run_id.startswith("instantml-") else CASTFORM_APP_HOME
+    final_metrics = numeric_metrics(_dict(row.get("latest_metrics")))
+    if not final_metrics:
+        aggregates = _dict(row.get("metric_aggregates"))
+        final_metrics = {
+            str(key): round(float(value["latest"]), 6)
+            for key, value in aggregates.items()
+            if isinstance(value, dict) and isinstance(value.get("latest"), (int, float))
+        }
+    model = launcher_args.get("model") or (profile_spec.model if profile_spec else "Castform model")
+    baseline_model = launcher_args.get("baseline_model") or (profile_spec.baseline_model if profile_spec else "n/a")
+    learning_rate = safe_float(launcher_args.get("learning_rate"), profile_spec.learning_rate if profile_spec else 0.0)
+    group_size = safe_int(launcher_args.get("group_size"), profile_spec.group_size if profile_spec else 0)
+    return MirroredRun(
+        instantml_run_id=run_id,
+        castform_run_id=castform_run_id,
+        castform_url=castform_url,
+        name=name,
+        profile_slug=profile_slug,
+        title=title,
+        tags=tags,
+        model=str(model),
+        baseline_model=str(baseline_model),
+        learning_rate=learning_rate,
+        group_size=group_size,
+        environment=str(environment.get("name") or (profile_spec.environment if profile_spec else "Castform environment")),
+        dataset=str(environment.get("dataset") or (profile_spec.dataset if profile_spec else "Castform dataset")),
+        reward_version=str(environment.get("reward_version") or (profile_spec.reward_version if profile_spec else "Castform reward")),
+        final_metrics=final_metrics,
+    )
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def numeric_metrics(value: dict[str, Any]) -> dict[str, float]:
+    return {
+        str(key): round(float(metric), 6)
+        for key, metric in value.items()
+        if isinstance(metric, (int, float)) and not isinstance(metric, bool)
+    }
+
+
+def safe_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def infer_profile_slug(name: str, castform_run_id: str) -> str:
+    if name.startswith("castform-"):
+        slug = name.removeprefix("castform-")
+        slug = re.sub(r"-\d{8}-\d{6}$", "", slug)
+        if slug:
+            return slug
+    return castform_run_id
+
+
+def infer_title(name: str, profile_slug: str) -> str:
+    if name and name != profile_slug:
+        return name
+    return profile_slug.replace("-", " ")
+
+
 def create_embed_sessions(
     *,
     api_key: str,
@@ -566,14 +683,14 @@ def _unique(values: list[str]) -> list[str]:
 def http_json(
     method: str,
     path: str,
-    body: dict[str, Any],
+    body: dict[str, Any] | None = None,
     *,
     api_base_url: str,
     api_key: str,
     timeout: float,
 ) -> dict[str, Any]:
     url = api_base_url.rstrip("/") + path
-    data = json.dumps(body).encode("utf-8")
+    data = json.dumps(body).encode("utf-8") if body is not None else None
     request = urllib.request.Request(
         url,
         data=data,
@@ -716,6 +833,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--step-size", type=int, default=10)
     parser.add_argument("--stream-delay", type=float, default=0.0)
     parser.add_argument("--castform-run-id", action="append", default=[], help="Mirror an existing live Castform run ID instead of generating fallback runs")
+    parser.add_argument("--instantml-run-id", action="append", default=[], help="Reuse an existing InstantML run ID and only mint iframe sessions")
     parser.add_argument("--castform-base-url", default=os.environ.get("CASTFORM_BASE_URL"))
     parser.add_argument("--no-castform-logs", action="store_true", help="Skip Castform environment logs in live mirror mode")
     parser.add_argument("--timeout", type=float, default=30.0)
@@ -739,7 +857,18 @@ def main() -> int:
     parent_origin = validate_parent_origin(parent_origin, hosted=hosted)
     api_key = require_env("INSTANTML_API_KEY")
 
-    if args.castform_run_id:
+    if args.castform_run_id and args.instantml_run_id:
+        raise SystemExit("--castform-run-id and --instantml-run-id cannot be used together")
+
+    if args.instantml_run_id:
+        runs = mirror_existing_instantml_runs(
+            instantml_run_ids=args.instantml_run_id,
+            api_key=api_key,
+            api_base_url=args.api_base_url,
+            project=args.project,
+            timeout=args.timeout,
+        )
+    elif args.castform_run_id:
         castform_api_key = os.environ.get("CASTFORM_API_KEY") or os.environ.get("PLATFORM_API_KEY")
         if not castform_api_key:
             raise SystemExit("CASTFORM_API_KEY or PLATFORM_API_KEY is required with --castform-run-id")

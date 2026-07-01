@@ -73,3 +73,8 @@ Create a full end-to-end demo that:
   real local embed sessions; and browser-verifies iframe content on desktop and
   mobile. Verified with 3 runs, 3 sessions, and 42 iframe panel elements at both
   `1366x900` and `390x844`.
+- Added `run_demo.py --instantml-run-id` so operators can reuse existing
+  InstantML runs and mint iframe sessions without duplicating data after hosted
+  embed routes are deployed. The local real iframe E2E now verifies this resume
+  path by checking the run count remains unchanged before and after session
+  creation.

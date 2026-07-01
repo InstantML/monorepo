@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,7 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 DEFAULT_REPORT = HERE / "run-output" / "local-real-iframe-e2e-report.json"
 DEFAULT_SUMMARY = HERE / "run-output" / "local-real-iframe-summary.json"
+DEFAULT_RESUME_SUMMARY = HERE / "run-output" / "local-real-iframe-resume-summary.json"
 TOKEN_RE = re.compile(r"instantml_(?:embed_)?(?!redacted\b)[A-Za-z0-9_-]{20,}")
 
 
@@ -229,6 +231,32 @@ def mint_local_api_key(api_base_url: str, *, timeout: float) -> tuple[str, str]:
     return api_key, org_id
 
 
+def local_run_total(api_base_url: str, api_key: str, project: str, *, timeout: float) -> int:
+    query = urllib.parse.urlencode({"project": project, "limit": 1})
+    payload, _headers = http_json(
+        "GET",
+        f"{api_base_url}/api/runs/summary?{query}",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=timeout,
+    )
+    total = payload.get("total")
+    if not isinstance(total, int):
+        raise LocalRealIframeError("local run summary did not return an integer total")
+    return total
+
+
+def manifest_summary(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    runs = manifest.get("runs") or []
+    sessions = manifest.get("embed_sessions") or []
+    return manifest, {
+        "project": manifest.get("project"),
+        "runs": len(runs),
+        "embed_sessions": len(sessions),
+        "parent_origin": manifest.get("parent_origin"),
+    }
+
+
 def write_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -247,6 +275,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--summary", type=Path, default=DEFAULT_SUMMARY)
+    parser.add_argument("--resume-summary", type=Path, default=DEFAULT_RESUME_SUMMARY)
+    parser.add_argument("--skip-resume-check", action="store_true", help="Skip the existing-InstantML-run iframe resume check")
     parser.add_argument(
         "--keep-running",
         action="store_true",
@@ -366,6 +396,55 @@ def main() -> int:
             [sys.executable, "demo/castform/verify_demo.py", "--local", "--parent-url", parent_origin],
             timeout=args.timeout,
         )
+        manifest_path = HERE / "web" / "public" / "demo-manifest.json"
+        initial_manifest, initial_summary = manifest_summary(manifest_path)
+        report["initial_manifest"] = initial_summary
+
+        if not args.skip_resume_check:
+            run_ids = [
+                str(run.get("instantml_run_id"))
+                for run in initial_manifest.get("runs") or []
+                if isinstance(run, dict) and run.get("instantml_run_id")
+            ]
+            if len(run_ids) != args.runs:
+                raise LocalRealIframeError(f"expected {args.runs} run IDs for resume check, found {len(run_ids)}")
+            before_total = local_run_total(api_base_url, api_key, args.project, timeout=args.timeout)
+            resume_command = [
+                sys.executable,
+                "demo/castform/run_demo.py",
+                "--api-base-url",
+                api_base_url,
+                "--instantml-web-base-url",
+                web_base_url,
+                "--parent-origin",
+                parent_origin,
+                "--project",
+                args.project,
+                "--summary",
+                str(args.resume_summary),
+            ]
+            for run_id in run_ids:
+                resume_command.extend(["--instantml-run-id", run_id])
+            run_and_record(report, resume_command, env=writer_env, timeout=args.timeout)
+            after_total = local_run_total(api_base_url, api_key, args.project, timeout=args.timeout)
+            if after_total != before_total:
+                raise LocalRealIframeError(f"resume check changed run count from {before_total} to {after_total}")
+            report["resume_run_total_before"] = before_total
+            report["resume_run_total_after"] = after_total
+            run_and_record(
+                report,
+                [
+                    sys.executable,
+                    "demo/castform/verify_demo.py",
+                    "--local",
+                    "--parent-url",
+                    parent_origin,
+                    "--summary",
+                    str(args.resume_summary),
+                ],
+                timeout=args.timeout,
+            )
+
         expect_sessions = 1 if args.runs == 1 else 3
         browser_process_timeout = max(args.timeout + 60.0, args.timeout * 2.0)
         for viewport in ("1366x900", "390x844"):
@@ -388,14 +467,7 @@ def main() -> int:
                 ],
                 timeout=browser_process_timeout,
             )
-        manifest_path = HERE / "web" / "public" / "demo-manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        report["manifest"] = {
-            "project": manifest.get("project"),
-            "runs": len(manifest.get("runs") or []),
-            "embed_sessions": len(manifest.get("embed_sessions") or []),
-            "parent_origin": manifest.get("parent_origin"),
-        }
+        _manifest, report["manifest"] = manifest_summary(manifest_path)
         report["processes"] = {
             "api_pid": api_process.pid if api_process else None,
             "web_pid": web_process.pid if web_process else None,

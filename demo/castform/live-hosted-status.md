@@ -65,8 +65,9 @@ python3 demo/castform/run_local_real_iframe_e2e.py \
 
 The passing run started an isolated local Rust API, local ClickHouse, local Next
 embed app, and Castform parent page; wrote 3 Castform-shaped runs; created 3
-real local embed sessions; and verified 42 rendered iframe panel elements at
-both `1366x900` and `390x844`.
+real local embed sessions; reused those same run IDs through
+`run_demo.py --instantml-run-id` without increasing the run count; and verified
+42 rendered iframe panel elements at both `1366x900` and `390x844`.
 
 ## Current Demo URL
 
@@ -81,17 +82,18 @@ than stale mock iframe data.
 
 ## Recovery Path
 
-After the hosted embed API is deployed/enabled, rerun:
+After the hosted embed API is deployed/enabled, reuse the existing production
+runs without duplicating data:
 
 ```bash
 INSTANTML_API_KEY=... python3 demo/castform/run_demo.py \
   --parent-origin https://legends-cathedral-grey-broadcast.trycloudflare.com \
   --project castform-live-demo \
-  --runs 4 \
-  --steps 160 \
-  --step-size 20
+  --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
+  --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
+  --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
+  --instantml-run-id 2abdb990-1305-47ee-be70-c0716ac0f1c4
 ```
 
-That command will write a fresh set of runs and create iframe sessions. To avoid
-creating duplicate runs, add a small resume helper that calls
-`POST /api/embed/sessions` for the run IDs above and then writes the manifest.
+That command calls `GET /api/runs/summary` for those IDs, mints fresh embed
+sessions, and writes a new manifest for the parent page.
