@@ -20,6 +20,9 @@ Research date: 2026-06-30.
   Benchmax's public run-read client and the InstantML SDK.
 - `seed_castform_demo.py`: deterministic synthetic Castform-shaped data seeder
   for an InstantML demo workspace when live Castform credentials are unavailable.
+- `e2e-design.md`: accepted local architecture for the runnable Castform to
+  InstantML iframe demo.
+- `assets/ui-concept.png`: generated visual concept for the local parent page.
 
 ## Demo Paths
 
@@ -46,6 +49,14 @@ Both paths are designed to populate InstantML with Castform-shaped run metadata,
 reward curves, solve-rate curves, response-length curves, subreward curves,
 environment logs, and lifecycle notes so the call can focus on the integration
 value instead of credential setup.
+
+## End-to-End Hosted Demo
+
+The full demo design lives in `e2e-design.md`. The runnable slice will write to
+hosted InstantML by default under a new `castform-live-demo` project and create
+hosted iframe embed sessions that persist through the call. The local Castform
+parent page must be served through an HTTPS tunnel because hosted InstantML
+embeds require an exact HTTPS, non-InstantML parent origin.
 
 ## Verification
 
