@@ -33,6 +33,28 @@ generates or runs RL environments, reward signals, and the training loop. The
 SDK overview identifies `benchmax` as the open-source Python SDK used to define
 datasets, environments, rewards, and launch runs.
 
+## App Home Observation
+
+Observed `https://app.castform.com/home` on 2026-07-01. The app home loaded
+without signing in and showed an onboarding flow that maps directly to the demo
+story:
+
+1. install with `uv tool install -U castform`;
+2. prepare the workspace with `castform setup`;
+3. ask a coding agent to create an environment, synthesize data, run a baseline
+   eval, and propose whether to iterate or launch;
+4. launch and monitor with `castform launch`.
+
+The page also exposed example training results for:
+
+- `telestich poet`: `https://app.castform.com/train/9e53f8c1-b30a-48d5-a7ac-280a428fb82f`
+- `company docs search (rag)`: `https://app.castform.com/train/f810d5f4-c234-4dd7-a8f1-31c64bca9c8c`
+- `customer support (traces)`: `https://app.castform.com/train/2821b6ab-932d-4466-af01-146027af65d2`
+
+Those public examples support the current demo profile choices: a RAG run, a
+trace-based support run, and failure-mode comparisons around reward, solve
+rate, and response length.
+
 ## Training And SDK Touchpoints
 
 The public launch flow has two core calls:
@@ -125,6 +147,7 @@ Avoid framing:
 ## Sources
 
 - Castform home page: https://castform.com/
+- Castform app home: https://app.castform.com/home
 - Castform docs introduction: https://castform.com/docs.md
 - Benchmax SDK overview: https://castform.com/docs/getting-started/sdk-overview.md
 - Launching a training run: https://castform.com/docs/train/launching.md

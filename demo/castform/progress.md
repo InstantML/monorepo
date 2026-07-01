@@ -46,3 +46,6 @@ Create a full end-to-end demo that:
 - Added a one-command local smoke orchestrator that starts the parent server,
   runs manifest verification plus desktop/mobile browser checks, writes an
   ignored safe report, and shuts the server down.
+- Opened `https://app.castform.com/home` read-only in the browser and confirmed
+  the public app home exposes the install/setup/agent/launch flow plus example
+  RAG and trace training-result links mirrored by the demo story.

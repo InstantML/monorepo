@@ -142,3 +142,8 @@ Important choices:
 Ask Castform for one shared training run or a sandbox API key with read-only
 access to a few non-sensitive runs. That lets us mirror real curves and return
 with a concrete embedded or hosted prototype.
+
+The public app home already exposes example result links for `company docs
+search (rag)` and `customer support (traces)`. Use those examples on the call to
+ask whether the same IDs are stable enough for a shared read-only mirror, or
+whether Castform would prefer to provide a separate sandbox run set.
