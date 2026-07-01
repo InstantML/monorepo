@@ -86,3 +86,7 @@ Create a full end-to-end demo that:
   Castform SDK path. It checks Benchmax/Castform SDK importability, Castform
   API-key presence, uploaded asset arguments, and optional Castform app
   reachability before an operator attempts a real launch.
+- Cleaned up stale hosted-demo wording so operators do not mistake the temporary
+  Cloudflare tunnel or unavailable hosted embed routes for current working
+  infrastructure. The docs now distinguish the live persisted-data proof from
+  the local real iframe proof.

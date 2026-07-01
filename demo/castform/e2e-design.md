@@ -271,7 +271,9 @@ Full local demo check:
 4. run `python3 demo/castform/check_hosted_readiness.py --parent-origin
    <https-origin> --parent-url <https-origin>`;
 5. run `python3 demo/castform/run_demo.py --parent-origin <https-origin>`;
-6. open the HTTPS parent page in Chrome and confirm hosted iframe content loads.
+6. open the HTTPS parent page in Chrome and confirm either hosted iframe content
+   loads, when hosted embed routes are deployed, or the explicit blocked-embed
+   state from `live-hosted-status.md` appears.
 
 ## Risks And Constraints
 

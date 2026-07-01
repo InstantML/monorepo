@@ -19,6 +19,7 @@ For local browser smoke without live credentials:
 ```bash
 python3 demo/castform/run_mocked_e2e.py
 python3 demo/castform/run_local_smoke.py
+python3 demo/castform/run_local_real_iframe_e2e.py --runs 3 --steps 40 --step-size 10 --timeout 180
 ```
 
 ## Generated Manifest
@@ -39,3 +40,8 @@ writing `run-output/local-smoke-report.json`, and shutting the server down.
 `run_mocked_e2e.py` runs the real `run_demo.py` against a fake local InstantML
 API before serving this page, so it verifies the generated manifest came from
 the SDK writer path rather than only a static smoke fixture.
+
+`run_local_real_iframe_e2e.py` is the strongest local proof. It serves this
+parent page with a local Rust API and local Next embed app, creates real embed
+sessions, and verifies rendered InstantML iframe panels at desktop and mobile
+viewports.

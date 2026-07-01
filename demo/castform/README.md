@@ -85,11 +85,17 @@ value instead of credential setup.
 
 ## End-to-End Hosted Demo
 
-The full demo design lives in `e2e-design.md`. The runnable slice will write to
-hosted InstantML by default under a new `castform-live-demo` project and create
-hosted iframe embed sessions that persist through the call. The local Castform
-parent page must be served through an HTTPS tunnel because hosted InstantML
-embeds require an exact HTTPS, non-InstantML parent origin.
+The full demo design lives in `e2e-design.md`. The runnable slice writes to
+hosted InstantML by default under the `castform-live-demo` project. As of
+2026-07-01, production run writes work, but hosted embed-session routes are not
+deployed; the call-ready production path therefore shows live persisted data
+plus an explicit blocked-iframe state. The full real iframe proof uses the local
+Rust API and local Next embed app through `run_local_real_iframe_e2e.py`.
+
+When hosted embeds are deployed, the same `run_demo.py` command will create
+hosted iframe sessions that persist through the call. The local Castform parent
+page must be served through an HTTPS tunnel because hosted InstantML embeds
+require an exact HTTPS, non-InstantML parent origin.
 
 Use `live-runbook.md` for the full production-key and browser-verification
 sequence.

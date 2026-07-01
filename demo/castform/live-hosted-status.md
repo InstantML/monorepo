@@ -69,16 +69,18 @@ real local embed sessions; reused those same run IDs through
 `run_demo.py --instantml-run-id` without increasing the run count; and verified
 42 rendered iframe panel elements at both `1366x900` and `390x844`.
 
-## Current Demo URL
+## Last Tunnel URL
 
-The local parent page was exposed at:
+The local parent page was previously exposed at:
 
 ```text
 https://legends-cathedral-grey-broadcast.trycloudflare.com
 ```
 
-The page now renders the live runs and an explicit blocked-embed panel rather
-than stale mock iframe data.
+That tunnel was a temporary call-prep URL and is not expected to remain active.
+Start a fresh tunnel from `live-runbook.md` before any new hosted browser demo.
+The generated page state rendered the live runs and an explicit blocked-embed
+panel rather than stale mock iframe data.
 
 ## Recovery Path
 
@@ -87,7 +89,7 @@ runs without duplicating data:
 
 ```bash
 INSTANTML_API_KEY=... python3 demo/castform/run_demo.py \
-  --parent-origin https://legends-cathedral-grey-broadcast.trycloudflare.com \
+  --parent-origin https://your-fresh-demo-origin.example \
   --project castform-live-demo \
   --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
   --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
