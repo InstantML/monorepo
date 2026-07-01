@@ -637,6 +637,9 @@ export function DashboardShell({
   const messageRef = useRef("Loading runs...");
   const [activeTab, setActiveTab] = useState<ShellTabId>(() => initialActiveTab(initialTab));
   const activeTabRef = useRef(activeTab);
+  // The last non-settings tab, so closing the settings modal returns there
+  // instead of dumping the user on a default tab.
+  const preSettingsTabRef = useRef<ShellTabId>(activeTab === "settings" ? "runs" : activeTab);
   const [dashboardAuthorized, setDashboardAuthorized] = useState(() => Boolean(initialSession?.authenticated));
   const [dashboardSessionChecked, setDashboardSessionChecked] = useState(() => Boolean(initialSession?.authenticated));
   const [dashboardAuthMessage, setDashboardAuthMessage] = useState("Checking session...");
@@ -857,6 +860,7 @@ export function DashboardShell({
   }, [message]);
   useEffect(() => {
     activeTabRef.current = activeTab;
+    if (activeTab !== "settings") preSettingsTabRef.current = activeTab;
   }, [activeTab]);
   useLayoutEffect(() => {
     dashboardSelectionFilterKeyRef.current = dashboardSelectionFilterKey;
@@ -4677,6 +4681,7 @@ function dismissTopOverlay() {
               onCancelBilling={cancelBilling}
               onMetricKey={setMetricKey}
               onXMode={setXMode}
+              onClose={() => selectTab(preSettingsTabRef.current === "settings" ? "runs" : preSettingsTabRef.current)}
               orgName={sessionPayload?.organization?.name ?? ""}
               orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
               reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
