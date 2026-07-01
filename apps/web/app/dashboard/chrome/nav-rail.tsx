@@ -84,10 +84,15 @@ export function DashboardNav({
         </button>
       </div>
       <div className="tab-scroll">
-        {navGroups.map((group) => (
+        {navGroups.map((group) => {
+          // Settings is reachable only from the account/profile menu
+          // ("Workspace settings"), so it is intentionally omitted from the rail.
+          const items = group.items.filter((tab) => tab.id !== "settings");
+          if (!items.length) return null;
+          return (
           <div className="tab-group" key={group.id}>
             <span className="tab-group-label">{navGroupLabels[group.id]}</span>
-            {group.items.map((tab) => {
+            {items.map((tab) => {
               const Icon = tab.icon;
               return (
                 <a
@@ -104,7 +109,8 @@ export function DashboardNav({
               );
             })}
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="nav-footer">
         <button
