@@ -32,3 +32,6 @@ Create a full end-to-end demo that:
   manifests and summaries are ignored so bearer iframe URLs are not committed.
 - Added a live hosted runbook and verifier for generated manifests, redacted
   summaries, and HTTPS parent-page readiness.
+- Added a live Castform/Benchmax SDK launch bridge and `run_demo.py
+  --castform-run-id` mode so real Castform runs can be mirrored into the same
+  hosted iframe demo flow when credentials and run IDs are available.

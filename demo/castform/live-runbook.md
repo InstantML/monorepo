@@ -53,6 +53,41 @@ demo webpage.
 
 ## 4. Write Hosted Runs And Iframes
 
+### Option A: Mirror A Real Castform Run
+
+If Castform credentials and a shared run are available, mirror the live run
+directly:
+
+```bash
+CASTFORM_API_KEY=... \
+INSTANTML_API_KEY=... \
+python3 demo/castform/run_demo.py \
+  --castform-run-id <castform-run-id> \
+  --parent-origin https://your-demo-origin.example \
+  --project castform-live-demo
+```
+
+### Option B: Launch Through The Benchmax SDK First
+
+If uploaded Castform assets are available, launch with the SDK bridge, then
+mirror the returned run ID:
+
+```bash
+CASTFORM_API_KEY=... \
+python3 demo/castform/castform_live_bridge.py \
+  --training-run-type simple \
+  --env-cls-path envs/.../env-cls.pkl \
+  --env-metadata-path envs/.../env-metadata.json \
+  --train-dataset-path datasets/.../train.jsonl \
+  --eval-dataset-path datasets/.../eval.jsonl \
+  --name castform-instantml-demo \
+  --launcher-arg model='"Qwen/Qwen3.5-4B"'
+```
+
+Then run Option A with the printed `castform_run_id`.
+
+### Option C: Deterministic Call-Prep Fallback
+
 Use the HTTPS tunnel origin as `--parent-origin`:
 
 ```bash

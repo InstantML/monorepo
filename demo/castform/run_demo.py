@@ -408,6 +408,59 @@ def mirror_training_runs(
     return mirrored
 
 
+def mirror_existing_castform_runs(
+    *,
+    castform_run_ids: list[str],
+    instantml_api_key: str,
+    instantml_api_base_url: str,
+    instantml_project: str,
+    castform_api_key: str,
+    castform_base_url: str | None,
+    include_logs: bool,
+) -> list[MirroredRun]:
+    from castform_instantml_adapter import mirror_castform_run
+
+    mirrored: list[MirroredRun] = []
+    for castform_run_id in castform_run_ids:
+        print(f"Mirroring live Castform run: {castform_run_id}")
+        summary = mirror_castform_run(
+            castform_run_id=castform_run_id,
+            instantml_project=instantml_project,
+            castform_api_key=castform_api_key,
+            instantml_api_key=instantml_api_key,
+            castform_base_url=castform_base_url,
+            instantml_base_url=instantml_api_base_url,
+            include_logs=include_logs,
+            dry_run=False,
+        )
+        instantml_run_id = str(summary.get("instantml_run_id") or "")
+        if not instantml_run_id:
+            raise RuntimeError(f"Castform run {castform_run_id} did not produce an InstantML run ID")
+        launcher_args = summary.get("launcher_args") if isinstance(summary.get("launcher_args"), dict) else {}
+        final_metrics = summary.get("final_metrics") if isinstance(summary.get("final_metrics"), dict) else {}
+        mirrored.append(
+            MirroredRun(
+                instantml_run_id=instantml_run_id,
+                castform_run_id=castform_run_id,
+                castform_url=str(summary.get("castform_url") or castform_run_url(castform_run_id)),
+                name=str(summary.get("name") or f"castform-{castform_run_id}"),
+                profile_slug=f"live-{castform_run_id}",
+                title=str(summary.get("name") or f"Live Castform run {castform_run_id}"),
+                tags=["castform", "mirrored", "live"],
+                model=str(launcher_args.get("model") or launcher_args.get("base_model") or "Castform model"),
+                baseline_model=str(launcher_args.get("baseline_model") or "n/a"),
+                learning_rate=float(launcher_args.get("learning_rate") or 0.0),
+                group_size=int(launcher_args.get("group_size") or 0),
+                environment=str(launcher_args.get("environment") or "Castform environment"),
+                dataset=str(launcher_args.get("dataset") or "Castform dataset"),
+                reward_version=str(launcher_args.get("reward_version") or "Castform reward"),
+                final_metrics={str(key): float(value) for key, value in final_metrics.items() if isinstance(value, (int, float))},
+            )
+        )
+        print(f"  InstantML mirror run: {instantml_run_id}")
+    return mirrored
+
+
 def create_embed_sessions(
     *,
     api_key: str,
@@ -464,6 +517,15 @@ def create_embed_sessions(
 
 
 def _embed_groups(runs: list[MirroredRun]) -> list[dict[str, Any]]:
+    if len(runs) == 1:
+        return [
+            {
+                "key": "overview",
+                "label": "Castform run",
+                "description": "Read-only InstantML board for the mirrored Castform run.",
+                "run_ids": [runs[0].instantml_run_id],
+            }
+        ]
     by_slug = {run.profile_slug: run for run in runs}
     best = by_slug.get("company-docs-rag-balanced") or runs[0]
     overfit = by_slug.get("company-docs-rag-fast-overfit") or runs[min(1, len(runs) - 1)]
@@ -554,6 +616,7 @@ def build_manifest(
             "app_home": CASTFORM_APP_HOME,
             "workflow": ["uv tool install -U castform", "castform setup", "castform launch"],
             "example_source": "https://app.castform.com/train/f810d5f4-c234-4dd7-a8f1-31c64bca9c8c",
+            "source": "live Castform mirror" if any("live" in run.tags for run in runs) else "local Castform SDK-shaped fallback",
         },
         "runs": [asdict(run) for run in runs],
         "embed_sessions": sessions,
@@ -652,6 +715,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=240)
     parser.add_argument("--step-size", type=int, default=10)
     parser.add_argument("--stream-delay", type=float, default=0.0)
+    parser.add_argument("--castform-run-id", action="append", default=[], help="Mirror an existing live Castform run ID instead of generating fallback runs")
+    parser.add_argument("--castform-base-url", default=os.environ.get("CASTFORM_BASE_URL"))
+    parser.add_argument("--no-castform-logs", action="store_true", help="Skip Castform environment logs in live mirror mode")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--summary", type=Path, default=DEFAULT_SUMMARY)
@@ -673,15 +739,29 @@ def main() -> int:
     parent_origin = validate_parent_origin(parent_origin, hosted=hosted)
     api_key = require_env("INSTANTML_API_KEY")
 
-    runs = mirror_training_runs(
-        api_key=api_key,
-        api_base_url=args.api_base_url,
-        project=args.project,
-        run_count=args.runs,
-        steps=args.steps,
-        step_size=args.step_size,
-        stream_delay=args.stream_delay,
-    )
+    if args.castform_run_id:
+        castform_api_key = os.environ.get("CASTFORM_API_KEY") or os.environ.get("PLATFORM_API_KEY")
+        if not castform_api_key:
+            raise SystemExit("CASTFORM_API_KEY or PLATFORM_API_KEY is required with --castform-run-id")
+        runs = mirror_existing_castform_runs(
+            castform_run_ids=args.castform_run_id,
+            instantml_api_key=api_key,
+            instantml_api_base_url=args.api_base_url,
+            instantml_project=args.project,
+            castform_api_key=castform_api_key,
+            castform_base_url=args.castform_base_url,
+            include_logs=not args.no_castform_logs,
+        )
+    else:
+        runs = mirror_training_runs(
+            api_key=api_key,
+            api_base_url=args.api_base_url,
+            project=args.project,
+            run_count=args.runs,
+            steps=args.steps,
+            step_size=args.step_size,
+            stream_delay=args.stream_delay,
+        )
     sessions = create_embed_sessions(
         api_key=api_key,
         api_base_url=args.api_base_url,

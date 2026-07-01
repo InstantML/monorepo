@@ -25,6 +25,8 @@ Research date: 2026-06-30.
 - `assets/ui-concept.png`: generated visual concept for the local parent page.
 - `run_demo.py`: hosted end-to-end writer that streams Castform-shaped training
   observations into InstantML and creates iframe embed sessions.
+- `castform_live_bridge.py`: optional live Benchmax SDK launcher for uploaded
+  Castform training assets.
 - `serve_web.py` and `web/`: local Castform-facing parent page for the hosted
   iframe embeds.
 - `verify_demo.py`: generated manifest and redacted-summary verifier.
@@ -76,7 +78,8 @@ sequence.
 2. Expose port 5174 through an HTTPS tunnel.
 
 3. In a separate shell, export a live InstantML API key with `sdk:ingest` and
-   `export:read`, then write the demo data:
+   `export:read`, then write the demo data. To mirror a real Castform run, also
+   export `CASTFORM_API_KEY` and pass `--castform-run-id <id>`.
 
    ```bash
    INSTANTML_API_KEY=instantml_... \
@@ -101,6 +104,6 @@ The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
 node --check demo/castform/web/app.js
 ```

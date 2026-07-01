@@ -12,7 +12,7 @@ Show a full local workflow that a Castform partner can understand in one pass:
 1. a Castform SDK-shaped training run emits run metadata, scalar metrics, logs,
    and lifecycle events;
 2. the demo streams those observations into InstantML through the real
-   InstantML Python SDK and local Rust API;
+   InstantML Python SDK and hosted or local InstantML API;
 3. the demo creates short-lived InstantML iframe embed sessions for the seeded
    runs;
 4. a local Castform-facing web page renders those iframes as read-only
@@ -23,9 +23,10 @@ The demo must remain honest about what is real:
 - InstantML ingestion, run storage, embed-session creation, and iframe rendering
   use real hosted InstantML surfaces by default so the demo data and iframe
   sessions persist for the call.
-- Castform training uses a deterministic local Castform SDK-shaped fallback by
-  default, because launching real Castform GPU jobs requires partner
-  credentials and quota.
+- Castform training can use a live Castform/Benchmax SDK run when credentials,
+  uploaded assets, and quota are available. The deterministic local
+  Castform-shaped fallback remains the default call-prep path when a live
+  launch is not appropriate.
 - The existing `castform_instantml_adapter.py` remains the live-read path when a
   real Benchmax/Castform API key and run ID are available.
 
@@ -34,13 +35,13 @@ The demo must remain honest about what is real:
 ```text
 demo/castform/run_demo.py
   -> read a live InstantML API key from the environment
-  -> run Castform SDK-shaped trainer
+  -> mirror live Castform run IDs or run Castform SDK-shaped fallback trainer
   -> log metrics/text/console through packages/python-sdk
   -> POST /api/embed/sessions for selected run sets
   -> write web/public/demo-manifest.json
 
 demo/castform/web
-  -> local React/Vite parent page
+  -> static local parent page
   -> reads demo-manifest.json
   -> renders InstantML iframe src values
   -> shows Castform-side status, run metadata, and source mapping
@@ -71,6 +72,7 @@ Inputs:
 - `--project`, default `castform-live-demo`
 - `--runs`, default `5`
 - `--steps`, default `240`
+- `--castform-run-id`, optional and repeatable for live Castform mirror mode
 - `--manifest`, default `demo/castform/web/public/demo-manifest.json`
 
 Outputs:
@@ -88,6 +90,32 @@ The manifest includes iframe URLs because browser iframes need the token-bearing
 fragment. Treat the manifest as local-only generated state; it is ignored by
 Git. A token-redacted summary is written for review. Never commit the API key,
 the plaintext embed token, or a live unredacted iframe URL.
+
+## Live Castform SDK Path
+
+Use `castform_live_bridge.py` when a real Castform run should be launched from
+already-uploaded assets. It calls `benchmax.platform.client.TrainerClient`:
+
+```bash
+CASTFORM_API_KEY=... \
+python3 demo/castform/castform_live_bridge.py \
+  --training-run-type simple \
+  --env-cls-path envs/.../env-cls.pkl \
+  --env-metadata-path envs/.../env-metadata.json \
+  --train-dataset-path datasets/.../train.jsonl \
+  --eval-dataset-path datasets/.../eval.jsonl \
+  --name castform-instantml-demo \
+  --launcher-arg model='"Qwen/Qwen3.5-4B"'
+```
+
+Then pass the returned run ID into the hosted InstantML writer:
+
+```bash
+CASTFORM_API_KEY=... INSTANTML_API_KEY=... \
+python3 demo/castform/run_demo.py \
+  --castform-run-id <castform-run-id> \
+  --parent-origin https://<demo-parent-origin>
+```
 
 ## Castform SDK-Shaped Training Fallback
 
@@ -143,8 +171,8 @@ session IDs and redacted URLs.
 Minimum checks before a commit:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
-npm --prefix demo/castform/web run build
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
+node --check demo/castform/web/app.js
 git diff --check
 ```
 

@@ -60,6 +60,22 @@ def _latest_step_from_scalars(scalars_by_mode: dict[str, dict[str, list[dict[str
     return latest
 
 
+def _final_metrics_from_scalars(scalars_by_mode: dict[str, dict[str, list[dict[str, Any]]]]) -> dict[str, float]:
+    final: dict[str, float] = {}
+    for mode, scalars in scalars_by_mode.items():
+        for source_name, series in scalars.items():
+            key = _normalize_metric_key(mode, source_name)
+            points = [
+                point for point in series
+                if isinstance(point.get("value"), (int, float)) and isinstance(point.get("step"), (int, float))
+            ]
+            if not points:
+                continue
+            latest = max(points, key=lambda point: (int(point.get("step", 0)), str(point.get("createdAt") or point.get("created_at") or "")))
+            final[key] = float(latest["value"])
+    return final
+
+
 def _flatten_launcher_args(run: dict[str, Any]) -> dict[str, Any]:
     launcher_args = run.get("launcherArgs") or run.get("launcher_args") or {}
     if isinstance(launcher_args, dict):
@@ -99,11 +115,14 @@ def mirror_castform_run(
     summary = {
         "castform_run_id": castform_run_id,
         "castform_url": _castform_url(castform_run_id),
+        "name": source_run.get("name") or f"castform-{castform_run_id}",
         "source_status": source_run.get("status"),
         "modes": list(scalars_by_mode),
         "metric_count": sum(len(scalars) for scalars in scalars_by_mode.values()),
         "event_count": len(events),
         "log_count": len(logs),
+        "final_metrics": _final_metrics_from_scalars(scalars_by_mode),
+        "launcher_args": _flatten_launcher_args(source_run),
     }
 
     if dry_run:
