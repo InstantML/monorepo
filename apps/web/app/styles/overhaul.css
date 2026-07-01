@@ -2140,9 +2140,26 @@ button.secondary.danger-action:hover:not(:disabled),
 /* Two-col secondary layout: align rails to mock proportion */
 .tab-grid.two-col { grid-template-columns: minmax(0, 1fr) 332px; gap: 16px; }
 .tab-grid.two-col.api-tab-grid { grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr); }
+.tab-grid.two-col.agent-tab-grid { grid-template-columns: minmax(340px, 0.82fr) minmax(0, 1.18fr); }
 .settings-grid { gap: 16px; }
 .insight-stack { gap: 12px; }
 .settings-list, .api-list { gap: 10px; }
+
+.panel-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel-subhead strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font: 650 var(--fs-label)/1.25 var(--font-sans);
+}
 
 .api-list .api-row {
   display: grid;
@@ -2335,6 +2352,63 @@ button.secondary.danger-action:hover:not(:disabled),
   color: var(--text-2);
   font-size: var(--fs-label);
   line-height: 1.5;
+}
+
+.agent-workspace-stack,
+.agent-prompt-list,
+.settings-api-section {
+  display: grid;
+  gap: 12px;
+}
+
+.agent-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-capability-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.agent-capability-card svg {
+  color: var(--accent-strong);
+}
+
+.agent-capability-card strong {
+  color: var(--text);
+  font: 650 var(--fs-label)/1.25 var(--font-sans);
+}
+
+.agent-capability-card p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-label);
+  line-height: 1.45;
+}
+
+.agent-prompt-section,
+.settings-api-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agent-prompt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.agent-prompt-row code {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .admin-stack,

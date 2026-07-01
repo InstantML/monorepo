@@ -17,7 +17,7 @@ import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } fr
 import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { AlertsTabPane } from "./alerts/tab-pane";
-import { ApiTabPane } from "./api/tab-pane";
+import { AgentTabPane } from "./agent/tab-pane";
 import { ArtifactsTabPane } from "./artifacts/tab-pane";
 import { CompareView } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
@@ -2534,7 +2534,7 @@ export function DashboardShell({
   }, [activeOrgId, activeTab, dashboardAuthorized, loadOrgSettings]);
 
   useEffect(() => {
-    if (!dashboardAuthorized || activeTab !== "api" || !activeOrgId || !canManageOrg) {
+    if (!dashboardAuthorized || activeTab !== "settings" || !activeOrgId || !canManageOrg) {
       if (!canManageOrg) {
         setApiKeys([]);
         setNewApiKey("");
@@ -4660,27 +4660,15 @@ function dismissTopOverlay() {
           {visibleTab === "reports" ? <ReportsTabPane canEditReports={canEditReports} /> : null}
         </section>
 
-        <section className={`tab-pane ${visibleTab === "api" ? "active" : ""}`} aria-label="API">
-          {visibleTab === "api" ? (
-            <ApiTabPane
-              activeOrgId={activeOrgId}
-              adminBusy={adminBusy}
-              adminMessage={apiAdminMessage}
-              adminMessageTone={apiAdminTone}
-              apiKeyName={apiKeyName}
-              apiKeys={apiKeys}
-              apiRows={apiRows}
+        <section className={`tab-pane ${visibleTab === "agent" ? "active" : ""}`} aria-label="Agent">
+          {visibleTab === "agent" ? (
+            <AgentTabPane
               canManageOrg={canManageOrg}
               metricKey={metricKey}
               newApiKey={newApiKey}
-              onApiKeyNameChange={setApiKeyName}
-              onCopyNewApiKey={copyNewApiKey}
-              onCreateApiKey={createDashboardApiKey}
-              onRevokeApiKey={revokeDashboardApiKey}
               primaryRunId={primaryRun?.id ?? null}
               project={project}
               selectedRunIds={selectedRunIds}
-              status={status}
             />
           ) : null}
         </section>
@@ -4689,9 +4677,15 @@ function dismissTopOverlay() {
         <SettingsTabPane
           accountUser={sessionPayload?.user ?? null}
           activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
+          activeOrgId={activeOrgId}
           activePlan={activePlan}
           activeUsageWarnings={activeUsageOrg?.warnings ?? []}
           adminBusy={adminBusy}
+          adminMessage={apiAdminMessage}
+          adminMessageTone={apiAdminTone}
+          apiKeyName={apiKeyName}
+          apiKeys={apiKeys}
+          apiRows={apiRows}
           canManageOrg={canManageOrg}
           formatBytes={formatBytes}
           inviteEmail={inviteEmail}
@@ -4708,6 +4702,10 @@ function dismissTopOverlay() {
           apiRequestsLimit={apiRequestsLimit}
           generalRateLimitLabel={generalRateLimitLabel}
           ingestRateLimitLabel={ingestRateLimitLabel}
+          onApiKeyNameChange={setApiKeyName}
+          onCopyNewApiKey={copyNewApiKey}
+          onCreateApiKey={createDashboardApiKey}
+          onRevokeApiKey={revokeDashboardApiKey}
           onInviteEmail={setInviteEmail}
           onInviteRole={setInviteRole}
           onInviteSeat={inviteSeat}
@@ -4734,6 +4732,7 @@ function dismissTopOverlay() {
           usageAvailable={usageAvailable}
           xMode={xMode}
           billingStatus={billingPayload?.billing ?? null}
+          newApiKey={newApiKey}
         />
       ) : null}
       {quickSearchOpen ? (

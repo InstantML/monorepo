@@ -229,7 +229,7 @@ export type TabId =
   | "artifacts"
   | "reports"
   | "settings"
-  | "api";
+  | "agent";
 
 export type Tone = "good" | "bad" | "live" | "neutral" | "warn";
 

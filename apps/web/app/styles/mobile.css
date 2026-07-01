@@ -932,6 +932,7 @@
   }
 
   .tab-grid.two-col.api-tab-grid,
+  .tab-grid.two-col.agent-tab-grid,
   .metrics-workbench {
     grid-template-columns: 1fr;
     overflow: visible;
