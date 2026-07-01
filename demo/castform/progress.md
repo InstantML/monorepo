@@ -134,3 +134,6 @@ Create a full end-to-end demo that:
 - Added `demo_env.py` and wired the live operator entrypoints to load ignored
   `demo/castform/.env` values without overriding exported variables, so the
   call-prep commands can run directly after the production key is installed.
+- Added `run_call_prep_check.py --live` so the one-command gate can include
+  hosted readiness and the current live persisted-data blocked-embed browser
+  smoke alongside the no-secret rehearsals and optional local real iframe E2E.

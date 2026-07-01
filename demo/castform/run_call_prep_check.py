@@ -105,6 +105,10 @@ def compact_report(path: Path) -> dict[str, Any] | None:
         "resume_run_total_before",
         "resume_run_total_after",
         "counts",
+        "summary",
+        "parent_origin",
+        "parent_url",
+        "run_ids",
     ):
         if key in payload:
             summary[key] = payload[key]
@@ -119,6 +123,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Castform demo call-prep checks")
     parser.add_argument("--full", action="store_true", help="Include the heavier real local InstantML iframe E2E")
+    parser.add_argument("--live", action="store_true", help="Include hosted readiness and live persisted-data browser smoke")
     parser.add_argument("--timeout", type=float, default=240.0)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--real-runs", type=int, default=3)
@@ -133,6 +138,7 @@ def main() -> int:
         "ok": False,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "full": args.full,
+        "live": args.live,
         "commands": [],
         "reports": {},
     }
@@ -143,6 +149,9 @@ def main() -> int:
         mocked_report = HERE / "run-output" / "mocked-e2e-report.json"
         smoke_report = HERE / "run-output" / "local-smoke-report.json"
         real_report = HERE / "run-output" / "local-real-iframe-e2e-report.json"
+        hosted_report = HERE / "run-output" / "hosted-readiness-call-prep-report.json"
+        live_report = HERE / "run-output" / "live-blocked-smoke-call-prep-report.json"
+        live_summary = HERE / "run-output" / "live-blocked-smoke-call-prep-summary.json"
 
         record_command(
             report,
@@ -185,6 +194,33 @@ def main() -> int:
             timeout=args.timeout,
         )
         report["reports"]["local_smoke"] = compact_report(smoke_report)
+
+        if args.live:
+            record_command(
+                report,
+                [sys.executable, "demo/castform/check_hosted_readiness.py", "--report", str(hosted_report)],
+                timeout=args.timeout,
+            )
+            report["reports"]["hosted_readiness"] = compact_report(hosted_report)
+
+            record_command(
+                report,
+                [
+                    sys.executable,
+                    "demo/castform/run_live_blocked_smoke.py",
+                    "--timeout",
+                    str(args.timeout),
+                    "--report",
+                    str(live_report),
+                    "--summary",
+                    str(live_summary),
+                ],
+                timeout=max(args.timeout + 30.0, args.timeout * 1.5),
+            )
+            report["reports"]["live_blocked_smoke"] = compact_report(live_report)
+        else:
+            report["reports"]["hosted_readiness"] = {"skipped": True, "reason": "pass --live to run"}
+            report["reports"]["live_blocked_smoke"] = {"skipped": True, "reason": "pass --live to run"}
 
         if args.full:
             record_command(

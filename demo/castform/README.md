@@ -47,8 +47,9 @@ Research date: 2026-06-30.
   mobile browser checks, writes an ignored safe report, and stops the server.
 - `run_call_prep_check.py`: one-command operator gate that runs the safe
   Castform readiness check, Benchmax bridge smoke, Castform SDK workflow smoke,
-  mocked E2E recovery rehearsal, parent-page smoke, and optionally the full
-  local real iframe E2E under `--full`.
+  mocked E2E recovery rehearsal, parent-page smoke, optionally the full local
+  real iframe E2E under `--full`, and optionally the live persisted-data smoke
+  under `--live`.
 - `run_live_blocked_smoke.py`: one-command live-data recovery smoke that reuses
   the known production run IDs, writes the current blocked-embed parent-page
   manifest, serves the page locally, and browser-verifies the no-token blocked
@@ -220,8 +221,12 @@ python3 demo/castform/run_mocked_e2e.py
 `run_call_prep_check.py --full` is the walk-up gate: it runs the Castform
 readiness dry check, the Benchmax bridge smoke, the fake Castform SDK
 launch-to-mirror workflow, the mocked InstantML E2E, the local parent-page
-smoke, and the full local real iframe E2E. `run_mocked_e2e.py` alone runs the real
-`run_demo.py` against a local fake InstantML API and writes
+smoke, and the full local real iframe E2E. After a live InstantML key is
+available in the environment or ignored `.env`, use
+`python3 demo/castform/run_call_prep_check.py --full --live` to include hosted
+readiness and the current production persisted-data browser smoke in the same
+report. `run_mocked_e2e.py` alone runs the real `run_demo.py` against a local
+fake InstantML API and writes
 `run-output/mocked-e2e-report.json`, which is ignored by Git. It covers both
 fresh SDK ingestion and the `--instantml-run-id` recovery command.
 

@@ -38,7 +38,7 @@ python3 demo/castform/run_local_real_iframe_e2e.py \
 If port 5174 is already in use, pass `--port 0` to pick a free local port for
 the lightweight smoke preflight.
 
-`run_call_prep_check.py --full` is the walk-up gate for the demo: it runs the
+`run_call_prep_check.py --full` is the no-secret walk-up gate for the demo: it runs the
 safe Castform readiness dry check, mocked InstantML recovery rehearsal,
 parent-page smoke, and full local real iframe E2E. `check_castform_readiness.py`
 is the safe live-Castform preflight by itself: it checks SDK importability,
@@ -65,14 +65,17 @@ If a live InstantML API key is already exported and the goal is to rehearse the
 current production persisted-data page without duplicating runs, use:
 
 ```bash
-python3 demo/castform/run_live_blocked_smoke.py
+python3 demo/castform/run_call_prep_check.py --full --live
 ```
 
-That command reads the existing `castform-live-demo` run IDs, handles the
-current hosted `/api/embed/sessions` 404 as an expected blocked state, serves
-the parent page on a free local port, and runs desktop plus mobile browser
-checks. Pass `--parent-origin https://your-demo-origin.example` if you already
-have a tunnel and want the generated manifest to match that origin.
+That command runs the no-secret gate plus hosted readiness and the live
+persisted-data smoke. The live smoke reads the existing `castform-live-demo`
+run IDs, handles the current hosted `/api/embed/sessions` 404 as an expected
+blocked state, serves the parent page on a free local port, and runs desktop
+plus mobile browser checks. Use `run_live_blocked_smoke.py` directly when you
+only want the live persisted-data smoke, and pass
+`--parent-origin https://your-demo-origin.example` if you already have a tunnel
+and want the generated manifest to match that origin.
 
 For the live hosted path, start or keep the parent page server running:
 

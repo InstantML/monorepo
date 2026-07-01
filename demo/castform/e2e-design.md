@@ -282,6 +282,8 @@ python3 -m py_compile demo/castform/demo_env.py demo/castform/run_demo.py demo/c
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 python3 demo/castform/run_call_prep_check.py --full
+# With live InstantML key/.env installed:
+python3 demo/castform/run_call_prep_check.py --full --live
 git diff --check
 ```
 
