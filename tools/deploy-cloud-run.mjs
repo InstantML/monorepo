@@ -160,6 +160,7 @@ validateDeploymentTargets(deploymentPlan);
 validatePublicRouterConfig();
 validateExplicitPublicApiBaseConfig();
 validateInviteEmailConfig();
+validateMcpOAuthDeploymentConfig();
 await validateClerkDeploymentConfig();
 
 preflightBuildContext();
@@ -333,6 +334,10 @@ function managedClerkEnabledForDeployment() {
   return boolValue("INSTANTML_MANAGED_CLERK_ENABLED", Boolean(value("CLERK_SECRET_KEY")));
 }
 
+function mcpOauthEnabledForDeployment() {
+  return boolValue("INSTANTML_MCP_OAUTH_ENABLED", false);
+}
+
 function clerkPublishableKeyForDeployment() {
   return clerkPublishableKeySourcesForDeployment()[0]?.value || "";
 }
@@ -374,6 +379,14 @@ async function validateClerkDeploymentConfig() {
     fail(`CLERK_JWT_ISSUER (${explicitIssuer}) does not match NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (${derivedIssuer}). Use the public and secret keys from the same Clerk application.`);
   }
   await validateClerkSecretMatchesPublishableKey(derivedIssuer);
+}
+
+function validateMcpOAuthDeploymentConfig() {
+  if (!mcpOauthEnabledForDeployment()) return;
+  if (!value("CLERK_SECRET_KEY")) {
+    fail("CLERK_SECRET_KEY is required when INSTANTML_MCP_OAUTH_ENABLED=1.");
+  }
+  clerkApiBaseForDeployment();
 }
 
 function clerkPublishableKeySourcesForDeployment() {
@@ -968,6 +981,7 @@ function buildRuntimeEnv(staticEgressIp) {
     INSTANTML_BILLING_CANCEL_URL: value("INSTANTML_BILLING_CANCEL_URL"),
     INSTANTML_BILLING_PORTAL_RETURN_URL: value("INSTANTML_BILLING_PORTAL_RETURN_URL"),
     INSTANTML_BILLING_GRACE_DAYS: value("INSTANTML_BILLING_GRACE_DAYS"),
+    INSTANTML_MCP_OAUTH_ENABLED: value("INSTANTML_MCP_OAUTH_ENABLED"),
     CLERK_API_BASE: clerkApiBase,
     CLERK_JWT_ISSUER: clerkJwtIssuer,
   };
@@ -999,6 +1013,8 @@ function cloudflareR2AccountId() {
 
 function runtimeEnvForTarget(envVars, target) {
   const output = { ...envVars };
+  const mcpOauthEnabled = output.INSTANTML_MCP_OAUTH_ENABLED === "1"
+    || output.INSTANTML_MCP_OAUTH_ENABLED?.toLowerCase() === "true";
   if (target.servicePlane === "control") {
     for (const key of [
       "INSTANTML_ARTIFACT_BACKEND",
@@ -1016,10 +1032,12 @@ function runtimeEnvForTarget(envVars, target) {
       "INSTANTML_EMAIL_PROVIDER",
       "INSTANTML_EMAIL_FROM",
       "INSTANTML_EMAIL_REPLY_TO",
-      "CLERK_API_BASE",
       "CLERK_JWT_ISSUER",
     ]) {
       delete output[key];
+    }
+    if (!mcpOauthEnabled) {
+      delete output.CLERK_API_BASE;
     }
   }
   return output;
@@ -1032,7 +1050,9 @@ function secretEnvForTarget(secretEnv, target) {
   }
   if (target.servicePlane === "data") {
     output = output.filter((mapping) => !mapping.startsWith("RESEND_API_KEY="));
-    output = output.filter((mapping) => !mapping.startsWith("CLERK_SECRET_KEY="));
+    if (!mcpOauthEnabledForDeployment()) {
+      output = output.filter((mapping) => !mapping.startsWith("CLERK_SECRET_KEY="));
+    }
   }
   output = [...output, `DATABASE_URL=${controlDatabaseUrlSecret}:latest`];
   return output;

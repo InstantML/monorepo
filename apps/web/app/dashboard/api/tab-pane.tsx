@@ -82,7 +82,7 @@ export function ApiTabPane({
                 <button className="secondary" onClick={onCopyNewApiKey} type="button"><Copy size={14} /> Copy</button>
               </div>
             ) : null}
-            <AgentSetupPanel canManageOrg={canManageOrg} newApiKey={visibleNewApiKey} />
+            <AgentSetupPanel activeOrgId={activeOrgId} canManageOrg={canManageOrg} newApiKey={visibleNewApiKey} />
             <div className="admin-list">
               {visibleApiKeys.map((key) => (
                 <div className={`api-row ${key.revoked_at ? "muted" : ""}`} key={key.id}>

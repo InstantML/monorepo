@@ -41,13 +41,17 @@ instead of pasting a key. In the **Connect Agent** panel, choose **Browser
 sign-in** and copy the tokenless snippet, for example:
 
 ```bash
-claude mcp add --transport http instantml https://mcp.instantml.ai/mcp
+claude mcp add --transport http instantml "https://mcp.instantml.ai/mcp?org_id=<workspace-id>"
 ```
 
 On first connect the client discovers the InstantML authorization server, opens
 a browser for you to approve access for your organization, and receives a
 short-lived token — there is no key to copy, rotate, or commit. Clients without
 OAuth support keep using the API-key snippets below.
+
+Browser sign-in is scoped to the workspace selected in the dashboard when you
+copy the snippet. If you belong to multiple workspaces, add one MCP server per
+workspace rather than using one connection for all orgs.
 
 This path is in preview: when a workspace has not enabled OAuth, use an API key.
 

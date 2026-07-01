@@ -19,6 +19,8 @@ use crate::{
 
 use super::super::{AppState, SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_SECS};
 
+const MCP_OAUTH_ORG_HEADER: &str = "x-instantml-oauth-org-id";
+
 pub fn require_bootstrap(state: &AppState, headers: &HeaderMap) -> AppResult<()> {
     if !state.config.auth_mode.requires_api_key() {
         return Ok(());
@@ -141,7 +143,9 @@ pub async fn context(
             // without that prefix is the OAuth case. v1 is read-only.
             // See docs/design/2026-06-30-mcp-oauth.md.
             if mcp_oauth_enabled() && !token.starts_with("instantml_") {
-                let (org_id, user_id, role) = authenticate_mcp_oauth(state, token).await?;
+                let requested_org_id = mcp_oauth_requested_org_id(headers)?;
+                let (org_id, user_id, role) =
+                    authenticate_mcp_oauth(state, token, requested_org_id).await?;
                 RequestContext {
                     org_id,
                     auth: None,
@@ -260,6 +264,21 @@ fn mcp_oauth_enabled() -> bool {
     }
 }
 
+fn mcp_oauth_requested_org_id(headers: &HeaderMap) -> AppResult<Option<Uuid>> {
+    let Some(raw) = header_text(headers, MCP_OAUTH_ORG_HEADER) else {
+        return Ok(None);
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    Uuid::parse_str(raw).map(Some).map_err(|_| {
+        AppError::validation(format!(
+            "{MCP_OAUTH_ORG_HEADER} must be a valid organization UUID"
+        ))
+    })
+}
+
 /// Authenticate a Clerk OAuth access token (hosted MCP browser sign-in) and
 /// resolve it to `(org_id, user_id, role)` for a read-only request context.
 ///
@@ -273,8 +292,12 @@ fn mcp_oauth_enabled() -> bool {
 ///    secret key.
 /// 2. Map the Clerk user (`provider = "clerk"`, `provider_subject = subject`) to
 ///    the internal user and resolve the org/role from active memberships
-///    (single membership only; multi-org is rejected until the caller names one).
-async fn authenticate_mcp_oauth(state: &AppState, token: &str) -> AppResult<(Uuid, Uuid, String)> {
+///    (named org when present; otherwise single membership only).
+async fn authenticate_mcp_oauth(
+    state: &AppState,
+    token: &str,
+    requested_org_id: Option<Uuid>,
+) -> AppResult<(Uuid, Uuid, String)> {
     let secret_key = state
         .config
         .clerk_secret_key
@@ -289,7 +312,13 @@ async fn authenticate_mcp_oauth(state: &AppState, token: &str) -> AppResult<(Uui
     // v1 grants read-only regardless of the granted `principal.scopes`; the
     // caller sets demo_read_only so only export:read passes. Mirror-role is the
     // reviewed follow-up.
-    store::authenticate_oauth_identity(&state.store, "clerk", &principal.subject).await
+    store::authenticate_oauth_identity_for_org(
+        &state.store,
+        "clerk",
+        &principal.subject,
+        requested_org_id,
+    )
+    .await
 }
 
 pub fn require_scope(ctx: &RequestContext, scope: &str, state: &AppState) -> AppResult<()> {
@@ -551,4 +580,28 @@ pub fn parse_uuid(raw: &str, missing_message: &str) -> AppResult<Uuid> {
 
 pub fn header_value(value: &str) -> AppResult<HeaderValue> {
     HeaderValue::from_str(value).map_err(|_| AppError::internal("invalid header value"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mcp_oauth_requested_org_id_parses_optional_header() {
+        let org_id = Uuid::parse_str("11111111-2222-4333-8444-555555555555").unwrap();
+        let mut headers = HeaderMap::new();
+        assert_eq!(mcp_oauth_requested_org_id(&headers).unwrap(), None);
+
+        headers.insert(MCP_OAUTH_ORG_HEADER, HeaderValue::from_static(""));
+        assert_eq!(mcp_oauth_requested_org_id(&headers).unwrap(), None);
+
+        headers.insert(
+            MCP_OAUTH_ORG_HEADER,
+            HeaderValue::from_static("11111111-2222-4333-8444-555555555555"),
+        );
+        assert_eq!(mcp_oauth_requested_org_id(&headers).unwrap(), Some(org_id));
+
+        headers.insert(MCP_OAUTH_ORG_HEADER, HeaderValue::from_static("not-an-org"));
+        assert!(mcp_oauth_requested_org_id(&headers).is_err());
+    }
 }

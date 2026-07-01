@@ -26,7 +26,7 @@ service-describe commands at the bottom of this page.
 
 | Env var | Secret Manager name | Services that need it | Rotation |
 | --- | --- | --- | --- |
-| `CLERK_SECRET_KEY` | `instantml-clerk-secret-key` | `instantml-control` | quarterly + on personnel change |
+| `CLERK_SECRET_KEY` | `instantml-clerk-secret-key` | `instantml-control`; `instantml-data-us-central1-a` only when `INSTANTML_MCP_OAUTH_ENABLED=1` | quarterly + on personnel change |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | `instantml-clerk-publishable-key` | (build-time for `apps/web`; deploy-time validator) | rotate together with `CLERK_SECRET_KEY` |
 | `DATABASE_URL` | `instantml-control-database-url` | `instantml-control`, `instantml-data-us-central1-a` | quarterly; **immediate on incident or personnel change** |
 | `CLICKHOUSE_INSTANTML_GENERAL_KEY_ID` | `instantml-clickhouse-cloud-key-id` | `instantml-control`, `instantml-data-us-central1-a` | quarterly |
