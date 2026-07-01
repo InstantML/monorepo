@@ -238,11 +238,12 @@ to set `INSTANTML_API_KEY`.
 | --- | --- |
 | `tracker.list_projects` | Discover projects visible to the API key before choosing a run-search scope. |
 | `tracker.list_runs` | Search and page run summaries by project, query, status, metric sort, and cursor. |
+| `tracker.compare_matching_runs` | Rank matching runs server-side and return candidate evidence plus optional side-by-side difference rows. |
 | `tracker.get_run` | Fetch one run summary by UUID. |
 | `tracker.list_metrics` | Discover metric keys and latest/min/max/mean summary values for a run. |
 | `tracker.query_metrics` | Fetch bounded metric points for one run and one metric key. |
 | `tracker.get_metric_series_batch` | Fetch one metric across many run IDs through the batched series endpoint. |
-| `tracker.compare_runs` | Compare up to 50 selected runs by config, metadata, tags, attributes, and metric summaries. |
+| `tracker.compare_runs` | Compare up to 50 already selected runs by config, metadata, tags, attributes, and metric summaries. |
 | `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV. |
 | `tracker.workspace_view_data` | Resolve a portable dashboard view plus explicit run IDs into bounded panel data. |
 

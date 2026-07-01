@@ -78,6 +78,7 @@ test("MCP server exposes the report tool surface", () => {
   for (const expected of [
     "tracker.list_projects",
     "tracker.list_runs",
+    "tracker.compare_matching_runs",
     "tracker.get_run",
     "tracker.query_metrics",
     "tracker.list_metrics",
@@ -155,6 +156,55 @@ test("tracker.list_runs maps project aliases and search options to Rust summary 
     assert.equal(url.searchParams.get("metric_key"), "eval/return_mean");
     assert.equal(url.searchParams.get("cursor"), "offset:25");
     assert.equal(url.searchParams.get("limit"), "25");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.compare_matching_runs posts filtered comparison body", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "POST /api/runs/compare-query": ({ body }) => ({
+      total_matching_runs: 5,
+      selected_run_ids: ["run-1", "run-2"],
+      candidates: [
+        { run_id: "run-1", rank: 1, selection_reason: "selected" },
+        { run_id: "run-2", rank: 2, selection_reason: "reference" },
+      ],
+      rows: [{ path: "config/lr", different: true }],
+      truncated: { runs: true, rows: false },
+      echoed: body,
+    }),
+  });
+  try {
+    const tool = findTool("tracker.compare_matching_runs", tools);
+    const payload = parseTextResult(
+      await tool.handler({
+        project_id: "cartpole",
+        query: "tag:baseline status:finished",
+        display_status: "finished",
+        sort_by: "metric-best",
+        metric_key: "eval/return_mean",
+        limit: 2,
+        reference_run_id: "run-2",
+        diff_only: true,
+        include_rows: false,
+      }),
+    );
+    assert.equal(payload.total_matching_runs, 5);
+    assert.equal(payload.rows[0].path, "config/lr");
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].body, {
+      project: "cartpole",
+      q: "tag:baseline status:finished",
+      display_status: "finished",
+      sort_by: "metric-best",
+      metric_key: "eval/return_mean",
+      limit: 2,
+      reference_run_id: "run-2",
+      diff_only: true,
+      include_rows: false,
+    });
   } finally {
     restoreFetch();
   }

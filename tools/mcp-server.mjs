@@ -9,6 +9,7 @@
  * Tracker tools (read-only over runs/metrics):
  *   - tracker.list_projects()
  *   - tracker.list_runs(project?, query?, limit?, cursor?, sort_by?, metric_key?)
+ *   - tracker.compare_matching_runs(project?, query?, sort_by?, metric_key?, limit?)
  *   - tracker.get_run(run_id)
  *   - tracker.query_metrics(run_id, key, since_step?, until_step?)
  *   - tracker.list_metrics(run_id)

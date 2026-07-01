@@ -50,7 +50,7 @@ pub(super) fn metric_keys_from_run_values(run_values: &[Value], limit: usize) ->
     keys.into_iter().collect()
 }
 
-pub(super) fn validate_run_sort(sort_by: &str) -> AppResult<String> {
+pub(in crate::store) fn validate_run_sort(sort_by: &str) -> AppResult<String> {
     let sort_by = validate_name(Some(sort_by), "sort_by")?;
     if matches!(
         sort_by.as_str(),
@@ -98,7 +98,7 @@ fn metric_sort_value(
     }
 }
 
-pub(super) fn is_minimize_metric(key: &str) -> bool {
+pub(in crate::store) fn is_minimize_metric(key: &str) -> bool {
     key.split(['/', '_']).any(|part| {
         matches!(
             part.to_ascii_lowercase().as_str(),

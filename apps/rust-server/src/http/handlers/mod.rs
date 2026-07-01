@@ -66,11 +66,11 @@ pub(super) use reports::{
     list_org_panels, list_reports, rotate_report_share_token, update_report,
 };
 pub(super) use runs::{
-    create_attributes, create_object, create_project, create_run, fork_run, get_metrics, get_run,
-    get_run_lineage, list_attributes, list_console_logs, list_object_rows, list_objects,
-    list_projects, list_runs, log_console_logs, log_metrics, log_rank_metrics, overview,
-    rank_metrics_summary, runs_summary, side_by_side, stop_ack, stop_run, stop_runs, stop_signal,
-    update_run,
+    compare_matching_runs, create_attributes, create_object, create_project, create_run, fork_run,
+    get_metrics, get_run, get_run_lineage, list_attributes, list_console_logs, list_object_rows,
+    list_objects, list_projects, list_runs, log_console_logs, log_metrics, log_rank_metrics,
+    overview, rank_metrics_summary, runs_summary, side_by_side, stop_ack, stop_run, stop_runs,
+    stop_signal, update_run,
 };
 pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 

@@ -179,7 +179,7 @@ Validation limits that affect callers:
 | Artifact manifest entries | Default 100, max 1,000 per page |
 | Versioned artifact manifest | Max 1,000 entries |
 | Versioned artifact upload session | Max 20,000 total parts |
-| Side-by-side comparison | Max 50 runs and 5,000 rows |
+| Side-by-side comparison and compare-query | Max 50 runs and 5,000 rows |
 | Export | Max 500 runs, 100,000 metric points, 25,000 attributes, 10,000 artifacts |
 | API requests | Free 5 req/sec general / 2 req/sec ingest; Pro 50 / 25; Premium 200 / 100 |
 
@@ -1339,6 +1339,67 @@ Output:
     }
   ],
   "truncated": false
+}
+```
+
+### `POST /api/runs/compare-query`
+
+Auth: tenant read access.
+
+Body:
+
+| Field | Meaning |
+| --- | --- |
+| `project` | Optional project name/slug. Project-scoped API keys still constrain visible runs. |
+| `q` or `query` | Optional run search query using the same language as `/api/runs/summary`. |
+| `status` | Optional raw run status filter. |
+| `display_status` | Optional derived status filter: `running`, `stopping`, `stopped`, `finished`, or `failed`. |
+| `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, or `metric-best`; defaults to `created`. |
+| `metric_key` | Metric key for metric sorts; defaults to `eval/return_mean` only when a metric sort is requested. |
+| `limit` | Candidate count, max 50. |
+| `reference_run_id` | Optional visible reference run. If it matches the filter but falls outside the top candidates, the response appends it and marks it as `selection_reason: "reference"`. |
+| `diff_only` | `true` to hide rows where all values match. |
+| `include_rows` | Defaults to `true`; set `false` to fetch candidate evidence and summaries without side-by-side rows. |
+
+The endpoint ranks the exact filtered visible run set before applying `limit`.
+Metric sorts must use the filtered run IDs rather than an org-wide metric
+leaderboard, so sparse project/filter matches cannot be displaced by unrelated
+runs. Missing, inaccessible, hidden, or out-of-filter reference runs return
+`404`.
+
+Output:
+
+```json
+{
+  "query": {
+    "project": "cartpole",
+    "q": "tag:baseline",
+    "status": "finished",
+    "display_status": null,
+    "sort_by": "metric-best",
+    "metric_key": "eval/return_mean"
+  },
+  "total_matching_runs": 42,
+  "selected_run_ids": ["uuid"],
+  "candidates": [
+    {
+      "rank": 1,
+      "run_id": "uuid",
+      "sort_value": 0.92,
+      "sort_mode": "max",
+      "metric_key": "eval/return_mean",
+      "metric_count": 100,
+      "latest_step": 99,
+      "best_step": 88,
+      "missing_metric": false,
+      "selection_reason": "selected"
+    }
+  ],
+  "runs": [],
+  "rows": [],
+  "reference_run_id": "uuid",
+  "limits": { "runs": 50, "rows": 5000 },
+  "truncated": { "runs": true, "rows": false }
 }
 ```
 

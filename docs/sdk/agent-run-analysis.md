@@ -18,11 +18,12 @@ node tools/mcp-server.mjs
 | --- | --- |
 | `tracker.list_projects` | List projects visible to the caller before choosing a project for run searches. |
 | `tracker.list_runs` | Search and page run summaries. Use `project`, `query`, `status`, `sort_by`, `metric_key`, `cursor`, and `limit`. |
+| `tracker.compare_matching_runs` | Rank matching runs through `POST /api/runs/compare-query` and return selected candidate evidence, run summaries, and optional side-by-side difference rows. |
 | `tracker.get_run` | Fetch one run summary by UUID. |
 | `tracker.list_metrics` | List a run's metric keys with latest/min/max/mean summary values. |
 | `tracker.query_metrics` | Fetch bounded metric points for one run/key, optionally with `start_step`/`end_step`. Legacy `since_step`/`until_step` arguments are accepted by the tool and mapped to the Rust API. |
 | `tracker.get_metric_series_batch` | Fetch bounded series for one metric across many run IDs through `POST /api/metrics/series`. |
-| `tracker.compare_runs` | Compare up to 50 selected runs through `GET /api/runs/side-by-side`. |
+| `tracker.compare_runs` | Compare up to 50 already selected runs through `GET /api/runs/side-by-side`. |
 | `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV through `GET /api/export`. |
 | `tracker.workspace_view_data` | Resolve a portable workspace-view payload plus explicit run IDs into bounded panel data. |
 
@@ -39,9 +40,14 @@ node tools/mcp-server.mjs
    metric key is unknown.
 5. Call `tracker.get_metric_series_batch` for the selected metric and candidate
    run IDs. Keep `limit` modest unless the user asked for curve detail.
-6. Call `tracker.compare_runs` only after narrowing to at most 50 run IDs. This
-   endpoint is for detailed selected-run diffs, not broad project-wide ranking.
-7. Use `tracker.export_runs` when the user asks for portable evidence or wants
+6. Call `tracker.compare_matching_runs` when the user asks to compare the top
+   matching runs and you do not already have the exact run IDs. It applies the
+   same filters and metric sort as `tracker.list_runs`, returns `candidates[]`
+   explaining why each run was selected, and can include bounded diff rows.
+7. Call `tracker.compare_runs` only after narrowing to at most 50 exact run IDs.
+   This endpoint is for detailed selected-run diffs, not broad project-wide
+   ranking.
+8. Use `tracker.export_runs` when the user asks for portable evidence or wants
    data for a notebook/spreadsheet.
 
 ## Search Examples
@@ -81,6 +87,19 @@ await call("tracker.list_runs", {
 ```
 
 Compare candidate configs and summaries:
+
+```js
+await call("tracker.compare_matching_runs", {
+  project: "cartpole",
+  query: "tag:baseline status:finished",
+  sort_by: "metric-best",
+  metric_key: "eval/return_mean",
+  limit: 5,
+  diff_only: true,
+});
+```
+
+Compare exact selected configs and summaries:
 
 ```js
 await call("tracker.compare_runs", {

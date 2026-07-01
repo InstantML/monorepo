@@ -26,4 +26,5 @@ pub use query::{list_runs, overview, runs_summary};
 pub use rank_metrics::{log_rank_metrics, rank_metrics_summary};
 
 // re-exported as pub(super) so export.rs can call it via `use super::*`
+pub(super) use helpers::{is_minimize_metric, validate_run_sort};
 pub(super) use query::filtered_runs;

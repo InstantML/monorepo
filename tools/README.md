@@ -6,7 +6,7 @@ Use the root `../SETUP.md` for fresh-clone setup. Node helpers assume `npm ci` h
 
 ## MCP Server
 
-`mcp-server.mjs` exposes InstantML project, run, metric, export,
+`mcp-server.mjs` exposes InstantML project, run, metric, comparison, export,
 workspace-view, and report tools to MCP-compatible agents. The consumer API
 base defaults to `https://api.instantml.ai`, and report share links default to
 the hosted web app at `https://instantml.ai`.
@@ -59,6 +59,12 @@ CI/CD runs the same build/deploy via the **Deploy MCP Server** GitHub Action
 (`.github/workflows/deploy-mcp.yml`), using Workload Identity Federation like the
 Cloud Run deploy. The deploy sets `INSTANTML_MCP_OAUTH_AUTH_SERVER` (prod:
 `https://clerk.instantml.ai`) unless `--no-oauth` / `enable_oauth: false`.
+
+Run-analysis tools include `tracker.list_projects`, `tracker.list_runs`,
+`tracker.compare_matching_runs`, `tracker.compare_runs`, metric readers,
+bounded export, workspace-view data, and report helpers. Prefer
+`tracker.compare_matching_runs` when the agent needs to rank matching runs
+server-side before producing comparison evidence.
 
 ## Local ClickHouse Helper
 
