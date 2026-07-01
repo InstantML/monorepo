@@ -1029,26 +1029,51 @@ kbd {
    section into the pane at a time, so nothing is spread across columns. */
 .settings-modal {
   align-items: start;
-  animation: settings-modal-blur-in 0.2s ease forwards;
+  animation: settings-modal-in 0.2s ease forwards;
   padding-top: max(30px, calc(var(--topbar-height) + 24px));
 }
 
-@keyframes settings-modal-blur-in {
+/* Applied by the pane while it defers unmount for the exit fade. */
+.settings-modal.closing {
+  animation: settings-modal-out 0.2s ease forwards;
+}
+
+/* Fade the whole overlay (backdrop and card together) while the blur ramps. */
+@keyframes settings-modal-in {
   from {
+    opacity: 0;
     background: rgba(9, 14, 20, 0);
     -webkit-backdrop-filter: blur(0) saturate(100%);
     backdrop-filter: blur(0) saturate(100%);
   }
 
   to {
+    opacity: 1;
     background: rgba(9, 14, 20, 0.48);
     -webkit-backdrop-filter: blur(12px) saturate(115%);
     backdrop-filter: blur(12px) saturate(115%);
   }
 }
 
+@keyframes settings-modal-out {
+  from {
+    opacity: 1;
+    background: rgba(9, 14, 20, 0.48);
+    -webkit-backdrop-filter: blur(12px) saturate(115%);
+    backdrop-filter: blur(12px) saturate(115%);
+  }
+
+  to {
+    opacity: 0;
+    background: rgba(9, 14, 20, 0);
+    -webkit-backdrop-filter: blur(0) saturate(100%);
+    backdrop-filter: blur(0) saturate(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .settings-modal {
+  .settings-modal,
+  .settings-modal.closing {
     animation-duration: 1ms;
   }
 }
