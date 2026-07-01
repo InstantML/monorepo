@@ -4528,7 +4528,6 @@ function dismissTopOverlay() {
               groupBy={groupBy}
               hover={hover}
               hoverMetricKey={hoverMetricKey}
-              metricCatalogRows={metricCatalogRows}
               metricFilter={metricFilter}
               metricFilterValid={metricFilterValid}
               metricKey={metricKey}
