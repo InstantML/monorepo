@@ -25,10 +25,11 @@ REPO_ROOT = HERE.parents[1]
 DEFAULT_REPORT = HERE / "run-output" / "live-blocked-smoke-report.json"
 DEFAULT_SUMMARY = HERE / "run-output" / "live-blocked-smoke-summary.json"
 DEFAULT_PRODUCTION_RUN_IDS = [
-    "80aa6afb-4003-4756-bffc-591c541a332d",
-    "a2f80903-ddf8-4e84-a4dc-297480144093",
-    "46d776c3-8061-44a0-9ce5-27a9cf3ab85b",
-    "2abdb990-1305-47ee-be70-c0716ac0f1c4",
+    "a0c53fce-5351-476b-bd63-537c6ce442be",
+    "01fff006-b7e6-4329-9d6d-c32b44eb4d3c",
+    "b9a7b17a-8e37-4bec-9ae2-9ea4a9bba429",
+    "a51f74e9-1077-4587-87ad-9d678002aa49",
+    "1ddca3ef-fd24-4032-a95b-1d77f1c4b8aa",
 ]
 TOKEN_RE = re.compile(r"instantml_(?:embed_)?(?!redacted\b)[A-Za-z0-9_-]{20,}")
 

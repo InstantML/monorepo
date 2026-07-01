@@ -8,25 +8,29 @@ The production InstantML project `castform-live-demo` was created in workspace
 `InstantML Warehouse` and populated through the real InstantML SDK using the
 Castform-shaped fallback trainer.
 
-Verified production run IDs:
+Latest verified production run IDs:
 
-- `80aa6afb-4003-4756-bffc-591c541a332d`
-- `a2f80903-ddf8-4e84-a4dc-297480144093`
-- `46d776c3-8061-44a0-9ce5-27a9cf3ab85b`
-- `2abdb990-1305-47ee-be70-c0716ac0f1c4`
+- `a0c53fce-5351-476b-bd63-537c6ce442be`
+- `01fff006-b7e6-4329-9d6d-c32b44eb4d3c`
+- `b9a7b17a-8e37-4bec-9ae2-9ea4a9bba429`
+- `a51f74e9-1077-4587-87ad-9d678002aa49`
+- `1ddca3ef-fd24-4032-a95b-1d77f1c4b8aa`
 
-Verified production summary:
+Verified live write summary:
 
 - Project: `castform-live-demo`
-- Runs: `4`
-- Metric points: `576`
-- Active runs: `0`
-- Failed runs: `0`
-- Best `eval/reward_mean`: `0.7989583424106731`
+- Runs: `5`
+- Logged step events: `25` per run (`0..240` by `10`)
+- Scalar metrics per event: `16`
+- Best final `eval/reward_mean`: `0.779903`
+- Hosted embed sessions: `0`, blocked by missing `/api/embed/sessions`
 
 The local live manifest at `web/public/demo-manifest.json` is generated and
 ignored by Git. It contains these run IDs and the live metric evidence, but no
-API key and no embed token.
+API key and no embed token. The latest ignored evidence files are
+`run-output/live-generated-summary.json`,
+`run-output/live-generated-blocked-smoke-summary.json`, and
+`run-output/live-generated-blocked-smoke-report.json`.
 
 ## Hosted Iframe Blocker
 
@@ -92,10 +96,11 @@ INSTANTML_API_KEY=... python3 demo/castform/run_demo.py \
   --parent-origin https://your-fresh-demo-origin.example \
   --project castform-live-demo \
   --allow-embed-blocked \
-  --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
-  --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
-  --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
-  --instantml-run-id 2abdb990-1305-47ee-be70-c0716ac0f1c4
+  --instantml-run-id a0c53fce-5351-476b-bd63-537c6ce442be \
+  --instantml-run-id 01fff006-b7e6-4329-9d6d-c32b44eb4d3c \
+  --instantml-run-id b9a7b17a-8e37-4bec-9ae2-9ea4a9bba429 \
+  --instantml-run-id a51f74e9-1077-4587-87ad-9d678002aa49 \
+  --instantml-run-id 1ddca3ef-fd24-4032-a95b-1d77f1c4b8aa
 ```
 
 That command calls `GET /api/runs/summary` for those IDs and writes a new

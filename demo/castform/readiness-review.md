@@ -27,8 +27,9 @@ artifacts: production and staging still return 404 for
 
 ## Evidence Reviewed
 
-- Production data exists: `live-hosted-status.md` records 4 run IDs, 576 metric
-  points, no active/failed runs, and best `eval/reward_mean` evidence.
+- Production data exists: `live-hosted-status.md` records the latest 5 live
+  run IDs in project `castform-live-demo`; the generated write used 25 logged
+  steps per run and 16 scalar metrics per step.
 - Hosted iframe blocker is explicit: prod, app-domain, and staging
   `/api/embed/sessions` calls returned 404; dashboard routes are not frameable.
   `check_hosted_readiness.py` now inspects hosted OpenAPI for
@@ -40,9 +41,11 @@ artifacts: production and staging still return 404 for
 - Mocked E2E passed: `run_mocked_e2e.py` covers fresh SDK ingestion, existing
   run recovery, browser rendering, and the blocked-hosted branch where the fake
   embed route returns 404 without creating extra sessions.
-- Live blocked-smoke wrapper is covered by mocked E2E: the fake hosted API path
-  runs `run_live_blocked_smoke.py` against existing run IDs, a 404 embed route,
-  a local parent server, and desktop browser verification.
+- Live blocked-smoke wrapper is covered by mocked E2E and was also run against
+  the latest production run IDs. The live smoke regenerated the parent manifest
+  from hosted summaries, served it locally, and passed desktop `1366x900` plus
+  mobile `390x844` browser checks with zero hosted sessions and an explicit
+  blocked embed state.
 - Castform SDK bridge shape is covered: `run_castform_bridge_smoke.py` runs the
   real `castform_live_bridge.py` CLI against a temporary fake Benchmax SDK and
   verifies the `TrainerClient.launch_training_run(...)` arguments and output
@@ -92,10 +95,11 @@ INSTANTML_API_KEY=... python3 demo/castform/run_demo.py \
   --parent-origin https://your-demo-origin.example \
   --project castform-live-demo \
   --allow-embed-blocked \
-  --instantml-run-id 80aa6afb-4003-4756-bffc-591c541a332d \
-  --instantml-run-id a2f80903-ddf8-4e84-a4dc-297480144093 \
-  --instantml-run-id 46d776c3-8061-44a0-9ce5-27a9cf3ab85b \
-  --instantml-run-id 2abdb990-1305-47ee-be70-c0716ac0f1c4
+  --instantml-run-id a0c53fce-5351-476b-bd63-537c6ce442be \
+  --instantml-run-id 01fff006-b7e6-4329-9d6d-c32b44eb4d3c \
+  --instantml-run-id b9a7b17a-8e37-4bec-9ae2-9ea4a9bba429 \
+  --instantml-run-id a51f74e9-1077-4587-87ad-9d678002aa49 \
+  --instantml-run-id 1ddca3ef-fd24-4032-a95b-1d77f1c4b8aa
 ```
 
 Then verify:
@@ -107,7 +111,7 @@ python3 demo/castform/verify_demo.py \
 
 node demo/castform/browser_verify.mjs \
   --url https://your-demo-origin.example \
-  --expect-runs 4 \
+  --expect-runs 5 \
   --expect-sessions 0 \
   --allow-blocked-embeds
 ```

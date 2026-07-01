@@ -60,9 +60,10 @@ Create a full end-to-end demo that:
   a fake local InstantML API, verifies SDK metric/text/log traffic and mock
   embed sessions, serves the parent page, and runs desktop/mobile browser
   checks without live credentials.
-- Created production InstantML API key `Castform live demo 2026-07-01`, wrote
-  four live Castform-shaped runs to project `castform-live-demo`, and verified
-  the project has 4 runs and 576 metric points.
+- Created an initial production InstantML API key
+  `Castform live demo 2026-07-01`, wrote live Castform-shaped runs to project
+  `castform-live-demo`, and verified production reads before the later
+  five-run call-prep set superseded it.
 - Hosted iframe session creation is blocked in production: prod and staging
   return 404 for `POST /api/embed/sessions`, their OpenAPI documents omit embed
   paths, and dashboard pages are not frameable. Added a live blocked-embed page
@@ -121,3 +122,12 @@ Create a full end-to-end demo that:
 - Updated `check_hosted_readiness.py` to inspect hosted OpenAPI for
   `POST /api/embed/sessions`, warning during blocked hosted mode and failing
   under `--require-hosted-embeds` when real hosted iframes are expected.
+- With explicit operator approval, created and copied a production InstantML
+  API key named `Castform live demo Codex 2026-07-01` into ignored local
+  `demo/castform/.env`, verified the key with hosted readiness, and wrote a
+  fresh five-run production Castform-shaped data set to project
+  `castform-live-demo`.
+- Verified the fresh production set through `run_live_blocked_smoke.py` using
+  the exact run IDs. The smoke regenerated the parent manifest from hosted run
+  summaries, verified the blocked hosted-embed state, and passed desktop
+  `1366x900` plus mobile `390x844` browser checks.
