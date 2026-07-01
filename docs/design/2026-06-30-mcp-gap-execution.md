@@ -21,7 +21,7 @@ files.
 | 2 | `codex/mcp-gap2-list-projects` | Add `tracker.list_projects`. | Ready for PR |
 | 3 | `codex/mcp-gap3-compare-matching-runs` | Add server-side query comparison and MCP wrapper. | Ready for PR |
 | 4 | `codex/mcp-gap4-artifact-lineage-tools` | Add read-only artifact, checkpoint, and lineage MCP tools. | Ready for PR |
-| 5 | `codex/mcp-gap5-report-markdown-export` | Add `tracker.export_report_markdown`. | Pending |
+| 5 | `codex/mcp-gap5-report-markdown-export` | Add `tracker.export_report_markdown`. | Ready for PR |
 
 ## Gap 1 Notes
 
@@ -65,6 +65,15 @@ files.
 - Expected result: agents can answer checkpoint, input/output artifact, and
   producer/consumer lineage questions without exporting whole runs.
 
+## Gap 5 Notes
+
+- Classification: localized MCP wrapper over existing read-only Rust report
+  Markdown export endpoint; no new backend route or storage contract.
+- Implementation: add `tracker.export_report_markdown(report_id, share_token?)`
+  around `GET /api/reports/:report_id/markdown`.
+- Expected result: agents can retrieve a Markdown copy of a report for
+  downstream documents, review, or handoff without reconstructing block JSON.
+
 ## Validation Log
 
 - 2026-06-30 gap 1: `node --test tools/tests/mcp-server-entrypoint.test.js apps/server/tests/mcp-server-reports.test.js` passed.
@@ -96,4 +105,10 @@ files.
   preserved project/type/query/limit params.
 - 2026-06-30 gap 4: `npm run docs:validate` passed.
 - 2026-06-30 gap 4: local diff review and `git diff --check` completed with no findings.
+- 2026-06-30 gap 5: `node --test tools/tests/mcp-server-entrypoint.test.js apps/server/tests/mcp-server-reports.test.js` passed.
+- 2026-06-30 gap 5: real HTTP MCP `tools/call` against a fake upstream
+  `GET /api/reports/:report_id/markdown` API returned Markdown text and
+  preserved the `share` token param.
+- 2026-06-30 gap 5: `npm run docs:validate` passed.
+- 2026-06-30 gap 5: local diff review and `git diff --check` completed with no findings.
 - Pending: PR.

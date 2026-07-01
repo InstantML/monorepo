@@ -35,6 +35,7 @@ node tools/mcp-server.mjs
 | `tracker.get_artifact_lineage` | Fetch versioned artifact producer/consumer lineage. |
 | `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV through `GET /api/export`. |
 | `tracker.workspace_view_data` | Resolve a portable workspace-view payload plus explicit run IDs into bounded panel data. |
+| `tracker.export_report_markdown` | Export an InstantML report as Markdown text when the user wants a portable narrative artifact. |
 
 ## Recommended Flow
 
@@ -64,6 +65,9 @@ node tools/mcp-server.mjs
    `tracker.list_run_artifact_edges` for producer/consumer relationships.
 9. Use `tracker.export_runs` when the user asks for portable evidence or wants
    data for a notebook/spreadsheet.
+10. Use `tracker.export_report_markdown` when the user asks for a Markdown copy
+    of an existing report or wants to include a shared report in another
+    document.
 
 ## Search Examples
 

@@ -100,6 +100,7 @@ test("MCP server exposes the report tool surface", () => {
     "tracker.create_report",
     "tracker.update_report",
     "tracker.delete_report",
+    "tracker.export_report_markdown",
     "tracker.share_report",
     "tracker.report_block_schema",
     "tracker.list_org_panels",
@@ -690,6 +691,25 @@ test("tracker.create_report posts /api/reports with the supplied blocks", async 
     assert.equal(calls[0].pathname, "/api/reports");
     assert.equal(calls[0].body.blocks.length, 2);
     assert.equal(calls[0].body.blocks[0].kind, "heading");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.export_report_markdown fetches Markdown text", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const calls = installFetchStub({
+    "GET /api/reports/rep-1/markdown": "# Report\n\nSummary.",
+  });
+  try {
+    const tool = findTool("tracker.export_report_markdown", tools);
+    const markdown = parseTextResult(
+      await tool.handler({ report_id: "rep-1", share_token: "share-abc" }),
+    );
+    assert.match(markdown, /^# Report/);
+    const url = new URL(calls[0].url);
+    assert.equal(url.pathname, "/api/reports/rep-1/markdown");
+    assert.equal(url.searchParams.get("share"), "share-abc");
   } finally {
     restoreFetch();
   }

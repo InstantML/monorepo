@@ -146,7 +146,11 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
     return res.json();
   }
 
-  async function apiText(path, params = {}) {
+  async function apiText(
+    path,
+    params = {},
+    accept = "text/markdown, text/csv, text/plain, application/json",
+  ) {
     const url = new URL(path, apiUrl);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null) {
@@ -154,7 +158,7 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
       }
     }
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "text/csv, application/json" },
+      headers: { Authorization: `Bearer ${apiKey}`, Accept: accept },
     });
     const text = await res.text();
     if (!res.ok) {
@@ -804,6 +808,30 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
           `/api/reports/${encodeURIComponent(args.report_id)}`,
         );
         return textResult({ deleted: true, report_id: args.report_id });
+      },
+    },
+    {
+      name: "tracker.export_report_markdown",
+      description:
+        "Export a block-based report as Markdown text. Pass share_token to export a magic-link shared report without org membership.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          report_id: { type: "string" },
+          share_token: {
+            type: "string",
+            description: "Optional share token returned by tracker.share_report.",
+          },
+        },
+        required: ["report_id"],
+      },
+      handler: async (args) => {
+        const markdown = await apiText(
+          `/api/reports/${encodeURIComponent(args.report_id)}/markdown`,
+          compactParams({ share: args.share_token }),
+          "text/markdown, text/plain, application/json",
+        );
+        return textResult(markdown);
       },
     },
     {

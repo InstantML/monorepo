@@ -33,6 +33,7 @@
  *   - tracker.create_report(title, description?, blocks, visibility?, project_id?)
  *   - tracker.update_report(report_id, title?, description?, blocks?, visibility?)
  *   - tracker.delete_report(report_id)
+ *   - tracker.export_report_markdown(report_id, share_token?)
  *   - tracker.share_report(report_id) → { share_token, share_url }
  *   - tracker.report_block_schema() → JSON example covering every block type
  *
