@@ -868,6 +868,8 @@
   display: grid;
   place-items: center;
   background: rgba(9, 14, 20, 0.48);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
+  backdrop-filter: blur(12px) saturate(115%);
   padding: 26px;
 }
 
@@ -1076,12 +1078,13 @@ kbd {
   gap: 10px;
   border: 0;
   border-radius: 8px;
-  background: transparent;
+  background-color: transparent;
   color: var(--text);
   padding: 8px 10px;
-  font: inherit;
+  font: 600 12.5px/1.25 var(--font-sans);
   text-align: left;
   cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, font-weight 0.2s ease;
 }
 
 .settings-nav-item svg {
@@ -1090,13 +1093,13 @@ kbd {
 }
 
 .settings-nav-item:hover {
-  background: var(--surface-hover);
+  background-color: var(--surface-hover);
 }
 
 .settings-nav-item.active {
   /* A neutral step-darker gray (the app's standard raised-fill token), not the
      green selected tint, so the active row reads as a plain gray chip. */
-  background: var(--surface-3);
+  background-color: var(--surface-3);
   font-weight: 640;
 }
 

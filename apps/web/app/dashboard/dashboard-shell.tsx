@@ -4221,6 +4221,7 @@ function dismissTopOverlay() {
   const stopDialogSkippedSummary = stopDialogSkipRows.length
     ? stopDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
     : "";
+  const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
 
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
@@ -4349,8 +4350,8 @@ function dismissTopOverlay() {
           theme={theme}
         />
 
-        <section className={`tab-pane ${activeTab === "runs" ? "active" : ""}`} aria-label="Runs">
-          {activeTab === "runs" ? (
+        <section className={`tab-pane ${visibleTab === "runs" ? "active" : ""}`} aria-label="Runs">
+          {visibleTab === "runs" ? (
             <RunsTabPane
               addPanelSectionId={addPanelSectionId}
               primaryRunId={primaryRun?.id ?? ""}
@@ -4517,8 +4518,8 @@ function dismissTopOverlay() {
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "metrics" ? "active" : ""}`} aria-label="Metrics">
-          {activeTab === "metrics" ? (
+        <section className={`tab-pane ${visibleTab === "metrics" ? "active" : ""}`} aria-label="Metrics">
+          {visibleTab === "metrics" ? (
             <MetricsTabPane
               activeMetricCatalogRow={activeMetricCatalogRow}
               chartSummaries={chartSummaries}
@@ -4558,8 +4559,8 @@ function dismissTopOverlay() {
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "distributed" ? "active" : ""}`} aria-label="Distributed">
-          {activeTab === "distributed" ? (
+        <section className={`tab-pane ${visibleTab === "distributed" ? "active" : ""}`} aria-label="Distributed">
+          {visibleTab === "distributed" ? (
             <DistributedTabPane
               api={api}
               availableRuns={sortedRuns}
@@ -4569,8 +4570,8 @@ function dismissTopOverlay() {
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "detail" ? "active" : ""}`} aria-label="Run Detail">
-          {activeTab === "detail" ? (
+        <section className={`tab-pane ${visibleTab === "detail" ? "active" : ""}`} aria-label="Run Detail">
+          {visibleTab === "detail" ? (
             <DetailTabPane
               api={api}
               canControlRuns={canControlRuns}
@@ -4616,20 +4617,20 @@ function dismissTopOverlay() {
         </section>
 
 
-        <section className={`tab-pane ${activeTab === "alerts" ? "active" : ""}`} aria-label="Alerts">
-          {activeTab === "alerts" ? (
+        <section className={`tab-pane ${visibleTab === "alerts" ? "active" : ""}`} aria-label="Alerts">
+          {visibleTab === "alerts" ? (
             <AlertsTabPane alertRows={alertRows} metricKey={metricKey} overview={overview} onRefresh={loadDashboard} />
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
-          {activeTab === "datasets" ? (
+        <section className={`tab-pane ${visibleTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
+          {visibleTab === "datasets" ? (
             <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} />
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "insights" ? "active" : ""}`} aria-label="Insights">
-          {activeTab === "insights" ? (
+        <section className={`tab-pane ${visibleTab === "insights" ? "active" : ""}`} aria-label="Insights">
+          {visibleTab === "insights" ? (
             <InsightsTabPane
               api={api}
               metricKey={metricKey}
@@ -4641,8 +4642,8 @@ function dismissTopOverlay() {
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "artifacts" ? "active" : ""}`} aria-label="Artifacts">
-          {activeTab === "artifacts" ? (
+        <section className={`tab-pane ${visibleTab === "artifacts" ? "active" : ""}`} aria-label="Artifacts">
+          {visibleTab === "artifacts" ? (
             <ArtifactsTabPane
               api={api}
               canManageArtifacts={canManageOrg}
@@ -4655,66 +4656,12 @@ function dismissTopOverlay() {
           ) : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "reports" ? "active" : ""}`} aria-label="Reports">
-          {activeTab === "reports" ? <ReportsTabPane canEditReports={canEditReports} /> : null}
+        <section className={`tab-pane ${visibleTab === "reports" ? "active" : ""}`} aria-label="Reports">
+          {visibleTab === "reports" ? <ReportsTabPane canEditReports={canEditReports} /> : null}
         </section>
 
-        <section className={`tab-pane ${activeTab === "settings" ? "active" : ""}`} aria-label="Settings">
-          {activeTab === "settings" ? (
-            <SettingsTabPane
-              accountUser={sessionPayload?.user ?? null}
-              activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
-              activePlan={activePlan}
-              activeUsageWarnings={activeUsageOrg?.warnings ?? []}
-              adminBusy={adminBusy}
-              canManageOrg={canManageOrg}
-              formatBytes={formatBytes}
-              inviteEmail={inviteEmail}
-              inviteRole={inviteRole}
-              invitations={invitations}
-              invitationLinks={invitationLinks}
-              metricKey={metricKey}
-              metricOptionsForControls={metricOptionsForControls}
-              metricPercent={metricPercent}
-              metricUsed={metricUsed}
-              metricLimit={metricLimit}
-              apiRequestsPercent={apiRequestsPercent}
-              apiRequestsUsed={apiRequestsUsed}
-              apiRequestsLimit={apiRequestsLimit}
-              generalRateLimitLabel={generalRateLimitLabel}
-              ingestRateLimitLabel={ingestRateLimitLabel}
-              onInviteEmail={setInviteEmail}
-              onInviteRole={setInviteRole}
-              onInviteSeat={inviteSeat}
-              onCopyInvitationLink={copyInvitationLink}
-              onOpenInvitationLink={openInvitationLink}
-              onResendInvitation={resendInvitation}
-              onRevokeInvitation={revokeInvitation}
-              onOpenBillingPortal={openBillingPortal}
-              onChangeBillingPlan={changeBillingPlan}
-              onCancelBilling={cancelBilling}
-              onMetricKey={setMetricKey}
-              onXMode={setXMode}
-              onClose={() => selectTab(preSettingsTabRef.current === "settings" ? "runs" : preSettingsTabRef.current)}
-              orgName={sessionPayload?.organization?.name ?? ""}
-              orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
-              reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
-              seats={seats}
-              storagePercent={storagePercent}
-              storageUsed={storageUsed}
-              storageLimit={storageLimit}
-              storageUsageLabel={storageUsageLabel}
-              storageUsageDescription={storageUsageDescription}
-              usageResetLabel={usageResetLabel}
-              usageAvailable={usageAvailable}
-              xMode={xMode}
-              billingStatus={billingPayload?.billing ?? null}
-            />
-          ) : null}
-        </section>
-
-        <section className={`tab-pane ${activeTab === "api" ? "active" : ""}`} aria-label="API">
-          {activeTab === "api" ? (
+        <section className={`tab-pane ${visibleTab === "api" ? "active" : ""}`} aria-label="API">
+          {visibleTab === "api" ? (
             <ApiTabPane
               activeOrgId={activeOrgId}
               adminBusy={adminBusy}
@@ -4738,6 +4685,57 @@ function dismissTopOverlay() {
           ) : null}
         </section>
       </section>
+      {activeTab === "settings" ? (
+        <SettingsTabPane
+          accountUser={sessionPayload?.user ?? null}
+          activeLimitIncludedSeats={Number(activeLimits.included_seats ?? sessionPayload?.organization?.seat_limit ?? 0)}
+          activePlan={activePlan}
+          activeUsageWarnings={activeUsageOrg?.warnings ?? []}
+          adminBusy={adminBusy}
+          canManageOrg={canManageOrg}
+          formatBytes={formatBytes}
+          inviteEmail={inviteEmail}
+          inviteRole={inviteRole}
+          invitations={invitations}
+          invitationLinks={invitationLinks}
+          metricKey={metricKey}
+          metricOptionsForControls={metricOptionsForControls}
+          metricPercent={metricPercent}
+          metricUsed={metricUsed}
+          metricLimit={metricLimit}
+          apiRequestsPercent={apiRequestsPercent}
+          apiRequestsUsed={apiRequestsUsed}
+          apiRequestsLimit={apiRequestsLimit}
+          generalRateLimitLabel={generalRateLimitLabel}
+          ingestRateLimitLabel={ingestRateLimitLabel}
+          onInviteEmail={setInviteEmail}
+          onInviteRole={setInviteRole}
+          onInviteSeat={inviteSeat}
+          onCopyInvitationLink={copyInvitationLink}
+          onOpenInvitationLink={openInvitationLink}
+          onResendInvitation={resendInvitation}
+          onRevokeInvitation={revokeInvitation}
+          onOpenBillingPortal={openBillingPortal}
+          onChangeBillingPlan={changeBillingPlan}
+          onCancelBilling={cancelBilling}
+          onMetricKey={setMetricKey}
+          onXMode={setXMode}
+          onClose={() => selectTab(preSettingsTabRef.current === "settings" ? "runs" : preSettingsTabRef.current)}
+          orgName={sessionPayload?.organization?.name ?? ""}
+          orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
+          reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}
+          seats={seats}
+          storagePercent={storagePercent}
+          storageUsed={storageUsed}
+          storageLimit={storageLimit}
+          storageUsageLabel={storageUsageLabel}
+          storageUsageDescription={storageUsageDescription}
+          usageResetLabel={usageResetLabel}
+          usageAvailable={usageAvailable}
+          xMode={xMode}
+          billingStatus={billingPayload?.billing ?? null}
+        />
+      ) : null}
       {quickSearchOpen ? (
         <QuickSearchModal
           activeIndex={quickSearchActiveIndex}
