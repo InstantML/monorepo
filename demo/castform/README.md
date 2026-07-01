@@ -27,6 +27,9 @@ Research date: 2026-06-30.
   observations into InstantML and creates iframe embed sessions.
 - `castform_live_bridge.py`: optional live Benchmax SDK launcher for uploaded
   Castform training assets.
+- `run_castform_bridge_smoke.py`: no-secret smoke test that runs
+  `castform_live_bridge.py` against a temporary fake Benchmax SDK and verifies
+  the `TrainerClient.launch_training_run(...)` call shape.
 - `serve_web.py` and `web/`: local Castform-facing parent page for the hosted
   iframe embeds.
 - `create_smoke_manifest.py`: deterministic local manifest generator for
@@ -37,8 +40,9 @@ Research date: 2026-06-30.
   manifest, starts the parent page, runs artifact verification, runs desktop and
   mobile browser checks, writes an ignored safe report, and stops the server.
 - `run_call_prep_check.py`: one-command operator gate that runs the safe
-  Castform readiness check, mocked E2E recovery rehearsal, parent-page smoke,
-  and optionally the full local real iframe E2E under `--full`.
+  Castform readiness check, Benchmax bridge smoke, mocked E2E recovery
+  rehearsal, parent-page smoke, and optionally the full local real iframe E2E
+  under `--full`.
 - `run_live_blocked_smoke.py`: one-command live-data recovery smoke that reuses
   the known production run IDs, writes the current blocked-embed parent-page
   manifest, serves the page locally, and browser-verifies the no-token blocked
@@ -189,6 +193,7 @@ Live Castform SDK readiness check before launching through uploaded assets:
 python3 demo/castform/check_castform_readiness.py \
   --allow-missing-live-inputs \
   --skip-network
+python3 demo/castform/run_castform_bridge_smoke.py
 ```
 
 Full local writer rehearsal without live credentials:
@@ -199,8 +204,9 @@ python3 demo/castform/run_mocked_e2e.py
 ```
 
 `run_call_prep_check.py --full` is the walk-up gate: it runs the Castform
-readiness dry check, the mocked InstantML E2E, the local parent-page smoke, and
-the full local real iframe E2E. `run_mocked_e2e.py` alone runs the real
+readiness dry check, the Benchmax bridge smoke, the mocked InstantML E2E, the
+local parent-page smoke, and the full local real iframe E2E. `run_mocked_e2e.py`
+alone runs the real
 `run_demo.py` against a local fake InstantML API and writes
 `run-output/mocked-e2e-report.json`, which is ignored by Git. It covers both
 fresh SDK ingestion and the `--instantml-run-id` recovery command.
@@ -253,7 +259,7 @@ The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py demo/castform/run_live_blocked_smoke.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py demo/castform/run_live_blocked_smoke.py demo/castform/run_castform_bridge_smoke.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```

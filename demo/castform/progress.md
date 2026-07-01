@@ -103,3 +103,7 @@ Create a full end-to-end demo that:
   regenerate the current production persisted-data page from known run IDs,
   serve it locally, and browser-verify the blocked hosted-embed state without
   duplicating runs.
+- Added `run_castform_bridge_smoke.py` to execute the live Castform bridge CLI
+  against a temporary fake Benchmax SDK, verifying the
+  `TrainerClient.launch_training_run(...)` call shape without live Castform
+  credentials or uploaded assets.

@@ -40,6 +40,10 @@ artifacts: production and staging still return 404 for
 - Live blocked-smoke wrapper is covered by mocked E2E: the fake hosted API path
   runs `run_live_blocked_smoke.py` against existing run IDs, a 404 embed route,
   a local parent server, and desktop browser verification.
+- Castform SDK bridge shape is covered: `run_castform_bridge_smoke.py` runs the
+  real `castform_live_bridge.py` CLI against a temporary fake Benchmax SDK and
+  verifies the `TrainerClient.launch_training_run(...)` arguments and output
+  without live credentials.
 - Call-prep gate passed: `run_call_prep_check.py --full --timeout 240` passed,
   and the later fast gate passed after compact-report hardening.
 - Process hygiene passed: post-run checks found no lingering Rust API, Next,
@@ -97,8 +101,9 @@ sessions and remove the blocked browser expectation.
 
 - Real Castform SDK live launch still requires Castform credentials and uploaded
   assets from Castform/Benchmax. `check_castform_readiness.py` and
-  `castform_live_bridge.py` are ready for that path, but it has not been run
-  end to end against a real Castform training job.
+  `castform_live_bridge.py` are ready for that path, and the bridge CLI is
+  smoke-tested with a fake Benchmax SDK, but it has not been run end to end
+  against a real Castform training job.
 - Hosted iframes cannot be proven in production until `/api/embed/sessions` is
   deployed/enabled. The local real iframe E2E is the proof that the surrounding
   InstantML iframe contract works.

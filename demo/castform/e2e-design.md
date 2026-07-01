@@ -145,6 +145,17 @@ python3 demo/castform/run_demo.py \
   --parent-origin https://<demo-parent-origin>
 ```
 
+No-secret bridge coverage:
+
+```bash
+python3 demo/castform/run_castform_bridge_smoke.py
+```
+
+The smoke command runs the same bridge CLI against a temporary fake
+`benchmax.platform.client.TrainerClient`, verifies the uploaded asset paths,
+launcher args, API-key plumbing, returned Castform run ID, and output file, and
+does not persist the fake SDK key.
+
 ## Castform SDK-Shaped Training Fallback
 
 The fallback keeps the code path close to the public Castform/Benchmax shape:

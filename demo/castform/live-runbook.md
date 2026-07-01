@@ -24,6 +24,7 @@ python3 demo/castform/run_call_prep_check.py --full
 python3 demo/castform/check_castform_readiness.py \
   --allow-missing-live-inputs \
   --skip-network
+python3 demo/castform/run_castform_bridge_smoke.py
 python3 demo/castform/run_mocked_e2e.py
 python3 demo/castform/run_local_smoke.py
 python3 demo/castform/run_local_real_iframe_e2e.py \
@@ -41,7 +42,10 @@ safe Castform readiness dry check, mocked InstantML recovery rehearsal,
 parent-page smoke, and full local real iframe E2E. `check_castform_readiness.py`
 is the safe live-Castform preflight by itself: it checks SDK importability,
 Castform API-key presence, uploaded asset arguments, and optional Castform app
-reachability without printing secrets. `run_mocked_e2e.py` is the stronger
+reachability without printing secrets. `run_castform_bridge_smoke.py` runs the
+live bridge CLI against a temporary fake Benchmax SDK so the
+`TrainerClient.launch_training_run(...)` call shape is covered without real
+Castform credentials. `run_mocked_e2e.py` is the stronger
 InstantML rehearsal: it executes the real hosted writer against a fake local
 InstantML API, verifies the existing-run recovery command, and browser-tests the
 generated page.
