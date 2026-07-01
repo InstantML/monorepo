@@ -99,3 +99,7 @@ Create a full end-to-end demo that:
   existing production run IDs while hosted embed routes still return 404.
 - Added `readiness-review.md` as the dedicated review pass with evidence,
   operator path, and residual blockers.
+- Added `run_live_blocked_smoke.py` so an operator with a live InstantML key can
+  regenerate the current production persisted-data page from known run IDs,
+  serve it locally, and browser-verify the blocked hosted-embed state without
+  duplicating runs.

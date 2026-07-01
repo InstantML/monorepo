@@ -93,6 +93,7 @@ def compact_report(path: Path) -> dict[str, Any] | None:
         "initial_fake_api",
         "fake_api",
         "blocked_fake_api",
+        "live_blocked_smoke",
         "initial_manifest",
         "manifest",
         "resume_run_total_before",

@@ -39,6 +39,10 @@ Research date: 2026-06-30.
 - `run_call_prep_check.py`: one-command operator gate that runs the safe
   Castform readiness check, mocked E2E recovery rehearsal, parent-page smoke,
   and optionally the full local real iframe E2E under `--full`.
+- `run_live_blocked_smoke.py`: one-command live-data recovery smoke that reuses
+  the known production run IDs, writes the current blocked-embed parent-page
+  manifest, serves the page locally, and browser-verifies the no-token blocked
+  state.
 - `check_hosted_readiness.py`: hosted preflight that checks dependencies,
   ignored generated paths, parent-origin shape, optional tunnel reachability,
   live env var presence, and `https://api.instantml.ai/health` without writing
@@ -220,7 +224,20 @@ viewports. Do not run another `next dev` for `apps/web` at the same time; Next
 uses an app-level development lock even when this script chooses a free port.
 
 When production run data exists but hosted embed sessions are not deployed,
-verify the explicit blocked state with:
+regenerate and verify the explicit blocked state with:
+
+```bash
+INSTANTML_API_KEY=instantml_... \
+python3 demo/castform/run_live_blocked_smoke.py
+```
+
+This command reads the existing production run summaries, confirms the hosted
+embed route is still blocked, serves the parent page locally, and runs desktop
+plus mobile browser checks. If you already have an HTTPS tunnel running and
+want the manifest to use that exact origin, pass
+`--parent-origin https://your-demo-origin.example`.
+
+For an already served HTTPS origin, the direct browser verifier is:
 
 ```bash
 node demo/castform/browser_verify.mjs \
@@ -236,7 +253,7 @@ The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py demo/castform/run_call_prep_check.py demo/castform/run_live_blocked_smoke.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 ```

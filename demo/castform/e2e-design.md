@@ -66,6 +66,8 @@ repeatable full iframe proof until the hosted embed API is deployed. The hosted
 runner supports `--allow-embed-blocked` so an operator can still generate a
 live-run parent page with zero iframe sessions and an explicit deployment
 blocker after production data has been written or recovered by run ID.
+`run_live_blocked_smoke.py` wraps that recovery path with a local parent server
+and browser verification for the current call-prep environment.
 
 ## Demo Runner Contract
 

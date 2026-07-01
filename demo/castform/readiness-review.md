@@ -16,7 +16,8 @@ with two explicit modes:
 
 1. Production persisted-data mode: live Castform-shaped runs exist in project
    `castform-live-demo`, and the local parent page can now be regenerated from
-   those existing run IDs with `run_demo.py --allow-embed-blocked`.
+   those existing run IDs with `run_live_blocked_smoke.py` or
+   `run_demo.py --allow-embed-blocked`.
 2. Full iframe proof mode: `run_local_real_iframe_e2e.py` verifies the complete
    iframe flow against local real InstantML services.
 
@@ -36,6 +37,9 @@ artifacts: production and staging still return 404 for
 - Mocked E2E passed: `run_mocked_e2e.py` covers fresh SDK ingestion, existing
   run recovery, browser rendering, and the blocked-hosted branch where the fake
   embed route returns 404 without creating extra sessions.
+- Live blocked-smoke wrapper is covered by mocked E2E: the fake hosted API path
+  runs `run_live_blocked_smoke.py` against existing run IDs, a 404 embed route,
+  a local parent server, and desktop browser verification.
 - Call-prep gate passed: `run_call_prep_check.py --full --timeout 240` passed,
   and the later fast gate passed after compact-report hardening.
 - Process hygiene passed: post-run checks found no lingering Rust API, Next,
@@ -54,6 +58,12 @@ python3 demo/castform/run_call_prep_check.py --full --timeout 240
 
 For the current production hosted state, regenerate the live parent page from
 existing production runs without duplicating data:
+
+```bash
+INSTANTML_API_KEY=... python3 demo/castform/run_live_blocked_smoke.py
+```
+
+For a tunnel-specific manifest, use the lower-level command:
 
 ```bash
 INSTANTML_API_KEY=... python3 demo/castform/run_demo.py \

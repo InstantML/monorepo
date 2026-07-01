@@ -26,6 +26,7 @@ REPO_ROOT = HERE.parents[1]
 DEFAULT_REPORT = HERE / "run-output" / "mocked-e2e-report.json"
 DEFAULT_RESUME_SUMMARY = HERE / "run-output" / "mocked-e2e-resume-summary.json"
 DEFAULT_BLOCKED_SUMMARY = HERE / "run-output" / "mocked-e2e-blocked-summary.json"
+DEFAULT_LIVE_BLOCKED_REPORT = HERE / "run-output" / "mocked-live-blocked-smoke-report.json"
 TOKEN_RE = re.compile(r"instantml_embed_(?!redacted\b)[A-Za-z0-9_-]+")
 
 
@@ -333,6 +334,19 @@ def write_report(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def compact_report(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"path": str(path), "ok": False, "error": "report missing or invalid"}
+    return {
+        "path": str(path),
+        "ok": payload.get("ok"),
+        "manifest": payload.get("manifest"),
+        "command_count": len(payload.get("commands") or []),
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Castform demo writer against a fake local InstantML API")
     parser.add_argument("--host", default="127.0.0.1")
@@ -524,6 +538,26 @@ def main() -> int:
                 timeout=args.timeout,
             )
         )
+        live_blocked_smoke_command = [
+            sys.executable,
+            "demo/castform/run_live_blocked_smoke.py",
+            "--api-base-url",
+            api_base_url,
+            "--instantml-web-base-url",
+            api_base_url,
+            "--parent-origin",
+            "https://castform-mocked.local.invalid",
+            "--project",
+            "castform-mocked-e2e",
+            "--timeout",
+            str(args.timeout),
+            "--report",
+            str(DEFAULT_LIVE_BLOCKED_REPORT),
+        ]
+        for run_id in state.runs:
+            live_blocked_smoke_command.extend(["--run-id", run_id])
+        report["commands"].append(run_command(live_blocked_smoke_command, env=env, timeout=max(args.timeout + 15.0, args.timeout * 2.0)))
+        report["live_blocked_smoke"] = compact_report(DEFAULT_LIVE_BLOCKED_REPORT)
         report["fake_api"] = resume_summary
         report["initial_fake_api"] = summary
         report["blocked_fake_api"] = state.summary()

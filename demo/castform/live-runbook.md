@@ -52,6 +52,19 @@ through the SDK; creates real local embed sessions; and checks iframe panels at
 desktop and mobile viewports. Do not run another `next dev` for `apps/web` at
 the same time.
 
+If a live InstantML API key is already exported and the goal is to rehearse the
+current production persisted-data page without duplicating runs, use:
+
+```bash
+python3 demo/castform/run_live_blocked_smoke.py
+```
+
+That command reads the existing `castform-live-demo` run IDs, handles the
+current hosted `/api/embed/sessions` 404 as an expected blocked state, serves
+the parent page on a free local port, and runs desktop plus mobile browser
+checks. Pass `--parent-origin https://your-demo-origin.example` if you already
+have a tunnel and want the generated manifest to match that origin.
+
 For the live hosted path, start or keep the parent page server running:
 
 ```bash
@@ -215,7 +228,15 @@ node demo/castform/browser_verify.mjs \
 ```
 
 If production run data exists but hosted embed sessions are not deployed, verify
-the explicit blocked state instead:
+the explicit blocked state instead. The one-command local rehearsal is:
+
+```bash
+python3 demo/castform/run_live_blocked_smoke.py \
+  --parent-origin https://your-demo-origin.example
+```
+
+For a parent page that is already served at the HTTPS origin, the direct browser
+check is:
 
 ```bash
 node demo/castform/browser_verify.mjs \
