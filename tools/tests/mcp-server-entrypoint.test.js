@@ -5,15 +5,18 @@ import { test } from "node:test";
 
 import {
   DEFAULT_API_URL,
+  DEFAULT_WEB_URL,
   bearerTokenFromHeader,
   parseCliOptions,
 } from "../mcp-server.mjs";
 
 test("MCP entrypoint defaults to the hosted consumer API URL", () => {
   assert.equal(DEFAULT_API_URL, "https://api.instantml.ai");
+  assert.equal(DEFAULT_WEB_URL, "https://instantml.ai");
   assert.deepEqual(parseCliOptions([], {}), {
     transport: "stdio",
     apiUrl: "https://api.instantml.ai",
+    webUrl: "https://instantml.ai",
     apiKey: undefined,
     host: "127.0.0.1",
     port: 8080,
@@ -21,6 +24,27 @@ test("MCP entrypoint defaults to the hosted consumer API URL", () => {
   assert.equal(
     parseCliOptions(["--transport", "streamable-http"], { PORT: "9000" }).host,
     "0.0.0.0",
+  );
+});
+
+test("MCP entrypoint accepts a frontend URL override for report share links", () => {
+  assert.equal(
+    parseCliOptions([], { INSTANTML_FRONTEND_BASE_URL: "https://staging.instantml.ai/" })
+      .webUrl,
+    "https://staging.instantml.ai/",
+  );
+  assert.equal(
+    parseCliOptions([], {
+      INSTANTML_FRONTEND_BASE_URL: "https://staging.instantml.ai",
+      INSTANTML_WEB_URL: "https://instantml.example",
+    }).webUrl,
+    "https://instantml.example",
+  );
+  assert.equal(
+    parseCliOptions(["--web-url", "http://127.0.0.1:3000"], {
+      INSTANTML_WEB_URL: "https://instantml.example",
+    }).webUrl,
+    "http://127.0.0.1:3000",
   );
 });
 

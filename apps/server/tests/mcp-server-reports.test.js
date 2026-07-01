@@ -488,7 +488,11 @@ test("tracker.create_report posts /api/reports with the supplied blocks", async 
 });
 
 test("tracker.share_report surfaces the share token and a derived share URL", async () => {
-  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  const tools = buildTools({
+    apiUrl: API_URL,
+    apiKey: API_KEY,
+    webUrl: "https://staging.instantml.ai/",
+  });
   installFetchStub({
     "POST /api/reports/rep-9/share": () => ({
       report: { id: "rep-9", share_token: "share-abc" },
@@ -498,10 +502,23 @@ test("tracker.share_report surfaces the share token and a derived share URL", as
     const tool = findTool("tracker.share_report", tools);
     const payload = parseTextResult(await tool.handler({ report_id: "rep-9" }));
     assert.equal(payload.share_token, "share-abc");
-    assert.ok(
-      payload.share_url && payload.share_url.endsWith("/r/share-abc"),
-      `share URL should end with /r/<token> (got ${payload.share_url})`,
-    );
+    assert.equal(payload.share_url, "https://staging.instantml.ai/r/share-abc");
+  } finally {
+    restoreFetch();
+  }
+});
+
+test("tracker.share_report uses the hosted web URL by default", async () => {
+  const tools = buildTools({ apiUrl: API_URL, apiKey: API_KEY });
+  installFetchStub({
+    "POST /api/reports/rep-10/share": () => ({
+      report: { id: "rep-10", share_token: "share-default" },
+    }),
+  });
+  try {
+    const tool = findTool("tracker.share_report", tools);
+    const payload = parseTextResult(await tool.handler({ report_id: "rep-10" }));
+    assert.equal(payload.share_url, "https://instantml.ai/r/share-default");
   } finally {
     restoreFetch();
   }
