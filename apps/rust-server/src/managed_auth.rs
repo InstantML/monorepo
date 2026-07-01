@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::http::StatusCode;
@@ -301,6 +303,10 @@ struct ClerkOauthVerifyResponse {
     revoked: bool,
     #[serde(default)]
     expired: bool,
+    // Unix seconds; used to bound the verification cache to the token's own
+    // lifetime. Nullable in Clerk's schema.
+    #[serde(default)]
+    expiration: Option<f64>,
     // The active-token variant omits `active`, so absent means active; the
     // inactive variant sends `active: false`.
     #[serde(default = "default_active")]
@@ -329,6 +335,53 @@ impl ClerkOauthVerifyResponse {
     }
 }
 
+/// Longest a verification result is trusted from cache. Bounds how long a
+/// revoked token could still be accepted, so keep it short.
+const OAUTH_VERIFY_CACHE_TTL_SECS: u64 = 60;
+
+struct CachedVerification {
+    principal: ClerkOauthPrincipal,
+    expires_at: u64,
+}
+
+/// Process-local cache of verified OAuth tokens, keyed by the token's hash so
+/// raw tokens are not held in memory. Keeps the Clerk Backend API off the
+/// per-request hot path.
+fn oauth_verify_cache() -> &'static Mutex<HashMap<Vec<u8>, CachedVerification>> {
+    static CACHE: OnceLock<Mutex<HashMap<Vec<u8>, CachedVerification>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cache_lookup(
+    cache: &HashMap<Vec<u8>, CachedVerification>,
+    key: &[u8],
+    now: u64,
+) -> Option<ClerkOauthPrincipal> {
+    cache
+        .get(key)
+        .filter(|entry| entry.expires_at > now)
+        .map(|entry| entry.principal.clone())
+}
+
+fn cache_store(
+    cache: &mut HashMap<Vec<u8>, CachedVerification>,
+    key: Vec<u8>,
+    principal: ClerkOauthPrincipal,
+    expires_at: u64,
+    now: u64,
+) {
+    // Drop expired entries opportunistically so the map stays bounded to the
+    // set of currently valid tokens.
+    cache.retain(|_, entry| entry.expires_at > now);
+    cache.insert(
+        key,
+        CachedVerification {
+            principal,
+            expires_at,
+        },
+    );
+}
+
 /// Verify a Clerk OAuth access token via the Clerk Backend API and return the
 /// authenticated user's Clerk id and granted scopes.
 ///
@@ -336,13 +389,25 @@ impl ClerkOauthVerifyResponse {
 /// `verify_clerk_session_token` uses — so no separate OAuth client secret is
 /// required. Endpoint and response shape match Clerk's Backend API (base
 /// `https://api.clerk.com/v1`), verified against the official SDK. Rejects
-/// revoked, expired, and inactive tokens. A live end-to-end sign-in test and
-/// verification caching are still tracked in docs/design/2026-06-30-mcp-oauth.md.
+/// revoked, expired, and inactive tokens. Successful verifications are cached
+/// (keyed by token hash) for up to `OAUTH_VERIFY_CACHE_TTL_SECS`, never past the
+/// token's own expiry, to keep Clerk off the per-request hot path.
 pub async fn verify_clerk_oauth_token(
     secret_key: &str,
     api_base: &str,
     token: &str,
 ) -> AppResult<ClerkOauthPrincipal> {
+    let cache_key = crate::auth::hash_secret(token);
+    let now = now_epoch_seconds()?;
+    {
+        let cache = oauth_verify_cache()
+            .lock()
+            .map_err(|_| AppError::internal("oauth verification cache poisoned"))?;
+        if let Some(principal) = cache_lookup(&cache, &cache_key, now) {
+            return Ok(principal);
+        }
+    }
+
     let response = reqwest::Client::new()
         .post(format!(
             "{}/v1/oauth_applications/access_tokens/verify",
@@ -358,13 +423,27 @@ pub async fn verify_clerk_oauth_token(
     if !response.status().is_success() {
         return Err(AppError::unauthorized("invalid OAuth access token"));
     }
-    response
+    let body = response
         .json::<ClerkOauthVerifyResponse>()
         .await
         .map_err(|err| {
             AppError::unauthorized(format!("Clerk OAuth token verification failed: {err}"))
-        })?
-        .into_principal()
+        })?;
+    let token_expiry = body.expiration;
+    let principal = body.into_principal()?;
+
+    let ceiling = now.saturating_add(OAUTH_VERIFY_CACHE_TTL_SECS);
+    let expires_at = token_expiry
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| (value as u64).min(ceiling))
+        .unwrap_or(ceiling);
+    if expires_at > now {
+        let mut cache = oauth_verify_cache()
+            .lock()
+            .map_err(|_| AppError::internal("oauth verification cache poisoned"))?;
+        cache_store(&mut cache, cache_key, principal.clone(), expires_at, now);
+    }
+    Ok(principal)
 }
 
 #[cfg(test)]
@@ -489,6 +568,27 @@ mod tests {
         // No subject -> rejected.
         let empty: ClerkOauthVerifyResponse = serde_json::from_str(r#"{"scopes":[]}"#).unwrap();
         assert!(empty.into_principal().is_err());
+    }
+
+    #[test]
+    fn oauth_verify_cache_expires_and_purges() {
+        let mut cache = HashMap::new();
+        let principal = ClerkOauthPrincipal {
+            subject: "user_1".to_string(),
+            scopes: Vec::new(),
+            client_id: None,
+        };
+        cache_store(&mut cache, b"tok".to_vec(), principal.clone(), 100, 40);
+
+        // Hit before expiry; miss at/after the expiry second.
+        assert_eq!(cache_lookup(&cache, b"tok", 99).unwrap().subject, "user_1");
+        assert!(cache_lookup(&cache, b"tok", 100).is_none());
+        assert!(cache_lookup(&cache, b"tok", 200).is_none());
+
+        // A later store purges the now-expired entry so the map stays bounded.
+        cache_store(&mut cache, b"tok2".to_vec(), principal, 300, 150);
+        assert!(!cache.contains_key(b"tok".as_slice()));
+        assert!(cache.contains_key(b"tok2".as_slice()));
     }
 
     #[tokio::test]
