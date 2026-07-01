@@ -329,20 +329,9 @@
   grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.6fr);
 }
 
-.settings-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-}
-
-/* Each settings column is an independent tight stack so a tall panel in one
-   column (Plan Usage) doesn't leave a void beside a short panel in the other
-   (Billing) the way a row-paired grid did. */
-.settings-col {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
+/* Settings renders as a centered modal (see .settings-modal in panels.css), not a
+   data tab. `.settings-grid` survives only as a styling hook for the .setting-row
+   rows inside the modal pane, so it carries no page-level layout of its own. */
 
 .panel,
 .chart-card {

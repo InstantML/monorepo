@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Copy, CreditCard, ExternalLink, Gauge, RefreshCw, Settings, UserPlus, X } from "lucide-react";
+import type { ComponentType } from "react";
+import { AlertTriangle, Copy, CreditCard, ExternalLink, Gauge, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
-import { PageHead } from "../ui/page-head";
+import { useFocusTrap } from "../ui/use-focus-trap";
 import { SettingRow } from "./setting-row";
 import { formatNumber } from "../../../src/state.js";
 import { roleLabel } from "../../../src/roles.js";
@@ -66,6 +67,16 @@ function planDisplayName(value?: string) {
   return "Free";
 }
 
+type SectionId = "usage" | "billing" | "seats" | "workspace" | "defaults";
+
+const SECTIONS: { id: SectionId; label: string; Icon: ComponentType<{ size?: number }> }[] = [
+  { id: "usage", label: "Plan Usage", Icon: Gauge },
+  { id: "billing", label: "Billing", Icon: CreditCard },
+  { id: "seats", label: "Seats", Icon: UserPlus },
+  { id: "workspace", label: "Workspace", Icon: Settings },
+  { id: "defaults", label: "Defaults", Icon: SlidersHorizontal },
+];
+
 type Props = {
   accountUser: { display_name?: string | null; primary_email?: string | null } | null;
   activeLimitIncludedSeats: number;
@@ -100,6 +111,7 @@ type Props = {
   onCancelBilling: () => void;
   onMetricKey: (key: string) => void;
   onXMode: (mode: string) => void;
+  onClose: () => void;
   orgName: string;
   orgPlanTier: string;
   reservedSeatCount: number;
@@ -149,6 +161,7 @@ export function SettingsTabPane({
   onCancelBilling,
   onMetricKey,
   onXMode,
+  onClose,
   orgName,
   orgPlanTier,
   reservedSeatCount,
@@ -163,6 +176,14 @@ export function SettingsTabPane({
   xMode,
   billingStatus,
 }: Props) {
+  // Which settings section the modal's internal nav is showing.
+  const [section, setSection] = useState<SectionId>("usage");
+  const dialogRef = useFocusTrap<HTMLDivElement>(
+    true,
+    onClose,
+    "button[aria-label='Close workspace settings']",
+    "[data-settings-trigger='true']",
+  );
   // Plan changes confirm in-app before any Stripe redirect.
   const [pendingPlan, setPendingPlan] = useState<"free" | "pro" | "premium" | null>(null);
   // Drop a stale confirm if the plan changes underneath it (another admin
@@ -232,20 +253,44 @@ export function SettingsTabPane({
       : billingStatus?.cancel_at_period_end
         ? "Subscription is already scheduled to cancel"
         : "Cancel the active paid subscription at period end";
+  const activeSection = SECTIONS.find((entry) => entry.id === section) ?? SECTIONS[0];
+  // Settings is reached from the profile menu, not the left nav, so it presents as
+  // a centered modal (like the account/profile surface) rather than a data tab. An
+  // internal nav swaps one section into the pane at a time, so nothing is spread
+  // across columns.
   return (
-    <>
-      <PageHead title="Workspace settings" />
-      {/* Two independent column stacks instead of a row-paired grid: Plan Usage
-          is much taller than Billing, so a row grid left a large void under the
-          short Billing card before Workspace. Stacking each column lets the right
-          column pack tight against the top. */}
-      <div className="tab-grid settings-grid">
-        <div className="settings-col">
-        <section className="panel">
-          <div className="panel-head">
-            <h2><Gauge size={15} /> Plan Usage</h2>
+    <div
+      className="workspace-modal settings-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Workspace settings"
+      ref={dialogRef}
+      tabIndex={-1}
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <div className="settings-modal-card">
+        <button className="icon-button settings-modal-close" type="button" aria-label="Close workspace settings" onClick={onClose}><X size={16} /></button>
+        <nav className="settings-nav" aria-label="Settings sections">
+          <span className="settings-nav-title">Settings</span>
+          {SECTIONS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              className={`settings-nav-item ${section === id ? "active" : ""}`}
+              aria-current={section === id ? "page" : undefined}
+              onClick={() => setSection(id)}
+            >
+              <Icon size={15} /> {label}
+            </button>
+          ))}
+        </nav>
+        <div className="settings-pane">
+          <div className="settings-pane-head">
+            <h2>{activeSection.label}</h2>
           </div>
-          <div className="panel-body settings-list">
+          <div className="settings-pane-body settings-grid">
+            {section === "usage" ? (
+          <div className="settings-list">
             <SettingRow label="Plan" value={activePlan} tone="good" />
             <SettingRow label="Seats" value={`${formatNumber(reservedSeatCount, 0)} / ${formatNumber(activeLimitIncludedSeats, 0)}`} />
             <div className="usage-row">
@@ -283,12 +328,9 @@ export function SettingsTabPane({
               </div>
             ) : null}
           </div>
-        </section>
-        </div>
-        <div className="settings-col">
-        <section className="panel">
-          <div className="panel-head"><h2><CreditCard size={15} /> Billing</h2></div>
-          <div className="panel-body settings-list">
+            ) : null}
+            {section === "billing" ? (
+          <div className="settings-list">
             <SettingRow label="Access" value={billingState.replace(/_/g, " ")} />
             <SettingRow label="Subscription" value={billingSubscription} />
             <SettingRow label="Effective plan" value={effectivePlan} />
@@ -333,10 +375,9 @@ export function SettingsTabPane({
               </div>
             ) : null}
           </div>
-        </section>
-        <section className="panel">
-          <div className="panel-head"><h2><UserPlus size={15} /> Seats</h2></div>
-          <div className="panel-body admin-stack">
+            ) : null}
+            {section === "seats" ? (
+          <div className="admin-stack">
             {canManageOrg ? (
               <form
                 className="admin-form-row"
@@ -394,10 +435,9 @@ export function SettingsTabPane({
               {!canManageOrg ? <p className="empty">Seat management is available to workspace admins.</p> : null}
             </div>
           </div>
-        </section>
-        <section className="panel">
-          <div className="panel-head"><h2><Settings size={15} /> Workspace</h2></div>
-          <div className="panel-body settings-list">
+            ) : null}
+            {section === "workspace" ? (
+          <div className="settings-list">
             {/* Transient filter/selection state is visible in the filter bar
              * itself; echoing it here read as debug output (audit ST1). */}
             <SettingRow label="Organization" value={orgName || "Workspace"} />
@@ -409,10 +449,9 @@ export function SettingsTabPane({
               </>
             ) : null}
           </div>
-        </section>
-        <section className="panel">
-          <div className="panel-head"><h2><Gauge size={15} /> Defaults</h2></div>
-          <div className="panel-body settings-list">
+            ) : null}
+            {section === "defaults" ? (
+          <div className="settings-list">
             <CustomSelect
               className="full"
               disabled={!metricOptionsForControls.length}
@@ -436,9 +475,10 @@ export function SettingsTabPane({
             <SettingRow label="Summary row limit" value="100" />
             <SettingRow label="Metric point limit" value="1,000 per selected run" />
           </div>
-        </section>
+            ) : null}
+          </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

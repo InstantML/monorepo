@@ -499,6 +499,7 @@ export function AccountWorkspaceMenu({
         aria-haspopup="dialog"
         aria-label={`Account and workspace menu. Current workspace: ${currentName}.`}
         className={variant === "rail" ? "rail-foot-trigger" : "account-workspace-trigger"}
+        data-settings-trigger="true"
         disabled={busy}
         onClick={() => setOpen((value) => !value)}
         ref={triggerRef}
