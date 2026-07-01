@@ -1,13 +1,13 @@
 "use client";
 
-import { Check, ChevronDown, CircleHelp, CreditCard, LogOut, Menu, Moon, Plus, Search, Settings, Sun, X } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, LogOut, Menu, Moon, Plus, Search, Settings, Sun, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 
 import { InstantMlMark } from "../../instantml-mark";
 import { accountDisplayLabel, accountInitials, safeAccountAvatarUrl } from "../../../src/account.js";
-import { roleCapabilities, roleLabel } from "../../../src/roles.js";
+import { roleLabel } from "../../../src/roles.js";
 import { tabToPath } from "../../../src/routes.js";
 import { tabs } from "../../dashboard-config";
 import type { ShellTabId } from "../../dashboard-config";
@@ -218,10 +218,6 @@ function membershipRoleLabel(membership: OrgMembershipSummary) {
   return membership.role_label || roleLabel(membership.role);
 }
 
-function membershipCapabilities(membership: OrgMembershipSummary | null | undefined) {
-  return membership?.capabilities || roleCapabilities(membership?.role);
-}
-
 function WorkspaceCreateModal({
   memberships,
   onCheckName,
@@ -398,7 +394,6 @@ export function AccountWorkspaceMenu({
   memberships,
   onCheckWorkspaceName,
   onCreateWorkspace,
-  onOpenBilling,
   onOpenSettings,
   onSelect,
   onSignOut,
@@ -413,7 +408,6 @@ export function AccountWorkspaceMenu({
   memberships: OrgMembershipSummary[];
   onCheckWorkspaceName: (name: string) => Promise<WorkspaceNameAvailability>;
   onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
-  onOpenBilling: () => void;
   onOpenSettings: () => void;
   onSelect: (orgId: string) => void;
   onSignOut: () => void;
@@ -429,7 +423,6 @@ export function AccountWorkspaceMenu({
   const displayName = accountDisplayLabel(accountUser?.display_name ?? "", accountUser?.primary_email ?? "");
   const currentMembership = memberships.find((membership) => membership.is_current) ?? memberships.find((membership) => membership.org_id === current?.id) ?? null;
   const currentName = current?.name || currentMembership?.name || "Workspace";
-  const currentCapabilities = membershipCapabilities(currentMembership);
   const personal = memberships.filter((membership) => membership.is_personal || membership.account_type === "personal");
   const organizations = memberships.filter((membership) => !(membership.is_personal || membership.account_type === "personal"));
 
@@ -550,9 +543,6 @@ export function AccountWorkspaceMenu({
           <div className="account-workspace-actions">
             <button type="button" onClick={() => { setCreateOpen(true); setOpen(false); }}><Plus size={14} /> New workspace</button>
             <button type="button" onClick={() => { setOpen(false); onOpenSettings(); }}><Settings size={14} /> Workspace settings</button>
-            {currentCapabilities.manage_billing ? (
-              <button type="button" onClick={() => { setOpen(false); onOpenBilling(); }}><CreditCard size={14} /> Manage billing</button>
-            ) : null}
             <button type="button" onClick={onToggleTheme}>
               {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />} {theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             </button>
@@ -586,7 +576,6 @@ export function DashboardTopbar({
   onQuickSearch,
   onCheckWorkspaceName,
   onCreateWorkspace,
-  onOpenBilling,
   onOpenSettings,
   onSelectTab,
   onSignOut,
@@ -618,7 +607,6 @@ export function DashboardTopbar({
   onQuickSearch: () => void;
   onCheckWorkspaceName: (name: string) => Promise<WorkspaceNameAvailability>;
   onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<void>;
-  onOpenBilling: () => void;
   onOpenSettings: () => void;
   onSelectTab: (tabId: ShellTabId) => void;
   onSignOut: () => void;
@@ -760,7 +748,6 @@ export function DashboardTopbar({
               memberships={orgMemberships}
               onCheckWorkspaceName={onCheckWorkspaceName}
               onCreateWorkspace={onCreateWorkspace}
-              onOpenBilling={onOpenBilling}
               onOpenSettings={onOpenSettings}
               onSelect={onSwitchOrg}
               onSignOut={onSignOut}

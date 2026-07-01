@@ -765,6 +765,7 @@ textarea:focus {
 .account-workspace-option {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
   min-height: 44px;
@@ -799,6 +800,7 @@ textarea:focus {
 .account-workspace-actions button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   min-height: 38px;
   width: 100%;

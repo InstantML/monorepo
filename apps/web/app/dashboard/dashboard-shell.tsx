@@ -4231,7 +4231,6 @@ function dismissTopOverlay() {
         onQuickSearch={() => setQuickSearchOpen(true)}
         onCheckWorkspaceName={checkWorkspaceName}
         onCreateWorkspace={createWorkspace}
-        onOpenBilling={() => selectTab("settings")}
         onOpenSettings={() => selectTab("settings")}
         onSelectTab={selectTab}
         onSignOut={signOut}
