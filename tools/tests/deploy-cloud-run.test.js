@@ -249,12 +249,16 @@ test("deploy helper scopes provider secrets to the service planes that need them
 
   assert.match(source, /function cloudflareR2AccountId/);
   assert.match(source, /CLOUDFLARE_R2_ACCOUNT_ID/);
+  assert.match(source, /function mcpOauthEnabledForDeployment/);
+  assert.match(source, /INSTANTML_MCP_OAUTH_ENABLED/);
   assert.match(source, /function runtimeEnvForTarget/);
   assert.match(source, /function secretEnvForTarget/);
   assert.match(source, /target\.servicePlane === "control"/);
   assert.match(source, /target\.servicePlane === "data"/);
   assert.match(source, /!mapping\.startsWith\("CLOUDFLARE_"\)/);
   assert.match(source, /!mapping\.startsWith\("RESEND_API_KEY="/);
+  assert.match(source, /!mcpOauthEnabledForDeployment\(\)/);
+  assert.match(source, /!mapping\.startsWith\("CLERK_SECRET_KEY="/);
 });
 
 test("deploy helper keeps prod warm and staging bounded to one auto instance", () => {

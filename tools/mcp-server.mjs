@@ -71,6 +71,7 @@ export const DEFAULT_API_URL = "https://api.instantml.ai";
 export const DEFAULT_MCP_PUBLIC_URL = "https://mcp.instantml.ai";
 export const DEFAULT_WEB_URL = "https://instantml.ai";
 const JSON_CONTENT_TYPE = "application/json";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -199,8 +200,19 @@ function isProtectedResourceMetadataPath(path) {
   );
 }
 
-function createMcpServer({ apiUrl, apiKey, webUrl }) {
-  const tools = buildTools({ apiUrl, apiKey, webUrl });
+export function oauthOrgIdFromUrl(rawUrl) {
+  const url = new URL(rawUrl ?? "/", "http://127.0.0.1");
+  const raw = url.searchParams.get("org_id");
+  const orgId = raw?.trim();
+  if (!orgId) return null;
+  if (!UUID_RE.test(orgId)) {
+    throw new Error("org_id must be a UUID");
+  }
+  return orgId;
+}
+
+function createMcpServer({ apiUrl, apiKey, webUrl, orgId = null }) {
+  const tools = buildTools({ apiUrl, apiKey, webUrl, orgId });
 
   const server = new Server(
     { name: "instantml-mcp", version: "0.3.0" },
@@ -277,7 +289,8 @@ async function handleHttpMcpRequest(req, res, { apiUrl, webUrl, oauth = null }) 
     writeJson(res, 200, { ok: true, service: "instantml-mcp" });
     return;
   }
-  const path = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+  const requestUrl = new URL(req.url ?? "/", "http://127.0.0.1");
+  const path = requestUrl.pathname;
   // RFC 9728 protected-resource metadata — only advertised when OAuth is on.
   if (oauth && isProtectedResourceMetadataPath(path)) {
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -315,7 +328,15 @@ async function handleHttpMcpRequest(req, res, { apiUrl, webUrl, oauth = null }) 
     return;
   }
 
-  const server = createMcpServer({ apiUrl, apiKey, webUrl });
+  let orgId = null;
+  try {
+    orgId = oauthOrgIdFromUrl(req.url);
+  } catch {
+    writeJsonRpcError(res, 400, -32602, "Invalid org_id; expected a UUID.");
+    return;
+  }
+
+  const server = createMcpServer({ apiUrl, apiKey, webUrl, orgId });
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });

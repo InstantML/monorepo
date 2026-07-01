@@ -584,14 +584,27 @@ pub async fn authenticate_oauth_identity(
     provider: &str,
     provider_subject: &str,
 ) -> AppResult<(Uuid, Uuid, String)> {
+    authenticate_oauth_identity_for_org(store, provider, provider_subject, None).await
+}
+
+/// Resolve a verified external identity to a requested org, if provided. The
+/// requested org is accepted only when the identity's internal user has an
+/// active membership in that org.
+pub async fn authenticate_oauth_identity_for_org(
+    store: &Store,
+    provider: &str,
+    provider_subject: &str,
+    requested_org_id: Option<Uuid>,
+) -> AppResult<(Uuid, Uuid, String)> {
     let data = store.data.lock().await;
-    resolve_oauth_identity(&data, provider, provider_subject)
+    resolve_oauth_identity(&data, provider, provider_subject, requested_org_id)
 }
 
 fn resolve_oauth_identity(
     data: &StoreData,
     provider: &str,
     provider_subject: &str,
+    requested_org_id: Option<Uuid>,
 ) -> AppResult<(Uuid, Uuid, String)> {
     let identity_key = (provider.to_string(), provider_subject.to_string());
     let user_id =
@@ -606,6 +619,17 @@ fn resolve_oauth_identity(
         .values()
         .filter(|membership| membership.user_id == user_id && membership.status == "active")
         .collect::<Vec<_>>();
+    if let Some(org_id) = requested_org_id {
+        return active
+            .iter()
+            .find(|membership| membership.org_id == org_id)
+            .map(|membership| (membership.org_id, user_id, membership.role.clone()))
+            .ok_or_else(|| {
+                AppError::forbidden(
+                    "OAuth user is not an active member of the requested organization",
+                )
+            });
+    }
     match active.as_slice() {
         [] => Err(AppError::forbidden(
             "this account has no active organization membership",
@@ -985,7 +1009,7 @@ mod tests {
         });
 
         let (resolved_org, resolved_user, role) =
-            resolve_oauth_identity(&data, "clerk", "user_oauth").unwrap();
+            resolve_oauth_identity(&data, "clerk", "user_oauth", None).unwrap();
         assert_eq!(resolved_org, org_id);
         assert_eq!(resolved_user, user.id);
         assert_eq!(role, "admin");
@@ -1000,9 +1024,9 @@ mod tests {
             .insert(("clerk".to_string(), "user_multi".to_string()), user.id);
 
         // Unknown identity -> rejected.
-        assert!(resolve_oauth_identity(&data, "clerk", "nobody").is_err());
+        assert!(resolve_oauth_identity(&data, "clerk", "nobody", None).is_err());
         // Known identity but no active membership -> rejected.
-        assert!(resolve_oauth_identity(&data, "clerk", "user_multi").is_err());
+        assert!(resolve_oauth_identity(&data, "clerk", "user_multi", None).is_err());
 
         // Two active memberships -> ambiguous org, must be rejected (the
         // cross-tenant safety property: never silently pick an org).
@@ -1016,7 +1040,53 @@ mod tests {
                 created_at: Utc::now(),
             });
         }
-        assert!(resolve_oauth_identity(&data, "clerk", "user_multi").is_err());
+        assert!(resolve_oauth_identity(&data, "clerk", "user_multi", None).is_err());
+    }
+
+    #[test]
+    fn oauth_identity_resolves_requested_org_for_multi_org_user() {
+        let user = user_row(Uuid::new_v4(), "multi@example.com");
+        let selected_org = Uuid::new_v4();
+        let other_org = Uuid::new_v4();
+        let inactive_org = Uuid::new_v4();
+        let missing_org = Uuid::new_v4();
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities
+            .insert(("clerk".to_string(), "user_multi".to_string()), user.id);
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id: selected_org,
+            user_id: user.id,
+            role: "viewer".to_string(),
+            status: "active".to_string(),
+            created_at: Utc::now(),
+        });
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id: other_org,
+            user_id: user.id,
+            role: "admin".to_string(),
+            status: "active".to_string(),
+            created_at: Utc::now(),
+        });
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id: inactive_org,
+            user_id: user.id,
+            role: "owner".to_string(),
+            status: "invited".to_string(),
+            created_at: Utc::now(),
+        });
+
+        let (resolved_org, resolved_user, role) =
+            resolve_oauth_identity(&data, "clerk", "user_multi", Some(selected_org)).unwrap();
+        assert_eq!(resolved_org, selected_org);
+        assert_eq!(resolved_user, user.id);
+        assert_eq!(role, "viewer");
+
+        assert!(resolve_oauth_identity(&data, "clerk", "user_multi", Some(inactive_org)).is_err());
+        assert!(resolve_oauth_identity(&data, "clerk", "user_multi", Some(missing_org)).is_err());
     }
 
     #[test]

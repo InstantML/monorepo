@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { test } from "node:test";
 
-import { parseOAuthConfig, protectedResourceMetadata } from "../mcp-server.mjs";
+import { oauthOrgIdFromUrl, parseOAuthConfig, protectedResourceMetadata } from "../mcp-server.mjs";
 
 const AUTH_SERVER = "https://instantml.clerk.accounts.dev";
 
@@ -37,6 +37,13 @@ test("parseOAuthConfig honors overrides for public URL, resource, and scopes", (
   assert.equal(config.publicUrl, "https://mcp.example.test");
   assert.equal(config.resource, "https://mcp.example.test/mcp");
   assert.deepEqual(config.scopes, ["export:read", "reports:write", "runs:read"]);
+});
+
+test("oauthOrgIdFromUrl parses optional selected org from the MCP URL", () => {
+  const orgId = "11111111-2222-4333-8444-555555555555";
+  assert.equal(oauthOrgIdFromUrl("/mcp"), null);
+  assert.equal(oauthOrgIdFromUrl(`/mcp?org_id=${orgId}`), orgId);
+  assert.throws(() => oauthOrgIdFromUrl("/mcp?org_id=not-an-org"), /org_id must be a UUID/);
 });
 
 async function startServer(extraEnv) {

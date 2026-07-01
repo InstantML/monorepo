@@ -7,6 +7,7 @@ import { buildAgentSetupSnippets, type AgentAuthMode, type AgentClientId } from 
 import { ClientLogo } from "./client-logos";
 
 type Props = {
+  activeOrgId: string;
   canManageOrg: boolean;
   newApiKey: string;
 };
@@ -26,13 +27,13 @@ async function copyText(value: string) {
   }
 }
 
-export function AgentSetupPanel({ canManageOrg, newApiKey }: Props) {
+export function AgentSetupPanel({ activeOrgId, canManageOrg, newApiKey }: Props) {
   const [authMode, setAuthMode] = useState<AgentAuthMode>("api-key");
   const [activeClient, setActiveClient] = useState<AgentClientId>("claude-code");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const apiKey = canManageOrg ? newApiKey : "";
-  const snippets = useMemo(() => buildAgentSetupSnippets(apiKey, authMode), [apiKey, authMode]);
+  const snippets = useMemo(() => buildAgentSetupSnippets(apiKey, authMode, activeOrgId), [activeOrgId, apiKey, authMode]);
   const activeSnippet = snippets.find((snippet) => snippet.id === activeClient) ?? snippets[0]!;
   const hasCopyOnceKey = Boolean(apiKey);
 
@@ -44,7 +45,7 @@ export function AgentSetupPanel({ canManageOrg, newApiKey }: Props) {
 
   const note =
     authMode === "oauth"
-      ? "Your agent opens a browser to sign in to InstantML on first connect — no key to copy, rotate, or commit."
+      ? "Your agent opens a browser to sign in to InstantML and is scoped to this workspace — no key to copy, rotate, or commit."
       : hasCopyOnceKey
         ? "Using the copy-once key above. It is shown once, so store it in a secrets manager."
         : canManageOrg
