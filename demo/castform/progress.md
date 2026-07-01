@@ -82,3 +82,7 @@ Create a full end-to-end demo that:
   command against a fake InstantML API, so the fast no-credential check now
   proves fresh ingestion, resume session creation, manifest verification, and
   desktop/mobile parent-page rendering.
+- Added `check_castform_readiness.py` as a no-secret preflight for the live
+  Castform SDK path. It checks Benchmax/Castform SDK importability, Castform
+  API-key presence, uploaded asset arguments, and optional Castform app
+  reachability before an operator attempts a real launch.

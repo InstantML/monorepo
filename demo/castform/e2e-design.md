@@ -109,6 +109,16 @@ the plaintext embed token, or a live unredacted iframe URL.
 Use `castform_live_bridge.py` when a real Castform run should be launched from
 already-uploaded assets. It calls `benchmax.platform.client.TrainerClient`:
 
+Before launching, run the safe readiness gate:
+
+```bash
+python3 demo/castform/check_castform_readiness.py \
+  --env-cls-path envs/.../env-cls.pkl \
+  --env-metadata-path envs/.../env-metadata.json \
+  --train-dataset-path datasets/.../train.jsonl \
+  --eval-dataset-path datasets/.../eval.jsonl
+```
+
 ```bash
 CASTFORM_API_KEY=... \
 python3 demo/castform/castform_live_bridge.py \
@@ -245,7 +255,7 @@ Next holds an app-directory dev lock even when different ports are used.
 Minimum checks before a commit:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/castform_live_bridge.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py demo/castform/create_smoke_manifest.py demo/castform/run_local_smoke.py demo/castform/check_hosted_readiness.py demo/castform/check_castform_readiness.py demo/castform/run_mocked_e2e.py demo/castform/run_local_real_iframe_e2e.py
 node --check demo/castform/web/app.js
 node --check demo/castform/browser_verify.mjs
 python3 demo/castform/run_local_real_iframe_e2e.py --runs 3 --steps 40 --step-size 10 --timeout 180
