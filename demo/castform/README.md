@@ -27,6 +27,8 @@ Research date: 2026-06-30.
   observations into InstantML and creates iframe embed sessions.
 - `serve_web.py` and `web/`: local Castform-facing parent page for the hosted
   iframe embeds.
+- `verify_demo.py`: generated manifest and redacted-summary verifier.
+- `live-runbook.md`: operator runbook for the hosted call demo.
 
 ## Demo Paths
 
@@ -62,6 +64,9 @@ hosted iframe embed sessions that persist through the call. The local Castform
 parent page must be served through an HTTPS tunnel because hosted InstantML
 embeds require an exact HTTPS, non-InstantML parent origin.
 
+Use `live-runbook.md` for the full production-key and browser-verification
+sequence.
+
 1. Start the parent page:
 
    ```bash
@@ -83,11 +88,19 @@ embeds require an exact HTTPS, non-InstantML parent origin.
 `web/public/demo-manifest.json` and a redacted review summary to
 `run-output/latest-summary.json`.
 
+Verify generated artifacts without exposing live tokens:
+
+```bash
+python3 demo/castform/verify_demo.py \
+  --parent-url https://your-demo-origin.example
+```
+
 ## Verification
 
 The scripts are dependency-light but require installed `instantml` and, for the
 live mirror path, installed `benchmax` at runtime. Syntax-only verification:
 
 ```bash
-python3 -m py_compile demo/castform/run_demo.py demo/castform/serve_web.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
+python3 -m py_compile demo/castform/run_demo.py demo/castform/serve_web.py demo/castform/verify_demo.py demo/castform/castform_instantml_adapter.py demo/castform/seed_castform_demo.py
+node --check demo/castform/web/app.js
 ```

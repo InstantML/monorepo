@@ -30,3 +30,5 @@ Create a full end-to-end demo that:
   the local parent page needs a tunnel for the call.
 - Added the hosted demo runner and static Castform parent page. Generated live
   manifests and summaries are ignored so bearer iframe URLs are not committed.
+- Added a live hosted runbook and verifier for generated manifests, redacted
+  summaries, and HTTPS parent-page readiness.
