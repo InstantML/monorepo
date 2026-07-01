@@ -285,29 +285,39 @@ pub struct ClerkOauthPrincipal {
     pub client_id: Option<String>,
 }
 
+// Response shape confirmed from Clerk's official SDK
+// (clerk/clerk-sdk-python `VerifyOAuthAccessToken`): the active token returns
+// `object=clerk_idp_oauth_access_token` with `subject`, `scopes`, `revoked`,
+// `expired`, etc.; an inactive/expired token returns `{ "active": false }`.
 #[derive(Debug, Deserialize)]
 struct ClerkOauthVerifyResponse {
-    // Defensive: accept the user id under any name Clerk may use in the verify
-    // response. Confirm the exact field against a live token before enabling in
-    // production (see docs/design/2026-06-30-mcp-oauth.md).
     #[serde(default)]
     subject: Option<String>,
-    #[serde(default)]
-    sub: Option<String>,
-    #[serde(default)]
-    user_id: Option<String>,
     #[serde(default)]
     scopes: Option<Vec<String>>,
     #[serde(default)]
     client_id: Option<String>,
+    #[serde(default)]
+    revoked: bool,
+    #[serde(default)]
+    expired: bool,
+    // The active-token variant omits `active`, so absent means active; the
+    // inactive variant sends `active: false`.
+    #[serde(default = "default_active")]
+    active: bool,
+}
+
+fn default_active() -> bool {
+    true
 }
 
 impl ClerkOauthVerifyResponse {
     fn into_principal(self) -> AppResult<ClerkOauthPrincipal> {
+        if !self.active || self.revoked || self.expired {
+            return Err(AppError::unauthorized("OAuth access token is not active"));
+        }
         let subject = self
             .subject
-            .or(self.sub)
-            .or(self.user_id)
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .ok_or_else(|| AppError::unauthorized("OAuth token has no subject"))?;
@@ -324,9 +334,10 @@ impl ClerkOauthVerifyResponse {
 ///
 /// Authenticates with the Clerk **secret key** — the same credential
 /// `verify_clerk_session_token` uses — so no separate OAuth client secret is
-/// required. The path uses the `/v1/` Backend API prefix, consistent with the
-/// JWKS and user lookups above; confirm it against a live token before enabling
-/// (see docs/design/2026-06-30-mcp-oauth.md).
+/// required. Endpoint and response shape match Clerk's Backend API (base
+/// `https://api.clerk.com/v1`), verified against the official SDK. Rejects
+/// revoked, expired, and inactive tokens. A live end-to-end sign-in test and
+/// verification caching are still tracked in docs/design/2026-06-30-mcp-oauth.md.
 pub async fn verify_clerk_oauth_token(
     secret_key: &str,
     api_base: &str,
@@ -450,21 +461,32 @@ mod tests {
     }
 
     #[test]
-    fn oauth_verify_response_extracts_subject_and_scopes() {
-        let body: ClerkOauthVerifyResponse =
-            serde_json::from_str(r#"{"subject":"user_42","scopes":["export:read"]}"#).unwrap();
+    fn oauth_verify_response_extracts_active_token_and_rejects_the_rest() {
+        // Active token (Clerk's clerk_idp_oauth_access_token shape).
+        let body: ClerkOauthVerifyResponse = serde_json::from_str(
+            r#"{"object":"clerk_idp_oauth_access_token","id":"oat_1","client_id":"c_1",
+                "subject":"user_42","scopes":["export:read"],"revoked":false,"expired":false}"#,
+        )
+        .unwrap();
         let principal = body.into_principal().unwrap();
         assert_eq!(principal.subject, "user_42");
         assert_eq!(principal.scopes, vec!["export:read".to_string()]);
+        assert_eq!(principal.client_id.as_deref(), Some("c_1"));
 
-        // Tolerates the user id under `user_id` and missing scopes.
-        let alt: ClerkOauthVerifyResponse =
-            serde_json::from_str(r#"{"user_id":"user_7"}"#).unwrap();
-        let alt = alt.into_principal().unwrap();
-        assert_eq!(alt.subject, "user_7");
-        assert!(alt.scopes.is_empty());
+        // Inactive variant: { "active": false } -> rejected.
+        let inactive: ClerkOauthVerifyResponse =
+            serde_json::from_str(r#"{"active":false}"#).unwrap();
+        assert!(inactive.into_principal().is_err());
 
-        // No subject at all -> rejected.
+        // Revoked and expired active-shape tokens -> rejected.
+        let revoked: ClerkOauthVerifyResponse =
+            serde_json::from_str(r#"{"subject":"user_42","revoked":true}"#).unwrap();
+        assert!(revoked.into_principal().is_err());
+        let expired: ClerkOauthVerifyResponse =
+            serde_json::from_str(r#"{"subject":"user_42","expired":true}"#).unwrap();
+        assert!(expired.into_principal().is_err());
+
+        // No subject -> rejected.
         let empty: ClerkOauthVerifyResponse = serde_json::from_str(r#"{"scopes":[]}"#).unwrap();
         assert!(empty.into_principal().is_err());
     }

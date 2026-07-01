@@ -264,10 +264,10 @@ fn mcp_oauth_enabled() -> bool {
 /// resolve it to `(org_id, user_id, role)` for a read-only request context.
 ///
 /// Gated behind `INSTANTML_MCP_OAUTH_ENABLED` (off by default) and pending a
-/// fresh auth review before production enablement (docs/design/2026-06-30-mcp-oauth.md):
-/// the verify-endpoint path and response schema still need confirming against a
-/// live Clerk token, and verification should be cached off the per-request hot
-/// path before real load.
+/// fresh auth review before production enablement (docs/design/2026-06-30-mcp-oauth.md).
+/// The Clerk verify endpoint and response shape are confirmed against Clerk's
+/// SDK; still outstanding before enabling are a live end-to-end sign-in test and
+/// caching verification off the per-request hot path.
 ///
 /// 1. Verify the token via the Clerk Backend API using the configured Clerk
 ///    secret key.
