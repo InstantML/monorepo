@@ -45,7 +45,7 @@
     "examples": {
       "train correctness mean": "train/reward_components/correctness/mean",
       "train citation mean": "train/reward_components/citation/mean",
-      "train conciseness mean": "train/reward_components/conciseness/mean",
+      "train search_efficiency mean": "train/reward_components/search_efficiency/mean",
       "eval correctness mean": "eval/reward_components/correctness/mean"
     }
   },

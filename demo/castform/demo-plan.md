@@ -43,7 +43,7 @@ Metrics:
 - `eval/solve_rate`
 - `train/reward_components/correctness/mean`
 - `train/reward_components/citation/mean`
-- `train/reward_components/conciseness/mean`
+- `train/reward_components/search_efficiency/mean`
 - `eval/reward_components/*/mean`
 
 Metadata:
@@ -124,7 +124,7 @@ Charts:
 - Eval reward mean against train reward mean.
 - Solve rate by step.
 - Response length by step.
-- Reward component breakdown: correctness, citation, conciseness.
+- Reward component breakdown: correctness, citation, search efficiency.
 
 Run detail:
 

@@ -21,6 +21,10 @@ function tagClass(tag) {
   return "tag";
 }
 
+function renderMetricCode(metric) {
+  return `<code>${escapeHtml(metric).replaceAll("/", "/<wbr>")}</code>`;
+}
+
 function activeSession(manifest, key) {
   return manifest.embed_sessions.find((session) => session.key === key) || manifest.embed_sessions[0];
 }
@@ -145,7 +149,7 @@ function renderApp(manifest, selectedKey) {
             <section class="side-card">
               <h2>Metric focus</h2>
               <div class="code-list">
-                ${(manifest.metric_groups || []).slice(0, 7).map((metric) => `<code>${escapeHtml(metric)}</code>`).join("")}
+                ${(manifest.metric_groups || []).slice(0, 7).map(renderMetricCode).join("")}
               </div>
             </section>
             <section class="side-card">

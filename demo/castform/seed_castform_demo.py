@@ -144,7 +144,7 @@ def seed_runs(
 
             correctness = max(0.0, min(1.0, train_reward + rng.uniform(-0.02, 0.02)))
             citation = max(0.0, min(1.0, train_reward - 0.10 + rng.uniform(-0.03, 0.03)))
-            conciseness = max(0.0, min(1.0, 1.0 - response_tokens / 1500 + rng.uniform(-0.03, 0.03)))
+            search_efficiency = max(0.0, min(1.0, 1.0 - response_tokens / 1500 + rng.uniform(-0.03, 0.03)))
 
             run.log(
                 {
@@ -157,10 +157,10 @@ def seed_runs(
                     "eval/solve_rate": eval_solve,
                     "train/reward_components/correctness/mean": correctness,
                     "train/reward_components/citation/mean": citation,
-                    "train/reward_components/conciseness/mean": conciseness,
+                    "train/reward_components/search_efficiency/mean": search_efficiency,
                     "eval/reward_components/correctness/mean": max(0.0, correctness - eval_gap),
                     "eval/reward_components/citation/mean": max(0.0, citation - eval_gap),
-                    "eval/reward_components/conciseness/mean": conciseness,
+                    "eval/reward_components/search_efficiency/mean": search_efficiency,
                 },
                 step=step,
             )
@@ -177,7 +177,7 @@ def seed_runs(
                 "castform/environment_logs": (
                     "reward gate: answer tag parsed\n"
                     "tool search returned 4 candidate passages\n"
-                    "judge score: correctness/citation/conciseness recorded"
+                    "judge score: correctness/citation/search_efficiency recorded"
                 ),
             },
             step=steps,
@@ -185,7 +185,7 @@ def seed_runs(
         run.log_stdout(
             [
                 f"{castform_run_id} environment initialized",
-                "sample rollout scored correctness=0.83 citation=0.71 conciseness=0.64",
+                "sample rollout scored correctness=0.83 citation=0.71 search_efficiency=0.64",
                 "eval checkpoint completed",
             ]
         )

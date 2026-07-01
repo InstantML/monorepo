@@ -49,3 +49,6 @@ Create a full end-to-end demo that:
 - Opened `https://app.castform.com/home` read-only in the browser and confirmed
   the public app home exposes the install/setup/agent/launch flow plus example
   RAG and trace training-result links mirrored by the demo story.
+- Inspected the public RAG example train/eval tabs and updated the demo metric
+  mapping from `conciseness` to Castform's observed `search_efficiency` reward
+  component.

@@ -119,7 +119,7 @@ class LocalCastformTrainer:
 
             correctness = max(0.0, min(1.0, train_reward + rng.uniform(-0.018, 0.018)))
             citation = max(0.0, min(1.0, train_reward - 0.08 + rng.uniform(-0.024, 0.024)))
-            conciseness = max(0.0, min(1.0, 1.0 - response_tokens / 1500.0 + rng.uniform(-0.025, 0.025)))
+            search_efficiency = max(0.0, min(1.0, 1.0 - response_tokens / 1500.0 + rng.uniform(-0.025, 0.025)))
             kl = max(0.003, 0.042 * math.exp(-step / max(1, steps * 0.30)) + rng.uniform(-0.002, 0.002))
             policy_loss = -0.012 - (train_reward * 0.035) + rng.uniform(-0.006, 0.006)
 
@@ -137,7 +137,7 @@ class LocalCastformTrainer:
             if step and step % max(step_size, steps // 4) == 0:
                 lifecycle_events.append(f"training.eval_checkpoint.step_{step}")
                 environment_logs.append(
-                    f"reward breakdown correctness={correctness:.3f} citation={citation:.3f} conciseness={conciseness:.3f}"
+                    f"reward breakdown correctness={correctness:.3f} citation={citation:.3f} search_efficiency={search_efficiency:.3f}"
                 )
             if step == steps:
                 lifecycle_events.extend(["training.completed", "model.candidate.ready"])
@@ -159,10 +159,10 @@ class LocalCastformTrainer:
                         "eval/response_tokens_mean": response_tokens * (1.0 + rng.uniform(-0.025, 0.025)),
                         "train/reward_components/correctness/mean": correctness,
                         "train/reward_components/citation/mean": citation,
-                        "train/reward_components/conciseness/mean": conciseness,
+                        "train/reward_components/search_efficiency/mean": search_efficiency,
                         "eval/reward_components/correctness/mean": max(0.0, correctness - eval_penalty),
                         "eval/reward_components/citation/mean": max(0.0, citation - eval_penalty),
-                        "eval/reward_components/conciseness/mean": conciseness,
+                        "eval/reward_components/search_efficiency/mean": search_efficiency,
                     },
                     lifecycle_events=lifecycle_events,
                     environment_logs=environment_logs,
@@ -627,7 +627,7 @@ def build_manifest(
             "train/response_tokens_mean",
             "train/reward_components/correctness/mean",
             "train/reward_components/citation/mean",
-            "train/reward_components/conciseness/mean",
+            "train/reward_components/search_efficiency/mean",
         ],
         "notes": [
             "Manifest contains token-bearing iframe_src values and must stay local.",

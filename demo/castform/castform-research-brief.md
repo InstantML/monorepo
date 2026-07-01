@@ -55,6 +55,12 @@ Those public examples support the current demo profile choices: a RAG run, a
 trace-based support run, and failure-mode comparisons around reward, solve
 rate, and response length.
 
+The public `company docs search (rag)` run's train tab showed chart panels for
+average reward, response lengths, max reward, and solve rate, plus reward
+component groups named `citation`, `correctness`, and `search_efficiency`. The
+train and eval tabs both showed rollout deepdive tables with prompt, preview,
+step, and reward columns.
+
 ## Training And SDK Touchpoints
 
 The public launch flow has two core calls:
@@ -113,7 +119,7 @@ Demo capabilities to show:
   links.
 - Mirror scalar curves under normalized metric names such as
   `train/reward_mean`, `train/solve_rate`, `eval/reward_mean`, and
-  `train/reward_components/quality/mean`.
+  `train/reward_components/search_efficiency/mean`.
 - Store environment logs and lifecycle events as searchable console/text
   evidence.
 - Compare 5-10 runs by model, group size, learning rate, reward components, and

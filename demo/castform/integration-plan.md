@@ -104,6 +104,9 @@ Important choices:
 - Prefix source metrics with mode: `train/*`, `eval/*`, `comp/*`.
 - Preserve source names under metadata for traceability.
 - Store Castform URL and run ID in config/metadata/notes.
+- Expect environment-specific reward component names. The public RAG example
+  uses `citation`, `correctness`, and `search_efficiency`, but other
+  environments may expose different components.
 - Use tags for workflow filtering, not one-off details.
 - Keep raw rollout inspection in Castform; mirror selected logs and summaries in
   InstantML.
