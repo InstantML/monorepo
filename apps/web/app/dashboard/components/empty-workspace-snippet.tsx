@@ -207,13 +207,13 @@ export function EmptyWorkspaceSnippet({ orgName }: { orgName: string }) {
             <>
               use <button className="empty-workspace-snippet__inline-link" onClick={onCopySnippetWithKey} type="button">
                 {copied === "snippet-with-key" ? "copied with your key" : "copy a version with your key embedded"}
-              </button>, or set <code>INSTANTML_API_KEY</code> from the{" "}
-              <a className="empty-workspace-snippet__link" href="/dashboard/api">API tab</a>.
+              </button>, or set <code>INSTANTML_API_KEY</code> from{" "}
+              <a className="empty-workspace-snippet__link" href="/dashboard/settings">Workspace settings</a>.
             </>
           ) : (
             <>
-              set <code>INSTANTML_API_KEY</code> from the{" "}
-              <a className="empty-workspace-snippet__link" href="/dashboard/api">API tab</a>.
+              connect an agent from the{" "}
+              <a className="empty-workspace-snippet__link" href="/dashboard/agent">Agent tab</a>, or set <code>INSTANTML_API_KEY</code> from Workspace settings.
             </>
           )}
         </span>

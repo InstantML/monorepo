@@ -14,7 +14,7 @@ dashboard setup action instead of a docs-and-config-file chore.
 
 The smallest useful implementation is not full OAuth. It is:
 
-- a dashboard "Connect Agent" panel next to API-key creation,
+- a dashboard Agent tab with "Connect Agent" as the primary surface,
 - generated client-specific snippets that can use the copy-once API key,
 - a publish-ready MCP Registry `server.json`,
 - a small npm installer package scaffold for clients that still need local
@@ -51,8 +51,9 @@ surface without a fresh backend review.
 Primary users are workspace owners/admins who want an agent to inspect and
 compare training runs. The happy path:
 
-1. Open Dashboard -> API.
-2. Create an "Agent MCP key".
+1. Open Dashboard -> Agent.
+2. Connect with browser sign-in, or open Workspace settings -> API to create an
+   "Agent MCP key" fallback.
 3. Copy the generated setup for the user's client.
 4. Ask the agent to list recent InstantML runs.
 
@@ -63,8 +64,9 @@ server from metadata.
 
 ### Current Slice
 
-Add an `AgentSetupPanel` in `apps/web/app/dashboard/api/`. It renders below API
-key creation and uses the copy-once key when available. It generates:
+Add an `AgentSetupPanel` in the dashboard Agent tab. It defaults to browser
+sign-in and uses a copy-once key from Workspace settings -> API when available.
+It generates:
 
 - Claude Code `claude mcp add --transport http ... --header ...`
 - Codex `~/.codex/config.toml` with `bearer_token_env_var`
@@ -110,7 +112,7 @@ Backend:
 
 Frontend:
 
-- Add the dashboard Agent setup panel to the API tab.
+- Add the dashboard Agent setup panel to the Agent tab.
 
 Python SDK:
 
@@ -124,7 +126,7 @@ Storage:
 
 Docs:
 
-- Update public MCP docs to lead with Dashboard -> API -> Connect Agent.
+- Update public MCP docs to lead with Dashboard -> Agent -> Connect.
 - Keep manual setup and local fallback documented.
 
 ## Data Model
@@ -143,7 +145,8 @@ OAuth follow-up likely needs:
 Current slice:
 
 - No new API routes.
-- Existing API-key creation remains the source of bearer secrets.
+- Existing Workspace settings -> API key creation remains the source of bearer
+  secrets for fallback setup.
 - `server.json` declares:
   - `remotes[0].type = "streamable-http"`
   - `remotes[0].url = "https://mcp.instantml.ai/mcp"`
@@ -198,14 +201,15 @@ Deferred complexity:
 - Existing API-key UI tests should continue to assert read-only members cannot
   see stale key material.
 - Docs validation after public docs updates.
-- Optional browser smoke for Dashboard -> API once a local dev server is
+- Optional browser smoke for Dashboard -> Agent once a local dev server is
   running.
 
 ## Documentation Plan
 
 - `apps/docs/sdk/agent-mcp.mdx`: make dashboard setup the primary path and keep
   manual setup as advanced/fallback.
-- `apps/web/README.md`: note the API tab includes agent setup snippets.
+- `apps/web/README.md`: note the Agent tab includes agent setup snippets and
+  Workspace settings owns API keys/reference.
 - `packages/mcp-installer/README.md`: document package status and commands.
 
 ## Alternatives Considered

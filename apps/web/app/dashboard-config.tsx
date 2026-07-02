@@ -2,7 +2,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
-  Code2,
+  Bot,
   Database,
   FileBarChart,
   Network,
@@ -45,7 +45,7 @@ export const navGroups = [
       { id: "alerts", label: "Run Health", icon: AlertTriangle },
       { id: "reports", label: "Reports", icon: FileBarChart },
       { id: "settings", label: "Settings", icon: Settings },
-      { id: "api", label: "API", icon: Code2 },
+      { id: "agent", label: "Agent", icon: Bot },
     ],
   },
 ] as const;

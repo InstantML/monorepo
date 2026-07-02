@@ -13,8 +13,8 @@ type Props = {
 };
 
 const AUTH_MODES: { id: AgentAuthMode; label: string }[] = [
-  { id: "api-key", label: "API key" },
   { id: "oauth", label: "Browser sign-in" },
+  { id: "api-key", label: "API key" },
 ];
 
 async function copyText(value: string) {
@@ -28,7 +28,7 @@ async function copyText(value: string) {
 }
 
 export function AgentSetupPanel({ activeOrgId, canManageOrg, newApiKey }: Props) {
-  const [authMode, setAuthMode] = useState<AgentAuthMode>("api-key");
+  const [authMode, setAuthMode] = useState<AgentAuthMode>("oauth");
   const [activeClient, setActiveClient] = useState<AgentClientId>("claude-code");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -49,7 +49,7 @@ export function AgentSetupPanel({ activeOrgId, canManageOrg, newApiKey }: Props)
       : hasCopyOnceKey
         ? "Using the copy-once key above. It is shown once, so store it in a secrets manager."
         : canManageOrg
-          ? "Create an Agent MCP key above and this snippet fills in the key for you."
+          ? "Create an Agent MCP key in Workspace settings -> API and this snippet fills in the key for you."
           : "Use browser sign-in, or ask a workspace admin for an API key.";
 
   return (

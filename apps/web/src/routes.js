@@ -14,7 +14,7 @@ export const DASHBOARD_TAB_IDS = [
   "artifacts",
   "reports",
   "settings",
-  "api",
+  "agent",
 ];
 
 const DASHBOARD_TABS = new Set(DASHBOARD_TAB_IDS);
@@ -31,6 +31,9 @@ const DASHBOARD_TAB_ALIASES = new Map([
   // a user would guess from that label resolves to the same page.
   ["run-health", "alerts"],
   ["health", "alerts"],
+  // The old API tab became the agent-first surface. API keys and route
+  // reference now live under Workspace settings -> API.
+  ["api", "agent"],
 ]);
 const SAFE_NEXT_PREFIXES = ["/dashboard", "/onboarding"];
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
