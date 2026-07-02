@@ -35,7 +35,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dash-skeleton::after,
-  .dash-skel-linechart::after,
+  .dash-skel-linechart__frame::after,
+  .dash-skel-linechart__frame path,
   .dash-skel-chart__bars .dash-skeleton {
     animation: none;
   }
@@ -176,13 +177,22 @@
 }
 
 /* ── Line-chart placeholder ─────────────────────────────────────────────── */
-/* Stands in for a metric chart at the chart's own size: the gridded frame
- * fills the chart area with a static outline of faux series under the shared
- * shimmer sheen. */
+/* Stands in for a metric chart at the chart's own size: a gridded frame with
+ * a shimmering outline of faux series, over a faux run legend mirroring the
+ * plotted chart's bottom legend row. */
 .dash-skel-linechart {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 96px;
+  animation: dash-skel-fade-in 0.1s ease-out;
+}
+
+.dash-skel-linechart__frame {
   position: relative;
   overflow: hidden;
-  min-height: 96px;
+  flex: 1 1 auto;
+  min-height: 64px;
   border: 1px solid var(--line-soft);
   border-radius: var(--control-radius);
   background:
@@ -190,23 +200,24 @@
     linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
     var(--chart-card-bg);
   background-size: 100% 38px, 64px 100%, 100% 100%;
-  animation: dash-skel-fade-in 0.1s ease-out;
 }
 
-.dash-skel-linechart::after {
+/* The frame is --chart-card-bg (pure white in light mode), so the sheen must
+ * darken rather than lighten or it is invisible there. */
+.dash-skel-linechart__frame::after {
   content: "";
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  background: linear-gradient(90deg, transparent, rgba(114, 125, 141, 0.12), transparent);
   animation: dash-skeleton-sheen 1.6s ease-in-out infinite;
 }
 
-:root[data-theme="dark"] .dash-skel-linechart::after {
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.045), transparent);
+:root[data-theme="dark"] .dash-skel-linechart__frame::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
 }
 
-.dash-skel-linechart svg {
+.dash-skel-linechart__frame svg {
   position: absolute;
   inset: 14px 12px;
   width: calc(100% - 24px);
@@ -214,35 +225,105 @@
   overflow: visible;
 }
 
-.dash-skel-linechart path {
+.dash-skel-linechart__frame path {
   fill: none;
   /* viewBox units (the 100x56 box is stretched to fit), not CSS px */
   stroke-width: 0.45;
   stroke-linecap: round;
+  animation: dash-skel-line-shimmer 1.6s ease-in-out infinite;
 }
 
-.dash-skel-linechart path:nth-child(1) {
+.dash-skel-linechart__frame path:nth-child(1) {
   stroke: rgba(47, 128, 237, 0.42);
 }
 
-.dash-skel-linechart path:nth-child(2) {
+.dash-skel-linechart__frame path:nth-child(2) {
   stroke: rgba(18, 166, 122, 0.38);
+  animation-delay: 0.25s;
 }
 
-.dash-skel-linechart path:nth-child(3) {
+.dash-skel-linechart__frame path:nth-child(3) {
   stroke: rgba(124, 92, 196, 0.34);
+  animation-delay: 0.5s;
 }
 
-:root[data-theme="dark"] .dash-skel-linechart path:nth-child(1) {
+:root[data-theme="dark"] .dash-skel-linechart__frame path:nth-child(1) {
   stroke: rgba(96, 156, 240, 0.5);
 }
 
-:root[data-theme="dark"] .dash-skel-linechart path:nth-child(2) {
+:root[data-theme="dark"] .dash-skel-linechart__frame path:nth-child(2) {
   stroke: rgba(58, 190, 148, 0.46);
 }
 
-:root[data-theme="dark"] .dash-skel-linechart path:nth-child(3) {
+:root[data-theme="dark"] .dash-skel-linechart__frame path:nth-child(3) {
   stroke: rgba(152, 124, 214, 0.42);
+}
+
+@keyframes dash-skel-line-shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Faux run legend: same geometry as the plotted chart's .legend-chip rows
+ * (16x3 line swatch + label, two-ish columns) so the swap doesn't reflow. */
+.dash-skel-linechart__legend {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: 5px 10px;
+}
+
+.dash-skel-linechart__legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 22px;
+  padding: 3px 6px;
+}
+
+.dash-skel-linechart__legend-swatch {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.dash-skel-linechart__legend-label {
+  height: 8px;
+  border-radius: 4px;
+}
+
+/* Swatches cycle the faux series tints so the legend reads as the runs those
+ * lines belong to. */
+.dash-skel-linechart__legend-chip:nth-child(3n + 1) .dash-skel-linechart__legend-swatch {
+  background: rgba(47, 128, 237, 0.42);
+}
+
+.dash-skel-linechart__legend-chip:nth-child(3n + 2) .dash-skel-linechart__legend-swatch {
+  background: rgba(18, 166, 122, 0.38);
+}
+
+.dash-skel-linechart__legend-chip:nth-child(3n) .dash-skel-linechart__legend-swatch {
+  background: rgba(124, 92, 196, 0.34);
+}
+
+:root[data-theme="dark"] .dash-skel-linechart__legend-chip:nth-child(3n + 1) .dash-skel-linechart__legend-swatch {
+  background: rgba(96, 156, 240, 0.5);
+}
+
+:root[data-theme="dark"] .dash-skel-linechart__legend-chip:nth-child(3n + 2) .dash-skel-linechart__legend-swatch {
+  background: rgba(58, 190, 148, 0.46);
+}
+
+:root[data-theme="dark"] .dash-skel-linechart__legend-chip:nth-child(3n) .dash-skel-linechart__legend-swatch {
+  background: rgba(152, 124, 214, 0.42);
 }
 
 @keyframes dash-skel-fade-in {
