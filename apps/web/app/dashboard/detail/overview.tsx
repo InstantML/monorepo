@@ -57,7 +57,7 @@ function ChartPanel({ loading, spec }: { loading: boolean; spec: OverviewChartSp
       <div className="pd-panel-chart">
         {awaitingSeries ? (
           <div className="chart-area workspace-chart-loading" role="status" aria-label={`Loading ${spec.key} series`}>
-            <SkeletonChartLines minHeight={chartHeight} />
+            <SkeletonChartLines legend={false} minHeight={chartHeight} />
           </div>
         ) : (
           <MetricChart
