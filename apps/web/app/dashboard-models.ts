@@ -1,11 +1,9 @@
-import { queryString } from "../src/api.js";
 import { defaultDistributionFields, defaultScatterFields, parseCategoricalFieldId, parseFieldId } from "../src/dashboard-panels.js";
 import { bestMetric, durationLabel, formatNumber, metricGoal } from "../src/state.js";
 import { WORKSPACE_VIEW_PREFIX } from "./dashboard/state/storage-keys";
 
 import type {
   AlertRow,
-  ApiRow,
   Artifact,
   DatasetRow,
   MetricCatalogRow,
@@ -776,20 +774,6 @@ export function buildReportRows(savedViews: Array<string | { label: string; valu
       scope: `${scope || "all"} / ${metric || "metric"}`,
     };
   });
-}
-
-export function buildApiRows(metricKey: string, project: string, statusParams: { display_status?: string; status?: string }): ApiRow[] {
-  const runQuery = { project, ...statusParams };
-  return [
-    { method: "GET", path: "/projects", description: "List tracked projects." },
-    { method: "GET", path: `/api/overview${queryString({ ...runQuery, metric_key: metricKey })}`, description: "Current run and metric summary." },
-    { method: "GET", path: `/api/runs/summary${queryString({ ...runQuery, limit: 100, offset: 0 })}`, description: "Paginated run summaries." },
-    { method: "GET", path: `/runs/:id/metrics${queryString({ key: metricKey, limit: 1000 })}`, description: "Bounded metric series for one run." },
-    { method: "GET", path: "/api/runs/:id/artifacts", description: "Artifacts for one selected run." },
-    { method: "GET", path: "/api/runs/:id/objects", description: "Rich object manifests for one selected run." },
-    { method: "GET", path: "/api/objects/:id/rows", description: "Bounded table rows for one logged table object." },
-    { method: "GET", path: "/api/runs/side-by-side?run_ids=<ids>", description: "Config and metric comparison rows." },
-  ];
 }
 
 export function formatBytes(value: unknown) {
