@@ -9,6 +9,7 @@ import { MetricCatalog } from "./metric-catalog";
 import { MetricChart } from "./metric-chart";
 import { SeriesTable, siStep } from "./series-table";
 import { PageHead } from "../ui/page-head";
+import { SkeletonChartLines } from "../ui/skeleton";
 import { formatNumber } from "../../../src/state.js";
 import type { HoverPoint, MetricCatalogRow, MetricSeries, RunSummary } from "../../dashboard-types";
 
@@ -196,13 +197,8 @@ export function MetricsTabPane({
             </div>
             <div className="mx-chart-body">
               {seriesLoading && !visibleSeries.length ? (
-                <div className="chart-area workspace-chart-loading" aria-label={`Loading ${metricKey || "metric"} series`}>
-                  <div className="chart-loading-frame">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                  <div className="empty">Loading metric series...</div>
+                <div className="chart-area workspace-chart-loading" role="status" aria-label={`Loading ${metricKey || "metric"} series`}>
+                  <SkeletonChartLines minHeight={320} />
                 </div>
               ) : (
                 <MetricChart

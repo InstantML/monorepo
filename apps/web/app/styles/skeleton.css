@@ -34,8 +34,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dash-skeleton::after {
+  .dash-skeleton::after,
+  .dash-skel-linechart::after,
+  .dash-skel-chart__bars .dash-skeleton {
     animation: none;
+  }
+
+  .dash-skel-linechart path {
+    animation: none;
+    stroke-dashoffset: 0;
   }
 }
 
@@ -146,4 +153,126 @@
 
 .dash-skel-chart__bars .dash-skeleton {
   flex: 1 1 0;
+  transform-origin: bottom;
+  animation: dash-skel-bar-pulse 1.9s ease-in-out infinite;
+}
+
+.dash-skel-chart__bars .dash-skeleton:nth-child(3n) {
+  animation-delay: 0.28s;
+}
+
+.dash-skel-chart__bars .dash-skeleton:nth-child(3n + 1) {
+  animation-delay: 0.56s;
+}
+
+@keyframes dash-skel-bar-pulse {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  50% {
+    transform: scaleY(0.84);
+  }
+}
+
+/* ── Line-chart placeholder ─────────────────────────────────────────────── */
+/* Stands in for a metric chart at the chart's own size: the gridded frame
+ * fills the chart area while faux series draw themselves in on a loop.
+ * --skel-delay staggers sibling placeholders so a grid of them feels alive. */
+.dash-skel-linechart {
+  position: relative;
+  overflow: hidden;
+  min-height: 96px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background:
+    linear-gradient(var(--chart-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
+    var(--chart-card-bg);
+  background-size: 100% 38px, 64px 100%, 100% 100%;
+}
+
+.dash-skel-linechart::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  animation: dash-skeleton-sheen 1.6s ease-in-out infinite;
+}
+
+:root[data-theme="dark"] .dash-skel-linechart::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.045), transparent);
+}
+
+.dash-skel-linechart svg {
+  position: absolute;
+  inset: 14px 12px;
+  width: calc(100% - 24px);
+  height: calc(100% - 28px);
+  overflow: visible;
+}
+
+.dash-skel-linechart path {
+  fill: none;
+  /* viewBox units (the 100x56 box is stretched to fit), not CSS px */
+  stroke-width: 0.45;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: dash-skel-line-draw 2.6s ease-in-out infinite;
+  animation-delay: var(--skel-delay, 0s);
+}
+
+.dash-skel-linechart path:nth-child(1) {
+  stroke: rgba(47, 128, 237, 0.42);
+}
+
+.dash-skel-linechart path:nth-child(2) {
+  stroke: rgba(18, 166, 122, 0.38);
+  animation-delay: calc(var(--skel-delay, 0s) + 0.22s);
+}
+
+.dash-skel-linechart path:nth-child(3) {
+  stroke: rgba(124, 92, 196, 0.34);
+  animation-delay: calc(var(--skel-delay, 0s) + 0.44s);
+}
+
+:root[data-theme="dark"] .dash-skel-linechart path:nth-child(1) {
+  stroke: rgba(96, 156, 240, 0.5);
+}
+
+:root[data-theme="dark"] .dash-skel-linechart path:nth-child(2) {
+  stroke: rgba(58, 190, 148, 0.46);
+}
+
+:root[data-theme="dark"] .dash-skel-linechart path:nth-child(3) {
+  stroke: rgba(152, 124, 214, 0.42);
+}
+
+@keyframes dash-skel-line-draw {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  58% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  84% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
 }

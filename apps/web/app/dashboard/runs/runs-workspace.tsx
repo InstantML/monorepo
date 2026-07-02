@@ -10,6 +10,7 @@ import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels
 import { BULK_SELECT_MATCHING_LIMIT, canRequestStop, displayStatusForRun, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
 import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runRailTooltip, shortMetricName, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
+import { Skeleton, SkeletonChartLines } from "../ui/skeleton";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { WorkspaceSectionView } from "./workspace-panel-card";
 import type { HistogramTimelineState, MetricSeries, RunSummary, WorkspacePanelType, WorkspaceView } from "../../dashboard-types";
@@ -425,7 +426,7 @@ export function RunsWorkspace({
               ref={(node) => { if (node) node.indeterminate = railSelectionState === "some"; }}
               type="checkbox"
             />
-            <h2>Runs {initialRunsLoading ? <span>loading</span> : <span>({summaryTotal})</span>}</h2>
+            <h2>Runs {initialRunsLoading ? <Skeleton height={13} radius={999} style={{ display: "inline-block", verticalAlign: "-1px" }} width={30} /> : <span>({summaryTotal})</span>}</h2>
           </label>
           <div className="workspace-rail-actions">
             {!runRailCollapsed ? (
@@ -600,7 +601,7 @@ export function RunsWorkspace({
             options={[10, 25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
             value={String(pageSize)}
           />
-          <strong>{initialRunsLoading ? "Loading runs" : `${pageStart}-${pageEnd} of ${summaryTotal}`}</strong>
+          <strong>{initialRunsLoading ? <Skeleton height={11} radius={999} style={{ display: "inline-block", verticalAlign: "-1px" }} width={78} /> : `${pageStart}-${pageEnd} of ${summaryTotal}`}</strong>
           <div className="workspace-run-pager">
             <button className="icon-button framed" disabled={paginationBusy || initialRunsLoading || !hasPreviousPage} onClick={onPreviousPage} type="button" aria-label="Previous page" title="Previous page"><ChevronDown className="rotate-90" size={15} /></button>
             <RunPageJumper
@@ -771,10 +772,12 @@ export function RunsWorkspace({
 }
 
 function RunsRailSkeleton() {
+  // Rows shimmer in a top-down wave (--skel-delay staggers the sheen) so the
+  // rail reads as filling in rather than sitting frozen.
   return (
     <div className="workspace-run-loading" role="status" aria-label="Loading runs">
       {Array.from({ length: 7 }, (_, index) => (
-        <div className="workspace-run-skeleton-row" key={index}>
+        <div className="workspace-run-skeleton-row" key={index} style={{ "--skel-delay": `${index * 90}ms` } as CSSProperties}>
           <span className="workspace-run-skeleton-check" />
           <span className="workspace-run-skeleton-body">
             <span className="workspace-skeleton-line is-title" />
@@ -796,15 +799,13 @@ function WorkspaceCanvasSkeleton() {
       </div>
       <div className="workspace-loading-panel-grid">
         {Array.from({ length: 4 }, (_, index) => (
-          <div className="workspace-loading-panel" key={index}>
+          <div className="workspace-loading-panel" key={index} style={{ "--skel-delay": `${index * 160}ms` } as CSSProperties}>
             <div className="workspace-loading-panel-head">
               <span className="workspace-skeleton-line is-panel-title" />
               <span className="workspace-skeleton-line is-panel-meta" />
             </div>
             <div className="workspace-loading-panel-body">
-              <span className="workspace-skeleton-line is-wide" />
-              <span className="workspace-skeleton-line is-medium" />
-              <span className="workspace-skeleton-line is-short" />
+              <SkeletonChartLines />
             </div>
           </div>
         ))}

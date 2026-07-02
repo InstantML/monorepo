@@ -12,8 +12,8 @@ type Props = {
   newApiKey: string;
 };
 
-const AUTH_MODES: { id: AgentAuthMode; label: string; preview?: boolean }[] = [
-  { id: "oauth", label: "Browser sign-in", preview: true },
+const AUTH_MODES: { id: AgentAuthMode; label: string }[] = [
+  { id: "oauth", label: "Browser sign-in" },
   { id: "api-key", label: "API key" },
 ];
 
@@ -70,7 +70,6 @@ export function AgentSetupPanel({ activeOrgId, canManageOrg, newApiKey }: Props)
             type="button"
           >
             {mode.label}
-            {mode.preview ? <span className="agent-auth-toggle__tag">Preview</span> : null}
           </button>
         ))}
       </div>

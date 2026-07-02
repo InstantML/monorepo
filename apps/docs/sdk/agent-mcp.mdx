@@ -34,7 +34,7 @@ This dashboard flow is the preferred setup because it keeps key creation and
 agent configuration in one place. Use the manual snippets below when setting up
 an agent before opening the dashboard.
 
-## Browser sign-in (OAuth, preview)
+## Browser sign-in (OAuth)
 
 OAuth-capable clients can connect by URL alone and sign in through the browser
 instead of pasting a key. In the **Connect Agent** panel, choose **Browser
@@ -53,7 +53,8 @@ Browser sign-in is scoped to the workspace selected in the dashboard when you
 copy the snippet. If you belong to multiple workspaces, add one MCP server per
 workspace rather than using one connection for all orgs.
 
-This path is in preview: when a workspace has not enabled OAuth, use an API key.
+Browser sign-in grants read-only access as the signed-in user. Use an API key
+when an agent needs write scopes such as report editing or SDK ingestion.
 
 ## Prerequisites
 

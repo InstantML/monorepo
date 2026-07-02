@@ -556,7 +556,15 @@
   height: 22px;
   margin-top: 8px;
   border-radius: 999px;
-  background: var(--surface-2);
+  background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+  background-size: 220% 100%;
+  animation: workspace-skeleton-sheen 1.55s ease-in-out infinite;
+}
+
+/* Rows shimmer in a top-down wave; each row sets its own --skel-delay. */
+.workspace-run-skeleton-row .workspace-skeleton-line,
+.workspace-run-skeleton-row .workspace-run-skeleton-check {
+  animation-delay: var(--skel-delay, 0s);
 }
 
 .workspace-run-skeleton-body {
@@ -996,33 +1004,12 @@
   width: 64px;
 }
 
+/* The chart-shaped placeholder (ui/skeleton.tsx) brings its own gridded
+ * frame; the body just reserves the plot's box. */
 .workspace-loading-panel-body {
-  position: relative;
   display: grid;
-  align-content: center;
-  gap: 18px;
   min-height: 180px;
   margin: 0 12px 12px;
-  padding: 20px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--control-radius);
-  background:
-    linear-gradient(var(--chart-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
-    transparent;
-  background-size: 100% 42px, 72px 100%, 100% 100%;
-}
-
-.workspace-loading-panel-body .is-wide {
-  width: 76%;
-}
-
-.workspace-loading-panel-body .is-medium {
-  width: 58%;
-}
-
-.workspace-loading-panel-body .is-short {
-  width: 40%;
 }
 
 :root[data-theme="dark"] .workspace-skeleton-line,
@@ -1048,7 +1035,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .workspace-skeleton-line {
+  .workspace-skeleton-line,
+  .workspace-run-skeleton-check {
     animation: none !important;
   }
 }
