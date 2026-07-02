@@ -529,6 +529,9 @@
 .axis-control-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .axis-control-grid.parallel { grid-template-columns: repeat(auto-fit, minmax(156px, 1fr)); }
 .axis-select { min-width: 0; }
+/* The base trigger is a fixed 170px, which truncates "Auto: <field>" labels
+   even when the card has room — let axis triggers fill their grid column. */
+.axis-select .select-trigger { width: 100%; }
 .axis-select .select-trigger-value span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -743,26 +746,27 @@
   letter-spacing: 0.04em;
   color: var(--muted);
 }
-.analysis-readout {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  margin: 8px 0 0;
-  padding: 7px 9px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  font: 500 11px/1.2 var(--font-mono);
+/* Point-anchored hover tooltips: the shell wraps a chart frame and bounds the
+   floating .chart-tooltip card (skin shared with the Runs tab metric charts,
+   see charts.css). The frame inside may scroll and clips overflow, so the
+   tooltip hangs off the shell instead of the frame. */
+.analysis-chart-shell {
+  position: relative;
+  min-width: 0;
+}
+.analysis-point-tip {
+  min-width: 0;
+  max-width: 280px;
+}
+.analysis-point-tip .tip-rows {
+  display: grid;
+  gap: 3px;
+  font: 500 11px/1.4 var(--font-mono);
   color: var(--muted);
 }
-.analysis-readout strong {
+.analysis-point-tip .tip-rows b {
   color: var(--text);
-  font: 600 11.5px/1.2 var(--font-sans);
-}
-.analysis-readout span {
-  color: var(--muted);
+  font-weight: 600;
 }
 
 /* ── Per-rank straggler bars ───────────────────────────────────────────────── */

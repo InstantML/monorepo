@@ -122,15 +122,17 @@ test("I3: constant parallel axes get one centered label and a dimmed line", () =
   assert.match(styles, /\.parallel-axis\.constant \{ opacity: 0\.35; stroke-dasharray: 3 4; \}/);
 });
 
-test("I4: scatter points and parallel lines are clickable and name the run on hover", () => {
+test("I4: scatter points and parallel lines are clickable and identify the run on hover", () => {
   // Optional prop with a no-op default so the dashboard shell needs no changes.
   assert.match(paneSource, /onSelectRun\?: \(runId: string\) => void/);
   assert.match(paneSource, /onSelectRun = \(\) => \{\}/);
   assert.match(paneSource, /onClick=\{\(\) => onSelectRun\(point\.run\.id\)\}/);
   assert.match(paneSource, /onClick=\{\(\) => onSelectRun\(row\.run\.id\)\}/);
-  // svg <title> as the hover-tooltip floor on both marks.
-  assert.match(paneSource, /<title>\{label\}<\/title>/);
-  assert.match(paneSource, /<title>\{row\.run\.name\}<\/title>/);
+  // Hover identification comes from the point-anchored tooltip; native svg
+  // <title> would pop a second, laggy browser tooltip on top of it.
+  assert.match(paneSource, /onMouseEnter=\{\(event\) => setTip\(lineTipFor\(row\.run\.id, event\)\)\}/);
+  assert.doesNotMatch(paneSource, /<title>\{label\}<\/title>/);
+  assert.doesNotMatch(paneSource, /<title>\{row\.run\.name\}<\/title>/);
   assert.match(styles, /\.parallel-line \{[^}]*pointer-events: stroke;/);
   assert.match(styles, /\.analysis-scatter:not\(\.clusters\) circle \{ cursor: pointer; \}/);
 });
@@ -214,7 +216,7 @@ test("parallelSummaryRows flags the best run and nulls missing axis values", () 
 });
 
 test("scatter explorer wires log scaling, a chart/table toggle, and an accessible table", () => {
-  assert.match(paneSource, /scatterGeometry\(points, \{ xScale, yScale \}\)/);
+  assert.match(paneSource, /scatterGeometry\(points, \{ xScale, yScale, width \}\)/);
   assert.match(paneSource, /analysis-scale-button/);
   assert.match(paneSource, /Toggle a logarithmic [XY] axis/);
   assert.match(paneSource, /ariaLabel="Scatter view"/);
@@ -227,7 +229,7 @@ test("scatter explorer wires log scaling, a chart/table toggle, and an accessibl
 test("parallel coordinates explorer is keyboard-focusable, capped, and disclosed", () => {
   // The chart svg becomes focusable with a live readout (was role=img only).
   assert.match(paneSource, /className="parallel-chart"[\s\S]*?tabIndex=\{0\}/);
-  assert.match(paneSource, /setFocusRunId\(bestRunId \?\? drawnRows\[0\]\?\.run\.id \?\? null\)/);
+  assert.match(paneSource, /setTip\(focusTipFor\(bestRunId \?\? drawnRows\[0\]\?\.run\.id \?\? null\)\)/);
   assert.match(paneSource, /function ParallelSummaryTable/);
   assert.match(paneSource, /ariaLabel="Parallel coordinates view"/);
   // Honest truncation: a named cap and disclosed "shown of" copy, not a silent slice.
@@ -256,6 +258,43 @@ test("scatter axis labels use formatAxisTick so a log learning-rate axis never r
   assert.match(paneSource, /fields\[0\]\}=\$\{formatMetricValue\(point\.x\)/);
   // Sanity check the helper itself: a learning-rate-scale tick is not "0".
   assert.equal(formatAxisTick(1e-5) === "0", false);
+});
+
+test("scatterGeometry spreads the x extents across a wider measured frame", () => {
+  const points = [
+    { run: { id: "a", name: "a" }, x: 0, y: 0 },
+    { run: { id: "b", name: "b" }, x: 10, y: 100 },
+  ];
+  const geo = scatterGeometry(points, { xScale: "linear", yScale: "linear", width: 1040 });
+  assert.equal(Math.round(geo.x(0)), 48);
+  assert.equal(Math.round(geo.x(10)), 1008); // width - 32
+  assert.equal(Math.round(geo.x(5)), 528);
+  // Vertical layout is fixed — only the width tracks the container.
+  assert.equal(Math.round(geo.y(0)), 200);
+  assert.equal(Math.round(geo.y(100)), 24);
+});
+
+test("insight charts render the viewBox at the measured frame width so SVG text stays UI-sized", () => {
+  // A fixed viewBox stretched to width:100% scales axis text with the card —
+  // the "giant uppercase axis label" bug. Every chart must measure its frame.
+  assert.match(paneSource, /useChartFrameWidth\(SCATTER_FRAME_WIDTH\)/);
+  assert.match(paneSource, /useChartFrameWidth\(PARALLEL_FRAME_WIDTH\)/);
+  assert.match(paneSource, /viewBox=\{`0 0 \$\{width\} \$\{SCATTER_FRAME_HEIGHT\}`\}/);
+  assert.match(paneSource, /viewBox=\{`0 0 \$\{width\} \$\{PARALLEL_FRAME_HEIGHT\}`\}/);
+  assert.doesNotMatch(paneSource, /viewBox="0 0 \d+ \d+"/);
+});
+
+test("hover details render as a point-anchored tooltip, not a readout row below the chart", () => {
+  // The tooltip reuses the Runs-tab .chart-tooltip skin and shared placement
+  // helper, floats over the chart shell (so hovering never reflows the card),
+  // and fully replaces the old .analysis-readout strip.
+  assert.match(paneSource, /chartTooltipPlacement/);
+  assert.match(paneSource, /className="chart-tooltip analysis-point-tip"/);
+  assert.match(paneSource, /className="analysis-chart-shell"/);
+  assert.doesNotMatch(paneSource, /analysis-readout/);
+  assert.match(styles, /\.analysis-chart-shell \{/);
+  assert.match(styles, /\.analysis-point-tip \{/);
+  assert.doesNotMatch(styles, /\.analysis-readout \{/);
 });
 
 test("scatter Table view is gated on its own rows, not on a plottable chart", () => {

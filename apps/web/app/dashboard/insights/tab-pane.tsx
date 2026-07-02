@@ -1,7 +1,8 @@
 "use client";
 
 import { LineChart, Plus, Table2, X } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
 import {
   evaluationCards,
@@ -24,12 +25,75 @@ import { metricTitle } from "../../dashboard-models";
 import type { RunSummary } from "../../dashboard-types";
 import { SegmentedToggle } from "../components/segmented-toggle";
 import { AnalysisCard } from "../ui/analysis-card";
+import { chartTooltipPlacement, type TooltipPlacement } from "../ui/chart-tooltip-placement";
 import { CustomSelect, type SelectOption } from "../ui/select";
+import { useChartFrameWidth } from "../ui/use-measured-size";
 import { SystemUsageInsightsPane } from "./system-usage-pane";
 
 const AUTO_AXIS = "__auto__";
 const MAX_AXIS_OPTIONS = 80;
 const MAX_PARALLEL_AXES = 5;
+
+// Chart frames render their SVG viewBox at the measured frame width (see
+// useChartFrameWidth) so axis text keeps a constant pixel size instead of
+// scaling up with the card — the "giant uppercase axis label" failure mode of
+// stretching a fixed viewBox. Heights are fixed in CSS pixels; the min widths
+// match the frames' CSS min-width, below which the frame scrolls.
+const SCATTER_FRAME_WIDTH = 520;
+const SCATTER_FRAME_HEIGHT = 232;
+const PARALLEL_FRAME_WIDTH = 720;
+const PARALLEL_FRAME_HEIGHT = 264;
+
+type TipAnchor = { x: number; y: number };
+
+/**
+ * Point-anchored hover tooltip matching the Runs tab metric chart: a floating
+ * .chart-tooltip card placed beside the hovered mark (flipping at the shell's
+ * edges via the shared placement helper) instead of a readout row below the
+ * chart. The shell — a position:relative wrapper around the chart frame — is
+ * the placement bounds. Since the SVG viewBox renders at the measured frame
+ * width, chart coordinates ARE frame-local CSS pixels.
+ */
+function ChartPointTip({
+  anchor,
+  children,
+  shellRef,
+}: {
+  anchor: TipAnchor;
+  children: ReactNode;
+  shellRef: { current: HTMLDivElement | null };
+}) {
+  const tipRef = useRef<HTMLDivElement | null>(null);
+  const [placement, setPlacement] = useState<TooltipPlacement | null>(null);
+  // The anchor object is recreated every render, so bail out of identical
+  // placements to avoid a measure → set-state loop while hovering.
+  useLayoutEffect(() => {
+    const shell = shellRef.current;
+    const tip = tipRef.current;
+    if (!shell || !tip) return;
+    const bounds = shell.getBoundingClientRect();
+    const rect = tip.getBoundingClientRect();
+    const next = chartTooltipPlacement({
+      anchorX: anchor.x,
+      anchorY: anchor.y,
+      boundsHeight: bounds.height,
+      boundsWidth: bounds.width,
+      tooltipHeight: rect.height,
+      tooltipWidth: rect.width,
+    });
+    setPlacement((current) => (
+      current && current.left === next.left && current.top === next.top ? current : next
+    ));
+  }, [anchor.x, anchor.y, children, shellRef]);
+  const style: CSSProperties = placement
+    ? { left: `${placement.left}px`, top: `${placement.top}px` }
+    : { left: 0, top: 0, visibility: "hidden" };
+  return (
+    <div className="chart-tooltip analysis-point-tip" ref={tipRef} role="tooltip" style={style}>
+      {children}
+    </div>
+  );
+}
 
 type Props = {
   api: { get: (path: string, options?: Record<string, unknown>) => Promise<any> };
@@ -265,6 +329,8 @@ function ScatterCard({
   const [xScaleOverride, setXScaleOverride] = useState<"linear" | "log" | null>(null);
   const [yScaleOverride, setYScaleOverride] = useState<"linear" | "log" | null>(null);
   const tableId = useId();
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const { frameRef, width } = useChartFrameWidth(SCATTER_FRAME_WIDTH);
 
   const points = rows
     .map((row) => ({ run: row.run, x: row.values[fields[0]], y: row.values[fields[1]] }))
@@ -272,7 +338,7 @@ function ScatterCard({
   // Auto-default a learning-rate-like axis to log; respect an explicit override.
   const xScale = xScaleOverride ?? (looksLogarithmicField(fields[0]) ? "log" : "linear");
   const yScale = yScaleOverride ?? (looksLogarithmicField(fields[1]) ? "log" : "linear");
-  const geometry = scatterGeometry(points, { xScale, yScale });
+  const geometry = scatterGeometry(points, { xScale, yScale, width });
   const plotted = geometry && !geometry.empty ? geometry.points : [];
   const visiblePoints = plotted.slice(0, SCATTER_MAX_DRAWN);
   // The table is the accessible alternative and shows every run with both
@@ -356,24 +422,25 @@ function ScatterCard({
         <div className="empty compact-empty">No runs have both selected fields.</div>
       )) : hasPlot ? (
         <>
-          <div className="analysis-chart-frame analysis-chart-frame--scatter">
+          <div className="analysis-chart-shell" ref={shellRef}>
+          <div className="analysis-chart-frame analysis-chart-frame--scatter" ref={frameRef}>
             <svg
               className="analysis-scatter"
               onBlur={() => setActiveRunId(null)}
               onFocus={() => setActiveRunId(visiblePoints[0]?.run.id ?? null)}
               role="img"
               tabIndex={0}
-              viewBox="0 0 520 232"
+              viewBox={`0 0 ${width} ${SCATTER_FRAME_HEIGHT}`}
               aria-label={`Hyperparameter scatter plotting ${fields[0]} (${xScale}) against ${fields[1]} (${yScale}) for ${coverageLabel} runs`}
             >
-              <line className="analysis-axis-line" x1="48" x2="488" y1="200" y2="200" />
-              <line className="analysis-axis-line" x1="48" x2="48" y1="16" y2="200" />
+              <line className="analysis-axis-line" x1={geometry.left} x2={geometry.right} y1="200" y2="200" />
+              <line className="analysis-axis-line" x1={geometry.left} x2={geometry.left} y1="16" y2="200" />
               {geometry.xDegenerate ? (
-                <text className="analysis-tick" x="268" y="214" textAnchor="middle">{formatAxisTick(geometry.minX)}</text>
+                <text className="analysis-tick" x={geometry.midX} y="214" textAnchor="middle">{formatAxisTick(geometry.minX)}</text>
               ) : (
                 <>
-                  <text className="analysis-tick" x="48" y="214">{formatAxisTick(geometry.minX)}</text>
-                  <text className="analysis-tick" x="488" y="214" textAnchor="end">{formatAxisTick(geometry.maxX)}</text>
+                  <text className="analysis-tick" x={geometry.left} y="214">{formatAxisTick(geometry.minX)}</text>
+                  <text className="analysis-tick" x={geometry.right} y="214" textAnchor="end">{formatAxisTick(geometry.maxX)}</text>
                 </>
               )}
               {geometry.yDegenerate ? (
@@ -384,7 +451,7 @@ function ScatterCard({
                   <text className="analysis-tick" x="44" y="24" textAnchor="end">{formatAxisTick(geometry.maxY)}</text>
                 </>
               )}
-              <text className="analysis-axis-title" x="270" y="228" textAnchor="middle">{shortLabel(fields[0])}{xScale === "log" ? " (log)" : ""}</text>
+              <text className="analysis-axis-title" x={geometry.midX} y="228" textAnchor="middle">{shortLabel(fields[0])}{xScale === "log" ? " (log)" : ""}</text>
               <text className="analysis-axis-title" x="16" y="108" textAnchor="middle" transform="rotate(-90 16 108)">{shortLabel(fields[1])}{yScale === "log" ? " (log)" : ""}</text>
               {visiblePoints.map((point) => {
                 const label = `${point.run.name}: ${fields[0]}=${formatMetricValue(point.x)}, ${fields[1]}=${formatMetricValue(point.y)}`;
@@ -400,20 +467,27 @@ function ScatterCard({
                     onMouseEnter={() => setActiveRunId(point.run.id)}
                     onMouseLeave={() => setActiveRunId(null)}
                     r={active ? "5.5" : "4"}
-                  >
-                    <title>{label}</title>
-                  </circle>
+                  />
                 );
               })}
             </svg>
           </div>
           {activePoint ? (
-            <p className="analysis-readout" aria-live="polite">
-              <strong>{activePoint.run.name}</strong>
-              <span>{shortLabel(fields[0])} {formatMetricValue(activePoint.x)}</span>
-              <span>{shortLabel(fields[1])} {formatMetricValue(activePoint.y)}</span>
-            </p>
+            <ChartPointTip
+              anchor={{ x: geometry.x(activePoint.x) - (frameRef.current?.scrollLeft ?? 0), y: geometry.y(activePoint.y) }}
+              shellRef={shellRef}
+            >
+              <div className="chart-tooltip-head">{activePoint.run.name}</div>
+              <div className="tip-rows">
+                <span>{shortLabel(fields[0])} <b>{formatMetricValue(activePoint.x)}</b></span>
+                <span>{shortLabel(fields[1])} <b>{formatMetricValue(activePoint.y)}</b></span>
+              </div>
+            </ChartPointTip>
           ) : null}
+          </div>
+          <span className="visually-hidden" role="status" aria-live="polite">
+            {activePoint ? `${activePoint.run.name}: ${shortLabel(fields[0])} ${formatMetricValue(activePoint.x)}, ${shortLabel(fields[1])} ${formatMetricValue(activePoint.y)}` : ""}
+          </span>
           <p className="analysis-note">{plottedNote}{missingCount ? ` · ${formatNumber(missingCount, 0)} missing one axis` : ""}{droppedCount ? ` · ${formatNumber(droppedCount, 0)} hidden by log scale` : ""} · {scaleNote}</p>
         </>
       ) : (
@@ -475,7 +549,9 @@ function ClusterCard({
   clustered: number;
 }) {
   const [activePointId, setActivePointId] = useState<string | null>(null);
-  const geometry = pointGeometry(points);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const { frameRef, width } = useChartFrameWidth(SCATTER_FRAME_WIDTH);
+  const geometry = pointGeometry(points, width);
   const axisFields = axes && axes.length === 2 ? axes : fields.slice(0, 2);
   const visiblePoints = points.slice(0, 500);
   const activePoint = activePointId ? points.find((point) => point.id === activePointId) : null;
@@ -504,25 +580,27 @@ function ClusterCard({
       />
       {!clusters.length || !geometry ? <div className="empty compact-empty">Need at least three runs and two numeric fields.</div> : (
         <>
-          <div className="analysis-chart-frame analysis-chart-frame--scatter">
+          <div className="analysis-chart-shell" ref={shellRef}>
+          <div className="analysis-chart-frame analysis-chart-frame--scatter" ref={frameRef}>
             <svg
               className="analysis-scatter clusters"
               onBlur={() => setActivePointId(null)}
               onFocus={() => setActivePointId(visiblePoints[0]?.id ?? null)}
               role="img"
               tabIndex={0}
-              viewBox="0 0 520 232"
+              viewBox={`0 0 ${width} ${SCATTER_FRAME_HEIGHT}`}
               aria-label={`K-means cluster projection using ${axisFields[0]} and ${axisFields[1]} for ${points.length} runs`}
             >
-              <line className="analysis-axis-line" x1="48" x2="488" y1="200" y2="200" />
+              <line className="analysis-axis-line" x1="48" x2={geometry.right} y1="200" y2="200" />
               <line className="analysis-axis-line" x1="48" x2="48" y1="16" y2="200" />
-              <text className="analysis-axis-title" x="270" y="224" textAnchor="middle">{shortLabel(axisFields[0])} (std)</text>
+              <text className="analysis-axis-title" x={geometry.midX} y="224" textAnchor="middle">{shortLabel(axisFields[0])} (std)</text>
               <text className="analysis-axis-title" x="16" y="108" textAnchor="middle" transform="rotate(-90 16 108)">{shortLabel(axisFields[1])} (std)</text>
               {visiblePoints.map((point) => {
+                const pointLabel = `${point.name}: ${axisFields[0]} ${formatNumber(point.x, 2)}, ${axisFields[1]} ${formatNumber(point.y, 2)}, cluster ${point.cluster + 1}`;
                 const active = activePointId === point.id;
                 return (
                   <circle
-                    aria-label={`${point.name}: ${axisFields[0]} ${formatNumber(point.x, 2)}, ${axisFields[1]} ${formatNumber(point.y, 2)}, cluster ${point.cluster + 1}`}
+                    aria-label={pointLabel}
                     className={`cluster-dot cluster-${point.cluster % 4}${active ? " active-point" : ""}`}
                     key={point.id}
                     cx={geometry.x(point.x)}
@@ -536,17 +614,26 @@ function ClusterCard({
             </svg>
           </div>
           {activePoint ? (
-            <p className="analysis-readout" aria-live="polite">
-              <strong>{activePoint.name}</strong>
-              <span>cluster {activePoint.cluster + 1}</span>
-              <span>{shortLabel(axisFields[0])} {formatNumber(activePoint.x, 2)}</span>
-              <span>{shortLabel(axisFields[1])} {formatNumber(activePoint.y, 2)}</span>
-            </p>
+            <ChartPointTip
+              anchor={{ x: geometry.x(activePoint.x) - (frameRef.current?.scrollLeft ?? 0), y: geometry.y(activePoint.y) }}
+              shellRef={shellRef}
+            >
+              <div className="chart-tooltip-head">{activePoint.name}</div>
+              <div className="tip-rows">
+                <span>cluster <b>{activePoint.cluster + 1}</b></span>
+                <span>{shortLabel(axisFields[0])} <b>{formatNumber(activePoint.x, 2)}</b></span>
+                <span>{shortLabel(axisFields[1])} <b>{formatNumber(activePoint.y, 2)}</b></span>
+              </div>
+            </ChartPointTip>
           ) : null}
+          </div>
+          <span className="visually-hidden" role="status" aria-live="polite">
+            {activePoint ? `${activePoint.name}: cluster ${activePoint.cluster + 1}, ${shortLabel(axisFields[0])} ${formatNumber(activePoint.x, 2)}, ${shortLabel(axisFields[1])} ${formatNumber(activePoint.y, 2)}` : ""}
+          </span>
           <div className="cluster-list">
             {clusters.map((cluster) => <span key={cluster.id}><i className={`cluster-${cluster.id % 4}`} />{cluster.label}: {formatNumber(cluster.count, 0)}</span>)}
           </div>
-          <p className="analysis-note">k fixed at 3 · projection shows {shortLabel(axisFields[0])} × {shortLabel(axisFields[1])} · {formatNumber(visiblePoints.length, 0)} shown of {formatNumber(plotted || points.length, 0)}/{formatNumber(clustered || points.length, 0)} clustered runs</p>
+          <p className="analysis-note">k fixed at 3 · projection shows {shortLabel(axisFields[0])} × {shortLabel(axisFields[1])} · {clusterCoverageNote(visiblePoints.length, plotted || points.length, clustered || points.length)}</p>
         </>
       )}
     </AnalysisCard>
@@ -587,8 +674,12 @@ function ParallelCoordinatesCard({
   onSelectRun: (runId: string) => void;
 }) {
   const [view, setView] = useState<"chart" | "table">("chart");
-  const [focusRunId, setFocusRunId] = useState<string | null>(null);
+  // Hovered/focused run plus the shell-local point the tooltip anchors to:
+  // mouse entry position for a hovered line, the first axis for keyboard focus.
+  const [tip, setTip] = useState<{ runId: string; x: number; y: number } | null>(null);
   const tableId = useId();
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const { frameRef, width } = useChartFrameWidth(PARALLEL_FRAME_WIDTH);
 
   if (fields.length < 2) {
     return (
@@ -603,7 +694,7 @@ function ParallelCoordinatesCard({
   const drawnRows = rows.slice(0, PARALLEL_MAX_DRAWN);
   const truncated = rows.length > drawnRows.length;
   const domains = parallelAxisDomains(drawnRows, fields);
-  const xFor = (index: number) => 50 + (index / Math.max(1, fields.length - 1)) * 640;
+  const xFor = (index: number) => 50 + (index / Math.max(1, fields.length - 1)) * (width - 80);
   const yFor = (value: number, index: number) => {
     const domain = domains[index];
     if (!Number.isFinite(value) || domain.min === null || domain.max === null) return Number.NaN;
@@ -623,8 +714,20 @@ function ParallelCoordinatesCard({
     .sort((a, b) => minimize ? (a.value ?? 0) - (b.value ?? 0) : (b.value ?? 0) - (a.value ?? 0))[0]?.id;
   const summaryRows = parallelSummaryRows(drawnRows, fields, bestRunId);
   const coverageNote = `${truncated ? `${formatNumber(drawnRows.length, 0)} shown of ${formatNumber(rows.length, 0)}` : formatNumber(rows.length, 0)} run${rows.length === 1 ? "" : "s"} · best for ${metricTitle(metricKey)} highlighted`;
-  const focusRun = focusRunId ? drawnRows.find((row) => row.run.id === focusRunId) : null;
+  const tipRun = tip ? drawnRows.find((row) => row.run.id === tip.runId) : null;
   const chartAriaLabel = `Parallel coordinate chart with axes ${fields.map((field) => shortLabel(field)).join(", ")} for ${truncated ? `${drawnRows.length} of ${rows.length}` : drawnRows.length} runs. Activate to read the best run.`;
+  // Keyboard focus anchors the tooltip where the run meets its first axis.
+  function focusTipFor(runId: string | null) {
+    const row = runId ? drawnRows.find((item) => item.run.id === runId) : null;
+    if (!row) return null;
+    const y = yFor(row.values[fields[0]], 0);
+    return { runId: row.run.id, x: xFor(0) - (frameRef.current?.scrollLeft ?? 0), y: Number.isFinite(y) ? y : PARALLEL_AXIS_MID };
+  }
+  function lineTipFor(runId: string, event: ReactMouseEvent<SVGPolylineElement>) {
+    const bounds = shellRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return { runId, x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+  }
   return (
     <AnalysisCard title="Parallel coordinates" badge={`${fields.length} fields`} help={parallelHelp}>
       <div className="analysis-controls-row">
@@ -633,7 +736,7 @@ function ParallelCoordinatesCard({
           <SegmentedToggle
             ariaLabel="Parallel coordinates view"
             className="analysis-view-switch"
-            onChange={(next) => { setView(next); if (next === "table") setFocusRunId(null); }}
+            onChange={(next) => { setView(next); if (next === "table") setTip(null); }}
             options={[
               { value: "chart", label: "Chart", icon: LineChart },
               { value: "table", label: "Table", icon: Table2 },
@@ -652,15 +755,16 @@ function ParallelCoordinatesCard({
         </>
       ) : (
         <>
-          <div className="analysis-chart-frame analysis-chart-frame--wide">
+          <div className="analysis-chart-shell" ref={shellRef}>
+          <div className="analysis-chart-frame analysis-chart-frame--wide" ref={frameRef}>
             <svg
               className="parallel-chart"
-              viewBox="0 0 720 264"
+              viewBox={`0 0 ${width} ${PARALLEL_FRAME_HEIGHT}`}
               role="img"
               tabIndex={0}
               aria-label={chartAriaLabel}
-              onFocus={() => setFocusRunId(bestRunId ?? drawnRows[0]?.run.id ?? null)}
-              onBlur={() => setFocusRunId(null)}
+              onFocus={() => setTip(focusTipFor(bestRunId ?? drawnRows[0]?.run.id ?? null))}
+              onBlur={() => setTip(null)}
             >
               {fields.map((field, index) => {
                 const anchor = edgeAwareTextAnchor(index, fields.length);
@@ -705,23 +809,29 @@ function ParallelCoordinatesCard({
                     className={`parallel-line ${highlight ? "highlight" : ""}`}
                     key={row.run.id}
                     onClick={() => onSelectRun(row.run.id)}
+                    onMouseEnter={(event) => setTip(lineTipFor(row.run.id, event))}
+                    onMouseLeave={() => setTip((current) => (current?.runId === row.run.id ? null : current))}
                     points={coords.map(([x, y]) => `${x},${y}`).join(" ")}
-                  >
-                    <title>{row.run.name}</title>
-                  </polyline>
+                  />
                 );
               })}
             </svg>
           </div>
-          {focusRun ? (
-            <p className="analysis-readout" aria-live="polite">
-              <strong>{focusRun.run.name}</strong>
-              {focusRun.run.id === bestRunId ? <span>best for {metricTitle(metricKey)}</span> : null}
-              {fields.slice(0, 3).map((field) => (
-                <span key={field}>{shortLabel(field)} {Number.isFinite(focusRun.values[field]) ? formatMetricValue(focusRun.values[field]) : "—"}</span>
-              ))}
-            </p>
+          {tip && tipRun ? (
+            <ChartPointTip anchor={{ x: tip.x, y: tip.y }} shellRef={shellRef}>
+              <div className="chart-tooltip-head">{tipRun.run.name}</div>
+              <div className="tip-rows">
+                {tipRun.run.id === bestRunId ? <span>best for <b>{metricTitle(metricKey)}</b></span> : null}
+                {fields.slice(0, 3).map((field) => (
+                  <span key={field}>{shortLabel(field)} <b>{Number.isFinite(tipRun.values[field]) ? formatMetricValue(tipRun.values[field]) : "—"}</b></span>
+                ))}
+              </div>
+            </ChartPointTip>
           ) : null}
+          </div>
+          <span className="visually-hidden" role="status" aria-live="polite">
+            {tipRun ? `${tipRun.run.name}${tipRun.run.id === bestRunId ? `, best for ${metricTitle(metricKey)}` : ""}` : ""}
+          </span>
           <p className="analysis-note">{coverageNote}</p>
         </>
       )}
@@ -753,7 +863,7 @@ function ParallelSummaryTable({ fields, rows, tableId }: { fields: string[]; row
   );
 }
 
-function pointGeometry(points: Array<{ x: number; y: number }>) {
+function pointGeometry(points: Array<{ x: number; y: number }>, width = SCATTER_FRAME_WIDTH) {
   if (!points.length) return null;
   const minX = Math.min(...points.map((point) => point.x));
   const maxX = Math.max(...points.map((point) => point.x));
@@ -767,11 +877,21 @@ function pointGeometry(points: Array<{ x: number; y: number }>) {
   const yDegenerate = maxY - minY < 1e-9;
   const xSpan = Math.max(1e-9, maxX - minX);
   const ySpan = Math.max(1e-9, maxY - minY);
+  const right = Math.max(88, width - 32);
+  const midX = (48 + right) / 2;
   return {
-    x: (value: number) => (xDegenerate ? 268 : 48 + ((value - minX) / xSpan) * 440),
+    x: (value: number) => (xDegenerate ? midX : 48 + ((value - minX) / xSpan) * (right - 48)),
     y: (value: number) => (yDegenerate ? 108 : 200 - ((value - minY) / ySpan) * 176),
-    minX, maxX, minY, maxY, xDegenerate, yDegenerate,
+    minX, maxX, minY, maxY, xDegenerate, yDegenerate, right, midX,
   };
+}
+
+// "N shown of M/M clustered runs" was noise: plotted and clustered only differ
+// when the 500-point draw cap kicks in, so disclose the cap only when it does.
+function clusterCoverageNote(shown: number, plotted: number, clustered: number) {
+  const total = Math.max(plotted, clustered);
+  if (shown < total) return `${formatNumber(shown, 0)} shown of ${formatNumber(total, 0)} clustered runs`;
+  return `${formatNumber(total, 0)} clustered run${total === 1 ? "" : "s"}`;
 }
 
 function chooseScatterFields(numeric: { fields: string[]; rows: any[] }): string[] {
