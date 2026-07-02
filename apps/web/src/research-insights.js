@@ -71,14 +71,17 @@ export function looksLogarithmicField(field) {
 }
 
 // Scatter geometry generalized over per-axis linear/log scales. Preserves the
-// exact SVG pixel layout the scatter card has always used (x 48..488, y 200..24,
-// degenerate axis centered) so the linear path is visually unchanged, but maps
-// values through log10 when an axis is logarithmic. A log axis cannot place
-// values <= 0, so those points drop from the plotted set (counted in `dropped`)
-// while the axis still scales against the positive extremes.
+// vertical layout the scatter card has always used (y 200..24, degenerate axis
+// centered) but maps values through log10 when an axis is logarithmic. A log
+// axis cannot place values <= 0, so those points drop from the plotted set
+// (counted in `dropped`) while the axis still scales against the positive
+// extremes. `options.width` is the rendered frame width in CSS pixels: the SVG
+// draws its viewBox at that exact size so axis text keeps a constant pixel
+// size instead of scaling with the card. Defaults reproduce the historical
+// 520-wide layout (x 48..488).
 const SCATTER_X_LEFT = 48;
-const SCATTER_X_RIGHT = 488;
-const SCATTER_X_MID = 268;
+const SCATTER_X_RIGHT_MARGIN = 32;
+const SCATTER_DEFAULT_WIDTH = 520;
 const SCATTER_Y_BOTTOM = 200;
 const SCATTER_Y_TOP = 24;
 const SCATTER_Y_MID = 108;
@@ -86,6 +89,10 @@ const SCATTER_Y_MID = 108;
 export function scatterGeometry(points, options = {}) {
   const xScale = options.xScale === "log" ? "log" : "linear";
   const yScale = options.yScale === "log" ? "log" : "linear";
+  const width = Number.isFinite(options.width) && options.width > 0 ? options.width : SCATTER_DEFAULT_WIDTH;
+  const left = SCATTER_X_LEFT;
+  const right = Math.max(left + 40, width - SCATTER_X_RIGHT_MARGIN);
+  const midX = (left + right) / 2;
   const finite = (Array.isArray(points) ? points : []).filter(
     (point) => isFiniteNumber(point?.x) && isFiniteNumber(point?.y),
   );
@@ -99,7 +106,8 @@ export function scatterGeometry(points, options = {}) {
       xScale, yScale, minX: 0, maxX: 0, minY: 0, maxY: 0,
       xDegenerate: true, yDegenerate: true,
       points: [], dropped: finite.length, empty: true,
-      x: () => SCATTER_X_MID,
+      left, right, midX,
+      x: () => midX,
       y: () => SCATTER_Y_MID,
     };
   }
@@ -129,7 +137,8 @@ export function scatterGeometry(points, options = {}) {
     points: plottable,
     dropped: finite.length - plottable.length,
     empty: false,
-    x: (value) => (xDegenerate ? SCATTER_X_MID : SCATTER_X_LEFT + ((sx(value) - sMinX) / sSpanX) * (SCATTER_X_RIGHT - SCATTER_X_LEFT)),
+    left, right, midX,
+    x: (value) => (xDegenerate ? midX : left + ((sx(value) - sMinX) / sSpanX) * (right - left)),
     y: (value) => (yDegenerate ? SCATTER_Y_MID : SCATTER_Y_BOTTOM - ((sy(value) - sMinY) / sSpanY) * (SCATTER_Y_BOTTOM - SCATTER_Y_TOP)),
   };
 }

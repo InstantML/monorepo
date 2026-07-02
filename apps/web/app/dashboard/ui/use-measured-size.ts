@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Measure an element's border-box size in CSS pixels, tracking resizes.
@@ -66,4 +66,17 @@ export function useMeasuredSize(
     width: size.width || fallbackWidth,
     height: size.height || fallbackHeight,
   };
+}
+
+/**
+ * Width-only variant for charts with a fixed CSS-pixel height. Returns a ref
+ * for the chart frame plus its measured width clamped to `minWidth` — the same
+ * value as the frame's CSS `min-width`, below which the frame scrolls
+ * horizontally instead of squeezing. Rendering `viewBox={\`0 0 ${width} <h>\`}`
+ * at this width keeps SVG text and strokes at constant pixel size.
+ */
+export function useChartFrameWidth(minWidth: number) {
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const { width } = useMeasuredSize(frameRef, minWidth, 0);
+  return { frameRef, width: Math.max(minWidth, width) };
 }
