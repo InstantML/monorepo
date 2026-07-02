@@ -25,6 +25,14 @@ function displayKey(apiKey: string | null | undefined) {
   return trimmed || INSTANTML_API_KEY_PLACEHOLDER;
 }
 
+export function mcpUrlForOrg(orgId?: string | null) {
+  const trimmed = orgId?.trim();
+  if (!trimmed) return INSTANTML_MCP_URL;
+  const url = new URL(INSTANTML_MCP_URL);
+  url.searchParams.set("org_id", trimmed);
+  return url.toString();
+}
+
 function apiKeySnippets(apiKey?: string | null): AgentSetupSnippet[] {
   const key = displayKey(apiKey);
   return [
@@ -116,13 +124,14 @@ bearer_token_env_var = "INSTANTML_API_KEY"`,
   ];
 }
 
-function oauthSnippets(): AgentSetupSnippet[] {
+function oauthSnippets(orgId?: string | null): AgentSetupSnippet[] {
+  const mcpUrl = mcpUrlForOrg(orgId);
   return [
     {
       id: "claude-code",
       label: "Claude Code",
       filename: "Terminal",
-      body: `claude mcp add --transport http instantml ${INSTANTML_MCP_URL}
+      body: `claude mcp add --transport http instantml "${mcpUrl}"
 # Claude Code opens your browser to sign in to InstantML — no key to paste.`,
     },
     {
@@ -130,7 +139,7 @@ function oauthSnippets(): AgentSetupSnippet[] {
       label: "Codex",
       filename: "~/.codex/config.toml",
       body: `[mcp_servers.instantml]
-url = "${INSTANTML_MCP_URL}"
+url = "${mcpUrl}"
 # No token needed — Codex completes browser sign-in on first connect.`,
     },
     {
@@ -142,7 +151,7 @@ url = "${INSTANTML_MCP_URL}"
           mcpServers: {
             instantml: {
               transport: "http",
-              url: INSTANTML_MCP_URL,
+              url: mcpUrl,
             },
           },
         },
@@ -159,7 +168,7 @@ url = "${INSTANTML_MCP_URL}"
           servers: {
             instantml: {
               type: "http",
-              url: INSTANTML_MCP_URL,
+              url: mcpUrl,
             },
           },
         },
@@ -176,7 +185,7 @@ url = "${INSTANTML_MCP_URL}"
           mcpServers: {
             instantml: {
               command: "npx",
-              args: ["-y", "mcp-remote", INSTANTML_MCP_URL],
+              args: ["-y", "mcp-remote", mcpUrl],
             },
           },
         },
@@ -190,6 +199,7 @@ url = "${INSTANTML_MCP_URL}"
 export function buildAgentSetupSnippets(
   apiKey?: string | null,
   auth: AgentAuthMode = "api-key",
+  orgId?: string | null,
 ): AgentSetupSnippet[] {
-  return auth === "oauth" ? oauthSnippets() : apiKeySnippets(apiKey);
+  return auth === "oauth" ? oauthSnippets(orgId) : apiKeySnippets(apiKey);
 }

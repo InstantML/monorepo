@@ -4529,7 +4529,6 @@ function dismissTopOverlay() {
               groupBy={groupBy}
               hover={hover}
               hoverMetricKey={hoverMetricKey}
-              metricCatalogRows={metricCatalogRows}
               metricFilter={metricFilter}
               metricFilterValid={metricFilterValid}
               metricKey={metricKey}
@@ -4664,6 +4663,7 @@ function dismissTopOverlay() {
         <section className={`tab-pane ${visibleTab === "agent" ? "active" : ""}`} aria-label="Agent">
           {visibleTab === "agent" ? (
             <AgentTabPane
+              activeOrgId={activeOrgId}
               apiKeys={apiKeys}
               canManageOrg={canManageOrg}
               metricKey={metricKey}

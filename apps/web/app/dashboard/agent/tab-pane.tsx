@@ -12,6 +12,7 @@ import type { components } from "../../../src/types/api.generated";
 type ApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 
 type Props = {
+  activeOrgId: string;
   apiKeys: ApiKeyRow[];
   canManageOrg: boolean;
   metricKey: string;
@@ -87,6 +88,7 @@ function latestKeyActivity(apiKeys: ApiKeyRow[]): { at: string; name: string } |
 }
 
 export function AgentTabPane({
+  activeOrgId,
   apiKeys,
   canManageOrg,
   metricKey,
@@ -134,7 +136,7 @@ export function AgentTabPane({
             <h2><Telescope size={15} /> Connect</h2>
           </div>
           <div className="panel-body admin-stack">
-            <AgentSetupPanel canManageOrg={canManageOrg} newApiKey={visibleNewApiKey} />
+            <AgentSetupPanel activeOrgId={activeOrgId} canManageOrg={canManageOrg} newApiKey={visibleNewApiKey} />
             {canManageOrg ? (
               <p className={`agent-activity-line ${lastActivity ? "live" : ""}`} role="status">
                 <span className="agent-activity-dot" aria-hidden="true" />

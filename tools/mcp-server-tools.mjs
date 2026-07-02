@@ -11,6 +11,7 @@
 const BLOCK_SCHEMA_HINT =
   " The `blocks` array must match the shape returned by tracker.report_block_schema (heading / paragraph / markdown / code / callout / horizontal_rule / image / panel_grid).";
 const DEFAULT_WEB_URL = "https://instantml.ai";
+export const OAUTH_ORG_HEADER = "X-InstantML-OAuth-Org-Id";
 
 export const BLOCK_SCHEMA_EXAMPLE = {
   blocks: [
@@ -128,7 +129,15 @@ function metricSummariesFromRunPayload(result) {
  * plain array — the MCP transport loop in mcp-server.mjs registers list/call
  * handlers against it.
  */
-export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
+export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL, orgId = null }) {
+  function apiHeaders(accept = "application/json") {
+    const headers = { Authorization: `Bearer ${apiKey}`, Accept: accept };
+    if (orgId) {
+      headers[OAUTH_ORG_HEADER] = orgId;
+    }
+    return headers;
+  }
+
   async function api(path, params = {}) {
     const url = new URL(path, apiUrl);
     for (const [key, value] of Object.entries(params)) {
@@ -137,7 +146,7 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
       }
     }
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+      headers: apiHeaders(),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -158,7 +167,7 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
       }
     }
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: accept },
+      headers: apiHeaders(accept),
     });
     const text = await res.text();
     if (!res.ok) {
@@ -171,10 +180,7 @@ export function buildTools({ apiUrl, apiKey, webUrl = DEFAULT_WEB_URL }) {
     const url = new URL(path, apiUrl);
     const init = {
       method,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
+      headers: apiHeaders(),
     };
     if (body !== undefined) {
       init.headers["Content-Type"] = "application/json";

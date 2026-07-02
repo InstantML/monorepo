@@ -43,6 +43,11 @@ Useful overrides:
   and challenges unauthenticated requests so clients can run browser sign-in.
   Unset (default) keeps API-key bearer auth only.
 
+OAuth MCP URLs may include `?org_id=<uuid>` when generated from the dashboard.
+The MCP server forwards that selected workspace to the Rust API as
+`X-InstantML-OAuth-Org-Id`; Rust still verifies the Clerk token and active org
+membership before serving data.
+
 ### Deploying the hosted MCP server
 
 The hosted `instantml-mcp` Cloud Run service is built from `tools/mcp.Dockerfile`
@@ -109,6 +114,11 @@ npm run deploy:cloud-run -- --help
 ```
 
 The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. The managed router pins auth, billing, org, dashboard preference, and workspace-view routes to control; tenant product routes such as `/api/reports` use the data backend. Admin endpoints stay on the control service for operator access and are not added to the public router path map. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
+
+When `INSTANTML_MCP_OAUTH_ENABLED=1`, the Rust data service also receives
+`CLERK_SECRET_KEY` and `CLERK_API_BASE` so read-only MCP OAuth calls can verify
+Clerk access tokens before resolving the selected org. Keep the flag unset for
+the default API-key-only Rust auth path.
 
 For split deployments with the managed HTTPS router, auth, billing,
 organization, workspace-view, dashboard-preference, and invitation routes are

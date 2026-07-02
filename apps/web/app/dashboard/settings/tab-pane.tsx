@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { AlertTriangle, Code2, Copy, CreditCard, ExternalLink, Gauge, KeyRound, Plus, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
 
@@ -203,9 +203,20 @@ export function SettingsTabPane({
 }: Props) {
   // Which settings section the modal's internal nav is showing.
   const [section, setSection] = useState<SectionId>("usage");
+  // Play the exit fade before the parent unmounts us: flip to `closing` (which
+  // runs the reverse animation) and defer the real onClose until it finishes.
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestClose = useCallback(() => {
+    setClosing((wasClosing) => {
+      if (!wasClosing) closeTimer.current = setTimeout(onClose, 200);
+      return true;
+    });
+  }, [onClose]);
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
   const dialogRef = useFocusTrap<HTMLDivElement>(
     true,
-    onClose,
+    requestClose,
     "button[aria-label='Close workspace settings']",
     "[data-settings-trigger='true']",
   );
@@ -287,16 +298,16 @@ export function SettingsTabPane({
   // across columns.
   return (
     <div
-      className="workspace-modal settings-modal"
+      className={`workspace-modal settings-modal${closing ? " closing" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label="Workspace settings"
       ref={dialogRef}
       tabIndex={-1}
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}
     >
       <div className="settings-modal-card">
-        <button className="icon-button settings-modal-close" type="button" aria-label="Close workspace settings" onClick={onClose}><X size={16} /></button>
+        <button className="icon-button settings-modal-close" type="button" aria-label="Close workspace settings" onClick={requestClose}><X size={16} /></button>
         <nav className="settings-nav" aria-label="Settings sections">
           <span className="settings-nav-title">Settings</span>
           {SECTIONS.map(({ id, label, Icon }) => (
