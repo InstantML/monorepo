@@ -259,7 +259,7 @@ export function MetricsTabPane({
           ) : null}
           <section className="mx-panel mx-series-panel" aria-label="Series">
             <div className="mx-panel-head">
-              <span className="mx-mlabel">Series</span>
+              <span className="mx-mlabel mx-series-title">Series</span>
               <span className="mx-unit">{windowLabel}</span>
             </div>
             <div className="mx-series-scroll">

@@ -2465,6 +2465,7 @@ button.secondary.danger-action:hover:not(:disabled),
   min-width: 0;
   white-space: normal;
   overflow-wrap: anywhere;
+  font-family: var(--font-ui, var(--font-sans)), system-ui, sans-serif;
 }
 
 .admin-stack,

@@ -74,7 +74,8 @@
   white-space: nowrap;
 }
 .metrics-parity .mx-chart-title { text-transform: none; letter-spacing: 0.08em; }
-.metrics-parity .mx-browser-title {
+.metrics-parity .mx-browser-title,
+.metrics-parity .mx-series-title {
   font-family: var(--font-ui);
   text-transform: none;
   letter-spacing: normal;
@@ -455,7 +456,7 @@
 /* ---- Empty state -------------------------------------------------------------- */
 .metrics-parity .mx-empty {
   padding: 24px 16px;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--fs-data);
   color: var(--faint);
   text-align: center;
