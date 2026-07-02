@@ -1,6 +1,11 @@
 use super::super::*;
 use super::orgs::is_shared_demo_org;
 
+/// Successful authentications persist a fresh `last_used_at` at most this
+/// often, so the hot auth path does not write a control-plane record per
+/// request.
+const LAST_USED_PERSIST_INTERVAL_MINUTES: i64 = 5;
+
 pub(super) fn demo_api_key_scopes() -> Vec<String> {
     DEMO_API_KEY_SCOPES
         .iter()
@@ -280,6 +285,13 @@ pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthC
         return Err(AppError::unauthorized("invalid API key"));
     }
     let scopes = effective_api_key_scopes(&data, &record);
+    drop(data);
+    let now = Utc::now();
+    if record.row.last_used_at.is_none_or(|used| {
+        now - used >= ChronoDuration::minutes(LAST_USED_PERSIST_INTERVAL_MINUTES)
+    }) {
+        touch_api_key_last_used(store, record.row.org_id, record.row.id, now).await;
+    }
     Ok(AuthContext {
         org_id: record.row.org_id,
         api_key_id: record.row.id,
@@ -287,6 +299,40 @@ pub async fn authenticate_api_key(store: &Store, token: &str) -> AppResult<AuthC
         project_id: record.row.project_id,
         scopes,
     })
+}
+
+/// Best-effort bump of `last_used_at` after a successful authentication.
+/// Errors are logged, never surfaced: authentication must not fail because the
+/// activity write did.
+async fn touch_api_key_last_used(store: &Store, org_id: Uuid, key_id: Uuid, now: DateTime<Utc>) {
+    let result = if let Some(control_db) = store.control_db() {
+        // Targeted column update: a full-record upsert from the auth path
+        // could race a concurrent revoke and resurrect the key in Postgres.
+        control_db.touch_api_key_last_used(key_id, now).await
+    } else {
+        let record = {
+            let data = store.data.lock().await;
+            let Some(record) = data.api_keys.get(&key_id) else {
+                return;
+            };
+            let mut record = record.clone();
+            record.row.last_used_at = Some(now);
+            record
+        };
+        store
+            .persist_locked("api_key", org_id, &key_id.to_string(), &record)
+            .await
+    };
+    if let Err(err) = result {
+        tracing::warn!(%key_id, error = ?err, "failed to persist api key last_used_at");
+        return;
+    }
+    let mut data = store.data.lock().await;
+    if let Some(existing) = data.api_keys.get(&key_id) {
+        let mut updated = existing.clone();
+        updated.row.last_used_at = Some(now);
+        data.insert_api_key(updated);
+    }
 }
 
 pub async fn require_org_admin(

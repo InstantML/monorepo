@@ -143,7 +143,7 @@ export function AgentTabPane({
                 {lastActivity
                   ? <>Last agent activity {relativeTime(lastActivity.at)} · <code>{lastActivity.name}</code></>
                   : hasActiveKeys
-                    ? "Waiting for your agent's first tool call…"
+                    ? "Waiting for the first agent activity…"
                     : "No agent activity yet — connect an agent to see it here."}
               </p>
             ) : null}
