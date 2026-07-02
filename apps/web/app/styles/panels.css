@@ -585,6 +585,11 @@
 
 .workspace-panel-grid > .empty {
   grid-column: 1 / -1;
+  /* The grid's implicit rows are fixed 78px tracks, but .empty carries a 140px
+   * min-height — in a single track it overflows past the section's bottom edge,
+   * where the section's content-visibility paint containment clips it mid-box.
+   * Span two tracks (2×78 + gap ≥ 140) so the row actually fits the box. */
+  grid-row: span 2;
 }
 
 /* Collapsed to nothing until a panel is actually being dragged — otherwise it
