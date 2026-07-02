@@ -799,7 +799,7 @@ function WorkspaceCanvasSkeleton() {
       </div>
       <div className="workspace-loading-panel-grid">
         {Array.from({ length: 4 }, (_, index) => (
-          <div className="workspace-loading-panel" key={index} style={{ "--skel-delay": `${index * 160}ms` } as CSSProperties}>
+          <div className="workspace-loading-panel" key={index}>
             <div className="workspace-loading-panel-head">
               <span className="workspace-skeleton-line is-panel-title" />
               <span className="workspace-skeleton-line is-panel-meta" />

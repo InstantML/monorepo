@@ -40,9 +40,8 @@
     animation: none;
   }
 
-  .dash-skel-linechart path {
+  .dash-skel-linechart {
     animation: none;
-    stroke-dashoffset: 0;
   }
 }
 
@@ -178,8 +177,8 @@
 
 /* ── Line-chart placeholder ─────────────────────────────────────────────── */
 /* Stands in for a metric chart at the chart's own size: the gridded frame
- * fills the chart area while faux series draw themselves in on a loop.
- * --skel-delay staggers sibling placeholders so a grid of them feels alive. */
+ * fills the chart area with a static outline of faux series under the shared
+ * shimmer sheen. */
 .dash-skel-linechart {
   position: relative;
   overflow: hidden;
@@ -191,6 +190,7 @@
     linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
     var(--chart-card-bg);
   background-size: 100% 38px, 64px 100%, 100% 100%;
+  animation: dash-skel-fade-in 0.1s ease-out;
 }
 
 .dash-skel-linechart::after {
@@ -219,10 +219,6 @@
   /* viewBox units (the 100x56 box is stretched to fit), not CSS px */
   stroke-width: 0.45;
   stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: dash-skel-line-draw 2.6s ease-in-out infinite;
-  animation-delay: var(--skel-delay, 0s);
 }
 
 .dash-skel-linechart path:nth-child(1) {
@@ -231,12 +227,10 @@
 
 .dash-skel-linechart path:nth-child(2) {
   stroke: rgba(18, 166, 122, 0.38);
-  animation-delay: calc(var(--skel-delay, 0s) + 0.22s);
 }
 
 .dash-skel-linechart path:nth-child(3) {
   stroke: rgba(124, 92, 196, 0.34);
-  animation-delay: calc(var(--skel-delay, 0s) + 0.44s);
 }
 
 :root[data-theme="dark"] .dash-skel-linechart path:nth-child(1) {
@@ -251,28 +245,12 @@
   stroke: rgba(152, 124, 214, 0.42);
 }
 
-@keyframes dash-skel-line-draw {
-  0% {
-    stroke-dashoffset: 1;
+@keyframes dash-skel-fade-in {
+  from {
     opacity: 0;
   }
 
-  12% {
+  to {
     opacity: 1;
-  }
-
-  58% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-
-  84% {
-    stroke-dashoffset: 0;
-    opacity: 1;
-  }
-
-  100% {
-    stroke-dashoffset: 0;
-    opacity: 0;
   }
 }
