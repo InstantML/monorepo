@@ -2439,7 +2439,8 @@ button.secondary.danger-action:hover:not(:disabled),
   align-self: end;
 }
 
-.agent-capability-tools code {
+.agent-capability-tools code,
+.agent-capability-tools-toggle {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--bg-soft);
@@ -2447,6 +2448,20 @@ button.secondary.danger-action:hover:not(:disabled),
   font-size: 10.5px;
   color: var(--text-2);
   white-space: nowrap;
+}
+
+.agent-capability-tools-toggle {
+  appearance: none;
+  font-family: var(--font-mono);
+  line-height: inherit;
+  margin: 0;
+  cursor: pointer;
+}
+
+.agent-capability-tools-toggle:hover,
+.agent-capability-tools-toggle:focus-visible {
+  color: var(--text);
+  border-color: var(--text-3);
 }
 
 .agent-prompt-section,

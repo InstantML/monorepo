@@ -99,6 +99,7 @@ export function AgentTabPane({
 }: Props) {
   const [copiedPrompt, setCopiedPrompt] = useState("");
   const [guideCopyState, setGuideCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const visibleNewApiKey = canManageOrg ? newApiKey : "";
   const projectLabel = project || "all projects";
   const selectionLabel = selectedRunIds.length ? `${selectedRunIds.length} selected runs` : "the current run page";
@@ -164,23 +165,33 @@ export function AgentTabPane({
           </div>
           <div className="panel-body agent-workspace-stack">
             <div className="agent-capability-grid" aria-label="Agent capabilities">
-              {capabilityGroups.map(({ icon: Icon, title, body, tools }) => (
-                <article className="agent-capability-card" key={title}>
-                  <Icon size={16} />
-                  <strong>{title}</strong>
-                  <p>{body}</p>
-                  <p className="agent-capability-tools">
-                    {tools.slice(0, VISIBLE_TOOL_CHIPS).map((tool) => (
-                      <code key={tool} title={`tracker.${tool}`}>{tool}</code>
-                    ))}
-                    {tools.length > VISIBLE_TOOL_CHIPS ? (
-                      <code title={tools.slice(VISIBLE_TOOL_CHIPS).map((tool) => `tracker.${tool}`).join("\n")}>
-                        +{tools.length - VISIBLE_TOOL_CHIPS} more
-                      </code>
-                    ) : null}
-                  </p>
-                </article>
-              ))}
+              {capabilityGroups.map(({ icon: Icon, title, body, tools }) => {
+                const expanded = Boolean(expandedTools[title]);
+                const visibleTools = expanded ? tools : tools.slice(0, VISIBLE_TOOL_CHIPS);
+                return (
+                  <article className="agent-capability-card" key={title}>
+                    <Icon size={16} />
+                    <strong>{title}</strong>
+                    <p>{body}</p>
+                    <p className="agent-capability-tools">
+                      {visibleTools.map((tool) => (
+                        <code key={tool} title={`tracker.${tool}`}>{tool}</code>
+                      ))}
+                      {tools.length > VISIBLE_TOOL_CHIPS ? (
+                        <button
+                          aria-label={expanded ? `Collapse ${title} tools` : `Show ${tools.length - VISIBLE_TOOL_CHIPS} more ${title} tools`}
+                          aria-expanded={expanded}
+                          className="agent-capability-tools-toggle"
+                          type="button"
+                          onClick={() => setExpandedTools((prev) => ({ ...prev, [title]: !expanded }))}
+                        >
+                          {expanded ? "less" : `+${tools.length - VISIBLE_TOOL_CHIPS} more`}
+                        </button>
+                      ) : null}
+                    </p>
+                  </article>
+                );
+              })}
             </div>
 
             <section className="agent-prompt-section" aria-label="Prompt starters">

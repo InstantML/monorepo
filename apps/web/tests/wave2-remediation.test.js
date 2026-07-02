@@ -117,6 +117,24 @@ test("dashboard page headers carry no serif flourish", () => {
   }
 });
 
+test("agent capability overflow chips expand hidden tools inline", () => {
+  const paneSrc = read("app/dashboard/agent/tab-pane.tsx");
+  const css = read("app/styles/overhaul.css");
+
+  assert.match(paneSrc, /const \[expandedTools, setExpandedTools\] = useState<Record<string, boolean>>\(\{\}\)/);
+  assert.match(paneSrc, /const expanded = Boolean\(expandedTools\[title\]\)/);
+  assert.match(paneSrc, /const visibleTools = expanded \? tools : tools\.slice\(0, VISIBLE_TOOL_CHIPS\)/);
+  assert.match(paneSrc, /className="agent-capability-tools-toggle"/);
+  assert.match(paneSrc, /aria-expanded=\{expanded\}/);
+  assert.match(paneSrc, /aria-label=\{expanded \? `Collapse \$\{title\} tools` : `Show \$\{tools\.length - VISIBLE_TOOL_CHIPS\} more \$\{title\} tools`\}/);
+  assert.match(paneSrc, /setExpandedTools\(\(prev\) => \(\{ \.\.\.prev, \[title\]: !expanded \}\)\)/);
+  assert.match(paneSrc, /\{expanded \? "less" : `\+\$\{tools\.length - VISIBLE_TOOL_CHIPS\} more`\}/);
+  assert.doesNotMatch(paneSrc, /title=\{tools\.slice\(VISIBLE_TOOL_CHIPS\)/);
+
+  assert.match(css, /\.agent-capability-tools code,\s*\.agent-capability-tools-toggle/);
+  assert.match(css, /\.agent-capability-tools-toggle:hover,\s*\.agent-capability-tools-toggle:focus-visible/);
+});
+
 // ST1 — settings no longer echoes transient filter/selection state.
 test("settings drops the debug state echo", () => {
   const src = read("app/dashboard/settings/tab-pane.tsx");
