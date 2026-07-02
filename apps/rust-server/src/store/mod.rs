@@ -3366,6 +3366,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn authenticate_api_key_records_last_used_at() {
+        let store = store_without_control_db();
+        let org_id = Uuid::from_u128(50);
+        let key_id = Uuid::from_u128(52);
+        let secret = generate_api_key();
+        let account = ServiceAccountRow {
+            id: Uuid::from_u128(51),
+            org_id,
+            name: "agent service".to_string(),
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            disabled_at: None,
+        };
+        let record = ApiKeyRecord {
+            row: PublicApiKeyRow {
+                id: key_id,
+                org_id,
+                service_account_id: account.id,
+                name: "agent key".to_string(),
+                key_prefix: secret.chars().take(14).collect(),
+                scopes: vec!["sdk:ingest".to_string()],
+                project_id: None,
+                created_at: Utc::now(),
+                expires_at: None,
+                last_used_at: None,
+                revoked_at: None,
+            },
+            key_hash: hash_secret(&secret),
+        };
+        {
+            let mut data = store.data.lock().await;
+            data.service_accounts.insert(account.id, account);
+            data.insert_api_key(record);
+        }
+
+        authenticate_api_key(&store, &secret).await.unwrap();
+        let first = {
+            let data = store.data.lock().await;
+            data.api_keys.get(&key_id).unwrap().row.last_used_at
+        };
+        assert!(first.is_some());
+
+        // A second authentication inside the persist interval keeps the
+        // recorded time instead of writing again.
+        authenticate_api_key(&store, &secret).await.unwrap();
+        let second = {
+            let data = store.data.lock().await;
+            data.api_keys.get(&key_id).unwrap().row.last_used_at
+        };
+        assert_eq!(second, first);
+    }
+
+    #[tokio::test]
     async fn compare_matching_runs_appends_reference_within_filtered_scope() {
         let store = store_without_control_db();
         let ctx = RequestContext::local();
