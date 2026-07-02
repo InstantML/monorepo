@@ -2,15 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
-import { AlertTriangle, Code2, Copy, CreditCard, ExternalLink, Gauge, KeyRound, Plus, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Copy, CreditCard, ExternalLink, Gauge, KeyRound, Plus, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
 
-import { ApiTable } from "../api/api-table";
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import { SettingRow } from "./setting-row";
 import { formatNumber } from "../../../src/state.js";
 import { roleLabel } from "../../../src/roles.js";
-import type { ApiRow, Tone } from "../../dashboard-types";
+import type { Tone } from "../../dashboard-types";
 import type { components } from "../../../src/types/api.generated";
 
 type SeatRow = components["schemas"]["SeatRow"];
@@ -91,7 +90,6 @@ type Props = {
   adminMessageTone: "status" | "error";
   apiKeyName: string;
   apiKeys: ApiKeyRow[];
-  apiRows: ApiRow[];
   canManageOrg: boolean;
   formatBytes: (n: number) => string;
   inviteEmail: string;
@@ -152,7 +150,6 @@ export function SettingsTabPane({
   adminMessageTone,
   apiKeyName,
   apiKeys,
-  apiRows,
   canManageOrg,
   formatBytes,
   inviteEmail,
@@ -532,12 +529,9 @@ export function SettingsTabPane({
               </div>
             </section>
 
-            <section className="settings-api-card" aria-label="API surface">
-              <div className="panel-subhead">
-                <strong><Code2 size={14} /> API surface</strong>
-              </div>
-              <ApiTable rows={apiRows} />
-            </section>
+            <a className="secondary compact-button settings-api-docs-link" href="/docs/api-reference" rel="noreferrer" target="_blank">
+              <BookOpen size={14} /> API reference
+            </a>
           </div>
             ) : null}
             {section === "defaults" ? (

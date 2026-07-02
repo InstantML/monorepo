@@ -40,7 +40,6 @@ import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
 import {
   buildAlertRows,
-  buildApiRows,
   buildDatasetRows,
   buildMetricCatalogRows,
   buildRunMetricRows,
@@ -968,8 +967,6 @@ export function DashboardShell({
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
-  const apiStatusParams = useMemo(() => dashboardStatusQueryParams(status, status), [status]);
-  const apiRows = useMemo(() => buildApiRows(metricKey, project, apiStatusParams), [apiStatusParams, metricKey, project]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
   const localSavedViewScope = useMemo(
     () => storageScopeId([activeOrgId, sessionPayload?.user?.primary_email ?? ""].filter(Boolean).join(":")),
@@ -4687,7 +4684,6 @@ function dismissTopOverlay() {
           adminMessageTone={apiAdminTone}
           apiKeyName={apiKeyName}
           apiKeys={apiKeys}
-          apiRows={apiRows}
           canManageOrg={canManageOrg}
           formatBytes={formatBytes}
           inviteEmail={inviteEmail}

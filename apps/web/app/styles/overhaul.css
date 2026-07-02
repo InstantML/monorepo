@@ -2456,6 +2456,15 @@ button.secondary.danger-action:hover:not(:disabled),
   min-width: 0;
 }
 
+.settings-api-docs-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  font-size: var(--fs-label);
+  text-decoration: none;
+}
+
 .agent-prompt-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

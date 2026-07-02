@@ -1042,6 +1042,10 @@ kbd {
   position: relative;
   display: grid;
   grid-template-columns: 216px minmax(0, 1fr);
+  /* Pin the single row to the card height: an implicit auto row grows with
+     tall section content, so the pane body never hits its overflow and the
+     card's overflow:hidden clips it instead of scrolling. */
+  grid-template-rows: minmax(0, 1fr);
   width: min(900px, calc(100vw - 32px));
   height: min(660px, calc(100vh - var(--topbar-height) - 48px));
   overflow: hidden;

@@ -255,12 +255,6 @@ export type ReportRow = {
   scope: string;
 };
 
-export type ApiRow = {
-  method: string;
-  path: string;
-  description: string;
-};
-
 export type MetricCatalogRow = {
   key: string;
   label: string;
