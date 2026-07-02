@@ -10,6 +10,14 @@ import type { CSSProperties } from "react";
 // shape stable across renders so it doesn't twitch while data streams in.
 const CHART_BARS = [44, 66, 54, 80, 70, 90, 76, 94, 82, 68, 58, 78, 88, 72];
 
+// Faux training curves for the line-chart placeholder, normalized to a 100x56
+// box. pathLength=1 lets CSS animate each line drawing in path-relative units.
+const CHART_LINES = [
+  "M0 50 C10 46 14 38 22 34 S36 26 44 24 S62 18 72 16 S90 12 100 10",
+  "M0 14 C8 18 12 26 20 30 S34 38 44 40 S64 46 76 47 S92 49 100 50",
+  "M0 36 C6 32 10 40 16 36 S26 28 34 32 S46 24 54 28 S68 20 78 24 S92 18 100 20",
+];
+
 export function Skeleton({
   className = "",
   width,
@@ -29,6 +37,30 @@ export function Skeleton({
       aria-hidden="true"
       style={{ width, height, borderRadius: radius, ...style }}
     />
+  );
+}
+
+// A line-chart placeholder that occupies the exact box the plotted chart will
+// take over, so the swap doesn't reflow the card. It stretches to fill its
+// grid cell; pass minHeight when the real chart has a fixed frame height.
+// Faux series draw themselves in on a loop over the usual chart grid.
+export function SkeletonChartLines({ label, minHeight }: { label?: string; minHeight?: number }) {
+  return (
+    <div
+      aria-hidden={label ? undefined : true}
+      aria-label={label}
+      className="dash-skel-linechart"
+      role={label ? "status" : undefined}
+      style={minHeight === undefined ? undefined : { minHeight }}
+    >
+      <svg aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 56">
+        {/* Stroke width lives in viewBox units: non-scaling-stroke would move
+            dashing into screen space and break the pathLength-based draw. */}
+        {CHART_LINES.map((d) => (
+          <path d={d} key={d} pathLength={1} />
+        ))}
+      </svg>
+    </div>
   );
 }
 
