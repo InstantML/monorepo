@@ -2534,7 +2534,8 @@ export function DashboardShell({
   }, [activeOrgId, activeTab, dashboardAuthorized, loadOrgSettings]);
 
   useEffect(() => {
-    if (!dashboardAuthorized || activeTab !== "settings" || !activeOrgId || !canManageOrg) {
+    // The agent tab needs key rows too: its activity line reads last_used_at.
+    if (!dashboardAuthorized || (activeTab !== "settings" && activeTab !== "agent") || !activeOrgId || !canManageOrg) {
       if (!canManageOrg) {
         setApiKeys([]);
         setNewApiKey("");
@@ -4663,6 +4664,7 @@ function dismissTopOverlay() {
         <section className={`tab-pane ${visibleTab === "agent" ? "active" : ""}`} aria-label="Agent">
           {visibleTab === "agent" ? (
             <AgentTabPane
+              apiKeys={apiKeys}
               canManageOrg={canManageOrg}
               metricKey={metricKey}
               newApiKey={newApiKey}

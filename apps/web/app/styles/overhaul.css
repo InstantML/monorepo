@@ -2354,6 +2354,45 @@ button.secondary.danger-action:hover:not(:disabled),
   line-height: 1.5;
 }
 
+.agent-activity-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-label);
+}
+
+.agent-activity-line code {
+  font-size: 11px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.agent-activity-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.agent-activity-line.live .agent-activity-dot { background: var(--accent); }
+
+.agent-guide-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agent-guide-row .compact-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-label);
+  text-decoration: none;
+}
+
 .agent-workspace-stack,
 .agent-prompt-list,
 .settings-api-section {
@@ -2391,6 +2430,23 @@ button.secondary.danger-action:hover:not(:disabled),
   color: var(--text-2);
   font-size: var(--fs-label);
   line-height: 1.45;
+}
+
+.agent-capability-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-self: end;
+}
+
+.agent-capability-tools code {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  padding: 1px 7px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
 .agent-prompt-section,
