@@ -117,8 +117,9 @@ The helper reads the repo-root `.env` plus process env, then enables required GC
 
 When `INSTANTML_MCP_OAUTH_ENABLED=1`, the Rust data service also receives
 `CLERK_SECRET_KEY` and `CLERK_API_BASE` so read-only MCP OAuth calls can verify
-Clerk access tokens before resolving the selected org. Keep the flag unset for
-the default API-key-only Rust auth path.
+Clerk access tokens before resolving the selected org. Production deploys set
+the flag through `deploy-cloud-run.yml` (enabled 2026-07-02); staging and local
+deploys keep it unset for the API-key-only Rust auth path.
 
 For split deployments with the managed HTTPS router, auth, billing,
 organization, workspace-view, dashboard-preference, and invitation routes are

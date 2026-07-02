@@ -231,6 +231,7 @@ jobs:
               clerk_jwt_issuer="https://clerk.instantml.ai"
               cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
               control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
+              mcp_oauth_enabled="1"
               ;;
             staging)
               frontend_base_url="https://staging.instantml.ai"
@@ -238,6 +239,9 @@ jobs:
               clerk_jwt_issuer="https://modern-mustang-72.clerk.accounts.dev"
               cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
               control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-staging-control-database-url}"
+              # Staging Clerk (dev instance) has not been wired for MCP OAuth;
+              # leave the flag unset so staging keeps the API-key-only path.
+              mcp_oauth_enabled=""
               ;;
             *)
               frontend_base_url="https://instantml.ai"
@@ -245,6 +249,7 @@ jobs:
               clerk_jwt_issuer="https://clerk.instantml.ai"
               cloud_sql_connection="${CONTROL_CLOUD_SQL_CONNECTION:-${GCP_PROJECT}:${GCP_REGION}:instantml-control}"
               control_database_url_secret="${CONTROL_DATABASE_URL_SECRET:-instantml-control-database-url}"
+              mcp_oauth_enabled="1"
               ;;
           esac
           echo "environment=${environment}" >> "${GITHUB_OUTPUT}"
@@ -255,6 +260,7 @@ jobs:
           echo "clerk_jwt_issuer=${clerk_jwt_issuer}" >> "${GITHUB_OUTPUT}"
           echo "cloud_sql_connection=${cloud_sql_connection}" >> "${GITHUB_OUTPUT}"
           echo "control_database_url_secret=${control_database_url_secret}" >> "${GITHUB_OUTPUT}"
+          echo "mcp_oauth_enabled=${mcp_oauth_enabled}" >> "${GITHUB_OUTPUT}"
 
       - name: Reuse Pre-Built Image Tag
         id: image
@@ -308,6 +314,12 @@ jobs:
           INSTANTML_AUTH_MODE: "api-key"
           INSTANTML_MANAGED_CLERK_ENABLED: "true"
           CLERK_JWT_ISSUER: ${{ steps.inputs.outputs.clerk_jwt_issuer }}
+          # MCP OAuth bearer bridge (read-only, org-scoped). Prod-enabled
+          # 2026-07-02 after the auth review and live flip test; empty for
+          # staging, which the helper drops so the flag stays unset there.
+          # When set, the helper also mounts CLERK_SECRET_KEY/CLERK_API_BASE
+          # on the data plane so it can verify Clerk OAuth access tokens.
+          INSTANTML_MCP_OAUTH_ENABLED: ${{ steps.inputs.outputs.mcp_oauth_enabled }}
 
           # Server runtime config. BIND_ADDR and LOG_FORMAT differ
           # legitimately between dev (127.0.0.1:8001/pretty) and prod;
