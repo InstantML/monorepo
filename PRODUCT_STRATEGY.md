@@ -156,9 +156,9 @@ Opportunity:
 
 ### LLM Observability Tools
 
-LangSmith, Langfuse, Phoenix, and similar tools are strong for prompts, traces, evals, retrieval, and agent runtime behavior. They do not replace long-running training observability: metric streams, checkpoints, artifacts, source context, and experiment comparison.
+LangSmith, Langfuse, Phoenix, and similar tools are strong for prompts, traces, evals, retrieval, and agent runtime behavior. They do not replace long-running training observability: metric streams, checkpoints, artifacts, source context, experiment comparison, and RL/debug traces tied directly to runs.
 
-InstantML should stay focused on training unless users clearly pull it toward runtime observability later.
+InstantML should stay focused on training and evaluation loops rather than become a generic APM backend. Run-linked traces are in scope when they help users debug rollouts, agent/eval steps, data generation, and reward behavior alongside metrics and artifacts.
 
 ## Pricing Strategy
 

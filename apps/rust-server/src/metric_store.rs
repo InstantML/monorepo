@@ -1223,11 +1223,11 @@ fn bind_optional_step(step: Option<f64>) -> (u8, f64) {
     }
 }
 
-fn clickhouse_read_error(err: clickhouse::error::Error) -> AppError {
+pub(crate) fn clickhouse_read_error(err: clickhouse::error::Error) -> AppError {
     clickhouse_storage_error("clickhouse query failed", err)
 }
 
-fn clickhouse_storage_error(action: &str, err: clickhouse::error::Error) -> AppError {
+pub(crate) fn clickhouse_storage_error(action: &str, err: clickhouse::error::Error) -> AppError {
     let message = format!("{action}: {err}");
     if is_clickhouse_unavailable_message(&message) {
         AppError::warehouse_unavailable(message)

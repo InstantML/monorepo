@@ -201,6 +201,7 @@ fn demo_usage_delta(project_exists: bool) -> UsageDelta {
         projects: if project_exists { 0 } else { 1 },
         runs: DEMO_RUN_COUNT as i64,
         metric_points,
+        trace_events: 0,
         storage_bytes: artifacts * ARTIFACT_METADATA_BYTES
             + DEMO_RUN_COUNT as i64 * RUN_METADATA_BYTES
             + if project_exists {

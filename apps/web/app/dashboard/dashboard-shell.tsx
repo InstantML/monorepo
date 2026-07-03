@@ -33,6 +33,7 @@ import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { RunFilterBar } from "./runs/run-filter-bar";
 import { SettingsTabPane } from "./settings/tab-pane";
+import { TracesTabPane } from "./traces/tab-pane";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { useFocusTrap } from "./ui/use-focus-trap";
@@ -213,7 +214,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
+const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts", "traces"]);
 
 const EMPTY_OVERVIEW: Overview = { total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 };
 // The Overview cockpit lives at a static route segment while every other tab is
@@ -4623,6 +4624,18 @@ function dismissTopOverlay() {
         <section className={`tab-pane ${visibleTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {visibleTab === "datasets" ? (
             <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} />
+          ) : null}
+        </section>
+
+        <section className={`tab-pane ${visibleTab === "traces" ? "active" : ""}`} aria-label="Traces">
+          {visibleTab === "traces" ? (
+            <TracesTabPane
+              api={api}
+              onSelectRun={setPrimaryRunId}
+              primaryRun={primaryRun}
+              project={project}
+              sortedRuns={sortedRuns}
+            />
           ) : null}
         </section>
 

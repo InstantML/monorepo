@@ -13,6 +13,7 @@ pub struct UsageDelta {
     pub projects: i64,
     pub runs: i64,
     pub metric_points: i64,
+    pub trace_events: i64,
     pub storage_bytes: i64,
 }
 
@@ -253,6 +254,12 @@ async fn usage_counts_for_org(
         .count_rank_points_for_org_period(org_id, period.starts_at, period.ends_at)
         .await?;
     let metric_points = scalar_metric_points + rank_metric_points;
+    let trace_events = crate::trace_store::trace_event_usage_for_period(
+        &metric_store,
+        org_id,
+        &api_request_usage_period_key(period.starts_at),
+    )
+    .await? as i64;
     let metric_series = metric_store.count_series_for_org(org_id).await?;
     let warehouse_storage_bytes_exact = store.warehouse_storage_bytes_for_org(org_id).await?;
     let data = store.data.lock().await;
@@ -334,6 +341,7 @@ async fn usage_counts_for_org(
         runs,
         metric_points,
         metric_points_retained_total,
+        trace_events,
         metric_series,
         artifacts,
         raw_artifacts: artifact_usage.artifacts,
@@ -389,6 +397,8 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "metric_points": counts.metric_points,
             "metric_points_current_period": counts.metric_points,
             "metric_points_retained_total": counts.metric_points_retained_total,
+            "trace_events": counts.trace_events,
+            "trace_events_current_period": counts.trace_events,
             "metric_series": counts.metric_series,
             "artifacts": counts.artifacts,
             "raw_artifacts": counts.raw_artifacts,
@@ -428,6 +438,7 @@ fn usage_org_value(counts: &UsageCounts) -> Value {
             "projects": counts.plan.projects,
             "runs": counts.plan.runs,
             "metric_points": counts.plan.metric_points,
+            "trace_events": counts.plan.trace_events,
             "api_requests": counts.plan.api_requests
         },
         "rate_limits": {
@@ -452,6 +463,7 @@ fn overage_policy() -> Value {
         "runs": "blocked_at_limit",
         "storage": "blocked_at_limit",
         "metric_points": "blocked_at_limit",
+        "trace_events": "blocked_at_limit",
         "api_requests": "blocked_or_metered_overage",
         "artifacts": "visibility_only",
         "api_keys": "visibility_only"
@@ -793,6 +805,12 @@ fn first_blocking_violation(counts: &UsageCounts, delta: UsageDelta) -> Option<P
             counts.plan.metric_points,
         ),
         blocking_violation(
+            "trace_events",
+            counts.trace_events,
+            delta.trace_events,
+            counts.plan.trace_events,
+        ),
+        blocking_violation(
             "storage",
             counts
                 .storage_bytes_for_write_gate
@@ -839,6 +857,7 @@ struct UsageCounts {
     runs: i64,
     metric_points: i64,
     metric_points_retained_total: i64,
+    trace_events: i64,
     metric_series: i64,
     artifacts: i64,
     raw_artifacts: i64,
@@ -1310,6 +1329,7 @@ mod tests {
             runs: 1,
             metric_points: 1,
             metric_points_retained_total: 1,
+            trace_events: 0,
             metric_series: 1,
             artifacts: 0,
             raw_artifacts: 0,

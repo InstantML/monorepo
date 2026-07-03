@@ -6,6 +6,7 @@ export const DASHBOARD_TAB_IDS = [
   "runs",
   "metrics",
   "distributed",
+  "traces",
   "detail",
   "compare",
   "alerts",

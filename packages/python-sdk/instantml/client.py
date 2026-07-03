@@ -95,6 +95,7 @@ from .source import (
     _normalize_source_tracking,
     _source_metadata,
 )
+from .tracing import TraceSpan, attach_trace_context
 from .validation import (
     CONSOLE_LOG_STREAMS,
     MAX_CONSOLE_LOG_LINES_PER_BATCH,
@@ -169,6 +170,8 @@ _QUERY_KEY_BYTES_MAX = 256
 _QUERY_Q_BYTES_MAX = 512
 _QUERY_POINT_LIMIT_MAX = 10_000
 _QUERY_BUCKETS_MAX = 2_000
+_TRACE_BATCH_MAX_EVENTS = 500
+_TRACE_BATCH_MAX_BYTES = 512 * 1024
 
 
 @dataclass(frozen=True)
@@ -648,6 +651,8 @@ def _put_presigned_url(url: str, payload: bytes, timeout: float, headers: dict[s
 
 def _async_request_supported(method: str, path: str, body: dict[str, Any]) -> bool:
     if method == "POST" and (path.endswith("/metrics") or path.endswith("/rank-metrics") or path.endswith("/logs")):
+        return True
+    if method == "POST" and path.endswith("/traces/events"):
         return True
     if method == "PATCH" and path.startswith("/runs/") and set(body) == {"status"}:
         return True
@@ -1716,6 +1721,8 @@ class Run:
             if self._open_async_queue_or_warn(run_id):
                 self._start_async_uploader()
         self._queue: list[dict[str, Any]] = []
+        self._trace_events: list[dict[str, Any]] = []
+        self._trace_events_bytes = 0
         self._last_steps: dict[str, float] = {}
         self._console_line_numbers: dict[str, int] = {}
         self._process_sequence: int = 0
@@ -2882,6 +2889,82 @@ class Run:
         if self._local_store is not None:
             self._local_store.record_event(self.run_id, step, kind, key, payload, timestamp)
 
+    def trace(
+        self,
+        name: str,
+        *,
+        kind: str = "custom",
+        step: int | float | None = None,
+        rank: int | None = None,
+        thread_id: str | None = None,
+        rollout_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
+        metrics: dict[str, Any] | None = None,
+        links: Any = None,
+        capture: str = "off",
+        inputs: Any = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+    ) -> TraceSpan:
+        return TraceSpan(
+            self,
+            name,
+            kind=kind,
+            trace_id=trace_id,
+            span_id=span_id,
+            step=step,
+            rank=rank,
+            thread_id=thread_id,
+            rollout_id=rollout_id,
+            attributes=attributes,
+            metrics=metrics,
+            links=links,
+            capture=capture,
+            inputs=inputs,
+            root=True,
+        )
+
+    def start_span(
+        self,
+        name: str,
+        *,
+        kind: str = "custom",
+        trace_id: str | None = None,
+        parent_span_id: str | None = None,
+        span_id: str | None = None,
+        step: int | float | None = None,
+        rank: int | None = None,
+        thread_id: str | None = None,
+        rollout_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
+        metrics: dict[str, Any] | None = None,
+        links: Any = None,
+        capture: str = "off",
+        inputs: Any = None,
+    ) -> TraceSpan:
+        span = TraceSpan(
+            self,
+            name,
+            kind=kind,
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
+            span_id=span_id,
+            step=step,
+            rank=rank,
+            thread_id=thread_id,
+            rollout_id=rollout_id,
+            attributes=attributes,
+            metrics=metrics,
+            links=links,
+            capture=capture,
+            inputs=inputs,
+        )
+        span.start()
+        return span
+
+    def attach_trace_context(self, context: dict[str, Any]):
+        return attach_trace_context(self, context)
+
     def _record_file(
         self,
         key: str,
@@ -2898,10 +2981,11 @@ class Run:
             pending = self._queue
             self._queue = []
         for event in pending:
-            self._request_or_spool(event["method"], event["path"], event["body"])
+            self._request_or_spool(event["method"], event["path"], event["body"], event.get("idempotency_key"))
 
     def flush(self) -> None:
         self._flush_pending_requests()
+        self._flush_trace_events()
         if self.upload_mode == "async":
             self._force_async_buffer_flush(timeout=getattr(self.client, "timeout", 10.0))
 
@@ -2914,7 +2998,7 @@ class Run:
         events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
         replayed = 0
         for event in events:
-            self.client._request(event["method"], event["path"], event["body"])
+            self.client._request(event["method"], event["path"], event["body"], idempotency_key=event.get("idempotency_key"))
             replayed += 1
         path.unlink()
         return replayed
@@ -2939,6 +3023,7 @@ class Run:
             capture.restore()
         try:
             self._flush_pending_requests()
+            self._flush_trace_events()
             if self.upload_mode == "spool":
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
                 return
@@ -3075,7 +3160,66 @@ class Run:
             return
         self._request_or_spool(method, path, body)
 
-    def _enqueue_async_request(self, method: str, path: str, body: dict[str, Any]) -> None:
+    def _record_trace_event(self, event: dict[str, Any]) -> None:
+        serialized = json.dumps(event, sort_keys=True, separators=(",", ":"))
+        event_bytes = len(serialized.encode("utf-8"))
+        should_flush = False
+        with self._lock:
+            if (
+                self._trace_events
+                and (
+                    len(self._trace_events) >= _TRACE_BATCH_MAX_EVENTS
+                    or self._trace_events_bytes + event_bytes > _TRACE_BATCH_MAX_BYTES
+                )
+            ):
+                should_flush = True
+        if should_flush:
+            self._flush_trace_events()
+        with self._lock:
+            self._trace_events.append(event)
+            self._trace_events_bytes += event_bytes
+            should_flush = len(self._trace_events) >= _TRACE_BATCH_MAX_EVENTS or self._trace_events_bytes >= _TRACE_BATCH_MAX_BYTES
+        if should_flush:
+            self._flush_trace_events()
+
+    def _flush_trace_events(self) -> None:
+        with self._lock:
+            events = self._trace_events
+            self._trace_events = []
+            self._trace_events_bytes = 0
+        if not events:
+            return
+        self._submit_trace_batch(events)
+
+    def _submit_trace_batch(self, events: list[dict[str, Any]]) -> None:
+        method = "POST"
+        path = f"/api/runs/{self.run_id}/traces/events"
+        body = {"events": events}
+        idempotency_key = f"instantml-trace-{self.run_id}-{uuid.uuid4().hex}"
+        if self.upload_mode == "async" and _async_request_supported(method, path, body):
+            self._enqueue_async_request(method, path, body, idempotency_key=idempotency_key)
+            return
+        with self._lock:
+            if self.upload_mode == "spool":
+                self._process_sequence += 1
+                request = {"method": method, "path": path, "body": body, "idempotency_key": idempotency_key}
+                event = _process_event(
+                    self.run_id,
+                    request,
+                    data={"trace_events": len(events)},
+                    sequence=self._process_sequence,
+                )
+                _write_process_event(self._process_spool_run_dir, event, _serialize_process_event(event))
+                return
+        self._request_or_spool(method, path, body, idempotency_key)
+
+    def _enqueue_async_request(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+    ) -> None:
         if self._async_disabled_reason is not None:
             self._warn_async_drop(
                 f"async queue unavailable; dropped event: {self._async_disabled_reason}",
@@ -3088,7 +3232,7 @@ class Run:
                 method,
                 path,
                 body,
-                idempotency_key=f"instantml-{self.run_id}-{uuid.uuid4().hex}",
+                idempotency_key=idempotency_key or f"instantml-{self.run_id}-{uuid.uuid4().hex}",
                 created_at=time.time(),
             )
             if self._async_buffer is None:
@@ -3110,13 +3254,22 @@ class Run:
             warnings.warn(message, RuntimeWarning, stacklevel=2)
             self._last_async_warning_at = now
 
-    def _request_or_spool(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def _request_or_spool(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
         try:
-            return self.client._request(method, path, body)
+            return self.client._request(method, path, body, idempotency_key=idempotency_key)
         except InstantMLError:
             if not self.client.offline_dir:
                 raise
-            _spool_event(self.client.offline_dir, self.run_id, {"method": method, "path": path, "body": body})
+            event = {"method": method, "path": path, "body": body}
+            if idempotency_key:
+                event["idempotency_key"] = idempotency_key
+            _spool_event(self.client.offline_dir, self.run_id, event)
             return {"spooled": True, "artifact": {"id": "spooled", **body}}
 
 

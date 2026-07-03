@@ -39,6 +39,8 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Provide local adoption tools: W&B-compatible logging, W&B/Neptune/MLflow transformed JSON import, TensorBoard scalar sync, and Import v2 chunk upload to the Rust API.
 - Capture source metadata for reproducibility with privacy-safe defaults and explicit opt-in knobs for command, paths, branch, host/process identifiers, and git diff summaries.
 - Fork an existing Rust-backed run from a checkpoint and attach logging to that created child run.
+- Record run-linked traces for rollouts, eval examples, data-generation steps,
+  and agent/RL pipelines with privacy-safe capture defaults.
 - Finish runs cleanly.
 
 Target public API:
@@ -85,6 +87,17 @@ run.log_classification_eval(
 checkpoint_policy = im.CheckpointPolicy(every_steps=100)
 if checkpoint_policy.should_save(100):
     run.log_checkpoint_file("checkpoints/policy.pt", step=100)
+with run.trace("rollout", kind="rollout", step=100, attributes={"env": "CartPole-v1"}) as trace:
+    with trace.span("policy.forward", kind="model", inputs={"obs": [0.0, 0.1]}, capture="preview") as span:
+        action = 1
+        span.set_output({"action": action})
+    with trace.span("env.step", kind="env_step", capture="off") as span:
+        reward = 1.0
+        span.log_metric("reward", reward)
+carrier = trace.context()
+with run.attach_trace_context(carrier):
+    with run.start_span("worker.followup", kind="custom"):
+        pass
 run.log({"checkpoint": im.File("checkpoints/policy.pt", artifact_type="checkpoint")}, step=1)
 run.log_checkpoint("checkpoint.pt", "demo://checkpoint.pt", step=1)
 run.log_video("rollout.mp4", "demo://rollout.mp4", step=1)
@@ -114,6 +127,40 @@ forked_run.use_artifact(resolved)
 forked_run.log({"train/loss": 0.1}, step=101)
 forked_run.finish()
 ```
+
+## Tracing
+
+Tracing is for product traces tied to an InstantML run, not internal SDK/server
+logs. Use it to inspect nested rollout steps, eval examples, reward-model calls,
+agent turns, and data-generation pipelines next to the metrics and artifacts for
+the same run.
+
+```python
+with run.trace("eval-example", kind="eval", step=42) as trace:
+    with trace.span("retrieve-context", kind="tool", capture="off"):
+        docs = ["doc-1", "doc-2"]
+    with trace.span("policy-response", kind="model", inputs={"docs": docs}, capture="preview") as span:
+        output = {"answer": "ok"}
+        span.set_output(output)
+```
+
+`capture="off"` is the default and stores no input/output preview. Opt into
+`capture="preview"` only for bounded debugging previews; the SDK truncates
+serialized input/output/error previews before enqueueing them. Attributes,
+metrics, and links must be JSON-shaped and are validated before submission.
+
+Trace events are batched to
+`POST /api/runs/:run_id/traces/events` with a stable `Idempotency-Key`.
+`flush()` and `finish()` drain pending trace events, async mode writes trace
+batches to the same SQLite queue as metrics/logs, process-spool mode writes a
+single replayable request per trace batch, and `offline_dir` replay preserves
+the original idempotency key. `trace.context()`, `run.attach_trace_context(...)`,
+and `trace.wrap(fn)` provide a small JSON-serializable carrier for worker,
+thread, or callback propagation.
+
+Decorators, auto-instrumentation, OTLP import, trace-to-dataset export, and
+full argument/return capture are intentionally deferred; keep those behind a new
+design review before expanding the privacy surface.
 
 ## CLI: Login, logout, whoami
 
@@ -359,13 +406,15 @@ run.finish()
 
 Async metric/log mode is the default for `init()` and `Client.init()`. It is
 inspired by Neptune-style local-first logging: scalar metrics, rank metrics,
-console logs, and final run status are validated, snapshotted into a small
-process-local producer buffer, group-committed to a per-run SQLite WAL queue,
-and drained by a separate uploader process. The default producer flushes at 64
-events, 64 KiB of serialized payloads, or 20 ms since the oldest buffered event.
+console logs, trace batches, and final run status are validated, snapshotted
+into a small process-local producer buffer, group-committed to a per-run SQLite
+WAL queue, and drained by a separate uploader process. The default producer
+flushes at 64 events, 64 KiB of serialized payloads, or 20 ms since the oldest
+buffered event.
 Delivery, network, and API errors on those queued hot paths are reflected in
 `Run.upload_status()` and dashboard upload-health metrics instead of raising
-from `log_metrics()`, `log_rank_metrics()`, `log_console()`, or `finish()`.
+from `log_metrics()`, `log_rank_metrics()`, `log_console()`, trace context
+exit, or `finish()`.
 
 ```python
 run = im.init(
@@ -394,6 +443,8 @@ foreground.
 Async v1 intentionally keeps response-returning helpers synchronous: configs,
 attributes, tags, notes, rich objects, media, and artifact uploads stay on the
 existing sync/process-spool paths until their replay contracts are idempotent.
+Trace batches are async-safe because they are append-only and replayed with the
+same request idempotency key.
 If the managed uploader cannot start or a Python process exits early, drain
 orphaned queues later with the same `INSTANTML_API_KEY` or `instantml login`
 credentials used by normal SDK calls:
@@ -414,11 +465,11 @@ when you want a longer wait. See
 `docs/design/2026-05-27-async-sqlite-batching.md`.
 
 On the async path, invalid payloads never crash the training loop either:
-`log()`, `log_metrics()`, `log_rank_metrics()`, and `log_console()` warn-and-drop
-a bad value (a `NaN`/`inf` scalar, a raw tensor, an unsupported type) and count
-it under `Run.upload_status()["dropped"]` instead of raising. Use
-`upload_mode="sync"` when you want validation errors to raise in the foreground
-(scripts and CI).
+`log()`, `log_metrics()`, `log_rank_metrics()`, `log_console()`, and trace
+event creation warn-and-drop a bad value (a `NaN`/`inf` scalar, a raw tensor, an
+unsupported type, or a malformed trace payload) and count it under
+`Run.upload_status()["dropped"]` instead of raising. Use `upload_mode="sync"`
+when you want validation errors to raise in the foreground (scripts and CI).
 
 ## Process lifecycle, signals, and forked workers
 
@@ -478,6 +529,9 @@ Expected tests:
 - Tests for buffering/retry behavior if implemented.
 - Tests for process spool and uploader behavior.
 - Tests for async SQLite queue enqueue, retry/failure state, waits, recovery CLI, and no foreground HTTP on queued metric/log hot paths.
+- Tests for trace context managers, manual spans, preview/off capture,
+  idempotent trace batches, offline replay, process spool replay, and async
+  queue admission.
 - Integration tests against a local API test server when applicable.
 
 ## Setup
@@ -710,7 +764,15 @@ the Rust API's default JSON body limit.
 
 `step` defaults to `0` for `log_snapshot()` so strict servers receive a numeric metric step. Pass an explicit step for normal training-loop use.
 
-Existing helpers such as `log()`, `log_config()`, `log_text()`, `log_histogram()`, `log_objects()` for inline table/histogram objects, `add_tags()`, `log_artifact()`, and `finish()` also write single-request events in process spool mode. Mixed `log()` payloads are split into deterministic single-request sub-events. `upload_file()` records `source_path`, SHA-256, and size, then lets the uploader read and encode the file later, so keep source files stable until the uploader succeeds. Rich media object helpers are sync-only for now because linking the object to the uploaded artifact requires the upload response.
+Existing helpers such as `log()`, `log_config()`, `log_text()`,
+`log_histogram()`, `log_objects()` for inline table/histogram objects,
+`add_tags()`, `log_artifact()`, trace batch flushes, and `finish()` also write
+single-request events in process spool mode. Mixed `log()` payloads are split
+into deterministic single-request sub-events. `upload_file()` records
+`source_path`, SHA-256, and size, then lets the uploader read and encode the
+file later, so keep source files stable until the uploader succeeds. Rich media
+object helpers are sync-only for now because linking the object to the uploaded
+artifact requires the upload response.
 
 Run identification helpers:
 
@@ -740,7 +802,22 @@ PYTHONPATH=packages/python-sdk python3 -c "import instantml as im; print(im.Clie
 python3 -m pytest
 ```
 
-The SDK defaults to buffered async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 raw artifact storage in sync mode and record a source path for the uploader in process spool mode. Versioned artifacts require sync mode in this slice because presigned upload URLs are short-lived bearer secrets and the process spool contract does not yet persist multipart state.
+The SDK defaults to buffered async metric/log/trace uploads with a 10 second
+client timeout for foreground setup and bounded `finish()` waits. Short-window
+HTTP `429` rate-limit responses are retried by the uploader, honoring
+`Retry-After` when the server sends it; monthly quota `429` responses become
+failed queued rows. Use `upload_status()` or the wait helpers to detect async
+delivery failures, or pass `upload_mode="sync"` when foreground
+metric/log/trace HTTP errors should raise `InstantMLError`. Set `buffer_size`
+to batch sync post-init events in memory, `offline_dir` to spool failed
+existing-run requests as JSONL for later replay, or `upload_mode="spool"` to
+move post-init HTTP work into a separate uploader process.
+Artifact/checkpoint/rollout metadata works through the Rust server endpoints;
+`upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to
+local/R2 raw artifact storage in sync mode and record a source path for the
+uploader in process spool mode. Versioned artifacts require sync mode in this
+slice because presigned upload URLs are short-lived bearer secrets and the
+process spool contract does not yet persist multipart state.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 
@@ -773,3 +850,6 @@ record kind is `report` and the schema is documented under
 - Keep SDK-owned metadata under `_rlobs` and reject user-provided `_rlobs` keys before merging metadata.
 - Add true offline run creation only after a design doc; do not imply it in README examples until implemented.
 - Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/ClickHouse backend and deprecated Node backend.
+- Keep tracing privacy explicit: `capture="off"` remains the default, preview
+  capture stays bounded, and decorators/auto-instrumentation need a fresh design
+  review before shipping.

@@ -34,7 +34,7 @@ Backend note: the UI targets the Rust/ClickHouse API in `apps/rust-server` by de
 
 Current navigation, workspace, and comparison controls:
 
-- Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Run Detail`, `Compare`, `Insights`, `Alerts` (shown as `Run health`), `Datasets`, `Imports`, `Artifacts`, `Reports`, `Settings`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room. The rail groups tabs as Analyze / Workspace / More / Admin. The former `Checkpoints` tab merged into Run Detail; `/dashboard/checkpoints` and `/dashboard/models` stay routable as aliases of `/dashboard/detail`.
+- Route-backed navigation for `Runs`, `Metrics`, `Distributed`, `Traces`, `Run Detail`, `Compare`, `Insights`, `Alerts` (shown as `Run health`), `Datasets`, `Imports`, `Artifacts`, `Reports`, `Settings`, and `API` at `/dashboard/:tab`, with a compact logo-only topbar brand mark and plan usage badge near account controls so filters and saved-view controls have more room. The rail groups tabs as Analyze / Workspace / More / Admin. The former `Checkpoints` tab merged into Run Detail; `/dashboard/checkpoints` and `/dashboard/models` stay routable as aliases of `/dashboard/detail`.
 - With no project selected, Runs lands on an explicit "All projects" overview: one card per project (run count, active/failed, best metric, latest activity) that scopes the project filter on click, plus a "Browse all runs" escape hatch into the cross-project workspace. Per-project stat fetches are capped at 16 projects and the cap is disclosed.
 - Every metric line chart carries per-panel y-axis controls: a `Log` pill (log10 scale, positive values only — hidden point counts are disclosed, and an all-non-positive window keeps the controls mounted with an explanatory empty state) and a `Y auto/min–max` popover for manual y-ranges (one-sided entries fall back to the data bound; out-of-range data clips to the plot rect). The mini range overview and SVG export share the same scale.
 - Cross-highlighting on the Runs workspace: hovering a run in the rail isolates its series in every line panel; hovering a chart series or legend chip lights the matching rail row and legend chip.
@@ -69,6 +69,7 @@ Current navigation, workspace, and comparison controls:
   without changing the legacy `run.status` contract.
 - Metrics, Run Detail, and Compare now share the analysis-suite layout: compact header stats, responsive toolbars, chart-first metric inspection, a Run Detail metric picker/dossier, and row-first comparison evidence that visually matches the Runs workspace.
 - Distributed is a rank-aware per-run dashboard backed by `GET /api/runs/:id/rank-metrics/summary`; it renders reduce mean/weighted mean/min/max/range/stddev/p50/p95, rank coverage, heatmap cells, and outlier rows only when the tab is active.
+- Traces is a project/run-scoped debugging workspace backed by `GET /api/traces`, `GET /api/runs/:run_id/traces/:trace_id`, and `GET /api/runs/:run_id/traces/:trace_id/spans`. It only fetches while the tab is active, supports run/status/kind/search filters, paginated trace summaries, deep links via `run_id`, `trace_id`, and `span_id`, stale-response guards, and lazy child-span expansion for large trees.
 - Insights now has two views. `GPU & System` is API-backed and summarizes observed GPU telemetry by employee attribution label, project, GPU model, and run with coverage/confidence indicators; it is for optimization and triage, not tracked-hour billing. `Run Analysis` remains the local exploratory dashboard over loaded/selected run summaries, with grouped reducer comparisons, evaluation cards, hyperparameter scatter, k-means clusters, and parallel-coordinate traces. The hyperparameter scatter and parallel-coordinate explorers each offer a per-axis linear/log scale (learning-rate-like axes default to log), a `Chart`⇄`Table` toggle that exposes an accessible summary table (caption + scoped headers, ranked by the Y field / per-axis run matrix), keyboard-focusable charts with an `aria-live` readout, and honest truncation disclosure (parallel coordinates draws up to `PARALLEL_MAX_DRAWN = 200` runs and discloses "N of M" rather than silently capping).
 - Run Detail now contains a local Pluto-style Run Workspace with a sticky run header and Summary, Data, Logs, Files, System, and Graph sections. These are intentionally local run tabs, not new global dashboard tabs. The Summary checkpoint list can create a same-project linked fork from a checkpoint after an explicit confirmation that InstantML creates only a run record and does not start training. The Graph section fetches the selected run's bounded parent/child lineage only while the local Graph section is open.
 - Logs fetch `GET /api/runs/:id/logs` only when the local Logs section is opened, render stdout/stderr through a virtualized terminal with safe ANSI spans, and keep search bounded to the selected run/stream.
@@ -137,6 +138,8 @@ Expected tests:
 
 - Component tests for loading, empty, error, and populated states.
 - Interaction tests for filters, run selection, and chart controls.
+- Trace workspace tests for route registration, source-level API contracts, and
+  stylesheet wiring until authenticated UI smokes can seed local trace data.
 - Search tests for bare text, tags, boolean operators, regex success, inline
   validation errors, and stale/invalid select-all guards.
 - Integration tests for API-backed views where practical.
@@ -385,6 +388,7 @@ From the repo root:
 
 ```bash
 npm run test:node
+node --test apps/web/tests/traces-tab.test.js
 npm run web:build
 npx react-doctor@latest
 npm run test:ui
@@ -441,6 +445,7 @@ Set `INSTANTML_UI_SMOKE_API_BASE` to point the same smoke at an already running 
 - `app/styles/panels.css` — workspace panels, canvas, sections, modals
 - `app/styles/charts.css` — metric charts, axes, series, range, tooltip
 - `app/styles/research.css` — Distributed and Insights dashboard surfaces
+- `app/styles/traces.css` — Traces dashboard list, tree, inspector, and filters
 - `app/styles/imports.css` — imports workspace styling
 - `app/styles/run-detail.css` — run detail, KPIs, inspector, evidence, timeline
 - `app/styles/compare.css` — compare view, leaderboard, evidence cells

@@ -2,7 +2,7 @@
 
 Date: 2026-07-03
 
-Status: Draft revised after fresh architecture review
+Status: Accepted first slice in implementation
 
 Owner: Codex
 
@@ -997,9 +997,7 @@ Response:
     "payloads": false,
     "partial_tree": true
   },
-  "next_child_cursors": {
-    "086e83747d0e381e": "opaque"
-  }
+  "root_next_cursor": null
 }
 ```
 
@@ -1713,7 +1711,46 @@ None expected. If full meaningful first-party coverage is temporarily
 unreasonable, document the exception in the relevant component README and this
 section before implementation is accepted.
 
+## Implementation Progress
+
+2026-07-03 first implementation slice:
+
+- Added the Rust/ClickHouse ingest and read surface for native traces:
+  `POST /api/runs/{run_id}/traces/events`, `GET /api/traces`,
+  `GET /api/runs/{run_id}/traces/{trace_id}`, and
+  `GET /api/runs/{run_id}/traces/{trace_id}/spans`.
+- Added append-only ClickHouse tables for span events, span topology index,
+  trace summaries, and idempotent trace batches. Hot trace rows carry the
+  ingest idempotency key, reads only surface rows with an accepted batch marker,
+  and usage accounting is monthly over accepted `(run_id, idempotency_key)`
+  batches.
+- Added validation for bounded batches, lowercase trace/span ids, event kinds,
+  span kinds, statuses, finite timing fields, parent-cycle detection, preview
+  content policy, JSON payload sizes, required ingest idempotency keys, and
+  project/run auth scope.
+- Added the Python SDK tracing API: `run.trace(...)`,
+  `run.start_span(...)`, `trace.span(...)`, `span.finish(...)`,
+  `span.set_output(...)`, `span.log_metric(...)`, `trace.context()`,
+  `run.attach_trace_context(...)`, and `trace.wrap(fn)`. Capture defaults to
+  `off`; `preview` capture is bounded and serialized before enqueueing.
+- Added trace batch delivery through sync flush, async SQLite queue, process
+  spool, and offline JSONL replay while preserving stable request idempotency
+  keys.
+- Added the React Traces dashboard tab with run/status/kind/search filters,
+  paginated trace summaries, run-scoped detail loading, stale-response guards,
+  deep links by `run_id`/`trace_id`/`span_id`, and lazy child-span expansion.
+- Added OpenAPI registrations, generated TypeScript API contracts, and updated
+  product/API/schema/SDK/web/store docs. Focused Rust, SDK, and frontend tests
+  cover trace validation/cursors, usage behavior, OpenAPI route presence, SDK
+  durability paths, and Traces tab wiring.
+- Still deferred after this first slice: decorator/auto-instrumentation APIs,
+  OTLP/import/export and Castform-style trace-to-dataset workflows, optimized
+  incremental trace summary maintenance, Run Detail recent-traces panel,
+  large-trace timeline scrubber, and an authenticated browser E2E that seeds
+  trace data locally.
+
 ## Decision
 
-Draft revised after three fresh reviews. Do not implement until a human owner
-accepts this revised first slice or requests another review pass.
+Accepted first slice after three fresh reviews. Implementation should stay
+inside the accepted first-slice boundaries unless this design is updated with a
+new review note.

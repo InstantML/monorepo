@@ -698,6 +698,7 @@ mod tests {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            trace_ingest_capacity_lock: Arc::new(Mutex::new(())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             data: Arc::new(Mutex::new(data)),
             record_clock_micros: Arc::new(Mutex::new(0)),
