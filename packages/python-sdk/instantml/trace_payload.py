@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -36,6 +37,30 @@ TRACE_KINDS = {
 }
 TRACE_STATUSES = {"running", "ok", "error", "cancelled", "interrupted"}
 TRACE_CAPTURE_POLICIES = {"off", "preview"}
+_REDACTED = "[REDACTED]"
+_SECRET_KEY_PARTS = {
+    "api_key",
+    "apikey",
+    "authorization",
+    "cookie",
+    "password",
+    "secret",
+    "set_cookie",
+    "token",
+    "x_api_key",
+}
+_SECRET_VALUE_PATTERNS = [
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(r"\binstantml_[A-Za-z0-9_=-]{6,}"),
+    re.compile(r"\b(?:sk|pk|rk)_(?:test|live)_[A-Za-z0-9]{8,}"),
+    re.compile(r"\bwhsec_[A-Za-z0-9]{8,}"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{16,}"),
+    re.compile(r"\bghp_[A-Za-z0-9_]{16,}"),
+    re.compile(r"\bxox[a-z]-[A-Za-z0-9-]{10,}"),
+]
+_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|password|token|secret|cookie|set-cookie|x-api-key)\s*[:=]\s*['\"]?[^'\",\s}\]]+"
+)
 
 
 def utc_timestamp() -> str:
@@ -58,7 +83,7 @@ def normalize_name(value: str, field: str = "name") -> str:
         raise ValueError(f"{field} must be a non-empty string")
     if len(text.encode("utf-8")) > MAX_TRACE_NAME_BYTES:
         raise ValueError(f"{field} must be at most {MAX_TRACE_NAME_BYTES} bytes")
-    return text
+    return redact_string(text)
 
 
 def normalize_optional_label(value: str | None, field: str) -> str | None:
@@ -68,7 +93,7 @@ def normalize_optional_label(value: str | None, field: str) -> str | None:
         raise TypeError(f"{field} must be a string")
     if len(value.encode("utf-8")) > MAX_TRACE_FIELD_BYTES:
         raise ValueError(f"{field} must be at most {MAX_TRACE_FIELD_BYTES} bytes")
-    return value
+    return redact_string(value)
 
 
 def normalize_kind(value: str) -> str:
@@ -113,7 +138,7 @@ def json_object(value: dict[str, Any] | None, field: str, max_bytes: int) -> dic
         return {}
     if not isinstance(value, dict):
         raise TypeError(f"{field} must be a dictionary")
-    normalized = _jsonable(value, field)
+    normalized = redact_json_value(_jsonable(value, field))
     if not isinstance(normalized, dict):
         raise TypeError(f"{field} must be a dictionary")
     _ensure_serialized_size(normalized, field, max_bytes)
@@ -125,7 +150,7 @@ def json_object_or_array(value: Any, field: str, max_bytes: int) -> dict[str, An
         return {}
     if not isinstance(value, (dict, list, tuple)):
         raise TypeError(f"{field} must be a dictionary or list")
-    normalized = _jsonable(value, field)
+    normalized = redact_json_value(_jsonable(value, field))
     if not isinstance(normalized, (dict, list)):
         raise TypeError(f"{field} must be a dictionary or list")
     _ensure_serialized_size(normalized, field, max_bytes)
@@ -135,12 +160,18 @@ def json_object_or_array(value: Any, field: str, max_bytes: int) -> dict[str, An
 def preview_payload(value: Any, capture: str, field: str) -> tuple[str, bool]:
     if capture != "preview" or value is None:
         return "", False
-    normalized = _jsonable(value, field, stringify_unknown=True)
     try:
+        normalized = redact_json_value(_jsonable(value, field, stringify_unknown=True))
         text = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    except (TypeError, ValueError):
-        text = str(value)
-    return _truncate_utf8(text, MAX_TRACE_PREVIEW_BYTES)
+    except Exception:  # noqa: BLE001 - preview capture must never break user code
+        text = _safe_string(value)
+    return _truncate_utf8(redact_string(text), MAX_TRACE_PREVIEW_BYTES)
+
+
+def preview_text(value: str, capture: str) -> tuple[str, bool]:
+    if capture != "preview" or not value:
+        return "", False
+    return _truncate_utf8(redact_string(value), MAX_TRACE_PREVIEW_BYTES)
 
 
 def build_trace_event(
@@ -188,10 +219,10 @@ def build_trace_event(
         "started_at": started_at,
         "ended_at": ended_at,
         "duration_ms": normalize_duration_ms(duration_ms),
-        "input_preview": input_preview,
-        "output_preview": output_preview,
+        "input_preview": redact_string(input_preview),
+        "output_preview": redact_string(output_preview),
         "error_type": normalize_optional_label(error_type, "error_type"),
-        "error_preview": error_preview,
+        "error_preview": redact_string(error_preview),
         "attributes": json_object(attributes, "attributes", MAX_TRACE_ATTRIBUTES_BYTES),
         "metrics": json_object(metrics, "metrics", MAX_TRACE_METRICS_BYTES),
         "links": json_object_or_array(links, "links", MAX_TRACE_LINKS_BYTES),
@@ -235,11 +266,61 @@ def _jsonable(value: Any, field: str, *, stringify_unknown: bool = False) -> Any
         return [_jsonable(item, field, stringify_unknown=stringify_unknown) for item in sorted(value, key=repr)]
     if value is None or isinstance(value, (str, int, float, bool)):
         if isinstance(value, float) and not math.isfinite(value):
+            if stringify_unknown:
+                return str(value)
             raise ValueError(f"{field} must contain finite numbers")
         return value
     if stringify_unknown:
         return str(value)
     raise TypeError(f"{field} must be JSON serializable")
+
+
+def redact_json_value(value: Any, key: str | None = None) -> Any:
+    if key is not None and _is_secret_key(key):
+        return _REDACTED
+    if isinstance(value, dict):
+        return {str(item_key): redact_json_value(item_value, str(item_key)) for item_key, item_value in value.items()}
+    if isinstance(value, list):
+        return [redact_json_value(item) for item in value]
+    if isinstance(value, str):
+        return redact_string(value)
+    return value
+
+
+def redact_string(value: str) -> str:
+    text = value
+    for pattern in _SECRET_VALUE_PATTERNS:
+        text = pattern.sub(_REDACTED, text)
+    text = _SECRET_ASSIGNMENT_PATTERN.sub(lambda match: f"{match.group(1)}={_REDACTED}", text)
+    return text
+
+
+def _is_secret_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
+    if normalized in _SECRET_KEY_PARTS:
+        return True
+    sensitive_suffixes = (
+        "_api_key",
+        "_apikey",
+        "_authorization",
+        "_cookie",
+        "_password",
+        "_secret",
+        "_set_cookie",
+        "_token",
+        "_x_api_key",
+    )
+    return normalized.endswith(sensitive_suffixes)
+
+
+def _safe_string(value: Any) -> str:
+    try:
+        return str(value)
+    except Exception:  # noqa: BLE001 - preview fallback must be best effort
+        try:
+            return repr(value)
+        except Exception:  # noqa: BLE001
+            return "<unrepresentable>"
 
 
 def _ensure_serialized_size(value: Any, field: str, max_bytes: int) -> None:

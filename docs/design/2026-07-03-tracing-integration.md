@@ -25,9 +25,9 @@ workspace plus a compact Run Detail section.
 The accepted first slice is native InstantML tracing for Python SDK users, but
 it is intentionally narrower than the full product surface:
 
-- SDK `run.trace(...)` and `trace.span(...)` context managers create nested
+- SDK `run.trace(...)`, `trace.span(...)`, and `run.trace_op(...)` create nested
   spans. A minimal manual start/finish API supports callback-based frameworks.
-  Decorators, auto-instrumentation, and provider integrations are follow-ups.
+  Provider auto-instrumentation remains a follow-up.
 - Async queue and process-spool paths replay trace batches with stable
   idempotency keys. Durability is documented per mode instead of promised
   uniformly.
@@ -65,9 +65,9 @@ References checked while drafting:
   data preprocessing, evaluator calls, and user-defined spans.
 - Keep tracing separate from scalar metrics and internal Rust server
   observability logs.
-- Make the SDK ergonomic in a small first slice: `run.trace(...)`,
-  `trace.span(...)`, minimal manual `start_span`/`finish_span`, and optional
-  decorators/auto-instrumentation later.
+- Make the SDK ergonomic: `run.trace(...)`, `trace.span(...)`,
+  `run.trace_op(...)`, minimal manual `start_span`/`finish_span`, and optional
+  provider auto-instrumentation later.
 - Preserve SDK hot-path safety through batching, async queue integration,
   idempotency keys, bounded local queue size, and opt-in payload capture.
 - Store trace event volume in ClickHouse with bounded list/detail read paths and
@@ -317,9 +317,9 @@ with run.trace("rollout", kind="rollout", step=step, attributes={"env": "cartpol
         span.log_metric("dense_reward", reward)
 ```
 
-Decorators are planned sugar over the same recorder, but they are not required
-for the accepted first slice because they widen async, argument-capture, and
-privacy semantics. Phase 2 can add:
+Decorators are sugar over the same recorder after the SDK/privacy hardening in
+the decorator follow-up slice. They do not auto-capture arguments or returns
+unless users opt into bounded preview capture:
 
 ```python
 @run.trace_op(kind="reward", capture="preview")
@@ -1081,7 +1081,7 @@ API semantics:
 | `trace.context()` | Returns a JSON-serializable carrier with `trace_id`, current `span_id`, `thread_id`, `run_id`, and optional `rank`. |
 | `run.attach_trace_context(ctx)` | Attaches a carrier in another thread/process/rank so child spans keep the intended parent. |
 | `trace.wrap(fn)` | Captures the current context with `contextvars.copy_context()` for thread/executor submission. |
-| `@run.trace_op(...)` | Deferred. When added, it should preserve return values, support async functions explicitly, and capture args/return previews only under `capture="preview"`. |
+| `@run.trace_op(...)` | Decorates sync or async functions as spans, preserves return values and `functools.wraps` metadata, batches by default, inherits only same-run context, and captures argument/return/error previews only under `capture="preview"`. |
 
 Supported `kind` values:
 
@@ -1598,7 +1598,6 @@ Phase 4: docs and verification
 
 Phase 5: follow-ups
 
-- Decorator API and async decorator support.
 - OpenTelemetry import/export bridge.
 - Auto-instrumentation for OpenAI/Anthropic/LangChain/LlamaIndex.
 - Trace comparison and trace plots.
@@ -1607,6 +1606,144 @@ Phase 5: follow-ups
 - Trace retention controls and trace storage usage breakdown.
 - Broad attribute search after fields are promoted/indexed.
 - Full timeline scrubber and sampled-tree exploration for very large traces.
+
+## Decorator Follow-up Slice
+
+Date: 2026-07-03
+
+Status: Accepted narrow slice after fresh SDK/privacy, delivery, and testing
+reviews. Implementation must include the hardening items below before the
+decorator API is considered shippable.
+
+The next SDK ergonomics slice adds `Run.trace_op(...)`, a decorator factory for
+instrumenting reward functions, evaluator functions, model calls, data
+preprocessing helpers, and agent tools without manually opening a `with
+run.start_span(...)` block around every function body.
+
+This is intentionally sugar over the accepted native trace recorder. It does
+not add provider auto-instrumentation, monkeypatching, global decorators, OTLP
+bridges, or full argument capture by default.
+
+### Requirements
+
+- `@run.trace_op(...)` returns a decorator that preserves `functools.wraps`
+  metadata and traces each function invocation as one span.
+- The span is a child of the current trace/span only when the current context
+  belongs to the same `Run`. Cross-run carriers are rejected on attach and are
+  not inherited implicitly.
+- If no same-run context exists, the decorator creates a run-linked root span
+  but does not flush on every invocation; normal `flush()`/`finish()` batching
+  drains the trace events.
+- An explicit `trace_id` suppresses implicit parent inheritance unless the
+  caller also passes an explicit `parent_span_id`.
+- `capture="off"` remains the default and captures no argument, return, or
+  exception-message preview. Capture-off exceptions store only the
+  low-cardinality error type.
+- `capture="preview"` captures a bounded preview of call arguments and return
+  value using best-effort serialization, secret redaction, truncation, and
+  redaction-state logic. Instrumentation preview failures must never change the
+  decorated function's return value or mask its original exception.
+- Exceptions mark the span as `error`, record a low-cardinality error type plus
+  bounded preview only when `capture="preview"`, and re-raise the original
+  exception.
+- Decorated functions work in sync code, coroutine functions, and inside
+  already-active trace context.
+- The API supports explicit metadata: `name`, `kind`, `step`, `rank`,
+  `thread_id`, `rollout_id`, `attributes`, `metrics`, `links`, `capture`,
+  `trace_id`, and `parent_span_id`. Decorator-level static `span_id` is not
+  supported because repeated calls must create independent span identities.
+
+### API Design
+
+```python
+@run.trace_op(kind="reward", capture="preview", attributes={"phase": "eval"})
+def score_rollout(messages, answer):
+    return reward_model(messages, answer)
+
+@run.trace_op(name="policy.forward", kind="model", capture="off")
+def forward(obs):
+    return policy(obs)
+```
+
+The decorator factory lives on `Run` because it needs a concrete run ID and the
+run's configured delivery mode. The implementation delegates to a helper in
+`instantml.tracing` so the core tracing module owns argument-preview and
+exception semantics.
+
+### Data Flow
+
+```text
+decorated function call
+  -> build one TraceSpan with current context inheritance
+  -> start event emitted before user code
+  -> user code executes
+  -> finished/exception event emitted with bounded previews
+  -> existing trace batcher handles sync, async queue, spool, or offline replay
+```
+
+No new server endpoint, ClickHouse table, UI contract, or OpenAPI type is
+required.
+
+### Edge Cases
+
+- Non-JSON-serializable arguments under `capture="preview"` stringify through a
+  best-effort preview path rather than failing the training loop.
+- Secret-looking keys and token-like strings are redacted from previews,
+  attributes, metrics, links, labels, and error previews before local
+  SQLite/spool persistence or network submission.
+- Oversized argument/return previews are truncated to the existing trace preview
+  limit and marked `redaction_state="truncated"`.
+- Invalid static decorator metadata, such as a malformed `kind`, invalid trace
+  ID, or oversized attributes, raises before entering user code. That mirrors
+  existing foreground SDK validation; async upload mode only warn-drops payloads
+  that become invalid while building emitted events.
+- Return values are passed through unchanged.
+- Re-entrant calls create independent child spans and independent event IDs.
+- Explicit `parent_span_id` or `trace_id` overrides current context only when
+  the caller passes them, matching `run.start_span`.
+- The decorator never auto-flushes individual calls by default, including root
+  calls. Users can still call `run.flush()` or `run.finish()` to drain events.
+
+### Tests
+
+- SDK unit test: sync decorated function emits started/finished events, returns
+  the original value, preserves function metadata, and captures bounded argument
+  and output previews only when requested.
+- SDK unit test: decorated function inside `run.trace(...)` becomes a child span
+  of the active trace.
+- SDK unit test: exceptions create an `exception` event with status `error` and
+  re-raise the original exception without emitting a false success event or
+  leaking exception text under `capture="off"`.
+- SDK unit test: coroutine functions are traced across `await`, including
+  return previews and awaited exceptions.
+- SDK unit test: cross-run context is ignored/rejected, explicit trace IDs do
+  not inherit mismatched parents, and decorator calls do not accept static
+  `span_id`.
+- SDK unit test: metadata round-trips, secret redaction, non-finite/cyclic
+  preview values, re-entrant calls, sync/async queue, process spool, and offline
+  replay all use the existing trace batch path and stable idempotency keys.
+- Real end-to-end smoke: a short Python script against the Rust/ClickHouse
+  service uses `@run.trace_op` on a realistic RL/evaluator flow, then API and
+  Chrome/Computer-Use UI validation verify the decorator trace is visible in Run
+  Detail and the full Traces workspace.
+
+### Performance Notes
+
+- With `capture="off"`, the decorator adds only span ID generation, two small
+  event records, contextvar access, and existing queue/batch work around the
+  user function.
+- Argument and return serialization happens only for explicit
+  `capture="preview"`.
+- No additional browser reads or trace list fan-out are introduced.
+
+### Out of Scope
+
+- Auto-instrumentation for OpenAI, Anthropic, LangChain, LlamaIndex, HTTP
+  clients, database clients, or arbitrary frameworks.
+- Global decorators detached from a `Run` instance.
+- Provider semantic mapping beyond existing user-supplied attributes and
+  metrics.
+- Trace-to-dataset generation.
 
 ## Review Notes
 
@@ -1668,8 +1805,9 @@ Fresh reviewer 2: SDK/privacy
   `span.log_metric()` were ambiguous.
 - Risk: Users could misunderstand whether decorators create traces or spans,
   whether args/returns are captured, or whether trace metrics are run metrics.
-- Decision: Decorators are deferred from the first slice, `capture="full"` is
-  unsupported in v1, and `span.log_metric()` is explicitly trace-local.
+- Decision: Decorators were deferred from the first slice until the accepted
+  SDK decorator/privacy follow-up; `capture="full"` remains unsupported in v1,
+  and `span.log_metric()` is explicitly trace-local.
 
 Fresh reviewer 3: frontend/product/performance
 
@@ -1707,6 +1845,39 @@ Fresh reviewer 3: frontend/product/performance
 - Decision: Added ARIA tree/nested-list semantics, roving tabindex, keyboard
   behavior, visible focus, hover focus equivalents, and timeline table/text
   fallback requirements.
+
+Decorator follow-up fresh reviews:
+
+- Finding: Cross-run trace context could bleed into decorated spans.
+- Risk: A function decorated on one `Run` and called inside another run's active
+  trace could persist mismatched `trace_id` and `parent_span_id` values.
+- Decision: `TraceSpan` now inherits only same-run context, explicit `trace_id`
+  suppresses implicit parent inheritance, and `attach_trace_context` rejects
+  carriers for a different run.
+
+- Finding: Decorators make accidental capture much easier, while the SDK's
+  preview/redaction path was incomplete.
+- Risk: Arguments, return values, exception messages, attributes, links, or
+  local queue/spool payloads could retain secrets.
+- Decision: `capture="off"` stores no argument, return, or exception-message
+  preview; `capture="preview"` uses best-effort serialization, redacts
+  secret-looking keys and token-like strings before persistence, and truncates
+  by bytes before submission.
+
+- Finding: A static decorator `span_id` conflicts with one independent span per
+  call, and root decorator calls would flush once per function invocation.
+- Risk: Repeated calls could collapse into one canonical span or overload hot
+  RL loops with one request/spool file per decorated call.
+- Decision: `trace_op` does not accept static `span_id`, supports sync and
+  coroutine functions explicitly, and never auto-flushes individual decorated
+  calls by default.
+
+- Finding: Existing real smokes did not prove the decorator path.
+- Risk: Direct API-seeded traces could pass while the Python SDK decorator was
+  broken.
+- Decision: The Rust SDK smoke now uses `@run.trace_op` in an RL/reward-style
+  trace and reads the resulting decorator span back through Rust/ClickHouse
+  trace APIs.
 
 ## Coverage Exceptions
 
@@ -1746,7 +1917,7 @@ section before implementation is accepted.
   product/API/schema/SDK/web/store docs. Focused Rust, SDK, and frontend tests
   cover trace validation/cursors, usage behavior, OpenAPI route presence, SDK
   durability paths, and Traces tab wiring.
-- Still deferred after this first slice: decorator/auto-instrumentation APIs,
+- Still deferred after this first slice: provider auto-instrumentation APIs,
   OTLP/import/export and Castform-style trace-to-dataset workflows, optimized
   incremental trace summary maintenance, large-trace timeline scrubber, and
   broad cross-browser/mobile visual coverage for trace-heavy workspaces.
@@ -1784,10 +1955,34 @@ section before implementation is accepted.
   seeds a native trace, asserts `GET /api/traces?run_id=...` returns the trace,
   opens Run Detail's local Traces section, and follows the exact deep-link into
   the full Traces workspace.
-- Remaining after this follow-up: decorator/auto-instrumentation APIs,
+- Remaining after this follow-up: provider auto-instrumentation APIs,
   OTLP/import/export and Castform-style trace-to-dataset workflows, optimized
   incremental trace summary maintenance, large-trace timeline scrubber, and
   broader cross-browser/mobile visual coverage for trace-heavy workspaces.
+
+2026-07-03 SDK decorator/privacy follow-up:
+
+- Added `Run.trace_op(...)` for sync and coroutine functions. Decorated calls
+  create independent spans, preserve return values and wrapper metadata, inherit
+  only same-run active trace context, and batch until `flush()` or `finish()`
+  instead of flushing once per function invocation.
+- Hardened SDK trace privacy before decorator capture: preview serialization is
+  best effort, secret-looking keys and token-like strings are redacted before
+  local queue/spool/offline persistence, and `capture="off"` records exception
+  type without persisting exception-message previews.
+- Rejected cross-run trace carriers in `run.attach_trace_context(...)`, stopped
+  implicit parent inheritance when callers pass an explicit `trace_id`, and kept
+  decorator-level static `span_id` unsupported so repeated calls do not collapse
+  into one canonical span.
+- Extended SDK tests for decorator metadata, privacy, same-run/cross-run
+  context behavior, async functions, explicit trace IDs, async queue admission,
+  process spool, offline replay, and stable trace idempotency keys.
+- Extended the Rust SDK smoke so a real Python `@run.trace_op` reward function
+  writes to a disposable Rust/ClickHouse backend and is read back through
+  `GET /api/traces` plus run-scoped trace detail.
+- Required validation before closing this follow-up: run the real local
+  Rust/ClickHouse backend, exercise a realistic decorator-backed trace in the
+  dashboard, and verify it with Chrome/Computer Use.
 
 ## Decision
 

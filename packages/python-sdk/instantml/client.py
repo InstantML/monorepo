@@ -95,7 +95,7 @@ from .source import (
     _normalize_source_tracking,
     _source_metadata,
 )
-from .tracing import TraceSpan, attach_trace_context
+from .tracing import TraceSpan, attach_trace_context, trace_op_decorator
 from .validation import (
     CONSOLE_LOG_STREAMS,
     MAX_CONSOLE_LOG_LINES_PER_BATCH,
@@ -2965,6 +2965,38 @@ class Run:
     def attach_trace_context(self, context: dict[str, Any]):
         return attach_trace_context(self, context)
 
+    def trace_op(
+        self,
+        *,
+        name: str | None = None,
+        kind: str = "custom",
+        step: int | float | None = None,
+        rank: int | None = None,
+        thread_id: str | None = None,
+        rollout_id: str | None = None,
+        attributes: dict[str, Any] | None = None,
+        metrics: dict[str, Any] | None = None,
+        links: Any = None,
+        capture: str = "off",
+        trace_id: str | None = None,
+        parent_span_id: str | None = None,
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        return trace_op_decorator(
+            self,
+            name=name,
+            kind=kind,
+            step=step,
+            rank=rank,
+            thread_id=thread_id,
+            rollout_id=rollout_id,
+            attributes=attributes,
+            metrics=metrics,
+            links=links,
+            capture=capture,
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
+        )
+
     def _record_file(
         self,
         key: str,
@@ -3262,6 +3294,8 @@ class Run:
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         try:
+            if idempotency_key is None:
+                return self.client._request(method, path, body)
             return self.client._request(method, path, body, idempotency_key=idempotency_key)
         except InstantMLError:
             if not self.client.offline_dir:

@@ -136,18 +136,34 @@ agent turns, and data-generation pipelines next to the metrics and artifacts for
 the same run.
 
 ```python
-with run.trace("eval-example", kind="eval", step=42) as trace:
+with run.trace("eval-example", kind="evaluator", step=42) as trace:
     with trace.span("retrieve-context", kind="tool", capture="off"):
         docs = ["doc-1", "doc-2"]
     with trace.span("policy-response", kind="model", inputs={"docs": docs}, capture="preview") as span:
         output = {"answer": "ok"}
         span.set_output(output)
+
+@run.trace_op(kind="reward", capture="preview", attributes={"phase": "eval"})
+def score_answer(prompt, answer):
+    return {"reward": 1.0}
+
+score_answer("question", "answer")
 ```
 
-`capture="off"` is the default and stores no input/output preview. Opt into
-`capture="preview"` only for bounded debugging previews; the SDK truncates
-serialized input/output/error previews before enqueueing them. Attributes,
-metrics, and links must be JSON-shaped and are validated before submission.
+`capture="off"` is the default and stores no input/output preview or exception
+message preview. Opt into `capture="preview"` only for bounded debugging
+previews; the SDK redacts common secret keys and token-like strings, then
+truncates serialized input/output/error previews before enqueueing them.
+Attributes, metrics, links, labels, and previews are redacted before local
+SQLite queue writes, process-spool files, offline replay files, or network
+submission. Local queue and spool files are still plaintext after redaction, so
+do not opt into preview capture for raw private data.
+
+`run.trace_op(...)` decorates sync or async functions as spans. A decorated call
+nests under the active same-run trace/span when one exists; otherwise it creates
+a run-linked root span and batches normally until `flush()` or `finish()`.
+Decorator-level static `span_id` is intentionally unsupported so repeated calls
+remain independent spans.
 
 Trace events are batched to
 `POST /api/runs/:run_id/traces/events` with a stable `Idempotency-Key`.
@@ -158,8 +174,8 @@ the original idempotency key. `trace.context()`, `run.attach_trace_context(...)`
 and `trace.wrap(fn)` provide a small JSON-serializable carrier for worker,
 thread, or callback propagation.
 
-Decorators, auto-instrumentation, OTLP import, trace-to-dataset export, and
-full argument/return capture are intentionally deferred; keep those behind a new
+Auto-instrumentation, OTLP import/export, trace-to-dataset export, and full
+argument/return capture are intentionally deferred; keep those behind a new
 design review before expanding the privacy surface.
 
 ## CLI: Login, logout, whoami
@@ -529,9 +545,10 @@ Expected tests:
 - Tests for buffering/retry behavior if implemented.
 - Tests for process spool and uploader behavior.
 - Tests for async SQLite queue enqueue, retry/failure state, waits, recovery CLI, and no foreground HTTP on queued metric/log hot paths.
-- Tests for trace context managers, manual spans, preview/off capture,
-  idempotent trace batches, offline replay, process spool replay, and async
-  queue admission.
+- Tests for trace context managers, `trace_op` decorators, manual spans,
+  preview/off capture, redaction, same-run context inheritance, idempotent
+  trace batches, offline replay, process spool replay, and async queue
+  admission.
 - Integration tests against a local API test server when applicable.
 
 ## Setup
@@ -851,5 +868,5 @@ record kind is `report` and the schema is documented under
 - Add true offline run creation only after a design doc; do not imply it in README examples until implemented.
 - Keep API-key auth, idempotency keys, metric step validation, and artifact upload behavior compatible with the primary Rust/ClickHouse backend and deprecated Node backend.
 - Keep tracing privacy explicit: `capture="off"` remains the default, preview
-  capture stays bounded, and decorators/auto-instrumentation need a fresh design
+  capture stays bounded/redacted, and auto-instrumentation needs a fresh design
   review before shipping.

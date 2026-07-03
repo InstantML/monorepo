@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import inspect
 import secrets
 import threading
 import time
@@ -22,6 +23,7 @@ from .trace_payload import (
     normalize_span_id,
     normalize_trace_id,
     preview_payload,
+    preview_text,
     utc_timestamp,
 )
 
@@ -95,10 +97,13 @@ class TraceSpan:
         root: bool = False,
     ) -> None:
         current = _CURRENT_TRACE_CONTEXT.get()
-        inherited_trace_id = None if root else getattr(current, "trace_id", None)
-        inherited_parent_span_id = None if root else getattr(current, "span_id", None)
-        inherited_thread_id = None if root else getattr(current, "thread_id", None)
-        inherited_rank = None if root else getattr(current, "rank", None)
+        if root or getattr(current, "run_id", None) != getattr(run, "run_id", None):
+            current = None
+        explicit_trace_id = trace_id is not None
+        inherited_trace_id = getattr(current, "trace_id", None)
+        inherited_parent_span_id = None if explicit_trace_id else getattr(current, "span_id", None)
+        inherited_thread_id = getattr(current, "thread_id", None)
+        inherited_rank = getattr(current, "rank", None)
         self.run = run
         self.name = name
         self.kind = normalize_kind(kind)
@@ -122,6 +127,8 @@ class TraceSpan:
         self._lock = threading.RLock()
         self._context_token: contextvars.Token[TraceContext | None] | None = None
         self._output: Any = None
+        self._input_preview = ""
+        self._input_truncated = False
 
     def __enter__(self) -> "TraceSpan":
         self.start()
@@ -148,6 +155,8 @@ class TraceSpan:
             self._started_monotonic = time.monotonic()
             try:
                 input_preview, input_truncated = preview_payload(self.inputs, self.capture, "inputs")
+                self._input_preview = input_preview
+                self._input_truncated = input_truncated
                 self._emit(
                     event_kind="started",
                     status="running",
@@ -181,10 +190,11 @@ class TraceSpan:
             final_status = status
             error_type = None
             error_preview = ""
+            error_truncated = False
             if error is not None or status == "error":
                 event_kind = "exception"
                 final_status = "error"
-                error_type, error_preview = _error_preview(error)
+                error_type, error_preview, error_truncated = _error_preview(error, self.capture)
             elif status in {"cancelled", "interrupted"}:
                 event_kind = "interrupted"
             try:
@@ -194,10 +204,11 @@ class TraceSpan:
                     status=final_status,
                     ended_at=ended_at,
                     duration_ms=duration_ms,
+                    input_preview=self._input_preview,
                     output_preview=output_preview,
                     error_type=error_type,
                     error_preview=error_preview,
-                    truncated=output_truncated,
+                    truncated=self._input_truncated or output_truncated or error_truncated,
                 )
             except (TypeError, ValueError) as exc:
                 if not self._drop_invalid_payload(exc):
@@ -275,7 +286,7 @@ class TraceSpan:
         status: str,
         ended_at: str | None = None,
         duration_ms: float | None = None,
-        input_preview: str = "",
+        input_preview: str | None = None,
         output_preview: str = "",
         error_type: str | None = None,
         error_preview: str = "",
@@ -284,7 +295,9 @@ class TraceSpan:
         truncated: bool = False,
     ) -> None:
         self._sequence += 1
-        content_available = bool(input_preview or output_preview or error_preview)
+        effective_input_preview = self._input_preview if input_preview is None else input_preview
+        effective_truncated = truncated or (input_preview is None and self._input_truncated)
+        content_available = bool(effective_input_preview or output_preview or error_preview)
         try:
             event = build_trace_event(
                 trace_id=self.trace_id,
@@ -303,7 +316,7 @@ class TraceSpan:
                 started_at=self._started_at or utc_timestamp(),
                 ended_at=ended_at,
                 duration_ms=duration_ms,
-                input_preview=input_preview,
+                input_preview=effective_input_preview,
                 output_preview=output_preview,
                 error_type=error_type,
                 error_preview=error_preview,
@@ -311,8 +324,8 @@ class TraceSpan:
                 metrics=metrics if metrics is not None else self.metrics,
                 links=self.links,
                 content_policy="preview" if self.capture == "preview" else "off",
-                redaction_state=_redaction_state(self.capture, content_available, truncated),
-                truncated=truncated,
+                redaction_state=_redaction_state(self.capture, content_available, effective_truncated),
+                truncated=effective_truncated,
             )
         except (TypeError, ValueError) as exc:
             if self._drop_invalid_payload(exc):
@@ -346,6 +359,8 @@ def attach_trace_context(run: Any, carrier: dict[str, Any]) -> AttachedTraceCont
     thread_id = normalize_optional_label(carrier.get("thread_id"), "thread_id")
     rank = normalize_rank(carrier.get("rank"))
     run_id = str(carrier.get("run_id") or run.run_id)
+    if run_id != str(run.run_id):
+        raise ValueError("trace context run_id does not match this run")
     return AttachedTraceContext(
         TraceContext(
             run_id=run_id,
@@ -355,6 +370,118 @@ def attach_trace_context(run: Any, carrier: dict[str, Any]) -> AttachedTraceCont
             rank=rank,
         )
     )
+
+
+def trace_op_decorator(
+    run: Any,
+    *,
+    name: str | None = None,
+    kind: str = "custom",
+    step: int | float | None = None,
+    rank: int | None = None,
+    thread_id: str | None = None,
+    rollout_id: str | None = None,
+    attributes: dict[str, Any] | None = None,
+    metrics: dict[str, Any] | None = None,
+    links: Any = None,
+    capture: str = "off",
+    trace_id: str | None = None,
+    parent_span_id: str | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    capture_policy = normalize_capture(capture)
+
+    def decorate(fn: Callable[..., Any]) -> Callable[..., Any]:
+        if not callable(fn):
+            raise TypeError("trace_op can only decorate callable objects")
+        operation_name = name or getattr(fn, "__qualname__", None) or getattr(fn, "__name__", "operation")
+        try:
+            signature = inspect.signature(fn)
+        except (TypeError, ValueError):
+            signature = None
+
+        if inspect.iscoroutinefunction(fn):
+
+            @functools.wraps(fn)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                span = _decorator_span(run, operation_name, signature, args, kwargs)
+                token = _CURRENT_TRACE_CONTEXT.set(span._context())
+                try:
+                    result = await fn(*args, **kwargs)
+                except BaseException as exc:
+                    _finish_decorator_span(span, status="error", error=exc)
+                    raise
+                else:
+                    span.set_output(result)
+                    _finish_decorator_span(span, status="ok")
+                    return result
+                finally:
+                    _CURRENT_TRACE_CONTEXT.reset(token)
+
+            return async_wrapper
+
+        @functools.wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            span = _decorator_span(run, operation_name, signature, args, kwargs)
+            token = _CURRENT_TRACE_CONTEXT.set(span._context())
+            try:
+                result = fn(*args, **kwargs)
+            except BaseException as exc:
+                _finish_decorator_span(span, status="error", error=exc)
+                raise
+            else:
+                span.set_output(result)
+                _finish_decorator_span(span, status="ok")
+                return result
+            finally:
+                _CURRENT_TRACE_CONTEXT.reset(token)
+
+        return wrapper
+
+    def _decorator_span(
+        run: Any,
+        operation_name: str,
+        signature: inspect.Signature | None,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+    ) -> TraceSpan:
+        span = TraceSpan(
+            run,
+            operation_name,
+            kind=kind,
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
+            step=step,
+            rank=rank,
+            thread_id=thread_id,
+            rollout_id=rollout_id,
+            attributes=attributes,
+            metrics=metrics,
+            links=links,
+            capture=capture_policy,
+            inputs=_decorator_inputs(signature, args, kwargs) if capture_policy == "preview" else None,
+        )
+        span.start()
+        return span
+
+    return decorate
+
+
+def _decorator_inputs(
+    signature: inspect.Signature | None,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    if signature is not None:
+        try:
+            bound = signature.bind_partial(*args, **kwargs)
+            return {key: value for key, value in bound.arguments.items() if key not in {"self", "cls"}}
+        except TypeError:
+            pass
+    return {"args": args, "kwargs": kwargs}
+
+
+def _finish_decorator_span(span: TraceSpan, *, status: str, error: BaseException | str | None = None) -> None:
+    span.finish(status=status, error=error, flush=False)
 
 
 def _redaction_state(capture: str, content_available: bool, truncated: bool) -> str:
@@ -367,10 +494,12 @@ def _redaction_state(capture: str, content_available: bool, truncated: bool) -> 
     return "redacted"
 
 
-def _error_preview(error: BaseException | str | None) -> tuple[str | None, str]:
+def _error_preview(error: BaseException | str | None, capture: str) -> tuple[str | None, str, bool]:
     if error is None:
-        return None, ""
+        return None, "", False
     if isinstance(error, BaseException):
         lines = traceback.format_exception_only(type(error), error)
-        return type(error).__name__, "".join(lines).strip()
-    return "Error", str(error)
+        preview, truncated = preview_text("".join(lines).strip(), capture)
+        return type(error).__name__, preview, truncated
+    preview, truncated = preview_text(str(error), capture)
+    return "Error", preview, truncated
