@@ -3,38 +3,40 @@ title: "Attributes and objects API"
 description: "Write typed attributes, create rich objects, list object envelopes, and page table rows."
 ---
 
-# Attributes and objects API
+Store typed non-scalar context as attributes, and log first-class table, media,
+histogram, and evaluation payloads as rich objects for Run Detail and
+artifact-style inspection.
 
-Attributes store typed non-scalar context. Rich objects store first-class table,
-media, histogram, and evaluation payloads for Run Detail and artifact-style
-inspection.
+Authenticate with an `Authorization: Bearer instantml_...` API key or a browser
+session. Writes on this page need the `sdk:ingest` scope; reads need
+`export:read`.
 
 ## Write attributes
 
 Batch form:
 
-```http
-POST /api/runs/{run_id}/attributes
-Authorization: Bearer instantml_...
-Content-Type: application/json
-
-{
-  "attributes": [
-    {
-      "path": "config/optimizer",
-      "type": "string_series",
-      "step": 1,
-      "timestamp": "2026-05-16T00:00:00Z",
-      "value": "adam",
-      "summary": {},
-      "artifact_id": null
-    }
-  ]
-}
+```bash
+curl -X POST https://api.instantml.ai/api/runs/{run_id}/attributes \
+  -H "Authorization: Bearer instantml_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "attributes": [
+      {
+        "path": "config/optimizer",
+        "type": "string_series",
+        "step": 1,
+        "timestamp": "2026-05-16T00:00:00Z",
+        "value": "adam",
+        "summary": {},
+        "artifact_id": null
+      }
+    ]
+  }'
 ```
 
-Single-attribute form can put `path`, `type`, `step`, `timestamp`, `value`,
-and `summary` at the top level.
+Requires `sdk:ingest` or a writable browser session. Single-attribute form can
+put `path`, `type`, `step`, `timestamp`, `value`, and `summary` at the top
+level.
 
 Use rich object endpoints for tables, media, logged histograms, and typed
 evaluation bundles.
@@ -46,7 +48,7 @@ GET /api/runs/{run_id}/attributes?type=string_series&path_prefix=config/&limit=1
 Authorization: Bearer instantml_...
 ```
 
-Filters:
+Requires `export:read`. Filters:
 
 | Parameter | Meaning |
 | --- | --- |
@@ -76,7 +78,7 @@ Content-Type: application/json
 }
 ```
 
-Supported kinds:
+Requires `sdk:ingest` or a writable browser session. Supported kinds:
 
 - `table`
 - `image`
@@ -98,8 +100,9 @@ GET /api/runs/{run_id}/objects?kind=table&limit=100&offset=0
 Authorization: Bearer instantml_...
 ```
 
-The response includes object envelopes with inline values for non-table rich
-objects. Table row contents are paged separately through the rows endpoint.
+Requires `export:read`. The response includes object envelopes with inline
+values for non-table rich objects. Table row contents are paged separately
+through the rows endpoint.
 
 Use `kind=histogram&key=...&limit=100` to read selected-run logged histogram
 frames for Runs workspace timeline panels. The current API reads one run and
@@ -113,7 +116,7 @@ GET /api/objects/{object_id}/rows?limit=100&offset=0
 Authorization: Bearer instantml_...
 ```
 
-Response:
+Requires `export:read`. Response:
 
 ```json
 {
@@ -131,3 +134,10 @@ Response:
 ```
 
 Table row reads default to 100 rows and cap at 1,000 rows.
+
+## Next steps
+
+- [Log rich objects from the SDK](/sdk/rich-objects)
+- [Attach artifacts to runs](/api/artifacts)
+- [Inspect objects in Run Detail](/dashboard/run-detail)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)

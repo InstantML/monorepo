@@ -3,31 +3,20 @@ title: "Tables, histograms, evals, and media"
 description: "Log rich objects for table previews, histogram timelines, typed evaluation bundles, and media evidence."
 ---
 
-# Tables, histograms, evals, and media
+Log rich objects when a run needs structured evidence — prediction tables, score distributions, evaluation bundles, and media — alongside its scalar metrics.
 
-Scalar metrics explain trends. Rich objects explain evidence.
+Use scalar metrics for one numeric value per step. Use rich objects when the dashboard needs more:
 
-Use scalar metrics for one numeric value per step. Use rich objects when the
-dashboard needs structured evidence:
+- `run.log_table_object(...)` for prediction samples, eval rows, and compact per-example diagnostics in Run Detail.
+- `run.log_objects({"key": im.Histogram.from_values(...)})` for score, confidence, activation, gradient, reward, weight, or latency distributions.
+- `run.log_classification_eval(...)` for binary PR/ROC curves, a confusion matrix, per-class metrics, and optional prediction rows.
+- `im.Image`, `im.Video`, and `im.Audio` for rollout evidence, generated examples, and audio samples.
 
-- `run.log_table_object(...)` for prediction samples, eval rows, and compact
-  per-example diagnostics in Run Detail.
-- `run.log_objects({"key": im.Histogram.from_values(...)})` for score,
-  confidence, activation, gradient, reward, weight, or latency distributions in
-  Run Detail and selected-run logged-histogram timelines.
-- `run.log_classification_eval(...)` for binary PR/ROC curves, confusion
-  matrix, per-class metrics, and optional prediction rows in Run Detail.
-- `im.Image`, `im.Video`, and `im.Audio` for rollout evidence, generated
-  examples, custom diagnostics, and audio samples.
+For Runs workspace summary panels, keep logging scalar metrics with `run.log_metrics(...)`. For selected-run histogram timelines, log histogram objects under the same key at multiple steps.
 
-For Runs workspace summary panels, keep logging scalar metrics with
-`run.log_metrics(...)`. For selected-run histogram timelines, log histogram
-objects under the same key at multiple steps.
+## Log tables
 
-## Tables
-
-Use tables for bounded previewable rows such as predictions, eval samples, or
-per-example metrics.
+Use tables for bounded previewable rows such as predictions, eval samples, or per-example metrics.
 
 ```python
 import instantml as im
@@ -43,12 +32,11 @@ run.log_table_object(
 )
 ```
 
-The dashboard fetches table rows through a separate bounded endpoint.
+The dashboard fetches table rows through a separate bounded endpoint, so large tables do not slow down the run page.
 
-## Histograms
+## Log histograms
 
-Use histograms for distributions such as logits, rewards, gradient norms, or
-latency samples.
+Use histograms for distributions such as logits, rewards, gradient norms, or latency samples.
 
 ```python
 confidence_bins = [index / 8 for index in range(9)]
@@ -64,25 +52,17 @@ run.log_objects(
 )
 ```
 
-Histograms appear as previews in Run Detail and artifact/object surfaces. They
-are rich evidence objects, not the same surface as Runs workspace value
-histogram panels over scalar metric summaries.
+Histograms appear as previews in Run Detail and artifact/object surfaces. They are rich evidence objects — a different surface from Runs workspace value-histogram panels, which aggregate scalar metric summaries across runs.
 
-Runs workspace logged-histogram timeline panels can also read a selected run's
-histogram objects by explicit key. When frames share bin edges, the panel shows
-a heatmap over steps; when bins differ, it shows a selected-frame histogram so
-non-comparable frames are not implied to be comparable.
+Runs workspace histogram timeline panels can also read a selected run's histogram objects by explicit key. When frames share bin edges, the panel shows a heatmap over steps. When bins differ, it shows a single selected frame instead, so non-comparable frames are not implied to be comparable.
 
-For the cleanest timeline heatmap, keep bin edges stable for a given object
-key. If you need adaptive bins, the panel still works, but it falls back to a
-single selected frame because different bin edges are not directly comparable.
+<Tip>
+Keep bin edges stable for a given object key to get a clean timeline heatmap. Adaptive bins still work, but the panel falls back to one frame at a time.
+</Tip>
 
-## Classification evaluations
+## Log classification evaluations
 
-Use `log_classification_eval(...)` for compact binary classification eval
-bundles. The SDK stores typed rich-object data rather than screenshots, so Run
-Detail can render PR/ROC curves, a confusion matrix, per-class metrics, and an
-optional prediction preview.
+Use `log_classification_eval(...)` for compact binary classification eval bundles. The SDK stores typed rich-object data rather than screenshots, so Run Detail can render PR/ROC curves, a confusion matrix, per-class metrics, and an optional prediction preview.
 
 ```python
 run.log_classification_eval(
@@ -98,16 +78,11 @@ run.log_classification_eval(
 )
 ```
 
-The MVP is binary-only. `y_score` is the positive-class score, `y_pred` is
-optional and defaults to `score >= threshold`, confusion matrix rows are true
-classes, and columns are predicted classes in `class_names` order. Prediction
-rows are optional and must include at most 100 preview rows.
+The current version is binary-only. `y_score` is the positive-class score, and `y_pred` is optional — it defaults to `score >= threshold`. Confusion matrix rows are true classes and columns are predicted classes, both in `class_names` order. Prediction rows are optional and capped at 100 preview rows.
 
-## Media objects
+## Log media objects
 
-Use media objects when the dashboard should treat a stored image, audio, or
-video as previewable run evidence. Passing a local media path uploads the file
-bytes and creates the linked rich object for the same run.
+Use media objects when the dashboard should treat a stored image, audio, or video as previewable run evidence. Passing a local media path uploads the file bytes and creates the linked rich object for the same run.
 
 ```python
 run.log_objects(
@@ -121,8 +96,7 @@ run.log_objects(
 )
 ```
 
-For videos and audio, log the rich object directly when you want Run Detail and
-artifact surfaces to render a preview:
+For videos and audio, log the rich object directly when you want Run Detail and artifact surfaces to render a preview:
 
 ```python
 run.log_objects(
@@ -131,31 +105,23 @@ run.log_objects(
 )
 ```
 
-Use `upload_file(...)` separately only when you also want a standalone raw file
-artifact in addition to the rich media object.
+Use `upload_file(...)` separately only when you also want a standalone raw file artifact in addition to the rich media object.
 
-Local image, audio, and video objects upload artifact bytes and then create the
-linked rich object, so the API key needs both `artifacts:write` and
-`sdk:ingest`. Those helpers are not supported in `upload_mode="spool"` because
-the object link needs the artifact upload response; use `upload_mode="sync"` or
-the default async mode for those events.
+Local image, audio, and video objects upload artifact bytes and then create the linked rich object, so the API key needs both `artifacts:write` and `sdk:ingest`. These helpers are not supported in `upload_mode="spool"` because the object link needs the artifact upload response; use `upload_mode="sync"` or the default async mode for those events.
 
-External references such as object-store URIs remain metadata artifacts. They
-are useful for provenance, but they are not previewable unless bytes are stored
-through InstantML.
+External references such as object-store URIs remain metadata artifacts. They are useful for provenance, but they are not previewable unless bytes are stored through InstantML.
 
-## Text
+## Log text
+
+Use text values for short generated summaries, explanations, or compact debug output.
 
 ```python
 run.log_text({"notes/eval": "Policy stabilized after the reward schedule change."}, step=10)
 ```
 
-Text values are useful for short generated summaries, explanations, or compact
-debug output.
+## Mix value types in one call
 
-## Mixed `log(...)` payloads
-
-`run.log(...)` classifies values before sending requests:
+`run.log(...)` classifies values by type before sending requests:
 
 ```python
 run.log(
@@ -167,6 +133,11 @@ run.log(
 )
 ```
 
-Mixed payloads are deterministic but not atomic across routes. Metrics are sent
-first, then text, objects, files, and media. If a later request fails, earlier
-requests may already be stored.
+Mixed payloads are deterministic but not atomic across routes. Metrics are sent first, then text, then objects, then files — media values travel inside the object and file requests rather than as a separate batch. If a later request fails, earlier requests may already be stored.
+
+## Next steps
+
+- [Log artifacts and checkpoints](/sdk/artifacts-checkpoints)
+- [Log metrics and steps](/sdk/metrics-steps)
+- [Explore run evidence in Run Detail](/dashboard/run-detail)
+- [Query runs, metrics, and objects](/sdk/querying-data)

@@ -3,15 +3,11 @@ title: "Customer-owned GCP ClickHouse"
 description: "Configure Premium BYOC storage with self-hosted GCP ClickHouse and understand what InstantML stores where."
 ---
 
-# Customer-owned GCP ClickHouse
+Set up Premium customer-owned ClickHouse — also called BYOC ("bring your own cloud") — so tenant product data lives in your self-hosted ClickHouse database on Google Cloud.
 
-Premium customer-owned ClickHouse — also called BYOC ("bring your own cloud") —
-stores tenant product data in a customer's self-hosted ClickHouse database on
-Google Cloud. InstantML still owns identity,
-sessions, billing, API-key metadata, route metadata, and artifact bytes in its
-hosted control plane.
+With BYOC, InstantML still owns identity, sessions, billing, API-key metadata, route metadata, and artifact bytes in its hosted control plane.
 
-## What goes into customer ClickHouse
+## Know what goes into your ClickHouse
 
 - Projects.
 - Runs.
@@ -24,58 +20,41 @@ hosted control plane.
 - Import records.
 - Tenant operational records.
 
-## What stays in InstantML control storage
+## Know what stays with InstantML
 
 - Users and identities.
-- Organizations and memberships.
+- Workspaces (organizations) and memberships.
 - Browser sessions.
 - API keys and service-account metadata.
 - Billing and plan state.
 - Tenant route metadata.
-- Artifact byte storage in the private Cloudflare R2 artifact backend when
-  InstantML stores uploaded bytes.
+- Artifact byte storage in the private Cloudflare R2 artifact backend when InstantML stores uploaded bytes.
 
-Usage storage guardrails for BYOC count only artifact bytes stored by InstantML
-in Cloudflare R2. They do not count customer-owned ClickHouse database bytes.
+<Note>
+Usage storage guardrails for BYOC count only artifact bytes stored by InstantML in Cloudflare R2. They do not count customer-owned ClickHouse database bytes.
+</Note>
 
-## Recommended GCP setup
+## Set up ClickHouse on GCP
 
-1. Create or choose a read-write self-hosted ClickHouse deployment on Google
-   Cloud near the InstantML data-plane region. A dedicated Compute Engine VM or
-   managed instance group is the simplest first setup; use GKE only if your team
-   already operates Kubernetes for stateful services.
-2. Expose the ClickHouse HTTP interface over public HTTPS, usually through a
-   TLS-terminating proxy or load balancer in front of the ClickHouse host.
-3. Add every InstantML egress CIDR shown in onboarding to the GCP firewall,
-   load-balancer allowlist, or reverse-proxy allowlist. This is the
-   API/data-plane egress, not the browser IP.
-4. Create one dedicated database for the org, such as `instantml_acme`.
+1. Create or choose a read-write self-hosted ClickHouse deployment on Google Cloud near the InstantML data-plane region. A dedicated Compute Engine VM or managed instance group is the simplest first setup; use GKE only if your team already operates Kubernetes for stateful services.
+2. Expose the ClickHouse HTTP interface over public HTTPS, usually through a TLS-terminating proxy or load balancer in front of the ClickHouse host.
+3. Add every InstantML egress CIDR shown in onboarding to the GCP firewall, load-balancer allowlist, or reverse-proxy allowlist. This is the API/data-plane egress, not the browser IP.
+4. Create one dedicated database for the workspace, such as `instantml_acme`.
 5. Create one dedicated SQL user, such as `instantml_writer`.
 6. Grant schema migration, insert, and read permissions for initial setup.
-7. Paste the HTTPS endpoint origin, database, username, and password into
-   InstantML onboarding.
+7. Paste the HTTPS endpoint origin, database, username, and password into InstantML onboarding.
 8. Validate and save.
-9. Optionally revoke DDL privileges after validation. Future schema migrations
-   may require temporarily granting them again.
+9. Optionally revoke DDL privileges after validation. Future schema migrations may require temporarily granting them again.
 
-Recommended infrastructure settings:
+## Pick infrastructure settings
 
-- Region: choose the same Google Cloud region as the InstantML data plane shown
-  in onboarding or by your InstantML operator contact. Use the closest available
-  region if your training jobs are elsewhere, because writes flow SDK ->
-  InstantML API -> ClickHouse.
-- Compute and disk: start with a dedicated ClickHouse host, an SSD persistent
-  data disk, and enough free disk headroom for merges and backups. Keep data on
-  a persistent disk separate from the boot disk.
-- TLS: use a certificate from a public trusted CA and keep hostname verification
-  valid for the endpoint you paste into InstantML. Self-signed certificates are
-  only for local/operator tests.
-- Backups and monitoring: enable disk snapshots or ClickHouse backups, and alert
-  on disk usage, failed backups, CPU, memory, and ClickHouse query errors.
-- Install reference: ClickHouse's current install guide is
-  [clickhouse.com/docs/install](https://clickhouse.com/docs/install).
+- Region: choose the same Google Cloud region as the InstantML data plane shown in onboarding or by your InstantML operator contact. Use the closest available region if your training jobs are elsewhere, because writes flow SDK -> InstantML API -> ClickHouse.
+- Compute and disk: start with a dedicated ClickHouse host, an SSD persistent data disk, and enough free disk headroom for merges and backups. Keep data on a persistent disk separate from the boot disk.
+- TLS: use a certificate from a public trusted CA and keep hostname verification valid for the endpoint you paste into InstantML. Self-signed certificates are only for local/operator tests.
+- Backups and monitoring: enable disk snapshots or ClickHouse backups, and alert on disk usage, failed backups, CPU, memory, and ClickHouse query errors.
+- Install reference: ClickHouse's current install guide is [clickhouse.com/docs/install](https://clickhouse.com/docs/install).
 
-Recommended SQL:
+## Create the database and user
 
 ```sql
 CREATE DATABASE IF NOT EXISTS instantml_acme;
@@ -93,7 +72,7 @@ ON instantml_acme.*
 FROM instantml_writer;
 ```
 
-Endpoint format:
+Use this endpoint format:
 
 ```text
 https://clickhouse.acme.example.com:8443
@@ -101,7 +80,7 @@ https://clickhouse.acme.example.com:8443
 
 Do not include username, password, path, query string, or fragment in the URL.
 
-Example GCP firewall shape:
+## Open the firewall to InstantML egress
 
 ```bash
 gcloud compute firewall-rules create instantml-clickhouse-https \
@@ -111,26 +90,29 @@ gcloud compute firewall-rules create instantml-clickhouse-https \
   --source-ranges=<instantml-egress-cidr-1>,<instantml-egress-cidr-2>
 ```
 
+<Warning>
 Use the exact CIDRs from onboarding. Do not substitute your browser IP.
+</Warning>
 
-## Validation behavior
+## Validate the connection
 
-Validation runs from the data-plane service because that is the same service
-path that later serves SDK and dashboard product traffic. The org remains in a
-storage setup state until validation and save succeed.
+Validation runs from the data-plane service because that is the same service path that later serves SDK and dashboard product traffic. The workspace remains in a storage setup state until validation and save succeed.
 
-Product writes and SDK-key creation are blocked while storage is unconfigured.
-The dashboard should keep users in onboarding and show the required egress
-CIDRs and connection form.
+Product writes and SDK-key creation are blocked while storage is unconfigured. The dashboard keeps users in onboarding and shows the required egress CIDRs and connection form.
 
-## Current limitations
+## Plan around current limitations
 
 - BYOC is Premium-only.
-- The org must be empty before switching to BYOC.
+- The workspace must be empty before switching to BYOC.
 - Hosted mode requires a public HTTPS ClickHouse endpoint.
 - The database must already exist.
-- Initial validation applies the InstantML schema and needs DDL privileges.
-  Future schema upgrades may require temporarily re-granting DDL and
-  revalidating.
-- Runtime password storage should use the configured secret backend. Local
-  user-data password storage is for disposable smoke tests only.
+- Initial validation applies the InstantML schema and needs DDL privileges. Future schema upgrades may require temporarily re-granting DDL and revalidating.
+- Runtime password storage should use the configured secret backend. Local user-data password storage is for disposable smoke tests only.
+
+## Next steps
+
+- [Auth, billing, and storage](/guides/auth-billing-storage)
+- [Google Cloud ClickHouse architecture](/architecture/google-clickhouse)
+- [Storage model](/architecture/storage-model)
+- [Pricing, limits, and billing](/guides/pricing-limits-billing)
+- [Onboarding, team, and billing](/dashboard/onboarding-team-billing)

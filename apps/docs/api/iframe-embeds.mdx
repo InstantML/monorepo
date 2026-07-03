@@ -3,11 +3,8 @@ title: "Iframe run embeds"
 description: "Create short-lived read-only iframe charts for selected runs."
 ---
 
-# Iframe run embeds
-
-Iframe embeds let your backend place a focused, interactive InstantML run board
-inside an internal portal, notebook, wiki, or review page without loading the
-full dashboard.
+Place a focused, interactive InstantML run board inside an internal portal,
+notebook, wiki, or review page without loading the full dashboard.
 
 ![Embedded run charts inside a parent website](/images/product/embed-runs-iframe.png)
 
@@ -18,24 +15,23 @@ the embed bearer token.
 
 ## Create an embed session
 
-```http
-POST /api/embed/sessions
-Authorization: Bearer instantml_...
-Content-Type: application/json
-
-{
-  "run_ids": [
-    "4d14b2ea-7f49-4c7b-8d38-bb8437b5b029",
-    "767f8f0e-2d72-4ff8-b5be-01d06c93d265"
-  ],
-  "allowed_parent_origin": "https://portal.example.com",
-  "ttl_seconds": 900,
-  "options": {
-    "max_panels": 8,
-    "metric_point_limit": 500,
-    "theme": "system"
-  }
-}
+```bash
+curl -X POST https://api.instantml.ai/api/embed/sessions \
+  -H "Authorization: Bearer instantml_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "run_ids": [
+      "4d14b2ea-7f49-4c7b-8d38-bb8437b5b029",
+      "767f8f0e-2d72-4ff8-b5be-01d06c93d265"
+    ],
+    "allowed_parent_origin": "https://portal.example.com",
+    "ttl_seconds": 900,
+    "options": {
+      "max_panels": 8,
+      "metric_point_limit": 500,
+      "theme": "system"
+    }
+  }'
 ```
 
 The response includes:
@@ -53,8 +49,10 @@ The response includes:
 }
 ```
 
+<Warning>
 Treat both `iframe_src` and `embed_token` as bearer secrets. InstantML stores
 only a hash of the embed token and never returns the plaintext again.
+</Warning>
 
 ## Add the iframe
 
@@ -76,7 +74,7 @@ The embed page removes the fragment token from browser history before it makes
 API calls. Data requests use embed-only routes, omit browser credentials, and
 return bounded chart data only for the selected run IDs.
 
-## What renders
+## Know what renders
 
 The generated embed board reuses the Runs workspace's bounded chart projection.
 It can render:
@@ -93,7 +91,7 @@ chart exports are not available in iframes yet. Embeds are intentionally
 inspection-only: viewers can hover, zoom line charts, and refresh the data, but
 they cannot mutate dashboards or download plotted data from the iframe.
 
-## Limits and security
+## Respect limits and security rules
 
 - API key: must be an API key, not a browser session, and must include
   `export:read`.
@@ -111,7 +109,7 @@ they cannot mutate dashboards or download plotted data from the iframe.
   run-stop controls, artifact downloads, and plotted CSV/SVG exports are not
   available inside the iframe.
 
-## Failure states
+## Debug failure states
 
 Unknown sessions fail closed and cannot be framed. Known expired or disabled
 sessions can still frame only on the stored parent origin so viewers see a
@@ -125,3 +123,10 @@ If the iframe does not render, check:
 - The embed session has not expired.
 - The source API key still exists, is not revoked, and still has `export:read`.
 - Your backend did not place the token in a query string or server-side log.
+
+## Next steps
+
+- [Create and scope API keys](/dashboard/settings-api-keys)
+- [Share findings with reports](/api/reports)
+- [Query run summaries over HTTP](/api/projects-runs)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)

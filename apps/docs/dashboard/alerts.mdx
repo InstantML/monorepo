@@ -1,26 +1,35 @@
 ---
 title: "Run Health"
-description: "Use derived run-health signals for the current dashboard filters."
+description: "Scan derived health signals for the runs that match your current dashboard filters."
 ---
 
-# Run Health
+Check failed runs, active runs, and metric volume at a glance without leaving your current filter context.
 
-The Run Health tab summarizes run-health signals from the runs currently in
-scope. It is a read surface, not a persistent alert-rule builder.
+<Note>
+The nav rail labels this tab **Run Health** and it lives at the `/dashboard/alerts` route. It is a read surface, not a persistent alert-rule builder.
+</Note>
 
-## What appears
+## Read the health signals
+
+Run Health derives its rows from the runs currently in scope:
 
 - Failed-run signals.
 - Active-run signals.
 - Metric-point volume.
 - A best/latest value for the selected dashboard metric.
 
-## How to use it
+## Check health for a filter
 
 1. Choose the project, status filter, search query, and metric in the dashboard.
-2. Open Run Health.
-3. Refresh when you want to recompute the derived health rows from the current
-   filter state.
+2. Open **Run Health** in the nav rail.
+3. Refresh when you want to recompute the health rows from the current filter state.
 4. Jump back to Runs, Metrics, or Run Detail to inspect the underlying runs.
 
 If no derived signals match the current filters, the tab shows an empty state.
+
+## Next steps
+
+- [Runs workspace](/dashboard/runs-workspace)
+- [Metrics and charts](/dashboard/metrics-charts)
+- [Run Detail](/dashboard/run-detail)
+- [Compare runs](/dashboard/compare-runs)

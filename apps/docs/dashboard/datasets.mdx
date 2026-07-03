@@ -1,28 +1,35 @@
 ---
 title: "Datasets"
-description: "Inspect dataset and environment fields inferred from run configs."
+description: "Group runs by the dataset and environment fields inferred from their configs."
 ---
 
-# Datasets
+Use the Datasets tab to spot whether a comparison mixes runs trained on different data sources.
 
-The Datasets tab groups loaded runs by dataset-like or environment-like config
-fields. It helps you spot whether a comparison mixes different data sources.
+## Understand what the tab reads
 
-## What it reads
+Dataset rows are derived from the run summaries currently loaded in the dashboard. They are not a separate dataset registry.
 
-Dataset rows are derived from the run summaries currently loaded in the
-dashboard. They are not a separate dataset registry.
+The table checks these config and metadata keys in order and uses the first non-empty string as the group name:
 
-## What appears
+- `config.dataset`
+- `config.dataset_name`
+- `config.data`
+- `config.env`
+- `metadata.dataset`
+- `metadata.environment`
 
-- Dataset or environment name inferred from config.
-- Number of runs that reference it.
-- Seed values seen in those runs.
+## Read the dataset rows
+
+Each row shows:
+
+- The dataset or environment name inferred from config or metadata.
+- The number of runs that reference it.
+- The seed values seen in those runs.
 - The selected dashboard metric's best value for that group.
 
-## Good config keys
+## Name datasets consistently
 
-Put stable data identity into run config:
+Put stable data identity into run config so runs group cleanly:
 
 ```python
 import instantml as im
@@ -38,3 +45,10 @@ run = im.init(
 ```
 
 The tab is most useful when projects use consistent config names across runs.
+
+## Next steps
+
+- [Config, tags, and notes](/sdk/config-tags-notes)
+- [Runs workspace](/dashboard/runs-workspace)
+- [Compare runs](/dashboard/compare-runs)
+- [Run Detail](/dashboard/run-detail)

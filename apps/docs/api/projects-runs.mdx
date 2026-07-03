@@ -1,24 +1,27 @@
 ---
 title: "Projects and runs API"
-description: "Create projects, create runs, query run summaries, patch status, and compare selected runs."
+description: "Create projects, create runs, query run summaries, stop runs, and stream console logs."
 ---
 
-# Projects and runs API
+Create and query the core tracking objects — projects group runs inside an
+organization, and runs hold config, tags, notes, metadata, status, and summary
+values for metrics and artifacts.
 
-Projects group runs inside an organization. Runs hold config, tags, notes,
-metadata, status, and summary values for metrics and artifacts.
+Authenticate with an `Authorization: Bearer instantml_...` API key or a browser
+session. Read endpoints need the `export:read` scope, write endpoints need
+`sdk:ingest`, and stop endpoints need `runs:control`; per-endpoint notes below
+call out the exceptions.
 
 ## Create a project
 
-```http
-POST /projects
-Authorization: Bearer instantml_...
-Content-Type: application/json
-
-{
-  "name": "cartpole",
-  "description": "Optional project description"
-}
+```bash
+curl -X POST https://api.instantml.ai/projects \
+  -H "Authorization: Bearer instantml_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "cartpole",
+    "description": "Optional project description"
+  }'
 ```
 
 Requires `sdk:ingest` or a writable browser session.
@@ -33,7 +36,8 @@ GET /projects
 Authorization: Bearer instantml_...
 ```
 
-Requires tenant read access. Project-scoped keys only see their project.
+Requires `export:read` or a browser session. Project-scoped keys only see
+their project.
 
 ## Create a run
 
@@ -62,17 +66,24 @@ GET /runs?project=cartpole&status=finished&q=seed%2042&limit=100
 Authorization: Bearer instantml_...
 ```
 
-Filters:
+Requires `export:read` or a browser session. Filters:
 
 | Parameter | Meaning |
 | --- | --- |
 | `project` | Project name, omitted or `all` for all projects. |
 | `status` | `running`, `finished`, `failed`, omitted, or `all`. |
+| `display_status` | Derived display status: `running`, `stopping`, `stopped`, `finished`, or `failed`. |
 | `q` | Run search query over run name, project, tags, notes, config, metadata, status, and ID. Bare text is implicit `AND`; fields, uppercase booleans, quoted phrases, field/group exclusion with `-`, grouping, and explicit Rust `re:/.../` regex are supported. Literal negative terms such as `-1` remain text searches. |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, or `metric-best`. |
 | `metric_key` | Metric used by metric sorts. |
-| `limit` | Page size. |
+| `limit` | Page size, default 100, max 1,000. |
 | `offset` | Offset pagination. |
+
+`display_status` folds stop-request state into the stored status: a running run
+with a pending or acknowledged stop request shows as `stopping`, and a finished
+or failed run whose stop request completed shows as `stopped`. The same
+`display_status` filter also works on `GET /api/overview` and
+`GET /api/runs/summary`.
 
 Use `/api/runs/summary` for dashboard-shaped pages with metric summaries.
 
@@ -115,8 +126,9 @@ Content-Type: application/json
 }
 ```
 
-At least one field is required. Status must be `running`, `finished`, or
-`failed`. Empty notes remove the stored note.
+Requires `sdk:ingest` or a writable browser session. At least one field is
+required. Status must be `running`, `finished`, or `failed`. Empty notes remove
+the stored note.
 
 ## Fork a run from a checkpoint
 
@@ -130,15 +142,19 @@ Idempotency-Key: instantml-fork-...
   "checkpoint_artifact_id": "00000000-0000-0000-0000-000000000000",
   "step": 1000,
   "inherit_config": true,
+  "config_overrides": { "learning_rate": 0.0001 },
   "name": "retry-from-step-1000",
   "tags": ["retry", "checkpoint"],
-  "notes": "Retry from the stable checkpoint."
+  "notes": "Retry from the stable checkpoint.",
+  "metadata": { "sweep": "lr-retry" }
 }
 ```
 
 Forking creates a linked child run record in the same project. It does not
-start training, copy metrics, or copy artifacts. Use a stable idempotency key
-for retries; the Python SDK derives one automatically in `Api.fork_run(...)`.
+start training, copy metrics, or copy artifacts. `config_overrides` merges on
+top of the inherited config, and `metadata` sets the child run's metadata. Use
+a stable idempotency key for retries; the Python SDK derives one automatically
+in `Api.fork_run(...)`.
 
 The caller needs `export:read` on the source run and `sdk:ingest` to create the
 child run.
@@ -154,7 +170,7 @@ Returns a bounded direct lineage graph for the selected run: the run, optional
 parent, direct children, optional checkpoint artifact, total child count, and
 whether more children exist beyond the current fixed child limit.
 
-## Dashboard summaries
+## Fetch dashboard summaries
 
 Project overview:
 
@@ -170,10 +186,14 @@ GET /api/runs/summary?project=cartpole&sort_by=metric-best&metric_key=eval/retur
 Authorization: Bearer instantml_...
 ```
 
-Response includes runs, metric keys, total count, `next_cursor`, and page info.
-Use cursors for large pages instead of increasing `limit` without bound.
+Both accept the same `project`, `status`, `display_status`, and `q` filters as
+`GET /runs`. The summary response includes runs, metric keys, total count,
+`next_cursor`, and page info. Pass `next_cursor` back as the `cursor` query
+parameter to fetch the next page instead of increasing `limit` without bound.
+Set `projection=selection` to get lightweight rows for bulk-selection UIs
+instead of full summary rows.
 
-## Side-by-side comparison
+## Compare runs side by side
 
 ```http
 GET /api/runs/side-by-side?run_ids=run-a,run-b&reference_run_id=run-a&diff_only=true
@@ -187,3 +207,164 @@ Limits:
 
 The response includes selected runs, reference run ID, comparison rows, and a
 `truncated` flag.
+
+## Stop runs
+
+Request a cooperative stop for one run:
+
+```http
+POST /api/runs/{run_id}/stop
+Authorization: Bearer instantml_...
+Content-Type: application/json
+Idempotency-Key: optional-stable-key
+
+{
+  "reason": "budget exhausted"
+}
+```
+
+Requires `runs:control` or a writable browser session. `reason` is optional.
+The response returns the run's control state:
+
+```json
+{
+  "run_id": "4d14b2ea-7f49-4c7b-8d38-bb8437b5b029",
+  "ok": true,
+  "run_control": {
+    "stop_state": "requested",
+    "display_status": "stopping",
+    "stop_requested": true,
+    "stop_request_id": "86d2c75c-0c88-4d7c-8711-e461a77d4edc",
+    "reason": "budget exhausted"
+  },
+  "already_requested": false,
+  "already_terminal": false
+}
+```
+
+Stopping is cooperative: the API records the request, and the training process
+notices it through the stop signal below. Repeating the call returns
+`already_requested: true`; stopping an already finished or failed run returns
+`already_terminal: true`.
+
+Stop up to 100 runs in one request:
+
+```http
+POST /api/runs/stop
+Authorization: Bearer instantml_...
+Content-Type: application/json
+Idempotency-Key: optional-stable-key
+
+{
+  "run_ids": ["uuid-a", "uuid-b"],
+  "reason": "sweep cancelled"
+}
+```
+
+The response returns per-run `results` (each with `run_id`, `ok`, optional
+`error`, and the run's `run_control` state) plus the bulk `limit`.
+
+## Poll the stop signal
+
+SDK-side processes poll for pending stop requests:
+
+```http
+GET /api/runs/{run_id}/stop-signal
+Authorization: Bearer instantml_...
+```
+
+Requires an API key with `sdk:ingest`; browser sessions are not accepted.
+Response:
+
+```json
+{
+  "run_id": "4d14b2ea-7f49-4c7b-8d38-bb8437b5b029",
+  "run_status": "running",
+  "terminal": false,
+  "stop_requested": true,
+  "poll_after_seconds": 15,
+  "stop_request": {
+    "stop_request_id": "86d2c75c-0c88-4d7c-8711-e461a77d4edc",
+    "requested_at": "2026-05-16T00:00:00Z",
+    "acknowledged_at": null
+  }
+}
+```
+
+Wait at least `poll_after_seconds` between polls; the interval is plan-aware
+(10-30 seconds). The Python SDK polls this route behind `run.should_stop()` and
+`run.raise_if_stop_requested()`.
+
+## Acknowledge a stop
+
+After the process observes the signal, acknowledge and later complete it:
+
+```http
+POST /api/runs/{run_id}/stop-ack
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "stop_request_id": "86d2c75c-0c88-4d7c-8711-e461a77d4edc",
+  "state": "acknowledged",
+  "message": "checkpoint saved, shutting down"
+}
+```
+
+Requires an API key with `sdk:ingest`; browser sessions are not accepted.
+`state` must be `acknowledged` or `completed`; the optional `message` is stored
+as the completion message. The response returns the updated `run_control`
+state. A `stop_request_id` that does not match the pending request returns
+`409`.
+
+## Write console logs
+
+```http
+POST /api/runs/{run_id}/logs
+Authorization: Bearer instantml_...
+Content-Type: application/json
+Idempotency-Key: optional-event-id
+
+{
+  "stream": "stdout",
+  "lines": [
+    { "line_number": 0, "message": "epoch 1 started", "timestamp": "2026-05-16T00:00:00Z" }
+  ]
+}
+```
+
+Requires `sdk:ingest` or a writable browser session. `stream` is `stdout`
+(default) or `stderr`. Each line needs `line_number` and `message`;
+`timestamp` is optional. Batches cap at 50 lines and messages at 16 KiB.
+Response:
+
+```json
+{ "inserted": 1 }
+```
+
+## Read console logs
+
+```http
+GET /api/runs/{run_id}/logs?stream=stdout&limit=250&q=error
+Authorization: Bearer instantml_...
+```
+
+Requires `export:read` or a browser session. Query parameters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `stream` | `stdout` or `stderr`. |
+| `limit` | Page size, default 250, max 1,000. |
+| `cursor` | Pagination cursor from the previous page. |
+| `q` | Substring filter over log messages. |
+
+The response includes `lines`, `next_cursor`, `limit`, and a `truncated` flag.
+Pass `next_cursor` back as `cursor` to page through long logs.
+
+## Next steps
+
+- [Write and read metric series](/api/metrics-series)
+- [Attach artifacts to runs](/api/artifacts)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)
+- [Capture console logs from the SDK](/sdk/console-system-integrations)
+- [Compare runs in the dashboard](/dashboard/compare-runs)

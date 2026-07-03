@@ -1,31 +1,28 @@
 ---
 title: "Checkpoints"
-description: "Inspect checkpoint lineage and run context for the selected run."
+description: "Inspect checkpoint artifacts, fork child runs, and trace lineage from Run Detail."
 ---
 
-# Checkpoints
+Find, fork, and resume checkpoints for the selected run without leaving Run Detail.
 
-Checkpoints live inside Run Detail. The standalone Checkpoints tab has been
-merged into Run Detail, so checkpoint rows, fork actions, and lineage all
-appear there for the selected run. Older `/dashboard/checkpoints` links still
-resolve to Run Detail.
+<Note>
+The standalone Checkpoints tab has been merged into Run Detail. Checkpoint rows, fork actions, and lineage all appear there, and older `/dashboard/checkpoints` links still resolve to Run Detail.
+</Note>
 
-![Checkpoint rows](/images/product/dashboard-checkpoints.png)
+![Run Detail Overview tab showing stored checkpoint artifacts with Download, Resume Code, and Fork actions](/images/product/dashboard-checkpoints.png)
 
-## What appears
+The Run Detail Overview tab lists stored checkpoint artifacts alongside the run's model context.
 
-- Run Detail's Overview tab shows stored checkpoint artifacts with Download,
-  Resume Code, and Fork actions, plus model context for the selected run.
-- Run Detail's Lineage tab shows parent, selected run, checkpoint, and direct
-  child context.
+## Find checkpoints in Run Detail
+
+- The **Overview** tab shows stored checkpoint artifacts with Download, Resume Code, and Fork actions, plus model context for the selected run.
+- The **Lineage** tab shows parent, selected run, checkpoint, and direct child context.
 
 ## Fork a checkpoint
 
-![Fork checkpoint modal](/images/product/dashboard-checkpoint-fork.png)
+![Fork checkpoint modal with source run, checkpoint, step, child name, retry reason, and config inheritance fields](/images/product/dashboard-checkpoint-fork.png)
 
-Fork creates a linked child run record from a source run and checkpoint. It
-does not start training, copy metrics, or copy artifacts. The linked child run
-is ready for the SDK to attach to and continue logging.
+Fork creates a linked child run record from a source run and checkpoint. It does not start training, copy metrics, or copy artifacts. The linked child run is ready for the SDK to attach to and continue logging.
 
 The fork modal records:
 
@@ -36,20 +33,13 @@ The fork modal records:
 - Optional retry reason.
 - Whether the child run should inherit source config.
 
-The dashboard also tags the child run as a forked checkpoint retry and stores
-the retry reason in metadata. The API and SDK can accept additional fork fields
-such as tags, notes, metadata, and config overrides, but the current dashboard
-modal exposes only name, reason, and config inheritance.
+The dashboard also tags the child run as a forked checkpoint retry and stores the retry reason in metadata. The API and SDK can accept additional fork fields such as tags, notes, metadata, and config overrides, but the current dashboard modal exposes only name, reason, and config inheritance.
 
-After creation, the dashboard selects the forked child run and opens Run Detail
-Lineage.
+After creation, the dashboard selects the forked child run and opens its Run Detail Lineage tab.
 
-![Run lineage graph](/images/product/dashboard-lineage-graph.png)
+![Run lineage graph showing a forked child run, its parent, and the source checkpoint artifact](/images/product/dashboard-lineage-graph.png)
 
-The lineage panel reads a bounded direct graph. The captured child-run state
-shows the selected fork, its parent run, the checkpoint artifact that produced
-it, and an empty direct-children region when no runs have forked from the
-selected child yet.
+The lineage panel reads a direct graph limited to immediate relationships. For a fresh fork it shows the selected child, its parent run, the checkpoint artifact that produced it, and an empty direct-children region until runs fork from the child in turn.
 
 ## Log checkpoint bytes
 
@@ -76,13 +66,11 @@ run.log_checkpoint(
 )
 ```
 
-Stored bytes can be downloaded through the artifact download route. External
-URI checkpoints remain provenance records.
+Stored bytes can be downloaded through the artifact download route. External URI checkpoints remain provenance records.
 
 ## Continue from a fork
 
-The dashboard's Resume Code button shows a restore snippet. For automation, use
-the Python API helper to create a fork and then attach logging to the child run:
+The dashboard's Resume Code button copies a restore snippet to the clipboard. For automation, use the Python API helper to create a fork and then attach logging to the child run:
 
 ```python
 import instantml as im
@@ -101,5 +89,11 @@ run.log({"train/loss": 0.1}, step=1001)
 run.finish()
 ```
 
-`Api.fork_run(...)` sends a stable idempotency key by default so retrying the
-same request does not create duplicate child runs.
+`Api.fork_run(...)` sends a stable idempotency key by default, so retrying the same request does not create duplicate child runs.
+
+## Next steps
+
+- [Artifacts and checkpoints in the SDK](/sdk/artifacts-checkpoints)
+- [Run Detail](/dashboard/run-detail)
+- [Artifacts, files, and media](/dashboard/artifacts-files)
+- [Querying data](/sdk/querying-data)

@@ -3,26 +3,28 @@ title: "Metrics and series API"
 description: "Write scalar metrics, read metric history, request batched series, and inspect rank metrics."
 ---
 
-# Metrics and series API
+Write scalar and rank-aware metrics on the SDK hot path, then read them back as
+bounded series for charting.
 
-Metric writes are the main SDK hot path. Keep them batched and finite.
+Authenticate with an `Authorization: Bearer instantml_...` API key or a browser
+session. Metric writes need the `sdk:ingest` scope; all reads on this page need
+`export:read`.
 
 ## Write scalar metrics
 
-```http
-POST /runs/{run_id}/metrics
-Authorization: Bearer instantml_...
-Idempotency-Key: optional-event-id
-Content-Type: application/json
-
-{
-  "metrics": {
-    "train/loss": 0.12,
-    "eval/accuracy": 0.9
-  },
-  "step": 1,
-  "timestamp": "2026-05-16T00:00:00Z"
-}
+```bash
+curl -X POST https://api.instantml.ai/runs/{run_id}/metrics \
+  -H "Authorization: Bearer instantml_..." \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: optional-event-id" \
+  -d '{
+    "metrics": {
+      "train/loss": 0.12,
+      "eval/accuracy": 0.9
+    },
+    "step": 1,
+    "timestamp": "2026-05-16T00:00:00Z"
+  }'
 ```
 
 Requires `sdk:ingest` or a writable browser session.
@@ -46,7 +48,7 @@ GET /runs/{run_id}/metrics?key=eval/accuracy&start_step=0&end_step=100&limit=100
 Authorization: Bearer instantml_...
 ```
 
-Query parameters:
+Requires `export:read`. Query parameters:
 
 | Parameter | Meaning |
 | --- | --- |
@@ -66,14 +68,30 @@ Content-Type: application/json
   "key": "eval/accuracy",
   "run_ids": ["uuid-a", "uuid-b"],
   "limit": 1000,
-  "start_step": 0,
-  "end_step": 100
+  "buckets": 512
 }
 ```
 
-Use this endpoint for dashboard-style charting. It accepts up to 2,000 run IDs,
-but the server clamps the effective per-run point limit so one response cannot
-exceed the maximum returned-point budget.
+Requires `export:read`. Use this endpoint for dashboard-style charting. It
+accepts up to 2,000 run IDs, but the server clamps the effective per-run point
+limit so one response cannot exceed the maximum returned-point budget.
+
+Request fields:
+
+| Field | Meaning |
+| --- | --- |
+| `key` | Required metric key. |
+| `run_ids` | Required run UUIDs, up to 2,000. |
+| `limit` | Optional per-run point limit. |
+| `start_step` | Optional lower step bound. |
+| `end_step` | Optional upper step bound. |
+| `buckets` | Optional M4 downsampling bucket count, 1 to 4,096. |
+
+When `buckets` is set and a series has more than `4 * buckets` points, the
+response uses M4 aggregation instead of a plain prefix limit; the rendered line
+through the downsampled points is pixel-identical to the line through all raw
+points. `buckets` is ignored when `start_step` or `end_step` is set — zoomed
+views use the raw path.
 
 ## Write rank-aware metrics
 
@@ -96,16 +114,18 @@ Content-Type: application/json
 }
 ```
 
-Rank and local rank are zero-based. World size must be between 1 and 512.
-Weight defaults to `1.0`.
+Requires `sdk:ingest`. Rank and local rank are zero-based. World size must be
+between 1 and 512. Weight defaults to `1.0`.
 
-## Read rank summary
+## Read a rank summary
 
 ```http
-GET /api/runs/{run_id}/rank-metrics/summary?key=train/loss&limit=1000
+GET /api/runs/{run_id}/rank-metrics/summary?key=train/loss&start_step=0&end_step=1000&limit=1000
 Authorization: Bearer instantml_...
 ```
 
+Requires `export:read`. `key` selects the rank metric, `start_step` and
+`end_step` bound the inclusive step range, and `limit` caps returned steps.
 The response includes:
 
 - Available keys.
@@ -117,3 +137,11 @@ The response includes:
 
 The summary is intentionally run-scoped, which keeps the Distributed tab fast
 for large projects.
+
+## Next steps
+
+- [Log metrics from the SDK](/sdk/metrics-steps)
+- [Track distributed training ranks](/sdk/distributed-training)
+- [Create runs and query summaries](/api/projects-runs)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)
+- [Chart metrics in the dashboard](/dashboard/metrics-charts)

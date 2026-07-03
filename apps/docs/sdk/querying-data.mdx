@@ -3,11 +3,11 @@ title: "Query runs, metrics, and objects"
 description: "Use the SDK query API for bounded notebook and automation reads."
 ---
 
-# Query runs, metrics, and objects
+Use `im.Api(...)` when a script or notebook needs to query runs, fetch bounded metric series, inspect logged objects, or download artifacts — everything a training script's write path does not cover.
 
-Most training scripts only write data. Use `im.Api(...)` when a script or
-notebook needs to query runs, fetch bounded metric series, inspect logged
-objects, export data, or restore artifacts.
+## Prerequisites
+
+- An API key with a read scope such as `export:read` for tenant read routes.
 
 ## Create an API helper
 
@@ -19,8 +19,6 @@ api = im.Api(
     api_key="instantml_...",
 )
 ```
-
-The key needs a read scope such as `export:read` for tenant read routes.
 
 ## Query run summaries
 
@@ -50,8 +48,7 @@ Accepted filters:
 | `cursor` | Cursor returned by the previous `Page`. |
 | `max_pages` | Number of pages to read into one `Page`; defaults to 1. |
 
-`query_runs()` returns `Page(items, next_cursor, raw, limit)` and preserves the
-server's order exactly. Use `iter_runs()` when you want lazy pagination:
+`query_runs()` returns `Page(items, next_cursor, raw, limit)` and preserves the server's order exactly. Use `iter_runs()` when you want lazy pagination:
 
 ```python
 for run in api.iter_runs(project="cartpole", q="tag:candidate", page_size=50, max_pages=2):
@@ -68,10 +65,9 @@ name:"long context" -tag:debug
 re:/seed-(13|14)/
 ```
 
-`Api.runs()` remains available as the raw compatibility helper. It returns the
-decoded `/api/runs/summary` payload as a dictionary and also accepts legacy
-`project_id` and `offset` parameters. Prefer the typed query helpers for new
-notebook and automation code.
+<Note>
+`Api.runs()` remains available as the raw compatibility helper. It returns the decoded `/api/runs/summary` payload as a dictionary and also accepts legacy `project_id` and `offset` parameters. Prefer the typed query helpers for new code.
+</Note>
 
 ## Fetch metric series
 
@@ -89,16 +85,9 @@ for item in series.series:
     print(item["run_id"], item["key"], len(item["metrics"]))
 ```
 
-`query_metrics()` accepts 1..100 run IDs and 1..25 keys. The SDK calls the
-bounded metric-series route once per key, preserves caller run order and caller
-key order, omits empty run/key pairs, and keeps each run/key bounded by
-`point_limit` before server-side effective caps. `buckets` requests the same
-M4 downsampling used by high-density dashboard charts.
+`query_metrics()` accepts 1..100 run IDs and 1..25 keys. The SDK calls the bounded metric-series route once per key, preserves caller run and key order, omits empty run/key pairs, and keeps each run/key bounded by `point_limit` before server-side effective caps. `buckets` requests the same M4 downsampling used by high-density dashboard charts.
 
-Metric timestamp windows are not exposed by the current Rust route. The SDK
-accepts the future-facing parameters but raises `ValueError` if `time_min`,
-`time_max`, or `x_axis="time"` are used, so notebooks do not silently receive a
-different slice than requested.
+Metric timestamp windows are not exposed by the current API route. The SDK accepts the future-facing parameters but raises `ValueError` if `time_min`, `time_max`, or `x_axis="time"` are used, so notebooks do not silently receive a different slice than requested.
 
 ## Query rich objects
 
@@ -113,17 +102,13 @@ objects = api.query_objects(
 rows = api.object_rows(objects.items[0]["id"], limit=100)
 ```
 
-`query_objects()` uses the cross-run `GET /api/objects/explorer` route when the
-backend exposes it. On older backends it falls back only when you pass a single
-`run_id`:
+`query_objects()` uses the cross-run `GET /api/objects/explorer` route when the backend exposes it. On older backends it falls back only when you pass a single `run_id`:
 
 ```python
 objects = api.query_objects(run_id="run-id", kind="table", key="eval/samples")
 ```
 
-The SDK does not emulate cross-run object search by paging every matching run.
-That keeps notebook code from accidentally turning a small query into an
-unbounded fan-out.
+The SDK does not emulate cross-run object search by paging every matching run. That keeps notebook code from accidentally turning a small query into an unbounded fan-out.
 
 ## Download artifact bytes
 
@@ -135,10 +120,9 @@ path = api.download_artifact(
 print(path)
 ```
 
-The helper creates parent directories and returns the written path. It is the
-same restore primitive used by checkpoint resume snippets in the dashboard.
+The helper creates parent directories and returns the written path. It is the same restore primitive used by checkpoint resume snippets in the dashboard.
 
-## Bounded reads
+## Stay inside read bounds
 
 InstantML keeps list and series reads bounded:
 
@@ -149,14 +133,11 @@ InstantML keeps list and series reads bounded:
 - Artifact lists are capped.
 - Export responses include truncation metadata when limits are hit.
 
-If you need a bulk data movement path, use export or an importer/exporter flow
-instead of repeatedly fetching every chart series from a notebook.
+If you need a bulk data movement path, use export or an importer/exporter flow instead of repeatedly fetching every chart series from a notebook.
 
-## Existing-run writes
+## Write to an existing run
 
-Use `im.attach_run(...)` when a resume script should continue logging into an
-existing run, such as a checkpoint fork created by the dashboard or
-`Api.fork_run(...)`.
+Use `im.attach_run(...)` when a resume script should continue logging into an existing run, such as a checkpoint fork created by the dashboard or `Api.fork_run(...)`.
 
 ```python
 run = im.attach_run("child-run-id")
@@ -164,7 +145,12 @@ run.log({"train/loss": 0.1}, step=1001)
 run.finish()
 ```
 
-By default, `attach_run(validate=True)` reads `/runs/:id` before returning a run
-handle. That validation needs read access such as `export:read`. Use
-`validate=False` only for intentionally write-only credentials or offline attach
-flows.
+By default, `attach_run(validate=True)` reads `/runs/:id` before returning a run handle. That validation needs read access such as `export:read`. Use `validate=False` only for intentionally write-only credentials or offline attach flows.
+
+## Next steps
+
+- [Log artifacts and checkpoints](/sdk/artifacts-checkpoints)
+- [Export data and usage limits](/guides/export-usage-limits)
+- [Import runs from other trackers](/guides/imports)
+- [Metrics series API reference](/api/metrics-series)
+- [Manage API keys in the dashboard](/dashboard/settings-api-keys)

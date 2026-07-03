@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Download,
   FileText,
   FlaskConical,
   Gauge,
@@ -20,6 +21,7 @@ import {
   type LucideIcon,
   Package,
   Rocket,
+  Table2,
   Terminal,
   Zap,
 } from "lucide-react";
@@ -58,7 +60,15 @@ type DocsBlock =
   | { type: "code"; language: string; code: string }
   | { type: "table"; headers: string[]; rows: string[][] }
   | { type: "list"; ordered: boolean; items: string[] }
+  | { type: "callout"; kind: "note" | "tip" | "warning" | "info"; text: string }
   | { type: "cards"; cards: Array<{ title: string; icon: string; href: string; description: string }> };
+
+const CALLOUT_LABELS: Record<string, string> = {
+  note: "Note",
+  tip: "Tip",
+  warning: "Warning",
+  info: "Info",
+};
 
 export const runtime = "nodejs";
 export const dynamic = "force-static";
@@ -77,6 +87,7 @@ const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
   "building-2": Building2,
   "chart-line": ChartLine,
   "credit-card": CreditCard,
+  download: Download,
   "file-text": FileText,
   "flask-conical": FlaskConical,
   gauge: Gauge,
@@ -84,6 +95,7 @@ const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
   "line-chart": ChartLine,
   package: Package,
   rocket: Rocket,
+  "table-2": Table2,
   terminal: Terminal,
   zap: Zap,
 };
@@ -398,6 +410,15 @@ function DocsBlockView({ block }: { block: DocsBlock }) {
 
   if (block.type === "paragraph") {
     return <p>{renderInline(block.text)}</p>;
+  }
+
+  if (block.type === "callout") {
+    return (
+      <aside className={`docs-callout docs-callout-${block.kind}`} role="note">
+        <span className="docs-callout-label">{CALLOUT_LABELS[block.kind] ?? "Note"}</span>
+        <p>{renderInline(block.text)}</p>
+      </aside>
+    );
   }
 
   if (block.type === "image") {

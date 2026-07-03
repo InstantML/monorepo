@@ -3,14 +3,20 @@ title: "Artifacts and checkpoints"
 description: "Log files, artifacts, checkpoints, rollouts, and media from Python."
 ---
 
-# Artifacts and checkpoints
+Attach files, checkpoints, versioned artifact collections, and rollout media to a run so the evidence lives next to the metrics that produced it.
 
-Artifacts let a run keep evidence near the metrics that produced it.
+## Prerequisites
 
-## Metadata artifacts
+- An API key with `artifacts:write` for artifact and checkpoint routes. Add `sdk:ingest` when the same key also logs metrics, rich objects, or attaches to runs.
+- Add `export:read` when you fork runs or resolve artifacts through `im.Api()`.
 
-Use `log_artifact(...)` when the bytes are stored elsewhere or when you want to
-record an external reference.
+<Info>
+An **artifact** is a file or external reference attached to a run — a model file, an eval report, a rollout video. A **checkpoint** is an artifact that marks a restart point for training. See [core concepts](/concepts/core-concepts) for how artifacts relate to runs and projects.
+</Info>
+
+## Log a metadata artifact
+
+Use `log_artifact(...)` when the bytes are stored elsewhere and you want to record an external reference.
 
 ```python
 run.log_artifact(
@@ -35,15 +41,15 @@ artifact = run.upload_file(
 )
 ```
 
-The SDK records size and SHA-256 metadata, then uploads through the API.
-Artifact `type` currently accepts `checkpoint`, `file`, or `rollout`; use
-metadata and MIME type for finer-grained labels such as image, audio, report,
-model, or table.
+The SDK records size and SHA-256 metadata, then uploads through the API. The artifact appears in the run's Files section and the Artifacts tab.
 
-## Versioned artifacts
+<Note>
+`artifact_type` accepts `checkpoint`, `file`, or `rollout`. Use metadata and MIME type for finer-grained labels such as image, audio, report, model, or table.
+</Note>
 
-Use `VersionedArtifact` when a dataset, model, or checkpoint package needs a
-stable manifest, `latest`/`best` aliases, and lineage.
+## Version artifacts
+
+Use `VersionedArtifact` when a dataset, model, or checkpoint package needs a stable manifest, `latest`/`best` aliases, and lineage.
 
 ```python
 import instantml as im
@@ -67,11 +73,11 @@ logged = run.log_versioned_artifact(
 run.finish()
 ```
 
-`log_artifact(artifact, aliases=[...], ttl_days=...)` also accepts a
-`VersionedArtifact` and keeps the older `log_artifact(name, uri, ...)`
-raw-artifact call working.
+`log_artifact(artifact, aliases=[...], ttl_days=...)` also accepts a `VersionedArtifact`, and the older `log_artifact(name, uri, ...)` raw-artifact call keeps working.
 
-Resolve and consume a version from another run:
+## Consume an artifact from another run
+
+Resolve a version by name and alias, then record the dependency and download the files.
 
 ```python
 api = im.Api()
@@ -83,15 +89,11 @@ dataset.download("inputs/training-data")
 run.finish()
 ```
 
-`LoggedArtifact.download(...)` keeps downloaded paths inside the output
-directory. `promote(alias="best", reason="...")` moves a custom alias, and
-`delete(delete_aliases=True, reason="...")` requests a soft delete when the key
-has management permission. The SDK sends the API's required confirmation fields
-for these destructive or mutable operations.
+`LoggedArtifact.download(...)` keeps downloaded paths inside the output directory. `promote(alias="best", reason="...")` moves a custom alias, and `delete(delete_aliases=True, reason="...")` requests a soft delete — both need a key with the `artifacts:manage` scope. The SDK sends the API's required confirmation fields for these destructive or mutable operations.
 
-## Checkpoints
+## Log checkpoints
 
-Use checkpoint helpers when the file is a restart point for training.
+Use the checkpoint helpers when the file is a restart point for training. For an external reference:
 
 ```python
 run.log_checkpoint(
@@ -111,17 +113,11 @@ run.log_checkpoint_file(
 )
 ```
 
-Checkpoint metadata and checkpoint byte uploads use artifact routes and need
-`artifacts:write`. Use `sdk:ingest` too when the same key logs metrics, rich
-objects, or attaches to/forks runs.
+Checkpoint metadata and checkpoint byte uploads use artifact routes, so they need `artifacts:write`. Use `CheckpointPolicy(every_steps=N)` in loops that save on a fixed interval.
 
-Use `CheckpointPolicy(every_steps=N)` in loops that save on a fixed interval.
+## Fork and resume from a checkpoint
 
-## Fork and resume
-
-The dashboard can create a linked fork from a checkpoint artifact. The fork is
-only a child run record; it does not start training or copy existing metrics.
-Attach the SDK to the child run when your resume script is ready to log.
+The dashboard can create a linked fork from a checkpoint artifact. The fork is only a child run record — it does not start training or copy existing metrics. Attach the SDK to the child run when your resume script is ready to log.
 
 ```python
 import instantml as im
@@ -139,30 +135,24 @@ run.log({"train/loss": 0.1}, step=1001)
 run.finish()
 ```
 
-`Api.fork_run(...)` sends a stable idempotency key by default, so retrying the
-same fork request does not create duplicates.
+`Api.fork_run(...)` sends a stable idempotency key by default, so retrying the same fork request does not create duplicates.
 
-Forking through the API needs both `export:read` and `sdk:ingest`. The attached
-child run validates with `export:read` by default; pass `validate=False` only
-for intentionally write-only credentials or offline attach flows.
+Forking through the API needs both `export:read` and `sdk:ingest`. The attached child run validates with `export:read` by default; pass `validate=False` only for intentionally write-only credentials or offline attach flows.
 
-## Rollouts and video
+## Log rollouts and video
 
 ```python
 run.log_rollout("eval-rollout", "s3://bucket/eval.mp4", step=1000)
 run.log_video("rollout.mp4", "s3://bucket/rollout.mp4", step=1000)
 ```
 
-These calls create metadata artifacts for externally stored media. To store
-bytes through InstantML for same-origin preview and download, upload the local
-file:
+These calls create metadata artifacts for externally stored media. To store bytes through InstantML for same-origin preview and download, upload the local file:
 
 ```python
 run.upload_file("outputs/rollout.mp4", artifact_type="rollout", step=1000)
 ```
 
-Use rich media objects when you want a local media file uploaded and linked as
-previewable evidence inside Run Detail:
+Use rich media objects when you want a local media file uploaded and linked as previewable evidence inside Run Detail:
 
 ```python
 run.log_objects(
@@ -171,22 +161,25 @@ run.log_objects(
 )
 ```
 
-Stored same-origin media can preview in the dashboard when the browser supports
-the MIME type. External object-store references remain copy/download metadata
-only.
+Stored same-origin media previews in the dashboard when the browser supports the MIME type. External object-store references remain copy/download metadata only.
 
-Local image, audio, and video rich objects upload artifact bytes and then create
-a linked rich object, so the API key needs both `artifacts:write` and
-`sdk:ingest`. Rich media object helpers are not supported in
-`upload_mode="spool"` because the object link needs the upload response; use
-`upload_mode="sync"` or the default async mode for those events.
+<Note>
+Rich media helpers need both `artifacts:write` and `sdk:ingest`, and they are not supported in `upload_mode="spool"` — see [media objects](/sdk/rich-objects#log-media-objects) for the details.
+</Note>
 
-## Where artifacts appear
+## Find artifacts in the dashboard
 
 - Run Detail summary and Files section for raw run artifacts.
 - Artifacts tab for versioned collections, manifests, lineage, and raw run artifacts.
 - Compare artifact context.
-- API snippets for download/copy workflows.
+- API snippets for download and copy workflows.
 
-Raw object-storage URLs are not shown directly in the dashboard when the API
-stores bytes for the org.
+Raw object-storage URLs are not shown in the dashboard when the API stores bytes for the workspace.
+
+## Next steps
+
+- [Browse artifacts and files in the dashboard](/dashboard/artifacts-files)
+- [Resume training from checkpoints](/dashboard/checkpoints)
+- [Log tables, histograms, and media](/sdk/rich-objects)
+- [Query runs, metrics, and objects](/sdk/querying-data)
+- [Artifacts API reference](/api/artifacts)

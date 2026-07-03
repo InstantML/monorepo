@@ -1,16 +1,18 @@
 ---
 title: "SDK patterns by workflow"
-description: "Recommended logging patterns for supervised learning, RL, distributed jobs, and checkpoints."
+description: "Copy-paste logging patterns for supervised learning, RL, distributed jobs, and checkpoints."
 ---
 
-# SDK patterns by workflow
+Grab a copy-paste pattern for your workflow — each snippet keeps run data easy to search, compare, export, and replay.
 
-These patterns are intentionally boring. They keep run data easy to search,
-compare, export, and replay.
+## Track a supervised run
 
-## Supervised learning
+Stable config keys plus `train/...` and `val/...` metric keys make runs comparable across seeds and variants.
 
 ```python
+import math
+import random
+
 import instantml as im
 
 run = im.init(
@@ -24,17 +26,17 @@ run = im.init(
         "l2": 0.0005,
         "epochs": 160,
     },
-    tags=["example", "real-data", "numpy", "classification"],
+    tags=["example", "classification"],
     notes="Track validation accuracy, calibration, and class-level errors.",
 )
 
 for epoch in range(1, 161):
     run.log_metrics(
         {
-            "train/loss": train_loss,
-            "val/loss": val_loss,
-            "val/accuracy": val_accuracy,
-            "optimizer/grad_norm": grad_norm,
+            "train/loss": 2.0 * math.exp(-epoch / 40) + random.uniform(0.0, 0.05),
+            "val/loss": 2.1 * math.exp(-epoch / 45) + random.uniform(0.0, 0.08),
+            "val/accuracy": 0.4 + 0.55 * (1 - math.exp(-epoch / 30)),
+            "optimizer/grad_norm": random.uniform(0.5, 3.0),
         },
         step=epoch,
     )
@@ -43,18 +45,19 @@ run.upload_file("artifacts/model.json", artifact_type="checkpoint", step=160)
 run.finish()
 ```
 
-Compare by validation metrics first, then use Run Detail for config, artifacts,
-and source context.
+Compare by validation metrics first, then open Run Detail for config, artifacts, and source context.
 
-## Chart-ready logging
+## Log chart-ready data
 
-Most dashboard visualizations come from stable metric keys plus run config.
-Use config for fields you want to group or plot against, and use scalar metric
-keys for values you want to chart or sort.
+Put fields you want to group or plot against in `config`, and values you want to chart or sort in scalar metric keys.
 
 ```python
+import math
+import random
+
 import instantml as im
 
+variant, seed = "wide", 7
 confidence_bins = [index / 32 for index in range(33)]
 
 run = im.init(
@@ -63,41 +66,39 @@ run = im.init(
     config={
         "variant": variant,
         "seed": seed,
-        "learning_rate": lr,
-        "batch_size": batch_size,
-        "model": model_name,
+        "learning_rate": 3e-4,
+        "batch_size": 64,
+        "model": "mlp-wide",
     },
     tags=[variant],
 )
 
-for epoch in range(1, epochs + 1):
+for epoch in range(1, 21):
+    scores = [random.random() for _ in range(256)]
     run.log_metrics(
         {
-            "train/loss": train_loss,
-            "eval/accuracy": eval_accuracy,
-            "eval/macro_f1": macro_f1,
-            "system/throughput": examples_per_second,
+            "train/loss": 1.5 * math.exp(-epoch / 6),
+            "eval/accuracy": 0.5 + 0.45 * (1 - math.exp(-epoch / 8)),
+            "eval/macro_f1": 0.45 + 0.45 * (1 - math.exp(-epoch / 9)),
+            "system/throughput": random.uniform(900, 1100),
         },
         step=epoch,
     )
     run.log_objects(
-        {
-            "eval/confidence": im.Histogram.from_values(
-                confidence_scores,
-                bins=confidence_bins,
-            )
-        },
+        {"eval/confidence": im.Histogram.from_values(scores, bins=confidence_bins)},
         step=epoch,
     )
 
 run.log_classification_eval(
     "eval/classification",
-    y_true=validation_labels,
-    y_score=positive_class_scores,
+    y_true=[random.randint(0, 1) for _ in range(200)],
+    y_score=[random.random() for _ in range(200)],
     class_names=["negative", "positive"],
     positive_label="positive",
-    step=epochs,
+    step=20,
 )
+
+run.finish()
 ```
 
 This shape gives you:
@@ -105,15 +106,20 @@ This shape gives you:
 - Line charts for `train/loss` and `eval/accuracy`.
 - Bar, dot, and value histogram panels from latest scalar summaries.
 - Scatter panels such as `config.learning_rate` versus `eval/accuracy best`.
-- Distribution panels grouped by `config.variant` with `config.seed` as
-  replicate metadata.
-- Logged histogram timelines for `eval/confidence` on a selected run when
-  frames share `confidence_bins`.
+- Distribution panels grouped by `config.variant` with `config.seed` as replicate metadata.
+- Logged histogram timelines for `eval/confidence` when frames share `confidence_bins`.
 - Classification eval previews in Run Detail without saving screenshots.
 
-## RL or simulation
+## Track an RL or simulation job
+
+Use `eval/...` keys for periodic policy evaluation and `train/...` keys for noisy online learning signals.
 
 ```python
+import math
+import random
+
+import instantml as im
+
 run = im.init(
     project="cartpole",
     name="ppo-seed-42",
@@ -122,12 +128,13 @@ run = im.init(
 )
 
 for global_step in range(0, 100_000, 1_000):
+    progress = global_step / 100_000
     run.log_metrics(
         {
-            "train/episode_return": episode_return,
-            "train/policy_loss": policy_loss,
-            "eval/return_mean": eval_return,
-            "eval/success_rate": success_rate,
+            "train/episode_return": 500 * progress + random.uniform(-40, 40),
+            "train/policy_loss": 0.8 * math.exp(-progress * 4),
+            "eval/return_mean": 500 * progress,
+            "eval/success_rate": min(1.0, progress * 1.2),
         },
         step=global_step,
     )
@@ -136,12 +143,13 @@ run.log_video("eval-rollout.mp4", "s3://bucket/rollouts/eval-rollout.mp4", step=
 run.finish()
 ```
 
-Use `eval/...` keys for periodic policy evaluation and `train/...` keys for
-noisy online learning signals.
+## Spool long-running jobs
 
-## Long-running jobs
+Spool mode keeps the training process from blocking on post-init HTTP calls.
 
 ```python
+import instantml as im
+
 run = im.init(
     project="humanoid",
     upload_mode="spool",
@@ -158,9 +166,9 @@ python3 -m instantml.uploader \
   --follow
 ```
 
-Spool mode keeps the training process from blocking on post-init HTTP calls.
+## Save and restore checkpoints
 
-## Checkpoint resume
+Use `CheckpointPolicy(every_steps=N)` to save on a fixed interval.
 
 ```python
 policy = im.CheckpointPolicy(every_steps=1000)
@@ -173,12 +181,11 @@ if policy.should_save(step):
     )
 ```
 
-Run Detail shows checkpoint artifacts with download and resume snippets. Use
-the `Api.download_artifact(...)` helper in automated restore scripts.
+Run Detail shows checkpoint artifacts with download and resume snippets. Use `Api.download_artifact(...)` in automated restore scripts.
 
-## Error handling
+## Mark failed runs
 
-Use context managers when a failing script should mark the run as failed:
+Use a context manager when a failing script should mark the run as failed:
 
 ```python
 with im.init(project="sweep", name="seed-7") as run:
@@ -196,3 +203,11 @@ except Exception:
     run.finish("failed")
     raise
 ```
+
+## Next steps
+
+- [Run the quickstart](/quickstart)
+- [Log metrics and steps](/sdk/metrics-steps)
+- [Log tables, histograms, and media](/sdk/rich-objects)
+- [Log rank-aware distributed metrics](/sdk/distributed-training)
+- [Buffering, offline mode, and reliability](/sdk/reliability)

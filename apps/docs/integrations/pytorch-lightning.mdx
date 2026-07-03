@@ -3,11 +3,7 @@ title: "PyTorch Lightning"
 description: "Log and compare PyTorch Lightning training runs in InstantML with a one-line logger that drops into the Lightning Trainer."
 ---
 
-# PyTorch Lightning
-
-`im.LightningLogger` implements the Lightning `Logger` interface, so you pass it
-straight to the `Trainer`. It is rank-zero safe: in distributed training only
-the main process logs.
+Pass `im.LightningLogger` to the Lightning `Trainer` and everything you `self.log(...)` lands in InstantML. The logger implements the Lightning `Logger` interface and is rank-zero safe: in distributed training only the main process logs.
 
 ## Install
 
@@ -15,47 +11,72 @@ the main process logs.
 python -m pip install "instantml[frameworks]"
 ```
 
-## Use it
+Authenticate with [`instantml login`](/sdk/installation-auth) or `INSTANTML_API_KEY` if you haven't already.
+
+## Wire the logger into the Trainer
+
+This complete example trains a tiny regressor on synthetic data and logs `train/loss` every step:
 
 ```python
 import instantml as im
-from lightning import Trainer
+import lightning as L
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+
+
+class TinyRegressor(L.LightningModule):
+    def __init__(self, lr=1e-3):
+        super().__init__()
+        self.save_hyperparameters()
+        self.layer = nn.Linear(8, 1)
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        loss = nn.functional.mse_loss(self.layer(x), y)
+        self.log("train/loss", loss)
+        return loss
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+
+
+dataset = TensorDataset(torch.randn(256, 8), torch.randn(256, 1))
 
 logger = im.LightningLogger(
-    project="cartpole",
-    name="ppo-seed-7",
-    tags=["lightning", "ppo"],
+    project="lightning-demo",
+    name="tiny-regressor",
+    tags=["lightning"],
 )
 
-trainer = Trainer(max_epochs=10, logger=logger)
-trainer.fit(model, datamodule)
+trainer = L.Trainer(max_epochs=5, logger=logger, log_every_n_steps=1)
+trainer.fit(TinyRegressor(), DataLoader(dataset, batch_size=32))
 ```
 
-`LightningLogger` accepts the same keyword arguments as `im.init(...)`
-(`name`, `config`, `tags`, `notes`, `api_key`, ...) and forwards them when it
-creates the run on first use.
+Open the `lightning-demo` project at [instantml.ai](https://instantml.ai) to watch the `train/loss` chart live. The run is finished automatically when Lightning calls `finalize(...)` at the end of training.
+
+`LightningLogger` accepts the same keyword arguments as `im.init(...)` (`name`, `config`, `tags`, `notes`, `api_key`, ...) and forwards them when it creates the run on first use.
 
 ## What gets logged
 
-- **Metrics** — everything you pass to `self.log(...)` inside your
-  `LightningModule` is forwarded through `log_metrics(...)` at the current
-  step.
-- **Hyperparameters** — `log_hyperparams(...)` records them as run config, so
-  `trainer = Trainer(logger=logger)` with `self.save_hyperparameters()`
-  captures your config automatically.
-- **Media** — `log_image`, `log_audio`, and `log_video` map to InstantML rich
-  objects.
+- **Metrics** — everything you pass to `self.log(...)` inside your `LightningModule` is forwarded through `log_metrics(...)` at the current step.
+- **Hyperparameters** — `log_hyperparams(...)` records them as run config, so `self.save_hyperparameters()` in your module captures your config automatically.
+- **Media** — Lightning's `log_image`, `log_audio`, and `log_video` map to InstantML [rich objects](/sdk/rich-objects).
 
 ## Reuse an existing run
 
-Pass an already-created run when you want the logger to share a run with other
-code instead of creating its own:
+Pass an already-created run when you want the logger to share a run with other code instead of creating its own:
 
 ```python
-run = im.init(project="cartpole", name="ppo-seed-7")
+run = im.init(project="lightning-demo", name="tiny-regressor")
 logger = im.LightningLogger(run=run)
-trainer = Trainer(logger=logger)
+trainer = L.Trainer(logger=logger)
 ```
 
-The run is finished automatically when Lightning calls `finalize(...)` at the
-end of training.
+## Next steps
+
+- [Understand metrics and steps](/sdk/metrics-steps)
+- [Log checkpoints as artifacts](/sdk/artifacts-checkpoints)
+- [Log images, audio, and video](/sdk/rich-objects)
+- [Log from distributed training](/sdk/distributed-training)
+- [Chart metrics in the dashboard](/dashboard/metrics-charts)

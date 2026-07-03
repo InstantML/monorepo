@@ -3,13 +3,9 @@ title: "Observability"
 description: "Use health endpoints, request IDs, structured logs, and safe error fields to debug InstantML."
 ---
 
-# Observability
+Debug InstantML with its health endpoints, Prometheus-compatible metrics, and structured request logs — all designed so support can trace incidents without leaking user payloads.
 
-InstantML exposes lightweight health endpoints, Prometheus-compatible metrics,
-and structured request logs. The logging contract is intentionally conservative
-so support can debug incidents without leaking user payloads.
-
-## Health endpoints
+## Check health endpoints
 
 | Endpoint | Meaning |
 | --- | --- |
@@ -19,14 +15,11 @@ so support can debug incidents without leaking user payloads.
 | `GET /metrics` | Prometheus text metrics. |
 | `GET /openapi.json` | Compact OpenAPI route index for the active service plane. |
 
-`/readyz` fails until startup replay has completed. In hosted mode, later
-control refresh failures can keep serving the last-known-good projection while
-surfacing degraded state in `/readyz` and `/metrics`.
+`/readyz` fails until startup replay has completed. In hosted mode, later control refresh failures can keep serving the last-known-good projection while surfacing degraded state in `/readyz` and `/metrics`.
 
-## Request correlation
+## Correlate requests with request IDs
 
-Every response should include `x-request-id`. Keep this value with bug reports,
-screenshots, and support tickets.
+Every response should include `x-request-id`. Keep this value with bug reports, screenshots, and support tickets.
 
 Hosted Rust origin logs include:
 
@@ -39,14 +32,13 @@ Hosted Rust origin logs include:
 - Service plane.
 - Coarse user-agent family.
 
-Cloudflare Ray IDs are edge correlation hints, not unique application request
-IDs. Pair them with timestamp, host, path, status, and `x-request-id`.
+<Note>
+Cloudflare Ray IDs are edge correlation hints, not unique application request IDs. Pair them with timestamp, host, path, status, and `x-request-id`.
+</Note>
 
-## Safe log fields
+## Know what logs can and cannot contain
 
-Server-error logs include stable fields such as status, code, retryability, and
-a safe summary. Workflow logs cover metric ingestion, console-log ingestion,
-artifact upload/download, imports, readiness, startup, and worker cleanup.
+Server-error logs include stable fields such as status, code, retryability, and a safe summary. Workflow logs cover metric ingestion, console-log ingestion, artifact upload/download, imports, readiness, startup, and worker cleanup.
 
 Logs may include stable product IDs:
 
@@ -71,7 +63,7 @@ Logs must not include:
 - Artifact filenames.
 - Object-storage bucket names, keys, or signed URLs.
 
-## Hosted settings
+## Configure hosted logging
 
 Recommended hosted defaults:
 
@@ -81,13 +73,11 @@ RUST_LOG=instantml_rust_server=info,tower_http=info
 INSTANTML_SLOW_REQUEST_MS=1000
 ```
 
-Use debug logging only for a short incident window and confirm that provider
-errors and request payloads remain sanitized.
+Use debug logging only for a short incident window and confirm that provider errors and request payloads remain sanitized.
 
-## Client-facing transient state
+## Recognize a waking warehouse
 
-When a tenant warehouse is waking or temporarily unavailable, the API can return
-HTTP `503` with:
+When a tenant warehouse is waking or temporarily unavailable, the API can return HTTP `503` with:
 
 ```json
 {
@@ -96,5 +86,11 @@ HTTP `503` with:
 }
 ```
 
-The dashboard treats that as "API reachable, data warehouse starting" rather
-than a generic offline state.
+The dashboard treats that as "API reachable, data warehouse starting" rather than a generic offline state.
+
+## Next steps
+
+- [Health and observability API](/api/health-observability)
+- [Errors and limits](/api/errors-and-limits)
+- [Troubleshooting](/troubleshooting)
+- [Service planes](/architecture/service-planes)

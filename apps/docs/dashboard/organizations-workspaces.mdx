@@ -1,17 +1,20 @@
 ---
 title: "Organizations and workspaces"
-description: "Understand workspace switching, organization hierarchy, roles, settings, and billing scope."
+description: "Switch workspaces, understand the hierarchy, and manage roles, settings, and billing scope."
 ---
 
-# Organizations and workspaces
+Learn how InstantML scopes every project, run, and setting to the active
+workspace, and how to switch between workspaces safely.
 
-InstantML scopes product data to the active workspace. A workspace is the
-dashboard name for an organization: it owns projects, runs, reports, API keys,
-seats, usage counters, billing state, and storage configuration.
+<Info>
+A **workspace** is the dashboard name for an organization: it owns projects,
+runs, reports, API keys, seats, usage counters, billing state, and storage
+configuration.
+</Info>
 
 ![Organization workspace menu](/images/product/dashboard-org-workspaces.png)
 
-## Hierarchy
+## Understand the hierarchy
 
 The hierarchy is intentionally small:
 
@@ -25,25 +28,26 @@ The hierarchy is intentionally small:
 Switching workspaces changes the organization context for every dashboard and
 API route. Runs from another workspace do not appear in the current workspace.
 
-## Workspace menu
+## Switch workspaces from the account menu
 
 Use the account menu in the top right to:
 
 - See the current workspace name, plan, and your role.
-- Filter your memberships when you belong to many workspaces.
 - Switch between personal and organization workspaces.
-- Create a new workspace.
-- Open workspace settings or billing when your role allows it.
+- Create a new workspace with **New workspace**.
+- Open the **Workspace settings** modal, which includes the Billing section
+  when your role allows it.
+- Toggle the light/dark theme.
 - Sign out.
 
-Personal workspaces are single-seat. Organization workspaces support teammates,
-invitations, role labels, and paid plan flows.
+The switcher groups your personal workspace and organization workspaces into
+separate sections, with your current workspace marked.
 
-Plan seat counts are organization-workspace allowances. Personal workspaces
-always stay one owner seat; create or switch to an organization workspace when
-you want to invite teammates.
+Personal workspaces are single-seat and always stay one owner seat. Plan seat
+counts apply to organization workspaces; create or switch to an organization
+workspace when you want to invite teammates.
 
-## Roles
+## Assign roles
 
 Workspace roles control mutations:
 
@@ -54,11 +58,24 @@ Workspace roles control mutations:
 | Write/read (`member`) | Create and update runs, artifacts, reports, and saved views |
 | Read only (`viewer`) | Read dashboard data without write access |
 
-The shared demo workspace is read-only. It can be used for exploration, but it
-does not accept run, artifact, report, or settings mutations.
+<Note>
+Invite forms offer only the member, admin, and viewer roles. Owner is not an
+invitable role — the workspace creator holds it.
+</Note>
 
-## Settings scope
+The shared demo workspace is read-only. Use it for exploration; it does not
+accept run, artifact, report, or settings mutations.
+
+## Confirm the scope before you act
 
 Settings, API keys, usage, storage mode, invitations, and billing always apply
 to the active workspace. Confirm the top-right workspace name before creating
 keys, inviting teammates, or launching imports into a new organization.
+
+## Next steps
+
+- [Dashboard tour](/dashboard/tour)
+- [Onboarding, team, and billing](/dashboard/onboarding-team-billing)
+- [Settings and API keys](/dashboard/settings-api-keys)
+- [Pricing, limits, and billing](/guides/pricing-limits-billing)
+- [Core concepts](/concepts/core-concepts)

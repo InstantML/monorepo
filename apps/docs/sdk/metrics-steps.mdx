@@ -1,12 +1,10 @@
 ---
 title: "Metrics and steps"
-description: "Name metrics, choose steps, batch scalar values, and understand how charts read series."
+description: "Name metrics, choose step semantics, and batch scalar values for fast training loops."
 ---
 
-# Metrics and steps
-
-Metrics are the hot path. Good metric shape makes runs easier to compare and
-keeps training loops light.
+Shape your metric keys and steps well up front — it is what makes runs easy to
+compare later and keeps the training loop light.
 
 ## Name metrics by namespace
 
@@ -80,9 +78,11 @@ does not preflight the batch count before the request.
 
 ## Use timestamps when needed
 
-If you omit a timestamp, the server records the ingest time. Provide an
-explicit timestamp when you replay data or when step order and wall-clock order
-are intentionally different.
+If you omit a timestamp, the SDK stamps each point with the client's wall-clock
+time at the moment of the `log` call in the default async mode and in spool
+mode. Only in `upload_mode="sync"` does the server record its own ingest time
+instead. Provide an explicit timestamp when you replay data or when step order
+and wall-clock order are intentionally different:
 
 ```python
 run.log_metrics(
@@ -95,20 +95,25 @@ run.log_metrics(
 Charts can use step or logged time as the x-axis. Step is usually better for
 model comparison; time is useful for wall-clock debugging.
 
-## Unit-bounded metrics
+## Know how axes scale
 
 Accuracy, precision, recall, F1, and AUC usually live in `0..1`. The dashboard
 uses normalized y-axes for common unit-bounded metrics so small differences are
-legible across runs.
+legible across runs. Return, reward, loss, and arbitrary custom metrics
+auto-scale to observed values.
 
-Return, reward, loss, and arbitrary custom metrics auto-scale to observed
-values.
-
-## Summary values
+## Understand summary values
 
 Run lists and Compare use maintained summaries instead of scanning every metric
 point on every page load. For each run and key, the server tracks count, min,
 max, latest, latest step, best, and aggregate moments used for mean/variance.
+Raw history remains available through bounded series endpoints, so large charts
+request only the keys and run IDs they need.
 
-Raw history remains available through bounded series endpoints, which is why
-large charts can request only the keys and run IDs they need.
+## Next steps
+
+- [SDK logging](/sdk/logging) — create runs and log from the loop
+- [Buffering, offline replay, and spool mode](/sdk/reliability) — upload modes and durability
+- [Distributed training](/sdk/distributed-training) — rank metrics and global steps
+- [Metrics and charts in the dashboard](/dashboard/metrics-charts)
+- [Query runs and metrics](/sdk/querying-data) — read series back from scripts

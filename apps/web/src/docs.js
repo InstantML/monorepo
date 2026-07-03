@@ -114,10 +114,15 @@ const loadDocsMarkdownByPath = cache(async function loadDocsMarkdownByPath(pageP
   const filePath = safeJoin(docsRoot, `${pagePath}.mdx`);
   const raw = await readFile(filePath, "utf8");
   const parsed = parseDocsMdx(raw);
+  const title = parsed.frontmatter.title || pagePathToTitle(pagePath);
+  // MDX bodies no longer carry an H1 (the web route renders the frontmatter
+  // title), so the Markdown mirror re-adds it for agents and offline readers.
+  const body = mdxToMarkdown(raw);
+  const markdown = body.startsWith(`# ${title}\n`) ? body : `# ${title}\n\n${body}`;
   return {
     path: pagePath,
-    title: parsed.frontmatter.title || pagePathToTitle(pagePath),
-    markdown: includeNavigation ? await appendMarkdownNavigation(mdxToMarkdown(raw), pagePath) : mdxToMarkdown(raw),
+    title,
+    markdown: includeNavigation ? await appendMarkdownNavigation(markdown, pagePath) : markdown,
   };
 });
 
@@ -232,6 +237,32 @@ export function parseDocsMdx(raw) {
         index += 1;
       }
       blocks.push(parseCardGroup(collected.join("\n")));
+      continue;
+    }
+
+    const calloutOpen = /^<(Note|Tip|Warning|Info)>\s*(.*)$/.exec(trimmed);
+    if (calloutOpen) {
+      const kind = calloutOpen[1].toLowerCase();
+      const closeTag = `</${calloutOpen[1]}>`;
+      const collected = [];
+      let rest = calloutOpen[2];
+      index += 1;
+      if (rest.endsWith(closeTag)) {
+        collected.push(rest.slice(0, -closeTag.length).trim());
+      } else {
+        if (rest) collected.push(rest);
+        while (index < lines.length) {
+          const inner = lines[index].trim();
+          index += 1;
+          if (inner === closeTag) break;
+          if (inner.endsWith(closeTag)) {
+            collected.push(inner.slice(0, -closeTag.length).trim());
+            break;
+          }
+          if (inner) collected.push(inner);
+        }
+      }
+      blocks.push({ type: "callout", kind, text: collected.join(" ").trim() });
       continue;
     }
 
@@ -455,13 +486,18 @@ async function appendMarkdownNavigation(markdown, currentPath) {
   return markdown.trimEnd() + "\n" + lines.join("\n").trimEnd() + "\n";
 }
 
-function mdxToMarkdown(raw) {
+export function mdxToMarkdown(raw) {
   const { body } = parseFrontmatter(raw);
   return normalizeMarkdownLinks(
-    body.replace(/<CardGroup[^>]*>([\s\S]*?)<\/CardGroup>/g, (_match, inner) => {
-      const cards = parseCardGroup(`<CardGroup>${inner}</CardGroup>`).cards;
-      return cards.map((card) => `- [${card.title}](${docsMarkdownHref(card.href)}): ${card.description}`).join("\n");
-    }),
+    body
+      .replace(/<CardGroup[^>]*>([\s\S]*?)<\/CardGroup>/g, (_match, inner) => {
+        const cards = parseCardGroup(`<CardGroup>${inner}</CardGroup>`).cards;
+        return cards.map((card) => `- [${card.title}](${docsMarkdownHref(card.href)}): ${card.description}`).join("\n");
+      })
+      .replace(/<(Note|Tip|Warning|Info)>\s*([\s\S]*?)\s*<\/\1>/g, (_match, kind, inner) => {
+        const text = inner.replace(/\s*\n\s*/g, " ").trim();
+        return `> **${kind}:** ${text}`;
+      }),
   ).trimEnd() + "\n";
 }
 
