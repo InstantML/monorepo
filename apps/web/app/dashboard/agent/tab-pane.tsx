@@ -6,14 +6,9 @@ import { useMemo, useState } from "react";
 import { AgentSetupPanel } from "../api/agent-setup";
 import { copyDocsMarkdown } from "../../docs/docs-agent-markdown-button";
 import { PageHead } from "../ui/page-head";
-import { relativeTime } from "../ui/relative-time";
-import type { components } from "../../../src/types/api.generated";
-
-type ApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 
 type Props = {
   activeOrgId: string;
-  apiKeys: ApiKeyRow[];
   canManageOrg: boolean;
   metricKey: string;
   newApiKey: string;
@@ -76,20 +71,8 @@ async function copyText(value: string) {
   }
 }
 
-function latestKeyActivity(apiKeys: ApiKeyRow[]): { at: string; name: string } | null {
-  let latest: { at: string; name: string; epoch: number } | null = null;
-  for (const key of apiKeys) {
-    if (key.revoked_at || !key.last_used_at) continue;
-    const epoch = Date.parse(key.last_used_at);
-    if (Number.isNaN(epoch)) continue;
-    if (!latest || epoch > latest.epoch) latest = { at: key.last_used_at, name: key.name, epoch };
-  }
-  return latest;
-}
-
 export function AgentTabPane({
   activeOrgId,
-  apiKeys,
   canManageOrg,
   metricKey,
   newApiKey,
@@ -109,12 +92,6 @@ export function AgentTabPane({
     `Find failed or stalled runs in ${projectLabel}, group them by likely cause, and create a short report.`,
     `Create a report comparing ${selectionLabel} in ${projectLabel} by ${metricKey}, cite the evidence, and share it with a link.`,
   ], [metricKey, primaryRunId, projectLabel, selectionLabel]);
-
-  // Coarse "is it working?" signal: newest last_used_at across active API keys.
-  // Key data only loads for admins, so the line is admin-only for now; OAuth
-  // (preview) connections are not reflected yet.
-  const lastActivity = canManageOrg ? latestKeyActivity(apiKeys) : null;
-  const hasActiveKeys = canManageOrg && apiKeys.some((key) => !key.revoked_at);
 
   async function handleCopy(prompt: string) {
     const copied = await copyText(prompt);
@@ -138,16 +115,6 @@ export function AgentTabPane({
           </div>
           <div className="panel-body admin-stack">
             <AgentSetupPanel activeOrgId={activeOrgId} canManageOrg={canManageOrg} newApiKey={visibleNewApiKey} />
-            {canManageOrg ? (
-              <p className={`agent-activity-line ${lastActivity ? "live" : ""}`} role="status">
-                <span className="agent-activity-dot" aria-hidden="true" />
-                {lastActivity
-                  ? <>Last agent activity {relativeTime(lastActivity.at)} · <code>{lastActivity.name}</code></>
-                  : hasActiveKeys
-                    ? "Waiting for the first agent activity…"
-                    : "No agent activity yet — connect an agent to see it here."}
-              </p>
-            ) : null}
             <div className="agent-guide-row">
               <button className="secondary compact-button" type="button" onClick={() => void handleCopyGuide()}>
                 <Copy size={13} /> {guideCopyState === "copied" ? "Copied guide" : guideCopyState === "failed" ? "Copy failed" : "Copy guide for your agent"}

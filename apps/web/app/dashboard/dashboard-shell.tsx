@@ -4696,7 +4696,6 @@ function dismissTopOverlay() {
           {visibleTab === "agent" ? (
             <AgentTabPane
               activeOrgId={activeOrgId}
-              apiKeys={apiKeys}
               canManageOrg={canManageOrg}
               metricKey={metricKey}
               newApiKey={newApiKey}
