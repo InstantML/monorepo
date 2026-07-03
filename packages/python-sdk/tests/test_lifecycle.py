@@ -133,6 +133,34 @@ def test_sync_log_still_raises_invalid_payload():
         run.finish()
 
 
+def test_sync_metric_hot_path_skips_timestamp_without_local_store():
+    client = _RecordingClient()
+    run = Run(client=client, run_id="run-1", upload_mode="sync")
+    original_timestamp = client_module._utc_timestamp
+
+    def fail_timestamp():
+        raise AssertionError("sync metric hot path should not create a timestamp without a local store")
+
+    client_module._utc_timestamp = fail_timestamp
+    try:
+        run.log_metrics({"loss": 0.5}, step=1)
+    finally:
+        client_module._utc_timestamp = original_timestamp
+        run.finish()
+
+    assert _request_triplet(client.requests[0]) == (
+        "POST",
+        "/runs/run-1/metrics",
+        {
+            "metrics": {"loss": 0.5},
+            "step": 1.0,
+            "timestamp": None,
+            "preview": False,
+            "preview_completion": 0.0,
+        },
+    )
+
+
 # --- finish() is idempotent ------------------------------------------------
 
 

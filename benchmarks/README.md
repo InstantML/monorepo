@@ -252,6 +252,14 @@ idle upload-health emission before enabling async by default, so the benchmark
 remains a hot-path producer-cost signal rather than a full quota model for
 background health traffic.
 
+The JSON and Markdown summaries also report hot-loop producer rows/minute and
+scalar values/minute. The top-level JSON `ingest.values_per_minute` field is
+intended for the competitive gate and maps to W&B's public scalar-throughput
+unit. Treat it as SDK producer-return throughput, not hosted remote persistence:
+it proves the training loop can hand off values at that rate under the measured
+local mode, while separate hosted ingest benchmarks are still needed for
+end-to-end durability throughput claims.
+
 The default matrix is:
 
 - `noop`: metric computation with no SDK logging.

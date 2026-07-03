@@ -263,6 +263,15 @@ function neptuneMetricScaleGate(result) {
 }
 
 function hostedBudgetGate(result) {
+  const measurements = Array.isArray(result?.measurements) ? result.measurements : [];
+  const budgetedMeasurements = measurements.filter((measurement) => Number.isFinite(measurement?.budget_ms));
+  if (!budgetedMeasurements.length) {
+    return notMeasured(
+      "internal.hosted_budgets",
+      "all measurement p95 values <= committed budgets",
+      "missing hosted benchmark measurements with budget_ms",
+    );
+  }
   const failures = budgetFailures(result);
   if (failures.length === 0) {
     return thresholdGate({

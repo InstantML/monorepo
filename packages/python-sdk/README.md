@@ -742,6 +742,11 @@ python3 -m pytest
 
 The SDK defaults to buffered async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 raw artifact storage in sync mode and record a source path for the uploader in process spool mode. Versioned artifacts require sync mode in this slice because presigned upload URLs are short-lived bearer secrets and the process spool contract does not yet persist multipart state.
 
+`benchmarks/sdk_logging_overhead.py` is the local hot-path benchmark for this
+component. Its JSON output includes `ingest.values_per_minute`, a producer-return
+throughput signal used by the competitive benchmark gates; it is not a hosted
+remote-persistence measurement.
+
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 
 Automatic SDK source metadata is reserved under `metadata["_rlobs"]["source"]`. User metadata may still use a top-level `source` key for its own meaning, but `_rlobs` is SDK-owned and `init(metadata={"_rlobs": ...})` raises `ValueError`.

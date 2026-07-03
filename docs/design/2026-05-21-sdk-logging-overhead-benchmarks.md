@@ -90,6 +90,14 @@ The first likely optimization target is the InstantML spool hot path. Before
 changing durability semantics, prefer low-risk optimizations that preserve one
 event file per log call and the current fsync behavior.
 
+2026-07-03 follow-up: benchmark summaries now include producer rows/minute and
+scalar values/minute, plus a top-level `ingest.values_per_minute` field for the
+competitive gates. This is a training-process producer-return signal, not a
+hosted remote-persistence throughput claim. The same follow-up also removes an
+unneeded sync-mode timestamp allocation from `Run.log_metrics()` when no local
+audit store is attached; sync request bodies still send `timestamp: None`
+unless the caller supplies a timestamp.
+
 ## Testing Plan
 
 - Unit-test deterministic metric payloads, overhead calculations, case ordering,

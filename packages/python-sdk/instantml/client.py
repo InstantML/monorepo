@@ -2192,7 +2192,8 @@ class Run:
                     warnings.warn(f"metric {key!r} logged at non-increasing step {step}", RuntimeWarning, stacklevel=2)
                 if not preview:
                     self._last_steps[key] = float(step)
-        self._record_metrics(metrics, step, metric_timestamp or _utc_timestamp())
+        if self._local_store is not None:
+            self._record_metrics(metrics, step, metric_timestamp or _utc_timestamp())
         self._submit(
             "POST",
             f"/runs/{self.run_id}/metrics",

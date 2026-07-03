@@ -94,6 +94,22 @@ test("competitive gates report fully measured public scale pass when payload con
   assert.equal(gateById(report, "neptune.metric_scale_seconds").status, "pass");
 });
 
+test("competitive gates read SDK producer throughput summaries", () => {
+  const report = competitiveBenchmarkGates({
+    ingest: {
+      scope: "sdk_hot_loop_producer",
+      case: "instantml-async-queue",
+      values_per_minute: 125_000,
+    },
+    measurements: [],
+  });
+
+  assert.equal(gateById(report, "wandb_scale.ingest_throughput").status, "pass");
+  assert.match(gateById(report, "wandb_scale.ingest_throughput").observed, /125,000 values\/minute/);
+  assert.equal(gateById(report, "wandb_scale.runs").status, "not_measured");
+  assert.equal(gateById(report, "internal.hosted_budgets").status, "not_measured");
+});
+
 test("competitive gate failures include historical and internal budget regressions", () => {
   const report = competitiveBenchmarkGates(hostedResult({
     measurements: [

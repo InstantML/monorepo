@@ -44,6 +44,24 @@ class SdkLoggingOverheadTests(unittest.TestCase):
             summaries["instantml-spool-durable"]["overhead_vs_noop"]["tree_cpu_us_per_log"],
             30,
         )
+        self.assertEqual(summaries["instantml-spool-durable"]["producer_rows_per_minute"]["median"], 3000000)
+        self.assertEqual(summaries["instantml-spool-durable"]["producer_values_per_minute"]["median"], 3000000)
+
+    def test_competitive_ingest_summary_prefers_async_queue(self):
+        payload = {
+            "protocol": {"metrics_per_log": 6},
+            "samples": [
+                sample("instantml-sync-null", 20, 20, metrics_per_log=6),
+                sample("instantml-async-queue", 30, 30, metrics_per_log=6),
+            ],
+        }
+        payload["summaries"] = bench.summarize_results(payload)
+
+        ingest = bench.competitive_ingest_summary(payload)
+
+        self.assertEqual(ingest["scope"], "sdk_hot_loop_producer")
+        self.assertEqual(ingest["case"], "instantml-async-queue")
+        self.assertEqual(ingest["values_per_minute"], 12000000)
 
     def test_render_markdown_labels_modes(self):
         payload = {
@@ -65,17 +83,24 @@ class SdkLoggingOverheadTests(unittest.TestCase):
         rendered = bench.render_markdown(payload)
 
         self.assertIn("SDK Logging Overhead Benchmark", rendered)
+        self.assertIn("Median values/min", rendered)
         self.assertIn("InstantML process-spool mode", rendered)
         self.assertIn("example caveat", rendered)
 
 
-def sample(case, tree_cpu_us, wall_us):
+def sample(case, tree_cpu_us, wall_us, metrics_per_log=1):
+    steps = 10
     return {
         "case": case,
         "sample_index": 0,
         "status": "ok",
-        "steps": 10,
+        "steps": steps,
+        "metrics_per_log": metrics_per_log,
+        "scalar_values": steps * metrics_per_log,
         "hot_loop": {
+            "wall_s": wall_us * steps / 1_000_000,
+            "parent_cpu_s": tree_cpu_us * steps / 1_000_000,
+            "tree_cpu_s": tree_cpu_us * steps / 1_000_000,
             "tree_cpu_us_per_log": tree_cpu_us,
             "parent_cpu_us_per_log": tree_cpu_us,
             "wall_us_per_log": wall_us,
