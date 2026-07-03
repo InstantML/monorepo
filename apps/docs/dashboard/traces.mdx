@@ -35,7 +35,7 @@ Use the top filters to narrow the list:
 | Run | Show traces for one run. |
 | Status | Find failed, running, interrupted, or completed traces. |
 | Kind | Focus on rollout, model, tool, retrieval, reward, evaluator, or custom spans. |
-| Search | Match root name, trace id prefix, rollout id, or thread id. |
+| Search | Match root name, trace id prefix, rollout id, or thread id. Multiple words are split into up to eight terms, and every term must match one of those fields. |
 
 Project-scoped browsing uses the API's recent default window. Selecting a
 specific run, or opening a deep link with `run_id`, lists all traces for that
@@ -43,7 +43,9 @@ run unless a date window is supplied, so older imported or backfilled runs do
 not disappear from the trace list.
 
 The workspace deep-links with `run_id`, `trace_id`, and `span_id` query
-parameters, so copied URLs reopen the exact selected span.
+parameters. If the selected span is outside the initially loaded root window,
+the tree stays honest instead of selecting a different span. Expand visible
+parents to load child spans when the selected parent is already in the tree.
 
 ## Span inspector
 

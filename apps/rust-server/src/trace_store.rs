@@ -14,6 +14,8 @@ use crate::{
     metric_store::{clickhouse_read_error, clickhouse_storage_error, MetricStore},
 };
 
+pub const MAX_TRACE_SEARCH_TERMS: usize = 8;
+
 #[derive(Row, Serialize, Clone)]
 pub struct TraceSpanEventRow {
     #[serde(with = "clickhouse::serde::uuid")]
@@ -437,7 +439,12 @@ pub async fn list_trace_summaries(
     if query.kind.is_some() {
         sql.push_str(" AND has(kinds, ?)");
     }
-    if query.q.is_some() {
+    let search_terms = query
+        .q
+        .as_deref()
+        .map(trace_search_terms)
+        .unwrap_or_default();
+    for _ in &search_terms {
         sql.push_str(
             " AND (positionCaseInsensitive(root_name, ?) > 0 \
                OR startsWith(trace_id, ?) \
@@ -481,8 +488,8 @@ pub async fn list_trace_summaries(
     if let Some(kind) = &query.kind {
         q = q.bind(kind);
     }
-    if let Some(search) = &query.q {
-        q = q.bind(search).bind(search).bind(search).bind(search);
+    for term in &search_terms {
+        q = q.bind(term).bind(term).bind(term).bind(term);
     }
     if let Some(min_step) = query.min_step {
         q = q.bind(min_step);
@@ -501,6 +508,14 @@ pub async fn list_trace_summaries(
         .fetch_all::<TraceSummaryReadRow>()
         .await
         .map_err(clickhouse_read_error)
+}
+
+fn trace_search_terms(value: &str) -> Vec<String> {
+    value
+        .split_whitespace()
+        .filter(|term| !term.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 pub async fn root_span_ids(
@@ -992,3 +1007,18 @@ const CANONICAL_SPANS_FOR_TRACES_SQL: &str = "SELECT \
   GROUP BY trace_id, span_id \
   ORDER BY trace_id ASC, started_at ASC, span_id ASC \
   LIMIT ? BY trace_id";
+
+#[cfg(test)]
+mod tests {
+    use super::trace_search_terms;
+
+    #[test]
+    fn trace_search_terms_split_whitespace() {
+        let terms = trace_search_terms("  rollout step2   reward extra one two three four five  ");
+
+        assert_eq!(
+            terms,
+            vec!["rollout", "step2", "reward", "extra", "one", "two", "three", "four", "five"]
+        );
+    }
+}

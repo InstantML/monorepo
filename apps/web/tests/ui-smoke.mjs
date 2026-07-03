@@ -2627,10 +2627,21 @@ async function assertVisibleRunDetailTraceLink(page, traceUrls) {
     const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
     return inspector.includes("qa rollout trace") && inspector.includes("2222222222222222");
   });
+  const childTraceUrl = new URL(traceLink, page.url());
+  childTraceUrl.searchParams.set("span_id", "4444444444444444");
+  await page.goto(childTraceUrl.toString(), { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => {
+    const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+    return inspector.includes("44444444") && inspector.includes("outside the loaded tree window");
+  }, null, { timeout: 10000 });
+  await page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first().click({ timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
+  await page.locator(".trace-node-button", { hasText: "reward.score" }).first().click({ timeout: 5000 });
+  await page.waitForFunction(() => {
+    const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+    return inspector.includes("reward.score") && inspector.includes("4444444444444444");
+  }, null, { timeout: 8000 });
   if (docsScreenshotMode) {
-    await page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first().click({ timeout: 5000 });
-    await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
-    await page.locator(".trace-node-button", { hasText: "reward.score" }).first().click({ timeout: 5000 });
     await page.waitForFunction(() => {
       const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
       return inspector.includes("reward.score") && inspector.includes("[REDACTED]");

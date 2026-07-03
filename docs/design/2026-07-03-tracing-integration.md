@@ -1998,6 +1998,13 @@ section before implementation is accepted.
   unloaded spans, per-org trace-ingest capacity locking, batched trace-summary
   recompute, parallel independent ClickHouse detail reads, and SDK trace limit
   constants shared from the payload module.
+- Followed up on the later PR review notes by splitting trace search text into
+  bounded whitespace terms over promoted summary fields, rejecting searches
+  beyond eight terms instead of silently broadening results, keeping selected
+  trace detail/copy context visible when a deep link is outside the current
+  list page, sharing Rust trace aggregate math between summary rows and detail
+  responses, and estimating SDK trace-event byte size for batching instead of
+  serializing every decorator-path event just to decide whether to flush.
 
 ## Decision
 

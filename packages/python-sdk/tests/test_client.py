@@ -2551,12 +2551,58 @@ def test_trace_batch_flushes_before_and_after_size_thresholds(monkeypatch):
     calls.clear()
     monkeypatch.setattr(client_module, "MAX_TRACE_EVENTS_PER_BATCH", trace_payload.MAX_TRACE_EVENTS_PER_BATCH)
     first = {"trace_id": "2" * 32, "span_id": "3" * 16, "event_id": "c", "payload": "x" * 20}
-    first_bytes = len(json.dumps(first, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    first_bytes = client_module._estimated_json_bytes(first) + client_module._TRACE_EVENT_SIZE_OVERHEAD_BYTES
     monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_BYTES", first_bytes + 1)
     run._record_trace_event(first)
     run._record_trace_event({"trace_id": "2" * 32, "span_id": "4" * 16, "event_id": "d", "payload": "y" * 20})
     run.flush()
     assert [len(call[2]["events"]) for call in calls] == [1, 1]
+
+
+def test_trace_record_event_hot_path_does_not_json_serialize(monkeypatch):
+    class FallbackSized:
+        def __str__(self):
+            return "fallback"
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("trace event should not flush")
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    assert client_module._estimated_json_bytes(FallbackSized()) == len(json.dumps("fallback").encode("utf-8"))
+    assert client_module._estimated_json_bytes([1, 2]) >= len(json.dumps([1, 2], separators=(",", ":")).encode("utf-8"))
+    escaped_text = "\"\\\n\u00e9\U0001f642"
+    assert client_module._estimated_json_bytes(escaped_text) >= len(json.dumps(escaped_text).encode("utf-8"))
+    minimal_event = {
+        "trace_id": "3" * 32,
+        "span_id": "5" * 16,
+        "event_id": "hot-path",
+        "sequence": 1,
+        "event_kind": "started",
+        "name": "reward.score",
+        "kind": "reward",
+        "status": "running",
+        "started_at": "2026-07-03T12:00:00Z",
+        "attributes": {},
+        "metrics": {},
+        "links": [],
+        "content_policy": "off",
+        "redaction_state": "not_captured",
+        "truncated": False,
+    }
+    actual_bytes = len(json.dumps(minimal_event, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    estimated_bytes = client_module._estimated_json_bytes(minimal_event) + client_module._TRACE_EVENT_SIZE_OVERHEAD_BYTES
+    assert estimated_bytes <= actual_bytes + 128
+
+    def fail_json_dump(*args, **kwargs):
+        raise AssertionError("trace event size should be estimated without json.dumps")
+
+    monkeypatch.setattr(client_module.json, "dumps", fail_json_dump)
+    run._record_trace_event(minimal_event)
+
+    assert len(run._trace_events) == 1
 
 
 def test_trace_async_invalid_payload_warns_and_counts_drop(monkeypatch, tmp_path):

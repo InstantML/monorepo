@@ -170,9 +170,10 @@ Trace events are batched to
 `flush()` and `finish()` drain pending trace events, async mode writes trace
 batches to the same SQLite queue as metrics/logs, process-spool mode writes a
 single replayable request per trace batch, and `offline_dir` replay preserves
-the original idempotency key. `trace.context()`, `run.attach_trace_context(...)`,
-and `trace.wrap(fn)` provide a small JSON-serializable carrier for worker,
-thread, or callback propagation.
+the original idempotency key. Trace batching estimates event byte size for
+flush decisions instead of serializing every event on the decorator hot path.
+`trace.context()`, `run.attach_trace_context(...)`, and `trace.wrap(fn)` provide
+a small JSON-serializable carrier for worker, thread, or callback propagation.
 
 Auto-instrumentation, OTLP import/export, trace-to-dataset export, and full
 argument/return capture are intentionally deferred; keep those behind a new

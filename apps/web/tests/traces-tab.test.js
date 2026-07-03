@@ -31,6 +31,9 @@ test("traces tab uses bounded list, detail, and child endpoints", () => {
   assert.match(paneSource, /useDebouncedValue\(query, 300\)/);
   assert.match(paneSource, /urlStateReady/);
   assert.match(paneSource, /if \(!urlStateReady\) \{/);
+  assert.match(paneSource, /traceIdForActions/);
+  assert.match(paneSource, /setDetail\(null\);/);
+  assert.match(paneSource, /detail\?\.trace\.run_id === selectedRunId && detail\.trace\.trace_id === selectedTraceId/);
 });
 
 test("traces tab exposes tree, inspector, status, and responsive styles", () => {
@@ -43,6 +46,10 @@ test("traces tab exposes tree, inspector, status, and responsive styles", () => 
   assert.match(paneSource, /role="listbox"/);
   assert.match(paneSource, /role="option"/);
   assert.match(paneSource, /aria-selected=/);
+  assert.match(paneSource, /outside the loaded tree window/);
+  assert.match(paneSource, /summary=\{inspectorSummary\}/);
+  assert.match(paneSource, /selectedDetail \? indexDisplayedSpans\(selectedDetail\.spans, childrenByParent\)/);
+  assert.doesNotMatch(paneSource, /\?\? all\[0\]/);
   assert.doesNotMatch(paneSource, /role="table"/);
   assert.doesNotMatch(styles, /border-radius:\s*8px/);
   assert.doesNotMatch(styles, /font-size:\s*11px/);

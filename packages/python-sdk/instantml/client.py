@@ -172,6 +172,7 @@ _QUERY_Q_BYTES_MAX = 512
 _QUERY_POINT_LIMIT_MAX = 10_000
 _QUERY_BUCKETS_MAX = 2_000
 _TRACE_BATCH_MAX_BYTES = 512 * 1024
+_TRACE_EVENT_SIZE_OVERHEAD_BYTES = 64
 
 
 @dataclass(frozen=True)
@@ -3193,8 +3194,7 @@ class Run:
         self._request_or_spool(method, path, body)
 
     def _record_trace_event(self, event: dict[str, Any]) -> None:
-        serialized = json.dumps(event, sort_keys=True, separators=(",", ":"))
-        event_bytes = len(serialized.encode("utf-8"))
+        event_bytes = _estimated_json_bytes(event) + _TRACE_EVENT_SIZE_OVERHEAD_BYTES
         should_flush = False
         with self._lock:
             if (
@@ -4051,6 +4051,55 @@ def _process_spool_run_dir(spool_dir: str | None, run_id: str) -> Path:
 
 def _serialize_process_event(event: dict[str, Any]) -> str:
     return json.dumps(event, separators=(",", ":"))
+
+
+def _estimated_json_bytes(value: Any) -> int:
+    """Conservative JSON byte estimate for trace batch sizing.
+
+    Trace events are already normalized into JSON-compatible values. Estimating
+    size here avoids serializing every trace event on the decorator hot path just
+    to decide whether the current batch should flush.
+    """
+    if value is None:
+        return 4
+    if isinstance(value, bool):
+        return 5
+    if isinstance(value, (int, float)):
+        return len(repr(value))
+    if isinstance(value, str):
+        return _estimated_json_string_bytes(value)
+    if isinstance(value, dict):
+        total = 2
+        for index, (key, item) in enumerate(value.items()):
+            if index:
+                total += 1
+            total += _estimated_json_string_bytes(str(key)) + 1 + _estimated_json_bytes(item)
+        return total
+    if isinstance(value, (list, tuple)):
+        total = 2
+        for index, item in enumerate(value):
+            if index:
+                total += 1
+            total += _estimated_json_bytes(item)
+        return total
+    return _estimated_json_string_bytes(str(value))
+
+
+def _estimated_json_string_bytes(value: str) -> int:
+    total = 2
+    for char in value:
+        codepoint = ord(char)
+        if char in {'"', "\\"}:
+            total += 2
+        elif codepoint <= 0x1F:
+            total += 6
+        elif codepoint < 0x80:
+            total += 1
+        elif codepoint <= 0xFFFF:
+            total += 6
+        else:
+            total += 12
+    return total
 
 
 def _write_process_event(run_dir: Path | None, event: dict[str, Any], serialized: str) -> Path:

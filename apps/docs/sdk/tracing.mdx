@@ -173,7 +173,9 @@ Trace events use the same delivery guarantees as other SDK writes:
 | `offline_dir` | Failed post-create trace requests are stored and replayed with the original idempotency key. |
 
 Trace ingest uses `POST /api/runs/:run_id/traces/events` with an
-`Idempotency-Key`, so retrying the same accepted batch is safe.
+`Idempotency-Key`, so retrying the same accepted batch is safe. The SDK keeps
+batching cheap on the decorator path by estimating trace-event byte size for
+flush decisions instead of serializing each event twice.
 
 ## Dashboard workflow
 
@@ -184,6 +186,8 @@ Open a run's **Traces** section to see recent traces for that run:
 Click a trace row to open the full Traces workspace. The full workspace lets you
 filter by run, status, kind, and search text; inspect the trace summary; expand
 child spans lazily; and copy span or trace identifiers for support tickets.
+Search text is split into terms, so `rollout step` can match a root span named
+`rollout.step2.g2`. Trace search accepts up to eight terms.
 Project-scoped browsing uses a recent default window, while run-scoped trace
 lists show all traces for that run unless a date window is supplied. That keeps
 older imported or backfilled runs reachable from Run Detail and copied deep

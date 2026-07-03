@@ -7,7 +7,7 @@ use chrono::TimeZone;
 use crate::trace_store::{
     self as ch_traces, TraceChildCountRow, TraceIngestBatchRow, TraceListCursor, TraceListQuery,
     TraceSpanCanonicalRow, TraceSpanEventRow, TraceSpanIndexReadRow, TraceSpanIndexRow,
-    TraceSummaryReadRow, TraceSummaryRow,
+    TraceSummaryReadRow, TraceSummaryRow, MAX_TRACE_SEARCH_TERMS,
 };
 
 const TRACE_SUMMARY_RECOMPUTE_LIMIT: i64 = 100_001;
@@ -201,11 +201,7 @@ pub async fn list_traces(
     let (project_id, run_id) = trace_project_scope(store, ctx, query).await?;
     let status = optional_trace_status(query.get("status").map(String::as_str))?;
     let kind = optional_trace_kind(query.get("kind").map(String::as_str))?;
-    let q = query
-        .get("q")
-        .map(|value| validate_short_string(value, "q", MAX_TRACE_FIELD_BYTES))
-        .transpose()?
-        .filter(|value| !value.trim().is_empty());
+    let q = trace_search_query(query)?;
     let window = trace_list_window(query, run_id, Utc::now())?;
     if let (Some(from), Some(to)) = (&window.from, &window.to) {
         if to <= from {
@@ -628,6 +624,75 @@ fn summary_row_from_spans(
     summary_scan_truncated: bool,
     now: DateTime<Utc>,
 ) -> AppResult<TraceSummaryRow> {
+    let aggregate = aggregate_trace_spans(spans)?;
+    let attributes = json!({
+        "root_count": aggregate.root_count,
+        "orphan_span_count": aggregate.orphan_span_count
+    });
+    Ok(TraceSummaryRow {
+        org_id,
+        project_id: run.project_id,
+        run_id: run.id,
+        trace_id: trace_id.to_string(),
+        idempotency_key: idempotency_key.to_string(),
+        event_id: Uuid::new_v4(),
+        root_span_id: aggregate.root.span_id.clone(),
+        root_name: aggregate.root.name.clone(),
+        status: aggregate.status.to_string(),
+        kinds: aggregate.kinds,
+        started_at: aggregate.started_at,
+        ended_at: aggregate.ended_at,
+        duration_ms: aggregate.duration_ms,
+        span_count: spans.len().min(u32::MAX as usize) as u32,
+        running_span_count: saturating_u32(aggregate.running_span_count),
+        error_count: saturating_u32(aggregate.error_count),
+        model_call_count: saturating_u32(aggregate.model_call_count),
+        tool_call_count: saturating_u32(aggregate.tool_call_count),
+        retrieval_count: saturating_u32(aggregate.retrieval_count),
+        reward_count: saturating_u32(aggregate.reward_count),
+        input_tokens: aggregate.input_tokens,
+        output_tokens: aggregate.output_tokens,
+        cost_usd: aggregate.cost_usd,
+        min_step: aggregate.min_step,
+        max_step: aggregate.max_step,
+        thread_id: aggregate.root.thread_id.clone(),
+        rollout_id: aggregate.root.rollout_id.clone(),
+        summary_metrics_json: serde_json::to_string(&aggregate.summary_metrics)
+            .map_err(|_| AppError::internal("trace summary metrics serialization failed"))?,
+        attributes_json: serde_json::to_string(&attributes)
+            .map_err(|_| AppError::internal("trace summary attributes serialization failed"))?,
+        content_available: aggregate.content_available as u8,
+        truncated: (summary_scan_truncated || aggregate.payloads_truncated) as u8,
+        updated_at: now,
+    })
+}
+
+struct TraceSpanAggregate<'a> {
+    root: &'a TraceSpanCanonicalRow,
+    started_at: DateTime<Utc>,
+    ended_at: Option<DateTime<Utc>>,
+    duration_ms: Option<f64>,
+    kinds: Vec<String>,
+    status: &'static str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_usd: Option<f64>,
+    min_step: Option<f64>,
+    max_step: Option<f64>,
+    summary_metrics: Value,
+    running_span_count: u64,
+    error_count: u64,
+    model_call_count: u64,
+    tool_call_count: u64,
+    retrieval_count: u64,
+    reward_count: u64,
+    root_count: u64,
+    orphan_span_count: u64,
+    content_available: bool,
+    payloads_truncated: bool,
+}
+
+fn aggregate_trace_spans(spans: &[TraceSpanCanonicalRow]) -> AppResult<TraceSpanAggregate<'_>> {
     let root = spans
         .iter()
         .filter(|span| span.parent_span_id.is_empty())
@@ -636,7 +701,8 @@ fn summary_row_from_spans(
                 .cmp(&b.started_at)
                 .then_with(|| a.span_id.cmp(&b.span_id))
         })
-        .unwrap_or(&spans[0]);
+        .or_else(|| spans.first())
+        .ok_or_else(|| AppError::not_found("trace not found"))?;
     let started_at = spans
         .iter()
         .map(|span| span.started_at)
@@ -652,59 +718,52 @@ fn summary_row_from_spans(
         .into_iter()
         .collect::<Vec<_>>();
     kinds.sort();
-    let status = summary_status(spans);
     let (input_tokens, output_tokens, cost_usd, summary_metrics) = summary_metrics(spans)?;
     let steps = spans
         .iter()
         .filter_map(|span| span.step)
         .collect::<Vec<_>>();
-    let min_step = steps.iter().copied().reduce(f64::min);
-    let max_step = steps.iter().copied().reduce(f64::max);
-    let attributes = json!({
-        "root_count": spans.iter().filter(|span| span.parent_span_id.is_empty()).count(),
-        "orphan_span_count": spans.iter().filter(|span| !span.parent_span_id.is_empty()).filter(|span| {
-            !spans.iter().any(|candidate| candidate.span_id == span.parent_span_id)
-        }).count()
-    });
-    Ok(TraceSummaryRow {
-        org_id,
-        project_id: run.project_id,
-        run_id: run.id,
-        trace_id: trace_id.to_string(),
-        idempotency_key: idempotency_key.to_string(),
-        event_id: Uuid::new_v4(),
-        root_span_id: root.span_id.clone(),
-        root_name: root.name.clone(),
-        status: status.to_string(),
-        kinds,
+    let span_ids = spans
+        .iter()
+        .map(|span| span.span_id.as_str())
+        .collect::<BTreeSet<_>>();
+    Ok(TraceSpanAggregate {
+        root,
         started_at,
         ended_at,
         duration_ms,
-        span_count: spans.len().min(u32::MAX as usize) as u32,
-        running_span_count: spans.iter().filter(|span| span.status == "running").count() as u32,
-        error_count: spans.iter().filter(|span| span.status == "error").count() as u32,
-        model_call_count: spans.iter().filter(|span| span.kind == "model").count() as u32,
-        tool_call_count: spans.iter().filter(|span| span.kind == "tool").count() as u32,
-        retrieval_count: spans.iter().filter(|span| span.kind == "retrieval").count() as u32,
-        reward_count: spans.iter().filter(|span| span.kind == "reward").count() as u32,
+        kinds,
+        status: summary_status(spans),
         input_tokens,
         output_tokens,
         cost_usd,
-        min_step,
-        max_step,
-        thread_id: root.thread_id.clone(),
-        rollout_id: root.rollout_id.clone(),
-        summary_metrics_json: serde_json::to_string(&summary_metrics)
-            .map_err(|_| AppError::internal("trace summary metrics serialization failed"))?,
-        attributes_json: serde_json::to_string(&attributes)
-            .map_err(|_| AppError::internal("trace summary attributes serialization failed"))?,
+        min_step: steps.iter().copied().reduce(f64::min),
+        max_step: steps.iter().copied().reduce(f64::max),
+        summary_metrics,
+        running_span_count: spans.iter().filter(|span| span.status == "running").count() as u64,
+        error_count: spans.iter().filter(|span| span.status == "error").count() as u64,
+        model_call_count: spans.iter().filter(|span| span.kind == "model").count() as u64,
+        tool_call_count: spans.iter().filter(|span| span.kind == "tool").count() as u64,
+        retrieval_count: spans.iter().filter(|span| span.kind == "retrieval").count() as u64,
+        reward_count: spans.iter().filter(|span| span.kind == "reward").count() as u64,
+        root_count: spans
+            .iter()
+            .filter(|span| span.parent_span_id.is_empty())
+            .count() as u64,
+        orphan_span_count: spans
+            .iter()
+            .filter(|span| !span.parent_span_id.is_empty())
+            .filter(|span| !span_ids.contains(span.parent_span_id.as_str()))
+            .count() as u64,
         content_available: spans
             .iter()
-            .any(|span| !span.input_preview.is_empty() || !span.output_preview.is_empty())
-            as u8,
-        truncated: (summary_scan_truncated || spans.iter().any(|span| span.truncated != 0)) as u8,
-        updated_at: now,
+            .any(|span| !span.input_preview.is_empty() || !span.output_preview.is_empty()),
+        payloads_truncated: spans.iter().any(|span| span.truncated != 0),
     })
+}
+
+fn saturating_u32(value: u64) -> u32 {
+    value.min(u32::MAX as u64) as u32
 }
 
 fn summary_status(spans: &[TraceSpanCanonicalRow]) -> &'static str {
@@ -1068,24 +1127,7 @@ fn summary_from_spans(
     root_count: u64,
     orphan_count: u64,
 ) -> AppResult<crate::domain::TraceDetailSummary> {
-    let root = spans
-        .iter()
-        .filter(|span| span.parent_span_id.is_empty())
-        .min_by(|a, b| {
-            a.started_at
-                .cmp(&b.started_at)
-                .then_with(|| a.span_id.cmp(&b.span_id))
-        })
-        .unwrap_or(&spans[0]);
-    let started_at = spans
-        .iter()
-        .map(|span| span.started_at)
-        .min()
-        .unwrap_or(root.started_at);
-    let ended_at = spans.iter().filter_map(|span| span.ended_at).max();
-    let duration_ms =
-        ended_at.map(|ended| (ended - started_at).num_microseconds().unwrap_or(0) as f64 / 1000.0);
-    let (_, _, _, summary_metrics) = summary_metrics(spans)?;
+    let aggregate = aggregate_trace_spans(spans)?;
     let attributes = json!({
         "root_count": root_count,
         "orphan_span_count": orphan_count,
@@ -1097,20 +1139,18 @@ fn summary_from_spans(
         project_id: run.project_id,
         project: run.project.clone(),
         run_name: run.name.clone(),
-        root_span_id: root.span_id.clone(),
-        root_name: root.name.clone(),
-        status: summary_status(spans).to_string(),
-        started_at,
-        ended_at,
-        duration_ms,
+        root_span_id: aggregate.root.span_id.clone(),
+        root_name: aggregate.root.name.clone(),
+        status: aggregate.status.to_string(),
+        started_at: aggregate.started_at,
+        ended_at: aggregate.ended_at,
+        duration_ms: aggregate.duration_ms,
         span_count: total_span_count,
-        running_span_count: spans.iter().filter(|span| span.status == "running").count() as u64,
-        error_count: spans.iter().filter(|span| span.status == "error").count() as u64,
-        content_available: spans
-            .iter()
-            .any(|span| !span.input_preview.is_empty() || !span.output_preview.is_empty()),
-        payloads_truncated: spans.iter().any(|span| span.truncated != 0),
-        summary_metrics,
+        running_span_count: aggregate.running_span_count,
+        error_count: aggregate.error_count,
+        content_available: aggregate.content_available,
+        payloads_truncated: aggregate.payloads_truncated,
+        summary_metrics: aggregate.summary_metrics,
         attributes,
         summary: json!({
             "run_name": run.name,
@@ -1420,6 +1460,22 @@ fn trace_list_window(
     })
 }
 
+fn trace_search_query(query: &HashMap<String, String>) -> AppResult<Option<String>> {
+    let q = match query.get("q") {
+        Some(value) if value.trim().is_empty() => None,
+        Some(value) => Some(validate_short_string(value, "q", MAX_TRACE_FIELD_BYTES)?),
+        None => None,
+    };
+    if q.as_deref()
+        .is_some_and(|value| value.split_whitespace().count() > MAX_TRACE_SEARCH_TERMS)
+    {
+        return Err(AppError::validation(format!(
+            "q cannot include more than {MAX_TRACE_SEARCH_TERMS} search terms"
+        )));
+    }
+    Ok(q)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1431,6 +1487,42 @@ mod tests {
 
     fn fixed_now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 7, 3, 12, 0, 0).unwrap()
+    }
+
+    fn canonical_span(
+        span_id: &str,
+        parent_span_id: &str,
+        name: &str,
+        kind: &str,
+        status: &str,
+        started_at: DateTime<Utc>,
+        metrics_json: &str,
+    ) -> TraceSpanCanonicalRow {
+        TraceSpanCanonicalRow {
+            trace_id: trace_id(),
+            span_id: span_id.to_string(),
+            parent_span_id: parent_span_id.to_string(),
+            name: name.to_string(),
+            kind: kind.to_string(),
+            status: status.to_string(),
+            step: Some(7.0),
+            rank: None,
+            thread_id: "thread-a".to_string(),
+            rollout_id: "rollout-a".to_string(),
+            started_at,
+            ended_at: Some(started_at + ChronoDuration::milliseconds(125)),
+            duration_ms: Some(125.0),
+            input_preview: String::new(),
+            output_preview: String::new(),
+            error_type: String::new(),
+            error_preview: String::new(),
+            attributes_json: "{}".to_string(),
+            metrics_json: metrics_json.to_string(),
+            links_json: "[]".to_string(),
+            content_policy: "off".to_string(),
+            redaction_state: "not_captured".to_string(),
+            truncated: 0,
+        }
     }
 
     #[test]
@@ -1467,6 +1559,23 @@ mod tests {
             "2026-06-01T00:00:00+00:00"
         );
         assert_eq!(window.to.unwrap().to_rfc3339(), "2026-06-02T00:00:00+00:00");
+    }
+
+    #[test]
+    fn trace_search_query_rejects_too_many_terms() {
+        let mut query = HashMap::new();
+        query.insert(
+            "q".to_string(),
+            "one two three four five six seven eight nine".to_string(),
+        );
+
+        assert!(trace_search_query(&query)
+            .unwrap_err()
+            .message()
+            .contains("more than 8 search terms"));
+
+        query.insert("q".to_string(), "   ".to_string());
+        assert!(trace_search_query(&query).unwrap().is_none());
     }
 
     #[test]
@@ -1636,5 +1745,63 @@ mod tests {
             started_at.timestamp_millis(),
             row.started_at.timestamp_millis()
         );
+    }
+
+    #[test]
+    fn aggregate_trace_spans_pins_summary_semantics() {
+        let root = canonical_span(
+            "2222222222222222",
+            "",
+            "rollout",
+            "rollout",
+            "running",
+            fixed_now(),
+            r#"{"gen_ai.usage.input_tokens":4}"#,
+        );
+        let earlier_root = canonical_span(
+            "1111111111111111",
+            "",
+            "first-root",
+            "tool",
+            "ok",
+            fixed_now() - ChronoDuration::seconds(2),
+            r#"{"gen_ai.usage.output_tokens":2,"gen_ai.usage.cost_usd":0.25}"#,
+        );
+        let mut child = canonical_span(
+            "3333333333333333",
+            "2222222222222222",
+            "reward.score",
+            "reward",
+            "error",
+            fixed_now() + ChronoDuration::seconds(1),
+            r#"{"reward.total":0.92,"cost_usd":0.5}"#,
+        );
+        child.input_preview = "{\"token\":\"[REDACTED]\"}".to_string();
+        child.truncated = 1;
+        let orphan = canonical_span(
+            "4444444444444444",
+            "5555555555555555",
+            "orphan",
+            "retrieval",
+            "ok",
+            fixed_now() + ChronoDuration::seconds(2),
+            "{}",
+        );
+
+        let spans = [root, earlier_root, child, orphan];
+        let aggregate = aggregate_trace_spans(&spans).expect("aggregate");
+
+        assert_eq!(aggregate.root.span_id, "1111111111111111");
+        assert_eq!(aggregate.status, "error");
+        assert_eq!(aggregate.root_count, 2);
+        assert_eq!(aggregate.orphan_span_count, 1);
+        assert_eq!(aggregate.input_tokens, 4);
+        assert_eq!(aggregate.output_tokens, 2);
+        assert_eq!(aggregate.cost_usd, Some(0.75));
+        assert_eq!(aggregate.reward_count, 1);
+        assert_eq!(aggregate.retrieval_count, 1);
+        assert!(aggregate.content_available);
+        assert!(aggregate.payloads_truncated);
+        assert_eq!(aggregate.summary_metrics["reward.total"], json!(0.92));
     }
 }

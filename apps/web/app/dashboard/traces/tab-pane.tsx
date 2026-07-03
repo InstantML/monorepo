@@ -17,6 +17,7 @@ type TraceListResponse = components["schemas"]["TraceListResponse"];
 type TraceDetailResponse = components["schemas"]["TraceDetailResponse"];
 type TraceChildrenResponse = components["schemas"]["TraceChildrenResponse"];
 type TraceSpan = components["schemas"]["TraceSpanItem"];
+type TraceInspectorSummary = Pick<TraceSummary, "run_name">;
 
 type Props = {
   api: {
@@ -89,9 +90,15 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     () => traces.find((trace) => trace.trace_id === selectedTraceId && trace.run_id === selectedRunId) ?? null,
     [selectedRunId, selectedTraceId, traces],
   );
+  const selectedDetail = detail?.trace.run_id === selectedRunId && detail.trace.trace_id === selectedTraceId ? detail : null;
+  const inspectorSummary = useMemo<TraceInspectorSummary | null>(
+    () => selectedTrace ? { run_name: selectedTrace.run_name } : selectedDetail ? { run_name: selectedDetail.trace.run_name } : null,
+    [selectedDetail, selectedTrace],
+  );
+  const traceIdForActions = selectedTrace?.trace_id ?? selectedDetail?.trace.trace_id ?? selectedTraceId;
   const displayedSpanIndex = useMemo(
-    () => detail ? indexDisplayedSpans(detail.spans, childrenByParent) : { first: null, byId: new Map<string, TraceSpan>() },
-    [childrenByParent, detail],
+    () => selectedDetail ? indexDisplayedSpans(selectedDetail.spans, childrenByParent) : { first: null, byId: new Map<string, TraceSpan>() },
+    [childrenByParent, selectedDetail],
   );
   const selectedSpan = selectedSpanId ? displayedSpanIndex.byId.get(selectedSpanId) ?? null : displayedSpanIndex.first;
 
@@ -100,7 +107,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
   }, [selectedTraceId]);
 
   useEffect(() => {
-    selectedTraceKeyRef.current = `${selectedRunId}:${selectedTraceId}`;
+    selectedTraceKeyRef.current = traceKey(selectedRunId, selectedTraceId);
   }, [selectedRunId, selectedTraceId]);
 
   useEffect(() => {
@@ -114,6 +121,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
         setSelectedTraceId("");
         setSelectedSpanId("");
         selectedTraceIdRef.current = "";
+        selectedTraceKeyRef.current = "";
         setUrlStateReady(true);
         return;
       }
@@ -122,6 +130,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
       setSelectedTraceId(next.traceId);
       setSelectedSpanId(next.spanId);
       selectedTraceIdRef.current = next.traceId;
+      selectedTraceKeyRef.current = traceKey(next.runId, next.traceId);
       setUrlStateReady(true);
     };
     applyUrlState();
@@ -200,6 +209,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     async function loadDetail() {
       setDetailLoading(true);
       setDetailError("");
+      setDetail(null);
       setChildrenByParent({});
       try {
         const payload = await retryTransientRequest(
@@ -234,6 +244,8 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     setSelectedRunId(trace.run_id);
     setSelectedTraceId(trace.trace_id);
     setSelectedSpanId(trace.root_span_id);
+    selectedTraceIdRef.current = trace.trace_id;
+    selectedTraceKeyRef.current = traceKey(trace.run_id, trace.trace_id);
     setExpanded(new Set());
     onSelectRun(trace.run_id);
     if (updateUrl) replaceTraceUrl(trace.run_id, trace.trace_id, trace.root_span_id);
@@ -253,7 +265,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
 
   async function loadChildren(parentSpanId: string, cursor = "") {
     if (!selectedRunId || !selectedTraceId) return;
-    const requestTraceKey = `${selectedRunId}:${selectedTraceId}`;
+    const requestTraceKey = traceKey(selectedRunId, selectedTraceId);
     setChildrenByParent((current) => patchChildWindow(current, parentSpanId, { loading: true, error: "" }));
     try {
       const payload = await retryTransientRequest(
@@ -398,28 +410,28 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
         <section className="panel traces-detail-panel">
           <div className="panel-head">
             <h2><GitBranch size={15} /> Trace tree</h2>
-            {selectedTrace ? (
-              <button className="icon-button framed" type="button" aria-label="Copy trace ID" onClick={() => copyText(selectedTrace.trace_id)}>
+            {traceIdForActions ? (
+              <button className="icon-button framed" type="button" aria-label="Copy trace ID" onClick={() => copyText(traceIdForActions)}>
                 <Copy size={15} />
               </button>
             ) : null}
           </div>
           {detailLoading ? <div className="empty">Loading trace detail...</div> : null}
           {detailError ? <div className="status-strip">{detailError}</div> : null}
-          {detail ? (
+          {selectedDetail ? (
             <div className="trace-detail-grid">
               <div className="trace-tree" role="tree" aria-label="Trace spans">
                 <TraceTree
                   childrenByParent={childrenByParent}
-                  detail={detail}
+                  detail={selectedDetail}
                   expanded={expanded}
                   onLoadMoreChildren={loadChildren}
                   onToggle={toggleSpan}
                   selectedSpanId={selectedSpanId}
                 />
-                {detail.truncated.partial_tree ? <div className="trace-truncation">Partial tree · {formatNumber(detail.trace.total_span_count, 0)} total spans</div> : null}
+                {selectedDetail.truncated.partial_tree ? <div className="trace-truncation">Partial tree · {formatNumber(selectedDetail.trace.total_span_count, 0)} total spans</div> : null}
               </div>
-              <TraceInspector requestedSpanId={selectedSpanId} span={selectedSpan} summary={selectedTrace} />
+              <TraceInspector requestedSpanId={selectedSpanId} span={selectedSpan} summary={inspectorSummary} />
             </div>
           ) : !detailLoading && !detailError ? <div className="empty">Select a trace to inspect its spans.</div> : null}
         </section>
@@ -529,7 +541,7 @@ function TraceTreeNode({
   );
 }
 
-function TraceInspector({ requestedSpanId, span, summary }: { requestedSpanId: string; span: TraceSpan | null; summary: TraceSummary | null }) {
+function TraceInspector({ requestedSpanId, span, summary }: { requestedSpanId: string; span: TraceSpan | null; summary: TraceInspectorSummary | null }) {
   if (!span && requestedSpanId) return <aside className="trace-inspector empty">Span {requestedSpanId.slice(0, 8)} is outside the loaded tree window.</aside>;
   if (!span) return <aside className="trace-inspector empty">Select a span.</aside>;
   return (
@@ -655,6 +667,10 @@ function replaceTraceUrl(runId: string, traceId: string, spanId: string) {
   else url.searchParams.delete("span_id");
   const search = url.searchParams.toString();
   window.history.replaceState(null, "", search ? `${url.pathname}?${search}` : url.pathname);
+}
+
+function traceKey(runId: string, traceId: string) {
+  return `${runId}:${traceId}`;
 }
 
 async function copyText(value: string) {
