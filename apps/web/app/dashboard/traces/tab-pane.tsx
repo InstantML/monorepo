@@ -41,8 +41,7 @@ const statusOptions = ["", "running", "ok", "error", "cancelled", "interrupted"]
 const kindOptions = ["", "rollout", "env_step", "model", "tool", "retrieval", "reward", "evaluator", "dataset", "checkpoint", "artifact", "system", "custom"];
 
 export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project, sortedRuns }: Props) {
-  const initialUrl = useMemo(() => traceUrlState(), []);
-  const [runFilter, setRunFilter] = useState(initialUrl.runId || primaryRun?.id || "");
+  const [runFilter, setRunFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [kindFilter, setKindFilter] = useState("");
   const [query, setQuery] = useState("");
@@ -50,10 +49,13 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState("");
-  const [selectedRunId, setSelectedRunId] = useState(initialUrl.runId || "");
-  const [selectedTraceId, setSelectedTraceId] = useState(initialUrl.traceId || "");
-  const [selectedSpanId, setSelectedSpanId] = useState(initialUrl.spanId || "");
-  const selectedTraceIdRef = useRef(initialUrl.traceId || "");
+  const [selectedRunId, setSelectedRunId] = useState("");
+  const [selectedTraceId, setSelectedTraceId] = useState("");
+  const [selectedSpanId, setSelectedSpanId] = useState("");
+  const selectedTraceIdRef = useRef("");
+  const selectedTraceKeyRef = useRef("");
+  const urlStateHydratedRef = useRef(false);
+  const listControllerRef = useRef<AbortController | null>(null);
   const listRequestRef = useRef(0);
   const [detail, setDetail] = useState<TraceDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -75,14 +77,51 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     selectedTraceIdRef.current = selectedTraceId;
   }, [selectedTraceId]);
 
+  useEffect(() => {
+    selectedTraceKeyRef.current = `${selectedRunId}:${selectedTraceId}`;
+  }, [selectedRunId, selectedTraceId]);
+
+  useEffect(() => {
+    const applyUrlState = () => {
+      const next = traceUrlState();
+      const hasTraceUrlState = Boolean(next.runId || next.traceId || next.spanId);
+      urlStateHydratedRef.current = hasTraceUrlState;
+      if (!hasTraceUrlState) {
+        setRunFilter("");
+        setSelectedRunId("");
+        setSelectedTraceId("");
+        setSelectedSpanId("");
+        selectedTraceIdRef.current = "";
+        return;
+      }
+      setRunFilter(next.runId);
+      setSelectedRunId(next.runId);
+      setSelectedTraceId(next.traceId);
+      setSelectedSpanId(next.spanId);
+      selectedTraceIdRef.current = next.traceId;
+    };
+    applyUrlState();
+    window.addEventListener("popstate", applyUrlState);
+    return () => window.removeEventListener("popstate", applyUrlState);
+  }, []);
+
+  useEffect(() => {
+    if (urlStateHydratedRef.current || runFilter || !primaryRun?.id) return;
+    setRunFilter(primaryRun.id);
+  }, [primaryRun?.id, runFilter]);
+
   const loadTraces = useCallback(async (cursor = "") => {
+    listControllerRef.current?.abort();
     if (!project && !runFilter) {
+      listRequestRef.current += 1;
       setTraces([]);
       setNextCursor(null);
       setListError("");
+      setListLoading(false);
       return;
     }
     const controller = new AbortController();
+    listControllerRef.current = controller;
     const requestId = ++listRequestRef.current;
     setListLoading(true);
     setListError("");
@@ -112,11 +151,13 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
       }
     } finally {
       if (requestId === listRequestRef.current) setListLoading(false);
+      if (listControllerRef.current === controller) listControllerRef.current = null;
     }
   }, [api, kindFilter, project, query, runFilter, statusFilter]);
 
   useEffect(() => {
     void loadTraces("");
+    return () => listControllerRef.current?.abort();
   }, [loadTraces]);
 
   useEffect(() => {
@@ -170,6 +211,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
 
   async function loadChildren(parentSpanId: string, cursor = "") {
     if (!selectedRunId || !selectedTraceId) return;
+    const requestTraceKey = `${selectedRunId}:${selectedTraceId}`;
     setChildrenByParent((current) => ({
       ...current,
       [parentSpanId]: {
@@ -181,13 +223,16 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
       },
     }));
     try {
-      const payload = await api.get<TraceChildrenResponse>(
-        `/api/runs/${encodeURIComponent(selectedRunId)}/traces/${encodeURIComponent(selectedTraceId)}/spans${queryString({
-          parent_span_id: parentSpanId,
-          limit: TRACE_CHILD_LIMIT,
-          cursor,
-        })}`,
+      const payload = await retryTransientRequest(
+        () => api.get<TraceChildrenResponse>(
+          `/api/runs/${encodeURIComponent(selectedRunId)}/traces/${encodeURIComponent(selectedTraceId)}/spans${queryString({
+            parent_span_id: parentSpanId,
+            limit: TRACE_CHILD_LIMIT,
+            cursor,
+          })}`,
+        ),
       );
+      if (selectedTraceKeyRef.current !== requestTraceKey) return;
       setChildrenByParent((current) => {
         const previous = current[parentSpanId]?.spans ?? [];
         const spans = cursor ? [...previous, ...(payload.spans ?? [])] : payload.spans ?? [];
@@ -203,6 +248,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
         };
       });
     } catch (error) {
+      if (selectedTraceKeyRef.current !== requestTraceKey) return;
       setChildrenByParent((current) => ({
         ...current,
         [parentSpanId]: {
@@ -350,6 +396,7 @@ function TraceTree({
   selectedSpanId: string;
 }) {
   const roots = rootSpans(detail.spans);
+  const knownChildrenByParent = useMemo(() => groupKnownChildren(detail.spans), [detail.spans]);
   return (
     <div>
       {roots.map((span) => (
@@ -358,6 +405,7 @@ function TraceTree({
           expanded={expanded}
           key={span.span_id}
           level={1}
+          knownChildrenByParent={knownChildrenByParent}
           onLoadMoreChildren={onLoadMoreChildren}
           onToggle={onToggle}
           selectedSpanId={selectedSpanId}
@@ -371,6 +419,7 @@ function TraceTree({
 function TraceTreeNode({
   childrenByParent,
   expanded,
+  knownChildrenByParent,
   level,
   onLoadMoreChildren,
   onToggle,
@@ -379,6 +428,7 @@ function TraceTreeNode({
 }: {
   childrenByParent: Record<string, ChildWindow>;
   expanded: Set<string>;
+  knownChildrenByParent: Record<string, TraceSpan[]>;
   level: number;
   onLoadMoreChildren: (parentSpanId: string, cursor?: string) => void;
   onToggle: (span: TraceSpan) => void;
@@ -387,8 +437,13 @@ function TraceTreeNode({
 }) {
   const childWindow = childrenByParent[span.span_id];
   const isExpanded = expanded.has(span.span_id);
-  const children = childWindow?.spans ?? [];
-  const hasChildren = span.child_count > 0;
+  const knownChildren = knownChildrenByParent[span.span_id] ?? [];
+  const knownChildIds = new Set(knownChildren.map((child) => child.span_id));
+  const children = [
+    ...knownChildren,
+    ...(childWindow?.spans ?? []).filter((child) => !knownChildIds.has(child.span_id)),
+  ];
+  const hasChildren = span.child_count > 0 || children.length > 0;
   return (
     <div className="trace-node" role="treeitem" aria-expanded={hasChildren ? isExpanded : undefined}>
       <button className={`trace-node-button ${selectedSpanId === span.span_id ? "active" : ""}`} style={{ paddingLeft: `${level * 14}px` }} type="button" onClick={() => onToggle(span)}>
@@ -407,6 +462,7 @@ function TraceTreeNode({
               childrenByParent={childrenByParent}
               expanded={expanded}
               key={child.span_id}
+              knownChildrenByParent={knownChildrenByParent}
               level={level + 1}
               onLoadMoreChildren={onLoadMoreChildren}
               onToggle={onToggle}
@@ -478,12 +534,28 @@ function rootSpans(spans: TraceSpan[]) {
 
 function flattenDisplayedSpans(spans: TraceSpan[], childrenByParent: Record<string, ChildWindow>) {
   const out: TraceSpan[] = [];
+  const knownChildrenByParent = groupKnownChildren(spans);
+  const seen = new Set<string>();
   const visit = (span: TraceSpan) => {
+    if (seen.has(span.span_id)) return;
+    seen.add(span.span_id);
     out.push(span);
+    for (const child of knownChildrenByParent[span.span_id] ?? []) visit(child);
     for (const child of childrenByParent[span.span_id]?.spans ?? []) visit(child);
   };
   for (const span of rootSpans(spans)) visit(span);
+  for (const span of spans) visit(span);
   return out;
+}
+
+function groupKnownChildren(spans: TraceSpan[]) {
+  return spans.reduce<Record<string, TraceSpan[]>>((groups, span) => {
+    if (!span.parent_span_id) return groups;
+    const group = groups[span.parent_span_id] ?? [];
+    group.push(span);
+    groups[span.parent_span_id] = group;
+    return groups;
+  }, {});
 }
 
 function formatDuration(value: number | null | undefined) {

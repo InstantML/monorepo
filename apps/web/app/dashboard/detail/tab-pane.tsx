@@ -1,10 +1,10 @@
 "use client";
 
-import { Copy, Database, GitBranch, GitFork, Square } from "lucide-react";
+import { Activity, Copy, Database, GitBranch, GitFork, Square } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import { isAbortError } from "../../../src/api.js";
+import { isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
 import { defaultForkRunName } from "../../../src/checkpoints.js";
 import { smoothSeries } from "../../../src/charts.js";
 import { canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, preferredMetricKey } from "../../../src/state.js";
@@ -16,8 +16,10 @@ import { RunMetricTable } from "./run-detail";
 import { ConfigPanel, ForkCheckpointDialog, OverviewTab, newestCheckpoint } from "./overview";
 import type { ForkCheckpointOptions, OverviewChartSpec } from "./overview";
 import type { Artifact, HoverPoint, LoggedObject, LoggedObjectRow, MetricPoint, MetricSeries, RunLineage, RunMetricRow, RunSummary, RunTimelineRow } from "../../dashboard-types";
+import type { components } from "../../../src/types/api.generated";
 
 type ChartZoomRange = { min: number; max: number } | null;
+type TraceSummary = components["schemas"]["TraceSummaryItem"];
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;
   post(path: string, body?: any, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<any>;
@@ -394,11 +396,13 @@ const LIVE_SERIES_POLL_MS = 45_000;
 const DETAIL_TABS: Array<{ id: RunWorkspaceTabId; label: string }> = [
   { id: "summary", label: "Overview" },
   { id: "data", label: "Metrics" },
+  { id: "traces", label: "Traces" },
   { id: "files", label: "Artifacts" },
   { id: "logs", label: "Logs" },
   { id: "system", label: "Config" },
   { id: "graph", label: "Lineage" },
 ];
+const RECENT_TRACE_LIMIT = 20;
 
 function artifactCountForRun(run: RunSummary, loadedCount: number) {
   const counted = Object.values(run.artifact_counts ?? {}).reduce((total, value) => (
@@ -450,6 +454,9 @@ export function DetailTabPane({
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [liveTick, setLiveTick] = useState(0);
   const [forkArtifact, setForkArtifact] = useState<Artifact | null>(null);
+  const [recentTraces, setRecentTraces] = useState<TraceSummary[]>([]);
+  const [recentTracesLoading, setRecentTracesLoading] = useState(false);
+  const [recentTracesError, setRecentTracesError] = useState("");
 
   const runId = run?.id ?? "";
   const userRows = useMemo(() => runMetricRows.filter((row) => !isInternalInstantMlMetric(row.key)), [runMetricRows]);
@@ -547,6 +554,40 @@ export function DetailTabPane({
     const timer = window.setInterval(() => setLiveTick((current) => current + 1), LIVE_SERIES_POLL_MS);
     return () => window.clearInterval(timer);
   }, [liveRun]);
+
+  useEffect(() => {
+    if (runWorkspaceTab !== "traces" || !run) {
+      setRecentTraces([]);
+      setRecentTracesError("");
+      setRecentTracesLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setRecentTraces([]);
+    setRecentTracesLoading(true);
+    setRecentTracesError("");
+    retryTransientRequest(
+      () => api.get(`/api/traces${queryString(runTraceListQuery(run))}`, { signal: controller.signal }),
+      { signal: controller.signal },
+    )
+      .then((payload) => {
+        if (!cancelled) setRecentTraces(((payload?.traces ?? []) as TraceSummary[]).slice(0, RECENT_TRACE_LIMIT));
+      })
+      .catch((caught) => {
+        if (!cancelled && !isAbortError(caught)) {
+          setRecentTraces([]);
+          setRecentTracesError(caught instanceof Error ? caught.message : "Unable to load traces.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRecentTracesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [api, run?.started_at, runId, runWorkspaceTab]);
 
   const kpiCells = useMemo(() => (
     run ? buildKpiCells({ run, running, seriesMap, userRows }) : []
@@ -777,6 +818,15 @@ export function DetailTabPane({
 
       {runWorkspaceTab === "logs" ? <RunLogsPanel api={api as any} run={run} /> : null}
 
+      {runWorkspaceTab === "traces" ? (
+        <RecentTracesPanel
+          error={recentTracesError}
+          loading={recentTracesLoading}
+          run={run}
+          traces={recentTraces}
+        />
+      ) : null}
+
       {runWorkspaceTab === "files" ? (
         <RunEvidenceExplorer artifacts={visibleArtifacts} objects={loggedObjects} rowsByObjectId={objectRowsById} run={run} />
       ) : null}
@@ -801,4 +851,77 @@ export function DetailTabPane({
       ) : null}
     </div>
   );
+}
+
+function RecentTracesPanel({
+  error,
+  loading,
+  run,
+  traces,
+}: {
+  error: string;
+  loading: boolean;
+  run: RunSummary;
+  traces: TraceSummary[];
+}) {
+  return (
+    <div className="pd-stack pd-traces-panel">
+      <section className="pd-panel">
+        <div className="pd-panel-head">
+          <span className="pd-mlabel"><Activity size={14} /> Recent traces</span>
+          <span className="pd-unit">last {RECENT_TRACE_LIMIT} for this run</span>
+        </div>
+        <div className="pd-panel-body">
+          {error ? <div className="status-strip">{error}</div> : null}
+          {loading ? <div className="empty compact-empty">Loading traces...</div> : null}
+          {!loading && !error && !traces.length ? (
+            <div className="empty compact-empty">No traces logged for {run.name} yet.</div>
+          ) : null}
+          {traces.length ? (
+            <div className="pd-trace-list" role="list" aria-label={`Recent traces for ${run.name}`}>
+              {traces.map((trace) => (
+                <a className="pd-trace-row" href={traceHref(trace)} key={`${trace.run_id}:${trace.trace_id}`} role="listitem">
+                  <span className={`trace-status ${trace.status}`}>{trace.status}</span>
+                  <span className="pd-trace-main">
+                    <strong>{trace.root_name || trace.trace_id.slice(0, 8)}</strong>
+                    <small>{trace.kinds.slice(0, 3).join(", ") || "custom"} · {trace.thread_id || trace.rollout_id || trace.trace_id.slice(0, 8)}</small>
+                  </span>
+                  <span className="pd-trace-meta">{formatNumber(trace.span_count, 0)} spans</span>
+                  <span className="pd-trace-meta">{traceDuration(trace.duration_ms)}</span>
+                  <span className="pd-trace-meta">{formatRunTime(trace.updated_at)}</span>
+                </a>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function traceHref(trace: TraceSummary) {
+  return `/dashboard/traces${queryString({
+    run_id: trace.run_id,
+    trace_id: trace.trace_id,
+    span_id: trace.root_span_id || undefined,
+  })}`;
+}
+
+function runTraceListQuery(run: RunSummary) {
+  const params: Record<string, string | number | undefined> = {
+    run_id: run.id,
+    limit: RECENT_TRACE_LIMIT,
+  };
+  const from = Date.parse(run.started_at);
+  if (Number.isFinite(from)) {
+    params.from = new Date(from).toISOString();
+    params.to = new Date(Date.now() + 60_000).toISOString();
+  }
+  return params;
+}
+
+function traceDuration(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  if (value < 1_000) return `${formatNumber(value, 0)} ms`;
+  return `${formatNumber(value / 1_000, value >= 10_000 ? 1 : 2)} s`;
 }

@@ -1229,7 +1229,18 @@ pub(crate) fn clickhouse_read_error(err: clickhouse::error::Error) -> AppError {
 
 pub(crate) fn clickhouse_storage_error(action: &str, err: clickhouse::error::Error) -> AppError {
     let message = format!("{action}: {err}");
-    if is_clickhouse_unavailable_message(&message) {
+    let unavailable = is_clickhouse_unavailable_message(&message);
+    tracing::error!(
+        workflow = "clickhouse",
+        operation = "storage",
+        outcome = "failure",
+        error_kind = "clickhouse_error",
+        action,
+        unavailable,
+        error = %err,
+        "clickhouse storage operation failed"
+    );
+    if unavailable {
         AppError::warehouse_unavailable(message)
     } else {
         AppError::internal(message)

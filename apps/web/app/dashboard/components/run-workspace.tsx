@@ -42,7 +42,7 @@ import type {
   RunTimelineRow,
 } from "../../dashboard-types";
 
-export type RunWorkspaceTabId = "summary" | "data" | "logs" | "files" | "system" | "graph";
+export type RunWorkspaceTabId = "summary" | "data" | "traces" | "logs" | "files" | "system" | "graph";
 type ChartZoomRange = { min: number; max: number } | null;
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;

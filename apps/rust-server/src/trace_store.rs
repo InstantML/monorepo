@@ -362,14 +362,21 @@ pub async fn list_trace_summaries(
     query: &TraceListQuery,
 ) -> AppResult<Vec<TraceSummaryReadRow>> {
     let mut sql = String::from(
-        "SELECT * FROM ( \
+        "SELECT \
+           project_id, run_id, trace_id, \
+           root_span_id, root_name, status, kinds, summary_started_at AS started_at, ended_at, duration_ms, \
+           span_count, running_span_count, error_count, model_call_count, tool_call_count, \
+           retrieval_count, reward_count, input_tokens, output_tokens, cost_usd, min_step, \
+           max_step, thread_id, rollout_id, summary_metrics_json, attributes_json, \
+           content_available, truncated, summary_updated_at AS updated_at \
+         FROM ( \
            SELECT \
              project_id, run_id, trace_id, \
              argMax(root_span_id, tuple(updated_at, event_id)) AS root_span_id, \
              argMax(root_name, tuple(updated_at, event_id)) AS root_name, \
              argMax(status, tuple(updated_at, event_id)) AS status, \
              argMax(kinds, tuple(updated_at, event_id)) AS kinds, \
-             argMax(started_at, tuple(updated_at, event_id)) AS started_at, \
+             argMax(started_at, tuple(updated_at, event_id)) AS summary_started_at, \
              argMax(ended_at, tuple(updated_at, event_id)) AS ended_at, \
              argMax(duration_ms, tuple(updated_at, event_id)) AS duration_ms, \
              argMax(span_count, tuple(updated_at, event_id)) AS span_count, \
@@ -390,7 +397,7 @@ pub async fn list_trace_summaries(
              argMax(attributes_json, tuple(updated_at, event_id)) AS attributes_json, \
              argMax(content_available, tuple(updated_at, event_id)) AS content_available, \
              argMax(truncated, tuple(updated_at, event_id)) AS truncated, \
-             max(updated_at) AS updated_at \
+             max(updated_at) AS summary_updated_at \
            FROM trace_summaries \
            WHERE org_id = ? \
              AND project_id = ? \
@@ -399,15 +406,16 @@ pub async fn list_trace_summaries(
                FROM trace_ingest_batches \
                WHERE org_id = ? AND project_id = ? AND status = 'accepted' \
                GROUP BY run_id, idempotency_key \
-             )",
+             ) \
+             AND started_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
+             AND started_at < parseDateTime64BestEffort(?, 6, 'UTC')",
     );
     if query.run_id.is_some() {
         sql.push_str(" AND run_id = ?");
     }
     sql.push_str(
         " GROUP BY project_id, run_id, trace_id \
-         ) WHERE started_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
-             AND started_at < parseDateTime64BestEffort(?, 6, 'UTC')",
+         ) WHERE 1",
     );
     if query.status.is_some() {
         sql.push_str(" AND status = ?");
@@ -431,11 +439,11 @@ pub async fn list_trace_summaries(
     }
     if query.cursor.is_some() {
         sql.push_str(
-            " AND (started_at < parseDateTime64BestEffort(?, 6, 'UTC') \
-               OR (started_at = parseDateTime64BestEffort(?, 6, 'UTC') AND trace_id < ?))",
+            " AND (summary_started_at < parseDateTime64BestEffort(?, 6, 'UTC') \
+               OR (summary_started_at = parseDateTime64BestEffort(?, 6, 'UTC') AND trace_id < ?))",
         );
     }
-    sql.push_str(" ORDER BY started_at DESC, trace_id DESC LIMIT ?");
+    sql.push_str(" ORDER BY summary_started_at DESC, trace_id DESC LIMIT ?");
 
     let mut q = store
         .client()
@@ -443,11 +451,12 @@ pub async fn list_trace_summaries(
         .bind(org_id)
         .bind(query.project_id)
         .bind(org_id)
-        .bind(query.project_id);
+        .bind(query.project_id)
+        .bind(query.from.to_rfc3339())
+        .bind(query.to.to_rfc3339());
     if let Some(run_id) = query.run_id {
         q = q.bind(run_id);
     }
-    q = q.bind(query.from.to_rfc3339()).bind(query.to.to_rfc3339());
     if let Some(status) = &query.status {
         q = q.bind(status);
     }
@@ -498,9 +507,9 @@ pub async fn child_span_ids(
     cursor: Option<(DateTime<Utc>, String)>,
 ) -> AppResult<Vec<TraceSpanIndexReadRow>> {
     let mut sql = String::from(
-        "SELECT span_id, parent_span_id, started_at \
+        "SELECT span_id, span_parent_id AS parent_span_id, first_started_at AS started_at \
          FROM ( \
-           SELECT span_id, any(parent_span_id) AS parent_span_id, min(started_at) AS started_at \
+           SELECT span_id, any(parent_span_id) AS span_parent_id, min(started_at) AS first_started_at \
            FROM trace_span_index \
            WHERE org_id = ? AND project_id = ? AND run_id = ? AND trace_id = ? AND parent_span_id = ? \
              AND idempotency_key IN ( \
@@ -514,11 +523,11 @@ pub async fn child_span_ids(
     );
     if cursor.is_some() {
         sql.push_str(
-            " AND (started_at > parseDateTime64BestEffort(?, 6, 'UTC') \
-               OR (started_at = parseDateTime64BestEffort(?, 6, 'UTC') AND span_id > ?))",
+            " AND (first_started_at > parseDateTime64BestEffort(?, 6, 'UTC') \
+               OR (first_started_at = parseDateTime64BestEffort(?, 6, 'UTC') AND span_id > ?))",
         );
     }
-    sql.push_str(" ORDER BY started_at ASC, span_id ASC LIMIT ?");
+    sql.push_str(" ORDER BY first_started_at ASC, span_id ASC LIMIT ?");
 
     let mut q = store
         .client()
@@ -769,7 +778,7 @@ pub async fn orphan_count(
         .query(
             "SELECT count() \
              FROM ( \
-               SELECT span_id, any(parent_span_id) AS parent_span_id \
+               SELECT span_id, any(parent_span_id) AS canonical_parent_span_id \
                FROM trace_span_index \
                WHERE org_id = ? AND project_id = ? AND run_id = ? AND trace_id = ? \
                  AND idempotency_key IN ( \
@@ -780,8 +789,8 @@ pub async fn orphan_count(
                  ) \
                GROUP BY span_id \
              ) \
-             WHERE parent_span_id != '' \
-               AND parent_span_id NOT IN ( \
+             WHERE canonical_parent_span_id != '' \
+               AND canonical_parent_span_id NOT IN ( \
                  SELECT span_id \
                  FROM trace_span_index \
                  WHERE org_id = ? AND project_id = ? AND run_id = ? AND trace_id = ? \

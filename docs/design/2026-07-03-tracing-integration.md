@@ -518,6 +518,7 @@ CREATE TABLE IF NOT EXISTS trace_span_events (
     trace_id         String,
     span_id          String,
     parent_span_id   String,
+    idempotency_key  String,
     event_id         UUID,
     sequence         UInt64 CODEC(Delta, ZSTD(3)),
     event_kind       LowCardinality(String),
@@ -545,7 +546,7 @@ CREATE TABLE IF NOT EXISTS trace_span_events (
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)
-ORDER BY (org_id, project_id, run_id, trace_id, span_id, sequence, created_at, event_id)
+ORDER BY (org_id, project_id, run_id, trace_id, span_id, idempotency_key, sequence, created_at, event_id)
 SETTINGS index_granularity = 8192;
 ```
 
@@ -609,6 +610,7 @@ CREATE TABLE IF NOT EXISTS trace_span_index (
     trace_id         String,
     span_id          String,
     parent_span_id   String,
+    idempotency_key  String,
     event_id         UUID,
     name             String CODEC(ZSTD(3)),
     kind             LowCardinality(String),
@@ -731,17 +733,18 @@ CREATE TABLE IF NOT EXISTS trace_ingest_batches (
     project_id          UUID,
     run_id              UUID,
     idempotency_key     String,
+    status              LowCardinality(String),
     body_hash           String,
     response_json       String CODEC(ZSTD(3)),
     trace_ids           Array(String),
-    event_ids           Array(UUID),
+    event_ids           Array(String),
     usage_event_count   UInt32 CODEC(Delta, ZSTD(3)),
     billing_period      String,
     accepted_at         DateTime64(6, 'UTC') DEFAULT now64(6) CODEC(Delta, ZSTD(3))
 )
 ENGINE = MergeTree
 PARTITION BY billing_period
-ORDER BY (org_id, billing_period, idempotency_key, accepted_at)
+ORDER BY (org_id, billing_period, run_id, idempotency_key, status, accepted_at)
 SETTINGS index_granularity = 8192;
 ```
 
@@ -1745,9 +1748,46 @@ section before implementation is accepted.
   durability paths, and Traces tab wiring.
 - Still deferred after this first slice: decorator/auto-instrumentation APIs,
   OTLP/import/export and Castform-style trace-to-dataset workflows, optimized
-  incremental trace summary maintenance, Run Detail recent-traces panel,
-  large-trace timeline scrubber, and an authenticated browser E2E that seeds
-  trace data locally.
+  incremental trace summary maintenance, large-trace timeline scrubber, and
+  broad cross-browser/mobile visual coverage for trace-heavy workspaces.
+
+2026-07-03 Run Detail follow-up:
+
+- Added the deferred Run Detail recent-traces panel now that exact trace
+  deep-linking is available. The local `Traces` section fetches only while
+  opened, requests the selected run's most recent 20 trace summaries through
+  `GET /api/traces?run_id=...`, bounds the query to the run lifetime so older
+  imported runs are not hidden by the dashboard default lookback, clears stale
+  rows immediately when switching runs, and links each row to the full Traces
+  workspace with `run_id`, `trace_id`, and root `span_id`.
+- Extended the authenticated UI smoke seed to ingest a native trace batch and
+  verify Run Detail stays trace-lazy until the local Traces section is opened,
+  then navigates through the exact full-workspace trace link.
+- Hardened ClickHouse trace read SQL after the real smoke found alias
+  substitution failures in summary and topology queries. Aggregate aliases now
+  avoid shadowing raw columns used in filters, run/time bounds are applied inside
+  the summary scan before grouping, and the smoke harness prints a Rust server
+  log tail on failure so future storage errors are diagnosable without exposing
+  internals in public API responses.
+- Rejected same-batch span parent rewrites during ingest while preserving the
+  common `started` + `finished` shape where the later finish event omits a known
+  parent. Cross-batch parent repair remains deferred to explicit follow-up
+  logic rather than hidden ClickHouse mutation.
+- Fixed direct Traces deep-link hydration by resolving `run_id`, `trace_id`,
+  and `span_id` after mount instead of reading `window.location.search` during
+  the first client render. This keeps SSR and hydration text stable while still
+  loading the linked trace immediately after mount.
+- Fixed lazy child-span rendering so detail responses that already include flat
+  descendants are displayed without an extra child request, and stale child/list
+  responses cannot attach to a newly selected trace.
+- Added `npm run test:ui:traces`, a targeted Rust/ClickHouse/Next smoke that
+  seeds a native trace, asserts `GET /api/traces?run_id=...` returns the trace,
+  opens Run Detail's local Traces section, and follows the exact deep-link into
+  the full Traces workspace.
+- Remaining after this follow-up: decorator/auto-instrumentation APIs,
+  OTLP/import/export and Castform-style trace-to-dataset workflows, optimized
+  incremental trace summary maintenance, large-trace timeline scrubber, and
+  broader cross-browser/mobile visual coverage for trace-heavy workspaces.
 
 ## Decision
 

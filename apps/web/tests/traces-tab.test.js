@@ -6,8 +6,10 @@ import { DASHBOARD_TAB_IDS, tabFromPath, tabToPath } from "../src/routes.js";
 
 const configSource = readFileSync(new URL("../app/dashboard-config.tsx", import.meta.url), "utf8");
 const shellSource = readFileSync(new URL("../app/dashboard/dashboard-shell.tsx", import.meta.url), "utf8");
+const detailSource = readFileSync(new URL("../app/dashboard/detail/tab-pane.tsx", import.meta.url), "utf8");
 const paneSource = readFileSync(new URL("../app/dashboard/traces/tab-pane.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/styles/traces.css", import.meta.url), "utf8");
+const runDetailStyles = readFileSync(new URL("../app/styles/run-detail.css", import.meta.url), "utf8");
 
 test("traces is a first-class dashboard route and nav item", () => {
   assert.ok(DASHBOARD_TAB_IDS.includes("traces"));
@@ -34,4 +36,18 @@ test("traces tab exposes tree, inspector, status, and responsive styles", () => 
   assert.match(styles, /\.trace-node-button/);
   assert.match(styles, /\.trace-inspector/);
   assert.match(styles, /@media \(max-width: 720px\)/);
+});
+
+test("run detail exposes recent traces lazily with exact deep links", () => {
+  assert.match(detailSource, /id: "traces", label: "Traces"/);
+  assert.match(detailSource, /runWorkspaceTab !== "traces"/);
+  assert.match(detailSource, /\/api\/traces\$\{queryString\(runTraceListQuery\(run\)\)\}/);
+  assert.match(detailSource, /run_id: run\.id/);
+  assert.match(detailSource, /limit: RECENT_TRACE_LIMIT/);
+  assert.match(detailSource, /params\.from = new Date\(from\)\.toISOString\(\)/);
+  assert.match(detailSource, /params\.to = new Date\(Date\.now\(\) \+ 60_000\)\.toISOString\(\)/);
+  assert.match(detailSource, /\/dashboard\/traces\$\{queryString\(\{/);
+  assert.match(detailSource, /span_id: trace\.root_span_id \|\| undefined/);
+  assert.match(runDetailStyles, /\.pd-trace-row/);
+  assert.match(runDetailStyles, /grid-template-columns: 84px minmax\(0, 1fr\) 82px 78px 132px/);
 });

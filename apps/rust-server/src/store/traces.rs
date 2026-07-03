@@ -773,6 +773,7 @@ fn validate_trace_events(events: Vec<TraceEventInput>) -> AppResult<Vec<ValidTra
     }
     let mut seen = BTreeSet::new();
     let mut seen_span_sequences = BTreeSet::new();
+    let mut span_parent_ids: HashMap<(String, String), String> = HashMap::new();
     let mut out = Vec::with_capacity(events.len());
     for (index, input) in events.into_iter().enumerate() {
         if !seen.insert(input.event_id) {
@@ -787,7 +788,7 @@ fn validate_trace_events(events: Vec<TraceEventInput>) -> AppResult<Vec<ValidTra
                 "events[{index}].sequence is duplicated for this span"
             )));
         }
-        let parent_span_id = input
+        let mut parent_span_id = input
             .parent_span_id
             .as_deref()
             .map(|value| validate_span_id(value, "parent_span_id"))
@@ -797,6 +798,20 @@ fn validate_trace_events(events: Vec<TraceEventInput>) -> AppResult<Vec<ValidTra
             return Err(AppError::validation(
                 "parent_span_id cannot be the same as span_id",
             ));
+        }
+        let span_key = (trace_id.clone(), span_id.clone());
+        if let Some(previous_parent_span_id) = span_parent_ids.get(&span_key).cloned() {
+            if previous_parent_span_id != parent_span_id {
+                if parent_span_id.is_empty() && !previous_parent_span_id.is_empty() {
+                    parent_span_id = previous_parent_span_id;
+                } else {
+                    return Err(AppError::validation(format!(
+                        "events[{index}].parent_span_id changes an existing span parent"
+                    )));
+                }
+            }
+        } else {
+            span_parent_ids.insert(span_key, parent_span_id.clone());
         }
         let event_kind = validate_trace_event_kind(&input.event_kind)?;
         let kind = validate_trace_kind(&input.kind)?;
@@ -1434,6 +1449,54 @@ mod tests {
         child.event_id = Uuid::new_v4();
 
         assert!(validate_trace_events(vec![parent, child]).is_err());
+    }
+
+    #[test]
+    fn trace_event_validation_rejects_parent_changes_within_batch() {
+        let started_at = "2026-07-03T12:00:00Z".to_string();
+        let first = TraceEventInput {
+            trace_id: trace_id(),
+            span_id: "086e83747d0e381e".to_string(),
+            parent_span_id: Some("1111111111111111".to_string()),
+            event_id: Uuid::new_v4(),
+            sequence: 1,
+            event_kind: "started".to_string(),
+            name: "child".to_string(),
+            kind: "model".to_string(),
+            status: "running".to_string(),
+            step: Some(1.0),
+            rank: None,
+            thread_id: None,
+            rollout_id: None,
+            started_at,
+            ended_at: None,
+            duration_ms: None,
+            input_preview: None,
+            output_preview: None,
+            error_type: None,
+            error_preview: None,
+            attributes: Some(json!({})),
+            metrics: Some(json!({})),
+            links: Some(json!([])),
+            content_policy: Some("off".to_string()),
+            redaction_state: Some("not_captured".to_string()),
+            truncated: Some(false),
+        };
+        let mut changed_parent = first.clone();
+        changed_parent.event_id = Uuid::new_v4();
+        changed_parent.sequence = 2;
+        changed_parent.parent_span_id = Some("2222222222222222".to_string());
+
+        assert!(validate_trace_events(vec![first.clone(), changed_parent]).is_err());
+
+        let mut omitted_parent_finish = first.clone();
+        omitted_parent_finish.event_id = Uuid::new_v4();
+        omitted_parent_finish.sequence = 2;
+        omitted_parent_finish.event_kind = "finished".to_string();
+        omitted_parent_finish.status = "ok".to_string();
+        omitted_parent_finish.parent_span_id = None;
+        let normalized = validate_trace_events(vec![first, omitted_parent_finish]).unwrap();
+        assert_eq!(normalized[1].parent_span_id, "1111111111111111");
     }
 
     #[test]
