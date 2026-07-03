@@ -345,7 +345,6 @@
     padding: 7px 12px 4px;
     color: var(--faint);
     font: 700 10px/1 var(--font-mono);
-    text-transform: uppercase;
   }
   .tab-group:last-child { border-bottom: 0; }
   .tab-button {
