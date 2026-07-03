@@ -104,18 +104,27 @@ describe("landing stat cards — dark theme contrast", () => {
 // ── S2: JSON-LD uses the escaping serializer ─────────────────────────────────
 describe("layout.tsx — JSON-LD escaping", () => {
   const layout = read("app/layout.tsx");
+  const serializer = read("src/json-ld.js");
 
-  test("defines a serializer that escapes < and U+2028/U+2029", () => {
-    assert.match(layout, /function serializeJsonLd/);
-    assert.match(layout, /\\\\u003c/);
-    assert.match(layout, /\\u2028/);
-    assert.match(layout, /\\u2029/);
+  test("shared serializer escapes < and U+2028/U+2029", () => {
+    assert.match(serializer, /function serializeJsonLd/);
+    assert.match(serializer, /\\\\u003c/);
+    assert.match(serializer, /\\u2028/);
+    assert.match(serializer, /\\u2029/);
+    assert.match(layout, /from "\.\.\/src\/json-ld\.js"/);
   });
 
-  test("both JSON-LD blocks embed through the serializer, not raw JSON.stringify", () => {
+  test("all JSON-LD blocks embed through the serializer, not raw JSON.stringify", () => {
     assert.match(layout, /serializeJsonLd\(organizationJsonLd\)/);
+    assert.match(layout, /serializeJsonLd\(webSiteJsonLd\)/);
     assert.match(layout, /serializeJsonLd\(softwareApplicationJsonLd\)/);
     assert.doesNotMatch(layout, /__html:\s*JSON\.stringify/);
+  });
+
+  test("docs breadcrumb JSON-LD embeds through the serializer", () => {
+    const docsPage = read("app/docs/[[...slug]]/page.tsx");
+    assert.match(docsPage, /serializeJsonLd\(breadcrumbJsonLd\(page\)\)/);
+    assert.doesNotMatch(docsPage, /__html:\s*JSON\.stringify/);
   });
 });
 
