@@ -2453,6 +2453,10 @@ button.secondary.danger-action:hover:not(:disabled),
 .agent-capability-tools-toggle {
   appearance: none;
   font-family: var(--font-mono);
+  /* base.css buttons carry min-height: 32px and font-weight: 680; match the
+   * surrounding code chips instead. */
+  min-height: 0;
+  font-weight: inherit;
   line-height: inherit;
   margin: 0;
   cursor: pointer;
@@ -2460,6 +2464,8 @@ button.secondary.danger-action:hover:not(:disabled),
 
 .agent-capability-tools-toggle:hover,
 .agent-capability-tools-toggle:focus-visible {
+  /* Pin the chip background so the base button:hover light wash doesn't apply. */
+  background: var(--bg-soft);
   color: var(--text);
   border-color: var(--text-3);
 }
