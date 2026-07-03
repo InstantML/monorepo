@@ -3,11 +3,9 @@ title: "Schema reference"
 description: "Public storage-shape reference for core InstantML entities and metric tables."
 ---
 
-# Schema reference
-
-This page describes the public storage shapes users and integrators need to
-understand exports, imports, API responses, and dashboard behavior. Physical
-database details can evolve, but the entity meanings should remain stable.
+This page documents the stable public shapes behind exports, imports, API
+responses, and dashboard behavior; physical database details can evolve, but
+these entity meanings hold.
 
 ## Project
 
@@ -21,7 +19,7 @@ database details can evolve, but the entity meanings should remain stable.
 }
 ```
 
-A project groups runs inside one organization. SDK run creation can create a
+A project groups runs inside one workspace. SDK run creation can create a
 project automatically unless a project-scoped API key forbids it.
 
 ## Run
@@ -43,14 +41,19 @@ project automatically unless a project-scoped API key forbids it.
 }
 ```
 
-Run statuses:
+Stored run statuses:
 
 - `running`
 - `finished`
 - `failed`
 
-Notes are stored in run metadata and treated as searchable run identity by the
-dashboard.
+The dashboard derives a display status that can also show `stopping` and
+`stopped` while a cooperative stop request is in flight; the stored status
+contract above does not change.
+
+Forked runs carry three optional lineage fields: `parent_run_id`,
+`forked_from_step`, and `forked_from_artifact_id`. Notes are stored in run
+metadata and treated as searchable run identity by the dashboard.
 
 ## Metric point
 
@@ -63,9 +66,9 @@ dashboard.
 }
 ```
 
-Metric values must be finite numbers (negative values such as losses or rewards
-are allowed); steps must be finite and nonnegative. A batch can include up to
-1,000 metrics for one run and step.
+Metric values must be finite numbers (negative values such as losses or
+rewards are allowed); steps must be finite and nonnegative. A batch can
+include up to 1,000 metric keys for one run and step.
 
 ## Rank metric point
 
@@ -81,25 +84,41 @@ are allowed); steps must be finite and nonnegative. A batch can include up to
 }
 ```
 
-Rank metrics are used for distributed reducers, coverage, heatmaps, and outlier
-views.
+Rank metrics power distributed-training reducers, coverage, heatmaps, and
+outlier views. See [Distributed training](/sdk/distributed-training).
 
 ## Attribute
 
 ```json
 {
+  "id": 1,
+  "org_id": "uuid",
+  "run_id": "uuid",
   "path": "config/optimizer",
   "type": "string_series",
   "step": 1,
-  "timestamp": "2026-05-16T00:00:00Z",
+  "logged_at": "2026-05-16T00:00:00Z",
   "value": "adam",
   "summary": {},
-  "artifact_id": null
+  "artifact_id": null,
+  "created_at": "2026-05-16T00:00:00Z"
 }
 ```
 
-Attributes hold typed non-scalar context such as text series, config history,
-histograms, evaluation bundles, and file references.
+Attributes hold typed non-scalar context. Supported `type` values:
+
+- `config`
+- `float_series`
+- `string_series`
+- `file`
+- `file_series`
+- `histogram_series`
+- `tag`
+
+<Note>
+Requests accept an optional `timestamp` field when logging an attribute; the
+stored and returned field is `logged_at`.
+</Note>
 
 ## Rich object
 
@@ -120,19 +139,21 @@ Supported kinds:
 - `image`
 - `video`
 - `audio`
-- `histogram`
+- `histogram` (stored and listed as `histogram_series`)
 - `classification_eval`
 
-Table row previews are paginated separately. Histogram object values use finite
-bins and nonnegative counts. `classification_eval` object values are compact
-binary classification bundles with bounded PR/ROC curves, a 2x2 confusion
-matrix, per-class metrics, and optional prediction rows.
+Media kinds (`image`, `video`, `audio`) require an `artifact_id` pointing at
+the uploaded bytes. Table row previews are paginated separately. Histogram
+values use finite bins and nonnegative counts. `classification_eval` values
+are compact binary-classification bundles with bounded PR/ROC curves, a 2x2
+confusion matrix, per-class metrics, and optional prediction rows.
 
 ## Artifact
 
 ```json
 {
   "id": "uuid",
+  "org_id": "uuid",
   "run_id": "uuid",
   "type": "checkpoint",
   "name": "policy.pt",
@@ -141,13 +162,16 @@ matrix, per-class metrics, and optional prediction rows.
   "size_bytes": 42000000,
   "sha256": "hex",
   "mime_type": "application/octet-stream",
+  "storage_backend": "r2",
   "metadata": {},
-  "path": "checkpoints/policy.pt"
+  "created_at": "2026-05-16T00:00:00Z"
 }
 ```
 
-Artifacts can be metadata-only external references or server-managed stored
-bytes. Stored bytes use opaque InstantML artifact URIs in public responses.
+`storage_backend` is `local` or `r2` for server-managed stored bytes and
+`external` for metadata-only references to your own storage. Stored bytes
+always surface an opaque `instantml://artifacts/<id>` URI in public responses;
+external references keep their original URI.
 
 ## Export envelope
 
@@ -171,5 +195,14 @@ Exports are explicit and bounded:
 }
 ```
 
-When `truncated` is true, inspect `limits` and narrow the filters before using
-the export as a complete archive.
+`limits` reports the per-section export caps that were applied. When
+`truncated` is true, at least one section hit its cap — narrow the filters
+before treating the export as a complete archive.
+
+## Next steps
+
+- [Storage model](/architecture/storage-model)
+- [Projects and runs API](/api/projects-runs)
+- [Metrics and series API](/api/metrics-series)
+- [Attributes and objects API](/api/attributes-objects)
+- [Import, export, and usage API](/api/import-export-usage)

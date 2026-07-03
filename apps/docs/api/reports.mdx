@@ -3,9 +3,7 @@ title: "Reports API"
 description: "Create, update, share, and export block-based dashboard reports."
 ---
 
-# Reports API
-
-Reports are workspace-scoped documents with ordered JSON blocks. They support
+Automate workspace-scoped reports — documents with ordered JSON blocks for
 headings, paragraphs, markdown, code, callouts, images, and live panel grids.
 Legacy `llm_summary` blocks can still render in existing reports, but new
 authoring should use the dashboard-supported block set.
@@ -19,9 +17,9 @@ tenant-read rule. Report API-key writes do not currently require a separate
 
 ## List reports
 
-```http
-GET /api/reports?limit=50&offset=0
-Authorization: Bearer instantml_...
+```bash
+curl "https://api.instantml.ai/api/reports?limit=50&offset=0" \
+  -H "Authorization: Bearer instantml_..."
 ```
 
 Optional `project` filters by project ID. The response includes summaries,
@@ -84,7 +82,7 @@ this route.
 Reports with `visibility: "public"` can be read by ID without auth. Private
 and org-visible reports require workspace access unless a share token is used.
 
-## Share and public read
+## Share and read publicly
 
 ```http
 POST /api/reports/{report_id}/share
@@ -95,7 +93,7 @@ GET /api/reports/{report_id}?share={share_token}
 Creating or rotating a share link returns the updated report with its
 `share_token`. Public share reads are limited to the shared report.
 
-## Markdown export
+## Export markdown
 
 ```http
 GET /api/reports/{report_id}/markdown
@@ -105,9 +103,16 @@ GET /api/reports/{report_id}/markdown?share={share_token}
 Markdown export renders text blocks, code blocks, panel-grid placeholders, and
 legacy stored LLM-summary text into a portable `.md` response.
 
-## Block limits
+## Stay inside block limits
 
 Reports are validated before persistence. Each report has a bounded number of
 blocks, per-block size limits, and a fixed set of supported block and panel
 types. Current limits are 256 blocks, 256 KiB total block JSON, and 32 KiB per
 block. Invalid blocks return `400` with a validation message.
+
+## Next steps
+
+- [Write reports in the dashboard](/dashboard/reports)
+- [Build research dashboards](/dashboard/research-dashboards)
+- [Embed run charts in other tools](/api/iframe-embeds)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)

@@ -3,20 +3,17 @@ title: "Integrations overview"
 description: "Track training runs from PyTorch Lightning, Hugging Face Transformers, Keras, and Weights & Biases with one-line InstantML adapters."
 ---
 
-# Integrations
+Pick the adapter for the framework you already train with and wire it in with one line. Every adapter calls the same public `run.log(...)` methods you would call by hand, so you can always drop down to [direct logging](/sdk/logging) for custom loops.
 
-InstantML keeps the core SDK small and adds thin adapters so the framework you
-already train with can log to InstantML without a second integration model.
-Every adapter calls the same public `run.log(...)` methods you would call by
-hand, so you can always drop down to direct logging for custom loops.
+## Install the adapters
 
-Install the framework adapters with the `frameworks` extra:
+Install the SDK with the `frameworks` extra:
 
 ```bash
 python -m pip install "instantml[frameworks]"
 ```
 
-## Framework adapters
+## Pick a framework adapter
 
 <CardGroup cols={2}>
   <Card title="PyTorch Lightning" href="/integrations/pytorch-lightning" icon="zap">
@@ -33,7 +30,7 @@ python -m pip install "instantml[frameworks]"
   </Card>
 </CardGroup>
 
-## Coming from Weights & Biases?
+## Migrate from Weights & Biases
 
 There are three ways to move, depending on how much risk you want to take:
 
@@ -43,10 +40,15 @@ There are three ways to move, depending on how much risk you want to take:
 | **Shadow** | `im.init(..., shadow_wandb=True)` | Both | You want InstantML and W&B side by side during evaluation. |
 | **Mirror** | `import instantml.wandb_mirror as wandb` | W&B | You want to keep W&B primary and mirror metrics into InstantML. |
 
-See the [Weights & Biases migration guide](/integrations/wandb) for all three.
+The [Weights & Biases migration guide](/integrations/wandb) covers all three with runnable examples.
 
-## Importing existing history
+## Import existing history
 
-To bring past experiments along, the SDK can import run history from W&B,
-MLflow, and Neptune JSON exports. See
-[Querying and importing data](/sdk/querying-data).
+To bring past experiments along, the CLI imports run history from W&B, Neptune, and MLflow exports (`instantml import wandb|neptune|mlflow`) and syncs TensorBoard event files (`instantml sync tensorboard`). See [Imports](/guides/imports).
+
+## Next steps
+
+- [Log metrics directly](/sdk/logging) when an adapter doesn't cover your loop
+- [Migrate from Weights & Biases](/integrations/wandb)
+- [Import past W&B, Neptune, or MLflow history](/guides/imports)
+- [Compare runs in the dashboard](/dashboard/compare-runs)

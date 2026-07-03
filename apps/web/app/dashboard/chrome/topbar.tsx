@@ -682,7 +682,7 @@ export function DashboardTopbar({
         <a
           className="brand-cell"
           href={tabToPath("runs")}
-          aria-label="InstantML"
+          aria-label="Dashboard home"
           onClick={(event) => {
             event.preventDefault();
             onSelectTab("runs");
@@ -690,9 +690,6 @@ export function DashboardTopbar({
         >
           <span className="brand-mark" aria-hidden="true">
             <InstantMlMark size={22} />
-          </span>
-          <span className="brand-wordmark" aria-hidden="true">
-            instant<span className="brand-wordmark__accent">ml</span>
           </span>
         </a>
         {/* Project is global context (applies to every tab), so it lives in the

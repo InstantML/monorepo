@@ -3,10 +3,7 @@ title: "Keras"
 description: "Log Keras training runs to InstantML with a callback that records epoch metrics from model.fit."
 ---
 
-# Keras
-
-`im.InstantMLKerasCallback` is a native Keras callback. Pass it to
-`model.fit(...)` and it logs epoch metrics to InstantML.
+Pass `im.InstantMLKerasCallback` to `model.fit(...)` and it logs your epoch metrics to InstantML. It is a native Keras callback — no wrapper around your model or training loop.
 
 ## Install
 
@@ -14,42 +11,66 @@ description: "Log Keras training runs to InstantML with a callback that records 
 python -m pip install "instantml[frameworks]"
 ```
 
-## Use it
+Authenticate with [`instantml login`](/sdk/installation-auth) or `INSTANTML_API_KEY` if you haven't already.
+
+## Add the callback to model.fit
+
+This complete example trains a small dense network on synthetic data:
 
 ```python
 import instantml as im
+import keras
+import numpy as np
+
+x_train = np.random.rand(512, 16).astype("float32")
+y_train = (x_train.sum(axis=1) > 8).astype("float32")
+
+model = keras.Sequential([
+    keras.Input(shape=(16,)),
+    keras.layers.Dense(32, activation="relu"),
+    keras.layers.Dense(1, activation="sigmoid"),
+])
+model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
 
 callback = im.InstantMLKerasCallback(
-    project="mnist",
-    name="cnn-seed-7",
-    config={"optimizer": "adam", "lr": 1e-3},
+    project="keras-demo",
+    name="dense-baseline",
+    config={"optimizer": "adam", "layers": 2},
 )
 
 model.fit(
     x_train,
     y_train,
     epochs=10,
-    validation_data=(x_val, y_val),
+    validation_split=0.2,
     callbacks=[callback],
 )
 ```
 
-The callback creates the run on `on_train_begin`, logs scalar metrics from each
-`on_epoch_end` (with `step=epoch`), and finishes the run on `on_train_end`.
-Extra keyword arguments are forwarded to `im.init(...)`.
+Open the project at [instantml.ai](https://instantml.ai) to see `loss`, `accuracy`, and their `val_` counterparts charted per epoch.
 
-## Per-batch metrics
+The callback creates the run on `on_train_begin`, logs scalar metrics from each `on_epoch_end` (with `step=epoch`), and finishes the run on `on_train_end`. Extra keyword arguments are forwarded to `im.init(...)`; when no `project` is given it defaults to `"keras"`.
 
-By default the callback logs once per epoch. Enable per-batch logging with
-`log_batch=True`; batch metrics are namespaced under `batch/`:
+## Log per-batch metrics
+
+By default the callback logs once per epoch. Enable per-batch logging with `log_batch=True`; batch metrics are namespaced under `batch/`:
 
 ```python
-callback = im.InstantMLKerasCallback(project="mnist", log_batch=True)
+callback = im.InstantMLKerasCallback(project="keras-demo", log_batch=True)
 ```
 
 ## Reuse an existing run
 
+Pass an already-created run when you want the callback to share a run with other code instead of creating its own:
+
 ```python
-run = im.init(project="mnist", name="cnn-seed-7")
+run = im.init(project="keras-demo", name="dense-baseline")
 callback = im.InstantMLKerasCallback(run=run)
 ```
+
+## Next steps
+
+- [Understand metrics and steps](/sdk/metrics-steps)
+- [Record config, tags, and notes](/sdk/config-tags-notes)
+- [Log images, audio, and video](/sdk/rich-objects)
+- [Compare runs in the dashboard](/dashboard/compare-runs)

@@ -1,28 +1,17 @@
 ---
 title: "Artifacts, files, and media"
-description: "Browse versioned artifact collections, manifests, lineage, files, checkpoints, rollouts, tables, histograms, evaluation bundles, and media previews."
+description: "Browse versioned artifact collections, inspect run files and media previews, and trace checkpoint lineage."
 ---
 
-# Artifacts, files, and media
+Connect metric behavior to the files a run produced — uploaded files, external references, checkpoints, rollouts, versioned model collections, and rich objects like tables and histograms.
 
-Artifacts connect metric behavior to the files and evidence produced by a run.
-Use them for uploaded files, external references, checkpoints, rollouts,
-versioned model collections, and the rich objects that make a training run
-inspectable after the fact.
+## Browse artifact collections
 
-## Artifact workspace
+![Artifacts tab showing versioned artifact collections with version list, manifest, and lineage for the selected version](/images/product/dashboard-artifacts-browser.png)
 
-![Artifacts workspace](/images/product/dashboard-artifacts-browser.png)
+The Artifacts tab starts with versioned artifact collections for the active project. The workflow is: choose a collection, inspect its versions, then open the manifest and lineage for the selected version.
 
-The Artifacts tab starts with versioned artifact collections for the active
-project. The collection list stays separate from the selected version detail so
-the main workflow is stable: choose a collection, inspect its versions, then
-open the manifest and lineage for the selected version.
-
-Each collection shows versions with stable `vN` labels, automatic `latest`,
-custom aliases such as `best`, byte/file counts, retention state, and soft
-delete state. Selecting a version shows its manifest and a bounded lineage view
-of producer and consumer runs.
+Each collection shows versions with stable `vN` labels, an automatic `latest` alias, custom aliases such as `best`, byte and file counts, retention state, and soft-delete state. Selecting a version shows its manifest and a lineage view of the runs that produced and consumed it.
 
 Versioned artifacts can represent:
 
@@ -31,81 +20,61 @@ Versioned artifacts can represent:
 - Checkpoints.
 - Rollouts.
 
-Owner/admin users can move the `best` alias, keep a version forever, apply a
-30-day retention window, or soft-delete a version after an explicit confirmation
-prompt with an audit reason. Read-only users see the same evidence with
-management controls disabled.
+Owners and admins can move the `best` alias, keep a version forever, apply a 30-day retention window, or soft-delete a version after an explicit confirmation prompt with an audit reason. Read-only users see the same information with management controls disabled.
 
-## Run Detail files explorer
+## Inspect run files in Run Detail
 
-![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
+![Run Detail Artifacts tab grouping checkpoints, media, and files with an inline preview panel](/images/product/dashboard-artifacts-evidence.png)
 
-Run Detail includes an Artifacts tab for the selected run. It groups checkpoints,
-media and rich objects, and files, then opens a bounded preview beside the
-evidence rail.
+Run Detail includes an Artifacts tab for the selected run. It groups checkpoints, media and rich objects, and files, then opens a preview next to the list.
 
 The Artifacts tab previews:
 
 - Tables with capped rows and columns.
 - Histograms.
-- Binary classification evaluation bundles with PR/ROC curves, confusion
-  matrices, per-class metrics, and optional prediction previews.
-- Same-origin image, audio, and video artifacts when bytes are stored through
-  InstantML.
-- Artifact metadata for checkpoints, uploaded files, rollout files, and
-  external references.
+- Binary classification evaluation bundles with PR/ROC curves, confusion matrices, per-class metrics, and optional prediction previews.
+- Image, audio, and video artifacts when bytes are stored through InstantML.
+- Artifact metadata for checkpoints, uploaded files, rollout files, and external references.
 - Copyable object or artifact IDs for SDK/API follow-up work.
 
-Hidden Run Detail sections do not fetch object manifests until opened, so the
-normal metric summary path stays lightweight.
+Hidden Run Detail sections do not fetch object manifests until opened, so the normal metric summary path stays lightweight.
 
-## Raw run artifacts
+## Work with raw run artifacts
 
-Versioned collections are the primary Artifacts tab workflow. Legacy raw run
-artifacts remain available so existing file/media, rich-object, checkpoint, and
-importer workflows keep their old IDs and Run Detail behavior. Imported
-external artifact references are also mirrored into metadata-only versioned
-run-level bundles, which lets migrated W&B/Neptune/MLflow artifacts appear in
-the catalog and lineage graph without copying bytes into InstantML storage.
+Versioned collections are the primary Artifacts tab workflow. Legacy raw run artifacts remain available so existing file/media, rich-object, checkpoint, and importer workflows keep their old IDs and Run Detail behavior.
 
-## Safe previews
+Imported external artifact references are also mirrored into metadata-only versioned run-level bundles. This lets migrated W&B, Neptune, and MLflow artifacts appear in the catalog and lineage graph without copying bytes into InstantML storage.
 
-Same-origin image, audio, and video artifacts can preview in Run Detail and
-Compare when bytes are stored through InstantML. Unsupported or external-only
-artifacts fall back to metadata, copy, or unavailable-download actions. Stored
-bytes are served through
-`/api/artifacts/{artifact_id}/download`; public artifact rows expose opaque
-InstantML URIs rather than raw object-store URLs.
+## Preview media safely
 
-Rich media objects can link to artifact bytes from the same run. Metadata-only
-objects and artifacts remain inspectable, but they cannot be downloaded through
-the same-origin route until bytes are uploaded to InstantML.
+Image, audio, and video artifacts preview in Run Detail and Compare when their bytes are stored through InstantML. Unsupported or external-only artifacts fall back to metadata, copy, or unavailable-download actions.
 
-## Checkpoint forks
+Stored bytes are served through `/api/artifacts/{artifact_id}/download`. Public artifact rows expose opaque InstantML URIs rather than raw object-store URLs.
 
-Checkpoint artifacts are visible in Run Detail (on the Overview and Lineage
-tabs). They can carry restore metadata such as source run and step. When
-checkpoint bytes are stored through the API, downloads go through the
-same-origin artifact download route.
+Rich media objects can link to artifact bytes from the same run. Metadata-only objects and artifacts remain inspectable, but they cannot be downloaded through the same-origin route until bytes are uploaded to InstantML.
 
-![Checkpoint fork modal](/images/product/dashboard-checkpoint-fork.png)
+## Fork from a checkpoint
 
-Forking a checkpoint creates a linked child run record in the same project. It
-records provenance and can inherit the source config, but it does not start
-training or copy metrics/artifacts. Attach the SDK to the new child run from the
-training script that resumes the checkpoint.
+Checkpoint artifacts appear in Run Detail on the Overview and Lineage tabs. They can carry restore metadata such as source run and step. When checkpoint bytes are stored through the API, downloads go through the same-origin artifact download route.
 
-## Checkpoint lineage
+![Fork checkpoint modal recording source run, checkpoint, step, and child run options](/images/product/dashboard-checkpoint-fork.png)
 
-![Run Detail Lineage tab](/images/product/dashboard-lineage-graph.png)
+Forking a checkpoint creates a linked child run record in the same project. It records provenance and can inherit the source config, but it does not start training or copy metrics or artifacts. Attach the SDK to the new child run from the training script that resumes the checkpoint.
 
-Run Detail's Lineage tab gives the same selected-run context a lineage-first
-view. Use it to confirm the checkpoint URI, step, run config context, and
-whether a run has forkable restore points before moving into a resumed
-experiment.
+## Trace checkpoint lineage
 
-## API snippets
+![Run Detail Lineage tab showing the parent run, the source checkpoint name and step, and direct child runs](/images/product/dashboard-lineage-graph.png)
 
-The Artifacts tab exposes copyable artifact IDs and safe download states. The
-API tab exposes copyable route snippets so a user can fetch artifacts or inspect
-API behavior without digging through browser network panels.
+Run Detail's Lineage tab gives the selected run a lineage-first view: the parent run, the source checkpoint's name and step, and a table of direct children. Use it to confirm where a run came from and which forks already exist before resuming an experiment. The full checkpoint URI is shown in the Overview tab's checkpoint rows.
+
+## Fetch artifacts through the API
+
+The Artifacts tab exposes copyable artifact IDs and safe download states. Use the [Artifacts API](/api/artifacts) when you need to fetch artifact bytes or inspect API behavior without digging through browser network panels.
+
+## Next steps
+
+- [Artifacts and checkpoints in the SDK](/sdk/artifacts-checkpoints)
+- [Rich objects](/sdk/rich-objects)
+- [Checkpoints](/dashboard/checkpoints)
+- [Artifacts API](/api/artifacts)
+- [Run Detail](/dashboard/run-detail)

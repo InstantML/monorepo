@@ -3,17 +3,23 @@ title: "Errors, pagination, and limits"
 description: "Reference common API error shape, pagination rules, and request limits."
 ---
 
-# Errors, pagination, and limits
-
-This page summarizes API behavior that clients should handle consistently.
+Handle InstantML API errors, page through large result sets, and stay inside
+request limits with the rules on this page. All routes accept the same
+credentials described in [API authentication](/api/authentication).
 
 ## Error shape
 
-JSON errors use HTTP status codes and at least an `error` string:
+Every JSON error uses an HTTP status code and at least an `error` string. Try
+it by requesting a run that does not exist:
+
+```bash
+curl -i https://api.instantml.ai/runs/00000000-0000-0000-0000-000000000000 \
+  -H "Authorization: Bearer instantml_..."
+```
 
 ```json
 {
-  "error": "not authorized"
+  "error": "run not found"
 }
 ```
 
@@ -57,12 +63,22 @@ optional 1-based `position`:
 
 ## Pagination and bounds
 
-List-style routes should be bounded. Important examples:
+Every list route returns a bounded page, never the full data set. Expect and
+handle these patterns:
 
-- Runs list supports page-size limits and cursor pagination on the Rust API.
-- Metric series should be fetched by run, key, range, and point limit.
-- Artifact and object list routes are bounded.
-- Table rows are fetched separately from object manifests.
+- `GET /runs` accepts `limit` and `offset`; pass a larger `offset` to fetch the
+  next page instead of raising `limit` past its cap.
+- `GET /api/runs/summary` and `GET /api/runs/{run_id}/logs` return a
+  `next_cursor` field; pass it back as `cursor` to fetch the next page.
+- Fetch metric series per run and key with `start_step`/`end_step` ranges and a
+  point `limit`; batched series responses clamp the effective per-run limit so
+  one response stays within the returned-point budget.
+- Artifact and object list responses cap their page size; narrow by run, kind,
+  or key when you hit the cap.
+- Table row contents are not inlined in object envelopes; page them separately
+  through `GET /api/objects/{object_id}/rows`.
+- When a response includes a `truncated` flag or truncation header, narrow the
+  query before treating the result as complete.
 
 Common limits:
 
@@ -123,3 +139,11 @@ does not retry monthly quota failures.
 
 Process-spool uploaders set `Idempotency-Key` for metric and console-log event
 replay. Compatible servers use that key to accept retries safely.
+
+## Next steps
+
+- [Authenticate API calls](/api/authentication)
+- [Query runs and summaries](/api/projects-runs)
+- [Write and read metric series](/api/metrics-series)
+- [Understand plan pricing and limits](/guides/pricing-limits-billing)
+- [Build reliable high-volume logging](/sdk/reliability)

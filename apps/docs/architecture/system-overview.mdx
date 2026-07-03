@@ -3,60 +3,77 @@ title: "System overview"
 description: "How the SDK, dashboard, Rust API, ClickHouse, and artifact storage fit together."
 ---
 
-# System overview
+InstantML has four moving parts: SDKs write training-loop events, a Rust API
+validates and stores them, ClickHouse holds operational records and metric
+history, and the dashboard reads those records back for run comparison.
 
-InstantML is a training observability system: SDKs write training-loop events,
-the API stores bounded and queryable records, and the dashboard turns those
-records into run comparison workflows.
+<Info>
+A **workspace** is the top-level tenant boundary. The API and billing surfaces
+call the same boundary an **organization** (`org_id`, org-scoped API keys).
+</Info>
 
 ## Primary product path
 
 | Producer | API boundary | Storage path |
 | --- | --- | --- |
 | Python SDK / uploader | Rust API | ClickHouse operational records |
-| Next dashboard | Rust API | ClickHouse metric tables |
+| Dashboard (Next.js) | Rust API | ClickHouse metric tables |
 | SDK and dashboard artifact flows | Rust API | Artifact byte storage |
 
-The Rust API is the primary backend. It owns the product route contract for SDK
-ingestion, dashboard reads, imports, exports, usage, billing gates, and artifact
-metadata.
+The Rust API is the single backend boundary. It owns the route contract for SDK
+ingestion, dashboard reads, imports, exports, usage, billing gates, and
+artifact metadata. Neither the browser nor the SDK ever talks to ClickHouse or
+object storage directly.
 
 ## Component responsibilities
 
 | Component | Responsibility |
 | --- | --- |
-| Python SDK | Create runs, log metrics, logs, attributes, artifacts, rich objects, checkpoints, and source context. |
+| Python SDK | Create runs, log metrics, console logs, attributes, artifacts, rich objects, checkpoints, and source context. |
 | Uploader | Drain process-isolated spool events from disk and replay them through the API. |
 | Rust API | Validate requests, enforce auth/scopes/limits, store records, stream artifact downloads, and expose dashboard/API routes. |
-| Control-plane Postgres | Store account/control records: users, orgs, memberships, sessions, API keys, billing, and tenant routes (Cloud SQL in hosted mode; single-binary local mode may keep these in ClickHouse instead). |
-| ClickHouse operational layer | Store low-volume append-only product/operational records (projects, runs, attributes). |
-| ClickHouse metric layer | Store raw scalar/rank metrics and maintained metric summaries. |
-| Artifact store | Store hosted private object-storage bytes for uploaded artifacts. |
-| Next dashboard and docs | Browse, chart, compare, annotate, export, administer workspaces, and serve public `/docs` documentation. |
+| Control-plane Postgres | Store account records: users, organizations, memberships, sessions, API keys, billing, invitations, tenant routes, dashboard preferences, and saved workspace views. Single-binary local mode keeps these records in ClickHouse instead. |
+| ClickHouse operational layer | Store low-volume append-only product records (projects, runs, attributes, artifacts, reports, imports). |
+| ClickHouse metric layer | Store raw scalar and per-rank metric points and maintained metric summaries. |
+| Artifact store | Store artifact bytes in private object storage (hosted) or on local disk (self-hosted single binary). |
+| Dashboard and docs (Next.js) | Browse, chart, compare, annotate, export, administer workspaces, and serve this documentation. |
 
 ## Hosted topology
 
+The hosted API is one public HTTPS URL backed by two service roles.
+
 | Layer | Role |
 | --- | --- |
-| Browser / Next app and Python SDK / uploader | Send product traffic to the public HTTPS API. |
-| Public HTTPS API | Routes requests to control or data service responsibilities. |
-| Rust control service | Reads and writes the control-plane Postgres database (Cloud SQL) for account, billing, and tenant-route metadata. |
-| Rust data service | Reads and writes tenant ClickHouse databases and private artifact buckets. |
+| Browser / dashboard and Python SDK / uploader | Send all product traffic to the public HTTPS API. |
+| Public HTTPS API | Routes each request to the control or data service. |
+| Control service | Reads and writes the control-plane Postgres database for account, billing, and tenant-route records. |
+| Data service | Reads and writes tenant ClickHouse databases and private artifact buckets. |
 
-The control service handles auth, orgs, sessions, API keys, billing, seats,
-tenant route metadata, dashboard preferences, reports, report share links, and
-report Markdown export. The data service handles projects, runs, metrics, logs,
-attributes, rich objects, imports, export, usage, and artifact data paths.
-InstantML-hosted production and staging keep account/control records in a
-control-plane Postgres database (Cloud SQL) and tenant run data and metrics in
-InstantML-owned self-hosted ClickHouse on Google Cloud.
+The control service handles auth, workspaces, sessions, API keys, billing,
+seats, invitations, tenant-route metadata, dashboard preferences, and saved
+workspace views. The data service handles projects, runs, metrics, console
+logs, attributes, rich objects, artifacts, reports, imports, export, and
+usage. Tenant run data and metrics live in InstantML-owned ClickHouse on
+Google Cloud; see [Service planes](/architecture/service-planes) for the full
+route split.
 
-## Design constraints users can rely on
+## Design constraints you can rely on
 
-- List endpoints are bounded.
-- Raw metric history is fetched through dedicated series endpoints.
-- Metric summaries are maintained during ingestion, so run tables do not scan
+- List endpoints are bounded; no endpoint returns unbounded history.
+- Raw metric history is fetched through dedicated series endpoints with
+  explicit limits.
+- Metric summaries are maintained during ingestion, so run tables never scan
   full metric history.
-- Artifact byte paths are separate from scalar metric ingestion.
-- API keys resolve to one organization and optional project scope.
-- Exports are explicit and bounded.
+- Artifact byte uploads and downloads are separate paths from scalar metric
+  ingestion.
+- Every API key resolves to exactly one workspace, with an optional project
+  scope.
+- Exports are explicit, bounded, and report truncation.
+
+## Next steps
+
+- [Service planes](/architecture/service-planes)
+- [Storage model](/architecture/storage-model)
+- [Auth and tenancy](/architecture/auth-tenancy)
+- [Schema reference](/architecture/schema-reference)
+- [Benchmarks](/benchmarks)

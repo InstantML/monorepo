@@ -3,12 +3,9 @@ title: "Distributed training"
 description: "Log rank-aware metrics for reducers, coverage, heatmaps, and outlier inspection."
 ---
 
-# Distributed training
+Log per-rank metrics from distributed jobs so the Distributed dashboard tab can show reducers, rank coverage, heatmaps, and outliers instead of one flattened scalar.
 
-Rank-aware metrics let you debug distributed jobs without flattening every rank
-into one scalar. They power the Distributed dashboard tab.
-
-## Log per-rank scalar metrics
+## Log per-rank metrics
 
 Each call records one rank's metric batch for one global step.
 
@@ -23,8 +20,6 @@ run.log_rank_metrics(
 )
 ```
 
-Arguments:
-
 | Argument | Meaning |
 | --- | --- |
 | `metrics` | Scalar metric dictionary for one rank. |
@@ -34,10 +29,11 @@ Arguments:
 | `local_rank` | Optional zero-based rank within a node. |
 | `weight` | Optional sample count or work weight for weighted reducers. Defaults to `1.0`. |
 
-The same monthly metric-point usage guardrail applies to rank metric rows and
-ordinary scalar metric rows.
+<Note>
+Rank metric rows count toward the same monthly metric-point usage guardrail as ordinary scalar metric rows.
+</Note>
 
-## Reducers in the UI
+## Inspect ranks in the Distributed tab
 
 The Distributed tab reads a run-scoped summary and renders:
 
@@ -55,10 +51,9 @@ Use these views to answer questions like:
 - Did a data shard or process produce outlier losses?
 - Are weighted reducers different from unweighted reducers?
 
-## Spool mode support
+## Use spool mode for rank metrics
 
-Process-isolated spool mode writes rank metric calls as JSONL-style request
-events and replays them with the event ID as `Idempotency-Key`.
+Process-isolated spool mode writes rank metric calls as JSONL-style request events and replays them with the event ID as `Idempotency-Key`.
 
 ```python
 import instantml as im
@@ -78,15 +73,17 @@ run.log_rank_metrics(
 )
 ```
 
-This keeps post-init HTTP calls out of the training process while preserving
-retry safety for compatible servers.
+This keeps post-init HTTP calls out of the training process while preserving retry safety for compatible servers.
 
-## Practical pattern
+## Choose which keys to log per rank
 
-Log rank-aware metrics only for the keys that help debug distributed behavior.
-For example, log ordinary `train/loss` and `eval/accuracy` from rank 0 or a
-trainer process, then log rank-aware `train/loss`, `optimizer/grad_norm`, and
-`system/gpu_memory_mb` from all ranks.
+Log rank-aware metrics only for the keys that help debug distributed behavior. For example, log ordinary `train/loss` and `eval/accuracy` from rank 0 or a trainer process, then log rank-aware `train/loss`, `optimizer/grad_norm`, and `system/gpu_memory_mb` from all ranks.
 
-That keeps scalar comparison fast while still giving the Distributed tab enough
-information to detect coverage and outlier problems.
+That keeps scalar comparison fast while still giving the Distributed tab enough information to detect coverage and outlier problems.
+
+## Next steps
+
+- [Log metrics and steps](/sdk/metrics-steps)
+- [Buffering, offline mode, and reliability](/sdk/reliability)
+- [SDK patterns by workflow](/sdk/examples-patterns)
+- [Usage limits and billing](/guides/pricing-limits-billing)

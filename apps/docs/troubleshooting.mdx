@@ -3,7 +3,8 @@ title: "Troubleshooting"
 description: "Fix common hosted API, SDK, API key, and importer issues."
 ---
 
-# Troubleshooting
+Work through the entry that matches your symptom — each one gives a quick
+check and the fix.
 
 ## The SDK cannot connect
 
@@ -13,72 +14,83 @@ Check that the hosted API is reachable:
 curl https://api.instantml.ai/healthz
 ```
 
-Then confirm your SDK key is configured:
+If the health check succeeds, confirm your SDK key is configured:
 
 ```bash
 test -n "$INSTANTML_API_KEY" && echo "INSTANTML_API_KEY is set"
 ```
+
+Fix: run `instantml login`, export `INSTANTML_API_KEY`, or pass
+`api_key="instantml_..."` directly to `im.init(...)`.
 
 ## Hosted calls are unauthorized
 
-Check that the API key is present:
+Check that an API key is present in the environment:
 
 ```bash
 test -n "$INSTANTML_API_KEY" && echo "INSTANTML_API_KEY is set"
 ```
 
-Either run `instantml login`, set `INSTANTML_API_KEY`, or pass
+Fix: run `instantml login`, set `INSTANTML_API_KEY`, or pass
 `api_key="instantml_..."` directly to `im.init(...)`.
 
 ## Hosted calls are rate-limited
 
-Short-window `429` responses include `X-InstantML-RateLimit-Scope: second` and
-`Retry-After`; retry after the header delay or reduce request concurrency.
+Check the `X-InstantML-RateLimit-Scope` header on the `429` response to see
+which limit you hit.
 
-Monthly API quota `429` responses include
-`X-InstantML-RateLimit-Scope: monthly` and reset at the next UTC calendar
-month. Free and non-billable orgs are blocked at the monthly allowance, while
-paid Pro and Premium API request overage is Stripe-metered. See
+Fix for `second` scope: retry after the `Retry-After` header delay or reduce
+request concurrency.
+
+Fix for `monthly` scope: the quota resets at the next UTC calendar month. Free
+and non-billable workspaces are blocked at the monthly allowance, while paid
+Pro and Premium API request overage is Stripe-metered. See
 [Pricing, limits, and billing](/guides/pricing-limits-billing).
 
 ## The dashboard does not show my run
 
-Check the project name you used in the SDK call. `project="cartpole"` appears in
-the dashboard project selector as `cartpole`.
+Check the project name you used in the SDK call. `project="cartpole"` appears
+in the dashboard project selector as `cartpole`.
 
-If the run was created but later logging calls failed, call `run.flush()` when
-using buffering and check SDK exceptions for the failed request.
+Fix: if the run was created but later logging calls failed, call `run.flush()`
+when using buffering and check SDK exceptions for the failed request.
 
 ## Offline replay did not create a run
 
-Current limitation: `init()` still needs a reachable server because run creation
-is not spooled yet. `offline_dir` covers failed requests made after a run already
-exists.
+Check whether the failure happened during `init()` itself. Current limitation:
+`init()` still needs a reachable server because run creation is not spooled
+yet.
 
-## Importer routes
+Fix: none needed for later calls — `offline_dir` covers failed requests made
+after a run already exists. Retry `init()` once the server is reachable.
 
-The public API includes Import v2 job routes for local-first W&B, Neptune
-Exporter, MLflow, and TensorBoard migration tooling:
+## Neptune imports fail before parsing
 
-- `POST /api/imports/jobs`
-- `POST /api/imports/jobs/{import_id}/chunks`
-- `POST /api/imports/jobs/{import_id}/commit`
-- `POST /api/imports/jobs/{import_id}/cancel`
+Check that `pyarrow` is installed and the input path is right.
 
-Legacy transformed JSON importer routes remain available:
+Fix: install the import extras with `pip install "instantml[imports]"` and
+point the importer at the exported Parquet directory rather than a symlink.
+For the full import workflow and CLI flags, see [Imports](/guides/imports).
 
-- `POST /api/imports/wandb`
-- `POST /api/imports/mlflow`
-- `POST /api/imports/neptune`
+## TensorBoard sync produces no new points
 
-If Neptune imports fail before parsing, confirm `pyarrow` is installed with
-`pip install "instantml[imports]"` and that the path points at the exported
-Parquet directory rather than a symlink. If TensorBoard sync produces no new
-points, confirm the run source identity matches the original imported
-TensorBoard run and that the event files contain scalar summaries.
+Check that the run source identity matches the original imported TensorBoard
+run and that the event files contain scalar summaries.
+
+Fix: re-run the sync against the original run's source identity, or confirm
+the event files actually log scalars. See [Imports](/guides/imports) for the
+sync workflow.
 
 ## Generated API reference looks stale
 
-The generated reference should match the practical API guides. If a documented
-hosted route is missing, report the page URL, endpoint, and response
-`x-request-id` if a request failed.
+The generated reference should match the practical API guides.
+
+Fix: if a documented hosted route is missing, report the page URL, endpoint,
+and response `x-request-id` if a request failed.
+
+## Next steps
+
+- [Pricing, limits, and billing](/guides/pricing-limits-billing)
+- [SDK reliability](/sdk/reliability)
+- [Imports](/guides/imports)
+- [Errors, pagination, and limits](/api/errors-and-limits)

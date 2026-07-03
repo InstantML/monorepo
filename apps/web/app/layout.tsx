@@ -6,6 +6,8 @@ import type { Metadata, Viewport } from "next";
 import { DM_Sans, Spline_Sans_Mono, Instrument_Serif } from "next/font/google";
 import { headers } from "next/headers";
 
+import { serializeJsonLd } from "../src/json-ld.js";
+
 // Instrument design language (docs/design/reimagine/DESIGN-SYSTEM.md):
 // DM Sans carries display + UI prose, Spline Sans Mono carries all data.
 
@@ -93,7 +95,9 @@ export const metadata: Metadata = {
   ],
   category: "technology",
   formatDetection: { telephone: false },
-  alternates: { canonical: "/" },
+  // No layout-level canonical: each indexable page declares its own, and a
+  // shared "/" here would make noindex pages (dashboard, share links) claim
+  // the homepage as their canonical.
   manifest: "/manifest.webmanifest",
   icons: {
     icon: "/instantml-mark.svg",
@@ -132,21 +136,20 @@ export const viewport: Viewport = {
   themeColor: "#0d0f0c",
 };
 
-// JSON-LD is embedded with dangerouslySetInnerHTML, so escape `<` (script
-// breakout) and U+2028/U+2029 (invalid in JS string contexts) before inlining.
-function serializeJsonLd(data: unknown): string {
-  return JSON.stringify(data)
-    .replace(/</g, "\\u003c")
-    .replace(/\u2028/g, "\\u2028")
-    .replace(/\u2029/g, "\\u2029");
-}
-
 const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: "InstantML",
   url: SITE_URL,
   logo: `${SITE_URL}/instantml-mark.svg`,
+};
+
+// Tells search engines the preferred site name for result snippets.
+const webSiteJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "InstantML",
+  url: SITE_URL,
 };
 
 const softwareApplicationJsonLd = {
@@ -191,6 +194,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <script
               type="application/ld+json"
               dangerouslySetInnerHTML={{ __html: serializeJsonLd(organizationJsonLd) }}
+            />
+            <script
+              type="application/ld+json"
+              dangerouslySetInnerHTML={{ __html: serializeJsonLd(webSiteJsonLd) }}
             />
             <script
               type="application/ld+json"

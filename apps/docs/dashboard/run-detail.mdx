@@ -3,14 +3,12 @@ title: "Run Detail"
 description: "Inspect one run's summary, metrics, traces, logs, files, system metadata, and lineage."
 ---
 
-# Run Detail
+Open Run Detail — by clicking a run in the Runs workspace — when you need to
+slow down and inspect a single run.
 
 ![Run Detail](/images/product/dashboard-run-detail.png)
 
-Run Detail is the place to slow down and inspect one run. Open it by clicking a
-run in the Runs workspace.
-
-## Header and KPI cockpit
+## Read the header and KPI cockpit
 
 The header shows run identity and live status:
 
@@ -27,10 +25,10 @@ Cards appear only when the underlying signal exists:
 - The **headline eval metric**, flagged "best yet" when the latest value is the
   run's extreme.
 - **Loss**, with a per-1k-step slope.
-- **Throughput** and **GPU utilization** when system metrics are logged.
+- **Throughput** and **GPU util** when system metrics are logged.
 - **ETA**, estimated from the recent step rate for running runs with a target.
 
-## Run Detail sections
+## Move between sections
 
 Run Detail has its own tabs, separate from the global dashboard navigation. The
 Data and Files sections carry count badges when the run has logged metric rows
@@ -62,12 +60,12 @@ links each trace to the full Traces workspace with the exact `run_id`,
 Use this section when you are already inspecting one run and want to jump from a
 metric regression or failed checkpoint to the execution tree that produced it.
 
-## Tags and notes
+## Edit tags and notes
 
 Use the small editor to update tags and notes without leaving the run. These
 fields are searchable and appear in Compare.
 
-## Files and artifacts
+## Review files and evaluation evidence
 
 The Files section previews checkpoints, uploaded files, media objects, tables,
 histograms, and binary classification evaluation bundles through existing
@@ -75,3 +73,11 @@ artifact and object routes. Classification eval previews render PR/ROC curves,
 a confusion matrix, per-class metrics, and optional prediction rows from typed
 rich-object data rather than screenshots. Download actions go through the API
 rather than exposing raw storage URLs.
+
+## Next steps
+
+- [Compare runs](/dashboard/compare-runs)
+- [Checkpoints and forking](/dashboard/checkpoints)
+- [Artifacts and files](/dashboard/artifacts-files)
+- [Rich objects](/sdk/rich-objects)
+- [Runs workspace](/dashboard/runs-workspace)

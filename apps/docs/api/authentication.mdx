@@ -3,9 +3,7 @@ title: "API authentication"
 description: "Understand hosted base URLs, SDK API keys, and bearer authentication."
 ---
 
-# API authentication
-
-InstantML has two day-to-day credential paths:
+Authenticate every InstantML API call with one of two credentials:
 
 | Credential | Transport | Main use |
 | --- | --- | --- |
@@ -15,9 +13,23 @@ InstantML has two day-to-day credential paths:
 Bootstrap/operator tokens are intentionally outside the public hosted API
 contract.
 
-## Base URLs
+## Call the API with a key
 
-Hosted public router:
+Send an API key as a bearer token on any direct HTTP call:
+
+```bash
+curl https://api.instantml.ai/projects \
+  -H "Authorization: Bearer instantml_..."
+```
+
+Create and manage keys in [dashboard settings](/dashboard/settings-api-keys).
+Each key carries explicit scopes such as `sdk:ingest` (writes), `export:read`
+(reads), `artifacts:write`, `imports:write`, `runs:control`, and `usage:read`.
+Endpoint pages state the scope each route needs.
+
+## Use the base URL
+
+All examples in this section target the hosted public router:
 
 ```text
 https://api.instantml.ai
@@ -27,7 +39,7 @@ The current public client contract is one stable API base URL. The frontend
 usually calls the API through same-origin Next rewrites, while SDK/API-key
 clients call the API base directly.
 
-## SDK API keys
+## Configure the SDK
 
 Set an API key in the environment:
 
@@ -47,14 +59,7 @@ run = im.init(
 )
 ```
 
-For direct HTTP calls, send the same key as a bearer token:
-
-```bash
-curl https://api.instantml.ai/projects \
-  -H "Authorization: Bearer instantml_..."
-```
-
-## Common errors
+## Handle common errors
 
 All JSON API errors use HTTP status codes and a body with at least an `error`
 string. Some errors also include a stable `code`.
@@ -62,3 +67,10 @@ string. Some errors also include a stable `code`.
 Hosted tenant warehouse wake/start failures return `503` with
 `code: "warehouse_unavailable"`. Treat this as a retryable "warehouse is
 starting" state, not as an authentication failure.
+
+## Next steps
+
+- [Create and scope API keys](/dashboard/settings-api-keys)
+- [Install the SDK and log in](/sdk/installation-auth)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)
+- [Create projects and runs over HTTP](/api/projects-runs)

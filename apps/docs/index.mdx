@@ -3,54 +3,50 @@ title: "InstantML Docs"
 description: "Log, compare, and debug training runs with the InstantML SDK, API, and dashboard."
 ---
 
-# Training observability without the maze
-
-InstantML helps small ML teams track runs, compare metrics, inspect configs,
-and keep artifacts close to the training loop. Create an API key, log a run
-from Python, then use the dashboard to sort, chart, and compare what happened.
-The Runs workspace supports line charts, latest-value bar and dot panels, value
-histograms, scatter plots, seed/group distribution panels, and selected-run
-logged histogram timelines.
-
-![InstantML Runs workspace](/images/product/dashboard-runs.png)
+InstantML is hosted training observability for small ML teams: log runs from
+your Python training loop, then sort, chart, and compare them in the dashboard.
+Start with the quickstart to go from API key to a charted run in about five
+minutes, or jump straight to the area you need below.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Create an SDK key, install InstantML, and log your first hosted Python run.
+    Go from API key to your first charted run in five minutes.
   </Card>
   <Card title="Install the SDK" icon="package" href="/sdk/installation-auth">
-    Install the Python package, configure an API host, and provide SDK credentials.
+    Install the Python package and authenticate.
   </Card>
   <Card title="Log from Python" icon="terminal" href="/sdk/logging">
-    Create runs, log scalar metrics, attach configs, add tags, and finish cleanly.
+    Create runs, log metrics, and attach configs and tags.
   </Card>
-  <Card title="Compare runs" icon="line-chart" href="/dashboard/compare-runs">
-    Use the Runs workspace, charts, Run Detail, and Compare views after logging.
+  <Card title="Compare runs" icon="chart-line" href="/dashboard/compare-runs">
+    Chart runs side by side and sort by metric summaries.
   </Card>
   <Card title="Dashboard tour" icon="layout-dashboard" href="/dashboard/tour">
-    Walk through the main product surfaces with screenshots from a representative project.
+    Walk through the main product surfaces with screenshots.
   </Card>
-  <Card title="Organizations" icon="building-2" href="/dashboard/organizations-workspaces">
-    Understand workspace hierarchy, roles, switching, settings, and billing scope.
+  <Card title="Workspaces" icon="building-2" href="/dashboard/organizations-workspaces">
+    Manage members, roles, billing scope, and workspace switching.
   </Card>
   <Card title="Reports" icon="file-text" href="/dashboard/reports">
-    Create experiment writeups with live panels, share links, and Markdown export.
+    Write experiment reports with live panels and share links.
   </Card>
   <Card title="API reference" icon="book-open" href="/api-reference/platform/get-health">
-    Browse the filtered public API reference generated from the Rust OpenAPI spec.
+    Browse the public REST API reference.
   </Card>
   <Card title="Examples" icon="flask-conical" href="/guides/examples">
-    Run the bundled supervised, RL, checkpoint, and distributed training examples.
+    Run the bundled supervised, RL, checkpoint, and distributed examples.
   </Card>
   <Card title="Usage and limits" icon="gauge" href="/guides/export-usage-limits">
-    Understand exports, usage counters, plan limits, and write gates.
+    Understand exports, usage counters, and plan limits.
   </Card>
   <Card title="Pricing" icon="credit-card" href="/pricing">
-    Review Free, Pro, and Premium packaging, included usage, explicit overage, and billing surfaces.
+    Compare Free, Pro, and Premium plans and what each includes.
   </Card>
 </CardGroup>
 
-## The first useful loop
+## Log your first run
+
+Log a complete run with a project, config, tags, and three metric series:
 
 ```python
 import instantml as im
@@ -76,22 +72,12 @@ for step in range(100):
 run.finish()
 ```
 
-In the dashboard, the project appears in the project selector, the run appears
-in the run list, config values appear in Run Detail and Compare, and metric keys
-become chartable series.
+Open the dashboard when the script finishes. The project appears in the
+project selector, the run appears in the run list, config values appear in Run
+Detail and Compare, and every metric key becomes a chartable series.
 
-## Where to go next
+![The Runs workspace charting logged metric series across runs](/images/product/dashboard-runs.png)
 
-- Use the quickstart if you want the fastest hosted path from API key to first
-  run.
-- Use the SDK guides when you are wiring InstantML into a real training loop.
-- Use the dashboard guides when you want to understand the Runs workspace,
-  metric charts, run detail, Compare, research dashboards, artifacts,
-  checkpoint forks, reports, organizations, and settings.
-- Use pricing and limits when you need current Free, Pro, and Premium
-  allowances, no tracked-hour billing, overage behavior, API rate limits, or
-  monthly reset rules.
-- Use the API guides when you need a durable technical reference for routes,
-  errors, and limits.
-- Use troubleshooting when hosted sign-in, API key, or SDK connection behavior
-  is not what you expected.
+Ready to run it yourself? The [quickstart](/quickstart) walks through the API
+key, install, and first run end to end, and [Core concepts](/concepts/core-concepts)
+explains the workspace, project, run, and metric model behind it.

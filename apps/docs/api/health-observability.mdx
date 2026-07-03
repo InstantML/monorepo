@@ -3,18 +3,16 @@ title: "Health and observability API"
 description: "Health, readiness, metrics, OpenAPI, and request correlation endpoints."
 ---
 
-# Health and observability API
+Probe service liveness, readiness, and Prometheus gauges without credentials —
+none of the endpoints on this page require authentication.
 
-These endpoints do not require tenant credentials.
-
-## Health
+## Check liveness
 
 ```bash
 curl https://api.instantml.ai/health
-curl https://api.instantml.ai/healthz
 ```
 
-Typical response:
+`/healthz` is an alias for the same check. Typical response:
 
 ```json
 { "status": "ok" }
@@ -22,10 +20,10 @@ Typical response:
 
 Use health for process liveness checks.
 
-## Readiness
+## Check readiness
 
-```bash
-curl https://api.instantml.ai/readyz
+```http
+GET /readyz
 ```
 
 Ready response:
@@ -34,33 +32,50 @@ Ready response:
 {
   "status": "ok",
   "control_projection_loaded": true,
-  "control_refresh_degraded": false
+  "control_refresh_degraded": false,
+  "write_ready": true,
+  "writer_lease": {
+    "required": true,
+    "ready": true
+  }
 }
 ```
 
-Use readiness for load balancers and startup probes. It should fail until the
-server can reach ClickHouse and replay the control projection.
+Use readiness for load balancers and startup probes. It fails with `503` until
+the server can reach ClickHouse and replay the control projection.
+`write_ready` mirrors `writer_lease.ready`: when the service plane requires a
+writer lease and the lease is not held, writes are not ready and
+`writer_lease.code` explains why.
 
-## Prometheus metrics
+## Scrape Prometheus metrics
 
-```bash
-curl https://api.instantml.ai/metrics
+```http
+GET /metrics
 ```
 
-The metrics output includes gauges for control projection loaded/degraded state
-and request-level metrics emitted by the Rust service stack.
+The metrics output contains exactly three gauge series:
 
-## OpenAPI
+- `instantml_rust_build_info` — always `1`, labeled with the service and active
+  service plane.
+- `instantml_control_projection_loaded` — `1` once the control projection has
+  replayed.
+- `instantml_control_refresh_degraded` — `1` while control-projection refresh
+  is degraded.
 
-```bash
-curl https://api.instantml.ai/openapi.json
+Request-level metrics are not exposed on this endpoint; use `x-request-id`
+correlation and origin logs for per-request debugging.
+
+## Fetch the OpenAPI spec
+
+```http
+GET /openapi.json
 ```
 
 The public docs site consumes a filtered OpenAPI copy. The live service's
 OpenAPI output is useful for operator verification because it reports the
 active service plane.
 
-## Request IDs
+## Correlate requests
 
 Responses include an `x-request-id` header. Keep it with support reports:
 
@@ -71,3 +86,10 @@ curl -i https://api.instantml.ai/healthz
 Hosted origin logs use this request ID as the primary application correlation
 key. Cloudflare Ray IDs can help correlate edge logs, but they are not a
 replacement for `x-request-id`.
+
+## Next steps
+
+- [Authenticate API calls](/api/authentication)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)
+- [Monitor InstantML in production](/guides/observability)
+- [Understand the service-plane split](/architecture/service-planes)

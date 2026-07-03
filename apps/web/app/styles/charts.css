@@ -1053,6 +1053,9 @@ small {
 .chart-menu-item {
   display: flex;
   align-items: center;
+  /* Beat the base `button { justify-content: center }` so rows hug the left
+     edge like the rest of the menu. */
+  justify-content: flex-start;
   gap: 9px;
   width: 100%;
   height: 32px;

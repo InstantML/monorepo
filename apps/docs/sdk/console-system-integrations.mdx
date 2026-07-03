@@ -3,14 +3,11 @@ title: "Console, system metrics, and integrations"
 description: "Capture stdout/stderr, system metrics, local audit events, and lightweight framework adapters."
 ---
 
-# Console, system metrics, and integrations
+Turn on console capture, tune automatic system-metrics sampling, control source-metadata collection, and wire framework adapters — each feature is explicit and enabled per run.
 
-InstantML keeps the core SDK small. Optional capture features are explicit and
-can be enabled per run.
+## Capture console logs
 
-## Console logs
-
-Log individual lines:
+Log individual lines directly:
 
 ```python
 run.log_stdout("epoch=1 loss=0.42")
@@ -29,18 +26,11 @@ run = im.init(
 )
 ```
 
-Captured console lines are written through to the original stream and also sent
-to InstantML as text-series attributes named `console/stdout` and
-`console/stderr`. Use `log_stdout(...)` or `log_stderr(...)` when you want
-bounded console rows in the Run Detail Logs section; dashboard entry does not
-fan out log requests until that section is opened.
+Captured console lines are written through to the original stream and also sent to InstantML as text-series attributes named `console/stdout` and `console/stderr`. They appear in the Run Detail Logs section, which only fetches log rows when you open it.
 
-## System metrics
+## Sample system metrics
 
-System metrics are collected automatically. `im.init()` samples CPU, memory,
-disk, network, and GPU stats every 15 seconds by default; pass
-`system_metrics=False` to disable, or `system_metrics_interval=<seconds>` to
-change the cadence:
+System metrics are collected automatically: `im.init()` samples CPU, memory, disk, network, and GPU stats every 15 seconds by default. Pass `system_metrics=False` to disable, or `system_metrics_interval=<seconds>` to change the cadence.
 
 ```python
 run = im.init(
@@ -50,15 +40,13 @@ run = im.init(
 )
 ```
 
-System metrics log under `system/...` at the current step without incrementing
-the run's implicit step counter. Install the `system` extra for optional system
-dependencies:
+System metrics log under `system/...` at the current step without incrementing the run's implicit step counter. Install the `system` extra for the optional system dependencies:
 
 ```bash
 python3 -m pip install "instantml[system]"
 ```
 
-## Local audit store
+## Keep a local audit store
 
 The local SQLite audit store records attempted SDK events before submit:
 
@@ -70,10 +58,11 @@ run = im.init(
 )
 ```
 
-This is not replay and is not proof that the server accepted an event. Use it
-when you want local evidence of what the SDK attempted during debugging.
+<Note>
+The audit store is not replay and is not proof that the server accepted an event. Use it when you want local evidence of what the SDK attempted during debugging.
+</Note>
 
-## Source metadata
+## Control source metadata
 
 By default, the SDK captures privacy-safe reproducibility context when it can:
 
@@ -82,8 +71,7 @@ By default, the SDK captures privacy-safe reproducibility context when it can:
 - Git availability, commit, and dirty state.
 - Entrypoint basename when available.
 
-Hostname, process ID, current working directory, full command argv, branch, and
-git diff metadata are opt-in:
+Hostname, process ID, current working directory, full command argv, branch, and git diff metadata are opt-in:
 
 ```python
 run = im.init(
@@ -99,19 +87,17 @@ run = im.init(
 )
 ```
 
-Disable source capture for sensitive jobs:
+Disable source capture entirely for sensitive jobs:
 
 ```python
 run = im.init(project="private-run", source_tracking=False)
 ```
 
-SDK-owned source metadata is reserved and cannot be overwritten by user-provided
-metadata.
+SDK-owned source metadata is reserved and cannot be overwritten by user-provided metadata.
 
-## Framework adapters
+## Use framework adapters
 
-Adapters stay deliberately thin. They help common frameworks call the same
-public SDK methods rather than adding a second integration model.
+Adapters stay deliberately thin. They help common frameworks call the same public SDK methods rather than adding a second integration model.
 
 ```python
 run.watch(model, log="gradients", log_freq=100)
@@ -119,11 +105,12 @@ trainer.add_callback(im.TransformersCallback(run=run))
 logger = im.LightningLogger(project="cartpole")
 ```
 
-Prefer direct `run.log(...)` calls for custom loops. Use adapters when a
-framework already owns the training lifecycle.
+Prefer direct `run.log(...)` calls for custom loops. Use adapters when a framework already owns the training lifecycle — see the per-framework guides for setup details.
 
-See the [Integrations](/integrations/overview) section for per-framework guides:
-[PyTorch Lightning](/integrations/pytorch-lightning),
-[Hugging Face Transformers](/integrations/huggingface-transformers),
-[Keras](/integrations/keras), and
-[Weights & Biases migration](/integrations/wandb).
+## Next steps
+
+- [Integrations overview](/integrations/overview)
+- [PyTorch Lightning](/integrations/pytorch-lightning)
+- [Hugging Face Transformers](/integrations/huggingface-transformers)
+- [Buffering, offline mode, and reliability](/sdk/reliability)
+- [Explore logs and system charts in Run Detail](/dashboard/run-detail)

@@ -9,38 +9,30 @@ function docsUrl(pagePath: string) {
   return `${SITE_URL}/docs/${pagePath}`;
 }
 
+// No lastModified: stamping every entry with the build time is inaccurate,
+// and search engines ignore lastmod once they see it change without content
+// changes. /signin is intentionally absent — it is noindex.
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const now = new Date();
   const docsPages = await loadPublicDocsPages();
   const publicPages: MetadataRoute.Sitemap = [
     {
       url: `${SITE_URL}/`,
-      lastModified: now,
       changeFrequency: "weekly",
       priority: 1,
     },
     {
       url: `${SITE_URL}/pricing`,
-      lastModified: now,
       changeFrequency: "monthly",
       priority: 0.8,
     },
     {
       url: `${SITE_URL}/signup`,
-      lastModified: now,
       changeFrequency: "yearly",
       priority: 0.6,
-    },
-    {
-      url: `${SITE_URL}/signin`,
-      lastModified: now,
-      changeFrequency: "yearly",
-      priority: 0.3,
     },
   ];
   const docsEntries: MetadataRoute.Sitemap = docsPages.map((page: { path: string }) => ({
     url: docsUrl(page.path),
-    lastModified: now,
     changeFrequency: "weekly",
     priority: page.path === "index" ? 0.9 : 0.7,
   }));

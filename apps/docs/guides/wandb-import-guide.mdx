@@ -1,19 +1,15 @@
 ---
 title: "W&B import guide"
-description: "Import W&B runs into InstantML with a local-first dry-run workflow that preserves runs, configs, scalar metrics, tags, notes, and artifact references."
+description: "Migrate W&B run history into InstantML with a local-first, dry-run-first CLI flow that preserves runs, configs, scalar metrics, tags, notes, and artifact references."
 ---
 
-# W&B import guide
+Migrate real W&B run history into an InstantML workspace before you change a single training script. The CLI reads runs through the local W&B SDK on your machine, normalizes them into import chunks, uploads a dry-run summary, and writes runs only after you commit — your W&B credentials never reach InstantML servers.
 
-InstantML can import W&B run history through a local-first CLI flow. Your W&B
-credentials stay on your machine. The CLI reads runs through the local W&B SDK,
-normalizes them into InstantML Import v2 chunks, uploads a dry-run summary, and
-writes runs only after you commit.
+<Info>
+This guide covers direct migration through the local `wandb` SDK. To import a W&B transformed JSON export file instead, see [W&B and Neptune imports](/guides/wandb-neptune-imports).
+</Info>
 
-Use this when you want to evaluate InstantML with real historical runs before
-changing training scripts.
-
-## What the importer preserves
+## Know what the importer preserves
 
 The W&B importer focuses on the migration spine:
 
@@ -22,17 +18,14 @@ The W&B importer focuses on the migration spine:
 - Config values and parameters.
 - Tags and notes when present.
 - Source metadata.
-- Artifact references, declared sizes, MIME types, and metadata-only artifact
-  catalog bundles.
+- Artifact references: declared sizes, MIME types, and metadata-only artifact catalog bundles.
 - Import warnings and diagnostics.
 
-The importer does not copy W&B artifact bytes into InstantML storage. Imported
-artifact references appear in the dashboard, but downloads stay unavailable
-until you upload the actual bytes with the SDK.
+The importer does not copy W&B artifact bytes into InstantML storage. Imported artifact references appear in the dashboard, but downloads stay unavailable until you upload the actual bytes with the SDK.
 
 ## Install and authenticate
 
-Install the optional W&B integration and authenticate locally:
+Install the optional W&B integration and authenticate both CLIs locally:
 
 ```bash
 pip install "instantml[wandb]"
@@ -40,8 +33,7 @@ instantml login
 wandb login
 ```
 
-`instantml login` authenticates the InstantML CLI. `wandb login` authenticates
-the local W&B SDK. InstantML servers do not receive your W&B API token.
+`instantml login` authenticates the InstantML CLI. `wandb login` authenticates the local W&B SDK. InstantML servers do not receive your W&B API token.
 
 ## Run a dry-run import
 
@@ -55,22 +47,29 @@ instantml import wandb \
   --dry-run
 ```
 
-The dry run uploads staged import chunks and a summary without committing runs
-to the target project.
+The dry run uploads staged import chunks and a summary without committing runs to the target project. The CLI prints the job id, job status, and run, metric, and artifact counts.
 
-Review the summary before committing:
+Review before committing:
 
 - Imported run count.
 - Metric point count.
-- Config and tag shape.
-- Warning count and warning messages.
 - Artifact-reference count.
 - Target InstantML project.
 
+For the full warning messages, config shape, and progress detail, fetch the job over the API:
+
+```bash
+curl https://api.instantml.ai/api/imports/jobs/42 \
+  -H "Authorization: Bearer instantml_..."
+```
+
+<Tip>
+Add `--limit 10` to the import command to cap the number of W&B runs exported while you validate the mapping.
+</Tip>
+
 ## Commit after review
 
-If the dry-run summary looks right, commit from the Imports dashboard or rerun
-without `--dry-run`:
+If the dry-run summary looks right, rerun the same command without `--dry-run` to commit:
 
 ```bash
 instantml import wandb \
@@ -79,7 +78,7 @@ instantml import wandb \
   --source-project old-project
 ```
 
-After commit, open the Runs workspace and inspect the target project.
+After commit, open the target project in the Runs workspace.
 
 ## Verify the imported project
 
@@ -93,10 +92,14 @@ Check that:
 - Artifact references are attached to the right runs.
 - Source metadata includes the external run identity.
 
-If something looks wrong, cancel the dry-run job and rerun with a smaller source
-project or corrected source arguments.
+If something looks wrong, cancel the staged job and rerun with a smaller source project or corrected source arguments:
 
-## Practical rollout
+```bash
+curl -X POST https://api.instantml.ai/api/imports/jobs/42/cancel \
+  -H "Authorization: Bearer instantml_..."
+```
+
+## Roll out in low-risk steps
 
 A low-risk migration usually looks like this:
 
@@ -107,13 +110,15 @@ A low-risk migration usually looks like this:
 5. Compare imported history and new runs in the same dashboard.
 6. Decide whether to import more history, dual-log, or switch future runs.
 
-For the screenshot walkthrough, see
-[W&B and Neptune imports](/guides/wandb-neptune-imports). For the broader
-positioning, see [W&B alternative](/guides/wandb-alternative).
+## Respect the boundaries
 
-## Boundaries
+The W&B importer does not claim full W&B parity for sweeps, reports, launch, server-side hosted W&B credential pulls, or every artifact-byte migration pattern. It preserves the core experiment history needed to evaluate and compare training runs in InstantML.
 
-The W&B importer does not claim full W&B parity for sweeps, reports, launch,
-server-side hosted W&B credential pulls, or every artifact-byte migration
-pattern. It preserves the core experiment history needed to evaluate and
-compare training runs in InstantML.
+## Next steps
+
+- [Imports overview](/guides/imports) — every import path, command, and API route in one place.
+- [W&B and Neptune imports](/guides/wandb-neptune-imports) — import W&B export files and Neptune Exporter directories.
+- [W&B alternative](/guides/wandb-alternative) — how InstantML compares to W&B.
+- [Shadow-log alongside W&B](/integrations/wandb) — dual-log new runs while you evaluate.
+- [Compare runs](/dashboard/compare-runs) — chart imported and new runs side by side.
+- [Import, export, and usage API](/api/import-export-usage) — job status, commit, and cancel routes.

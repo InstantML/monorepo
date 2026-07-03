@@ -200,9 +200,12 @@ describe("PricingPage — tier numbers match signup, Rust, and docs", () => {
       assert.ok(authFlow.includes(`storage: "${plan.storage}"`));
       assert.ok(rustDomain.includes(plan.rustPrice));
       for (const snippet of plan.rustSnippets) assert.ok(rustDomain.includes(snippet), snippet);
-      const docsRow = `| ${plan.label} | ${plan.price} / org / month | ${plan.seats} | ${plan.storage} | ${plan.projects} | ${plan.runs} | ${plan.metricPoints} | ${plan.apiRequests} |`;
-      assert.ok(pricingDocs.includes(docsRow), docsRow);
-      assert.ok(limitsDocs.includes(docsRow), docsRow);
+      // pricing.mdx is the packaging overview (price/seats/storage at a glance);
+      // guides/pricing-limits-billing.mdx is the authoritative full-limit table.
+      const glanceRow = `| ${plan.label} | ${plan.price} / workspace / month | ${plan.seats} | ${plan.storage} |`;
+      assert.ok(pricingDocs.includes(glanceRow), glanceRow);
+      const limitsRow = `| ${plan.label} | ${plan.price} / workspace / month | ${plan.seats} | ${plan.storage} | ${plan.projects} | ${plan.runs} | ${plan.metricPoints} | ${plan.apiRequests} |`;
+      assert.ok(limitsDocs.includes(limitsRow), limitsRow);
     });
   }
 

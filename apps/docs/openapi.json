@@ -2265,6 +2265,1030 @@
         ]
       }
     },
+    "/api/runs/{run_id}/artifact-uploads": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "initiate_artifact_upload",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InitiateArtifactUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Artifact upload session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactUploadSessionEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Write scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/artifact-inputs": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "create_artifact_input_edge",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateArtifactInputEdgeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created artifact input edge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-uploads/{upload_session_id}/complete": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "complete_artifact_upload",
+        "parameters": [
+          {
+            "name": "upload_session_id",
+            "in": "path",
+            "description": "Artifact upload session UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteArtifactUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Committed artifact version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-uploads/{upload_session_id}/abort": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "abort_artifact_upload",
+        "parameters": [
+          {
+            "name": "upload_session_id",
+            "in": "path",
+            "description": "Artifact upload session UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AbortArtifactUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Aborted artifact upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactUploadAbortEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-uploads/{upload_session_id}/renew": {
+      "post": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "renew_artifact_upload",
+        "parameters": [
+          {
+            "name": "upload_session_id",
+            "in": "path",
+            "description": "Artifact upload session UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenewArtifactUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Renewed upload URLs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactUploadRenewEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-collections": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_artifact_collections",
+        "parameters": [
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Project name filter",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Artifact collection type filter",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive collection name search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum collections to return",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Collection offset",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Versioned artifact collections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactCollectionsEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Read scope required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-collections/{collection_id}": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "get_artifact_collection",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "description": "Artifact collection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact collection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactCollectionEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-collections/{collection_id}/aliases/{alias}": {
+      "put": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "set_artifact_alias",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "alias",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetArtifactAliasRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Moved artifact alias",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "delete_artifact_alias",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "alias",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteArtifactAliasRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Deleted artifact alias",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactAliasDeletedEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-collections/{collection_id}/versions": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_artifact_collection_versions",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "description": "Artifact collection UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum versions to return",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Version offset",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact collection versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionsEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-versions/resolve": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "resolve_artifact_version",
+        "parameters": [
+          {
+            "name": "ref",
+            "in": "query",
+            "description": "Artifact reference such as name:latest, type/name:best, or project/type/name:v0",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Artifact collection type disambiguator",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Project name disambiguator",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved artifact version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Version not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-versions/{version_id}": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "get_artifact_version",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "description": "Artifact version UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Version not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Artifact version deleted or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "delete_artifact_version",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "description": "Artifact version UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteArtifactVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Soft-deleted artifact version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-versions/{version_id}/lineage": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "artifact_version_lineage",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "description": "Artifact version UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum lineage edges to return",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact lineage graph",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactLineageEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Version not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Artifact version deleted or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-versions/{version_id}/manifest": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "list_artifact_manifest",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "description": "Artifact version UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum manifest entries to return",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Manifest entry offset",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "path_prefix",
+            "in": "query",
+            "description": "Optional artifact path prefix",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact manifest page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactManifestEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Version not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Artifact version deleted or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-versions/{version_id}/retention": {
+      "patch": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "update_artifact_retention",
+        "parameters": [
+          {
+            "name": "version_id",
+            "in": "path",
+            "description": "Artifact version UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateArtifactRetentionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated artifact retention",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactVersionEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/artifact-entries/{entry_id}/download": {
+      "get": {
+        "tags": [
+          "runs"
+        ],
+        "operationId": "download_artifact_entry",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "description": "Artifact manifest entry UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Artifact entry byte stream",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "Artifact entry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Artifact version deleted or expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
     "/api/runs/{run_id}/logs": {
       "get": {
         "tags": [
@@ -5922,6 +6946,451 @@
           }
         }
       },
+      "InitiateArtifactUploadRequest": {
+        "type": "object",
+        "required": [
+          "collection",
+          "manifest"
+        ],
+        "properties": {
+          "aliases": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "collection": {
+            "$ref": "#/components/schemas/ArtifactCollectionInput"
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/VersionedArtifactManifestInput"
+          },
+          "source_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "ttl_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "ArtifactUploadSessionEnvelope": {
+        "type": "object",
+        "required": [
+          "upload_session",
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactUploadFileEnvelope"
+            }
+          },
+          "upload_session": {
+            "$ref": "#/components/schemas/ArtifactUploadSessionSummary"
+          }
+        }
+      },
+      "CreateArtifactInputEdgeRequest": {
+        "type": "object",
+        "properties": {
+          "artifact_version_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ArtifactVersionEnvelope": {
+        "type": "object",
+        "required": [
+          "artifact_version"
+        ],
+        "properties": {
+          "artifact_version": {
+            "$ref": "#/components/schemas/PublicArtifactVersionRow"
+          },
+          "deduplicated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "CompleteArtifactUploadRequest": {
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompleteArtifactUploadFile"
+            }
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AbortArtifactUploadRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ArtifactUploadAbortEnvelope": {
+        "type": "object",
+        "required": [
+          "upload_session"
+        ],
+        "properties": {
+          "upload_session": {
+            "type": "object"
+          }
+        }
+      },
+      "RenewArtifactUploadRequest": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "start_part_number",
+          "part_count"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "part_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "start_part_number": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ArtifactUploadRenewEnvelope": {
+        "type": "object",
+        "required": [
+          "upload_session",
+          "entry_id",
+          "parts"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactUploadPartEnvelope"
+            }
+          },
+          "upload_session": {
+            "type": "object"
+          }
+        }
+      },
+      "ArtifactCollectionsEnvelope": {
+        "type": "object",
+        "required": [
+          "collections",
+          "limit",
+          "offset",
+          "total",
+          "has_more"
+        ],
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactCollectionSummary"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ArtifactCollectionEnvelope": {
+        "type": "object",
+        "required": [
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "$ref": "#/components/schemas/ArtifactCollectionSummary"
+          }
+        }
+      },
+      "SetArtifactAliasRequest": {
+        "type": "object",
+        "required": [
+          "artifact_version_id"
+        ],
+        "properties": {
+          "artifact_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DeleteArtifactAliasRequest": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ArtifactAliasDeletedEnvelope": {
+        "type": "object",
+        "required": [
+          "deleted"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ArtifactVersionsEnvelope": {
+        "type": "object",
+        "required": [
+          "versions",
+          "limit",
+          "offset",
+          "total",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicArtifactVersionRow"
+            }
+          }
+        }
+      },
+      "DeleteArtifactVersionRequest": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "delete_aliases": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ArtifactLineageEnvelope": {
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges",
+          "truncated",
+          "limit",
+          "depth"
+        ],
+        "properties": {
+          "depth": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactLineageEdge"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactLineageNode"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ArtifactManifestEnvelope": {
+        "type": "object",
+        "required": [
+          "artifact_version_id",
+          "entries",
+          "limit",
+          "offset",
+          "total",
+          "has_more"
+        ],
+        "properties": {
+          "artifact_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicArtifactManifestEntryRow"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "UpdateArtifactRetentionRequest": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retention_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ttl_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "CreateConsoleLogsRequest": {
         "type": "object",
         "properties": {
@@ -7450,6 +8919,501 @@
           }
         }
       },
+      "ArtifactCollectionInput": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metadata": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "VersionedArtifactManifestInput": {
+        "type": "object",
+        "required": [
+          "entries"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VersionedArtifactManifestEntryInput"
+            }
+          }
+        }
+      },
+      "ArtifactUploadFileEnvelope": {
+        "type": "object",
+        "required": [
+          "entry_id",
+          "path",
+          "upload_kind",
+          "part_size_bytes",
+          "part_count",
+          "parts"
+        ],
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "part_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "part_size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactUploadPartEnvelope"
+            }
+          },
+          "path": {
+            "type": "string"
+          },
+          "upload_kind": {
+            "type": "string"
+          }
+        }
+      },
+      "ArtifactUploadSessionSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "artifact_version_id",
+          "expires_at",
+          "part_size_bytes"
+        ],
+        "properties": {
+          "artifact_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "part_size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PublicArtifactVersionRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "project_id",
+          "collection_id",
+          "name",
+          "type",
+          "version",
+          "version_index",
+          "aliases",
+          "digest",
+          "file_count",
+          "size_bytes",
+          "state",
+          "metadata",
+          "retention_mode",
+          "created_at"
+        ],
+        "properties": {
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "audit_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "collection_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delete_requested_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "file_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retention_mode": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source_run_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "source_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "state": {
+            "type": "string"
+          },
+          "ttl_days": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "type": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "version_index": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "CompleteArtifactUploadFile": {
+        "type": "object",
+        "required": [
+          "entry_id"
+        ],
+        "properties": {
+          "content_base64": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entry_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CompleteArtifactUploadPart"
+            }
+          }
+        }
+      },
+      "ArtifactUploadPartEnvelope": {
+        "type": "object",
+        "required": [
+          "part_number",
+          "url",
+          "expires_at",
+          "required_headers"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "part_number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "required_headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "ArtifactCollectionSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "org_id",
+          "project_id",
+          "project",
+          "name",
+          "type",
+          "metadata",
+          "versions_count",
+          "retained_bytes",
+          "pending_delete_bytes",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "best_version": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PublicArtifactVersionRow"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "latest_version": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PublicArtifactVersionRow"
+              }
+            ]
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pending_delete_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "project": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retained_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "versions_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ArtifactLineageEdge": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "direction"
+        ],
+        "properties": {
+          "direction": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "ArtifactLineageNode": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "object"
+          }
+        }
+      },
+      "PublicArtifactManifestEntryRow": {
+        "type": "object",
+        "required": [
+          "id",
+          "artifact_version_id",
+          "path",
+          "kind",
+          "storage_backend",
+          "downloadable",
+          "created_at"
+        ],
+        "properties": {
+          "artifact_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "downloadable": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "reference_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "storage_backend": {
+            "type": "string"
+          }
+        }
+      },
       "ConsoleLogInput": {
         "type": "object",
         "properties": {
@@ -8252,6 +10216,65 @@
               "null"
             ],
             "format": "double"
+          }
+        }
+      },
+      "VersionedArtifactManifestEntryInput": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mime_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "reference_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "CompleteArtifactUploadPart": {
+        "type": "object",
+        "required": [
+          "part_number",
+          "etag"
+        ],
+        "properties": {
+          "etag": {
+            "type": "string"
+          },
+          "part_number": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

@@ -1,68 +1,41 @@
 ---
 title: "W&B and Neptune imports"
-description: "Walk through local-first W&B and Neptune imports with dry-run review and dashboard screenshots."
+description: "Import W&B export files and Neptune Exporter directories into InstantML step by step, with dry-run preview and API job control."
 ---
 
-# W&B and Neptune imports
+Import existing W&B or Neptune experiment history from export files on your machine. Vendor files and credentials stay local: InstantML receives normalized import chunks, shows a dry-run summary, and writes runs only after you commit.
 
-Use this flow when a team already has real experiment history in W&B or a
-Neptune Exporter directory. Source credentials and vendor files stay on your
-machine. InstantML receives normalized Import v2 chunks, shows a dry-run
-summary, then writes runs only after you commit.
+<Info>
+This page covers export-file imports. To migrate directly from W&B through the local `wandb` SDK — no export file needed — follow the [W&B import guide](/guides/wandb-import-guide) instead.
+</Info>
 
-## 1. Open Imports & Integrations
+## Install and authenticate
 
-In the app, open **Dashboard > Imports**. The page keeps migration work
-CLI-first and shows the exact source-specific dry-run command to run locally.
-
-![W&B import source selected in the Imports & Integrations dashboard](/images/product/import-flow-wandb.png)
-
-## 2. Import from W&B
-
-Install the optional W&B integration and authenticate with W&B locally:
-
-```bash
-pip install "instantml[wandb]"
-instantml login
-wandb login
-```
-
-Run a dry-run import first:
-
-```bash
-instantml import wandb \
-  --project cartpole \
-  --entity my-team \
-  --source-project old-project \
-  --dry-run
-```
-
-The CLI uses the official local `wandb` SDK, converts runs, configs, scalar
-history, tags, notes, and artifact references into Import v2 chunks, then
-uploads the dry-run job to InstantML. W&B API tokens stay local.
-
-After the dry-run, return to **Recent import jobs** in the Imports tab. Review:
-
-- Run count.
-- Metric point count.
-- Warning count and messages.
-- Target project.
-- Source identity.
-
-Commit from the dashboard when the mapping looks right, or rerun the same
-command without `--dry-run` to import directly.
-
-## 3. Import from Neptune Exporter
-
-Export the Neptune project with Neptune Exporter first. Keep the generated
-Parquet data directory and optional files directory together.
+Install the extras for your source and authenticate the CLI once:
 
 ```bash
 pip install "instantml[imports]"
 instantml login
 ```
 
-Then run a dry-run import:
+The `[imports]` extra pulls in pyarrow for reading Neptune Exporter Parquet files. W&B and MLflow transformed JSON imports need no extra.
+
+## Import a W&B export file
+
+Point the importer at a W&B transformed JSON export and preview it with `--dry-run`:
+
+```bash
+instantml import wandb \
+  --project cartpole \
+  --input ./wandb-export.json \
+  --dry-run
+```
+
+The CLI converts runs, configs, scalar history, tags, notes, and artifact references into import chunks, uploads the staged job, and prints the job id, status, and run, metric, and artifact counts — without committing anything.
+
+## Import a Neptune Exporter directory
+
+Export the Neptune project with Neptune Exporter first. Keep the generated Parquet data directory and optional files directory together, then run a dry-run import:
 
 ```bash
 instantml import neptune \
@@ -73,17 +46,48 @@ instantml import neptune \
   --dry-run
 ```
 
-![Neptune Exporter import source selected in the Imports & Integrations dashboard](/images/product/import-flow-neptune.png)
+The Neptune importer streams Parquet rows into bounded import chunks instead of loading full metric history into memory. File attributes become artifact references; scalar series become metric points; params, tags, notes, and run metadata map into InstantML run metadata and config.
 
-The Neptune importer streams Parquet rows into bounded Import v2 chunks instead
-of loading full metric history into memory. File attributes become artifact
-references; scalar series become metric points; params, tags, notes, and run
-metadata map into InstantML run metadata/config.
+## Review the dry run
 
-Commit from the dashboard once the dry-run summary and warnings look right, or
-rerun without `--dry-run` for a direct import.
+Check the counts the CLI prints:
 
-## 4. Verify in the dashboard
+- Run count.
+- Metric point count.
+- Artifact-reference count.
+- Job status.
+
+For warning messages and progress detail, fetch the job with the id the CLI printed:
+
+```bash
+curl https://api.instantml.ai/api/imports/jobs/42 \
+  -H "Authorization: Bearer instantml_..."
+```
+
+If the counts or warnings look wrong, cancel the staged job, then rerun the CLI with a corrected export path or a smaller source project:
+
+```bash
+curl -X POST https://api.instantml.ai/api/imports/jobs/42/cancel \
+  -H "Authorization: Bearer instantml_..."
+```
+
+## Commit the import
+
+Rerun the same import command without `--dry-run` to commit the runs to the target project:
+
+```bash
+instantml import neptune \
+  --project cartpole \
+  --input ./neptune-export/data \
+  --files-path ./neptune-export/files \
+  --source-project "workspace/project"
+```
+
+<Note>
+Staged chunks count as retained operational storage and each import job has a 2 GiB staged-payload ceiling, so cancel dry-run jobs you decide not to commit.
+</Note>
+
+## Verify in the dashboard
 
 After commit, open the target project in the Runs workspace and check:
 
@@ -93,13 +97,14 @@ After commit, open the target project in the Runs workspace and check:
 - Artifact references are attached to the right runs.
 - Imported source metadata includes the external run identity.
 
-If the counts or warnings look wrong, cancel the dry-run job and rerun the CLI
-with a smaller source project, a `--limit` for W&B, or a corrected Neptune
-Exporter path.
+## Respect compatibility boundaries
 
-## Compatibility boundaries
+The importers cover the migration spine: runs, scalar metrics, configs/params, tags, notes, provenance, and artifact references. They do not claim full W&B sweeps/reports/launch parity, full Neptune namespace semantics, or hosted server-side vendor credential pulls. Artifact references are metadata only — upload the actual bytes with the SDK to make them downloadable.
 
-The importers cover the migration spine: runs, scalar metrics, configs/params,
-tags, notes, provenance, and artifact references. They do not claim full W&B
-sweeps/reports/launch parity, full Neptune namespace semantics, or hosted
-server-side vendor credential pulls.
+## Next steps
+
+- [Imports overview](/guides/imports) — every import path, command, and API route.
+- [W&B import guide](/guides/wandb-import-guide) — migrate directly through the local W&B SDK.
+- [Import, export, and usage API](/api/import-export-usage) — job status, commit, and cancel routes.
+- [Runs workspace](/dashboard/runs-workspace) — where imported runs appear.
+- [Troubleshooting](/troubleshooting) — diagnose pyarrow and Parquet import issues.

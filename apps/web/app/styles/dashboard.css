@@ -575,7 +575,6 @@
   color: var(--faint);
   font: 700 10px/1 var(--font-mono);
   opacity: 0;
-  text-transform: uppercase;
   visibility: hidden;
 }
 

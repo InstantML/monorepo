@@ -120,10 +120,10 @@ button.primary-button:hover,
   color: var(--accent);
 }
 
-/* 6 — Micro-labels: uppercase mono group labels take the Instrument tracking. */
+/* 6 — Micro-labels: title-case mono group labels with gentle tracking. */
 .tab-group-label {
   font-weight: 500;
-  letter-spacing: var(--tracking-eyebrow);
+  letter-spacing: 0.04em;
 }
 
 /* 7 — Focus is signal, everywhere, both themes. */

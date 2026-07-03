@@ -43,8 +43,9 @@
               "quickstart",
               "concepts/core-concepts",
               "pricing",
-              "guides/pricing-limits-billing",
-              "guides/examples"
+              "benchmarks",
+              "guides/examples",
+              "troubleshooting"
             ]
           }
         ]
@@ -150,8 +151,18 @@
               "api/reports",
               "api/iframe-embeds",
               "api/import-export-usage",
-              "api/dashboard-control-state",
-              "troubleshooting"
+              "api/dashboard-control-state"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "architecture/system-overview",
+              "architecture/service-planes",
+              "architecture/storage-model",
+              "architecture/google-clickhouse",
+              "architecture/auth-tenancy",
+              "architecture/schema-reference"
             ]
           }
         ]

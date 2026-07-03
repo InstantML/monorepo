@@ -620,6 +620,10 @@ export function DashboardShell({
   const seriesSignatureRef = useRef("");
   const panelSeriesSignatureRef = useRef("");
   const workspaceSeriesSignatureRef = useRef("");
+  // Org/project scope of the last workspace-view rebuild. Fetched series only
+  // become invalid when this scope moves; a rebuild triggered by metric keys
+  // growing (e.g. a live run logging a new metric) must keep painted charts.
+  const workspaceScopeKeyRef = useRef<string | null>(null);
   // Tracks whether the live-refresh loop was active, so we can issue one final
   // refresh when a run stops to capture the tail of the curve.
   const liveSeriesActiveRef = useRef(false);
@@ -1846,6 +1850,9 @@ export function DashboardShell({
   }, [workspaceView]);
 
   useEffect(() => {
+    const scopeKey = `${activeOrgId}\u0000${project}\u0000${scopedWorkspaceStorageKey}`;
+    const scopeChanged = workspaceScopeKeyRef.current !== null && workspaceScopeKeyRef.current !== scopeKey;
+    workspaceScopeKeyRef.current = scopeKey;
     if (project && !summaryMatchesProject) {
       setWorkspaceReady(false);
       if (hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
@@ -1865,7 +1872,7 @@ export function DashboardShell({
     }
     setWorkspaceView(sanitizeWorkspaceView(raw, actualMetricOptions, project));
     setWorkspaceReady(Boolean(raw) || actualMetricOptions.length > 0);
-    if (hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
+    if (scopeChanged && hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
     setAddPanelSectionId("");
     setEditingPanelRef(null);
     setFullscreenPanelRef(null);
@@ -2072,6 +2079,12 @@ export function DashboardShell({
   }, [activeTab, api, metricKey, metricSeriesRunKey, pinnedMetrics, liveSeriesTick]);
 
   useEffect(() => {
+    // Selected-run details hydrate in parallel with the first run summary and
+    // can win the race (a ?runs= deep link restores the selection). Fetching
+    // series for that partial run set just gets discarded — charts flash
+    // painted → skeleton → painted — when the summary widens the fetch set,
+    // so hold the first fetch until the summary has landed.
+    if (!initialLoadDone) return;
     let cancelled = false;
     const controller = new AbortController();
     const signature = `${activeTab}|${workspaceSeriesViewKey}|${workspaceFetchRunKey}|${workspacePanelMetricKey}`;
@@ -2082,9 +2095,31 @@ export function DashboardShell({
         if (hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
         return;
       }
-      if (!isLiveRefresh && hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
+      if (!isLiveRefresh && hasWorkspaceSeriesRef.current) {
+        // The fetch set changed (page turn, selection change, new run in the
+        // rail). Series for runs still being fetched stay painted while the
+        // refetch replaces them in place; metrics left with no series drop
+        // back to the skeleton (a metric key must stay absent, not empty, for
+        // the panel to read as loading).
+        const keepRunIds = new Set(workspaceFetchRuns.map((run) => run.id));
+        setWorkspaceSeries((current) => {
+          const kept: Record<string, MetricSeries[]> = {};
+          for (const [metric, items] of Object.entries(current)) {
+            const survivors = items.filter((item) => keepRunIds.has(item.id));
+            if (survivors.length) kept[metric] = survivors;
+          }
+          return kept;
+        });
+      }
       const next = await fetchMetricSeriesForMetrics(api, workspacePanelMetrics, workspaceFetchRuns, controller.signal, (metric, patch) => {
-        if (!cancelled && !isLiveRefresh) setWorkspaceSeries((current) => ({ ...current, [metric]: patch }));
+        if (cancelled || isLiveRefresh) return;
+        setWorkspaceSeries((current) => {
+          // Patches cover every fetched run, with empty placeholders for runs
+          // whose chunk has not arrived; let surviving series stand in for
+          // those so kept charts do not blank between chunks.
+          const stale = new Map((current[metric] ?? []).filter((item) => item.points?.length).map((item) => [item.id, item]));
+          return { ...current, [metric]: patch.map((item) => (item.points?.length ? item : stale.get(item.id) ?? item)) };
+        });
       });
       if (!cancelled) setWorkspaceSeries(next);
     }
@@ -2095,7 +2130,7 @@ export function DashboardShell({
       cancelled = true;
       controller.abort();
     };
-  }, [activeTab, api, workspaceFetchRunKey, workspacePanelMetricKey, workspaceSeriesViewKey, liveSeriesTick]);
+  }, [activeTab, api, initialLoadDone, workspaceFetchRunKey, workspacePanelMetricKey, workspaceSeriesViewKey, liveSeriesTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4674,7 +4709,6 @@ function dismissTopOverlay() {
           {visibleTab === "agent" ? (
             <AgentTabPane
               activeOrgId={activeOrgId}
-              apiKeys={apiKeys}
               canManageOrg={canManageOrg}
               metricKey={metricKey}
               newApiKey={newApiKey}

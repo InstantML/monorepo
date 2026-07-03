@@ -3,18 +3,17 @@ title: "Benchmarks"
 description: "Read the current InstantML latency evidence, W&B comparison status, and benchmark fairness rules."
 ---
 
-# Benchmarks
-
 InstantML benchmarks focus on the workflow users feel every day: loading run
 lists, searching, sorting by metric summaries, opening overview counters, and
 charting bounded metric series.
 
-The current verified hosted signal is strong: InstantML's Google Cloud
-ClickHouse path stayed sub-second on the 50,000-run showcase project with
-522,000,000 metric points. The W&B comparison is more nuanced. The historical
-May 18 public-API comparison showed a clear InstantML chart-read advantage, but
-it did not prove that InstantML is faster than W&B for every run-list, search,
-or sort operation.
+Two results matter, and they carry different weight. The current verified
+hosted signal is strong: InstantML's Google Cloud ClickHouse path stayed
+sub-second on the 50,000-run showcase project with 522,000,000 metric points.
+The W&B comparison is more nuanced. The historical May 18 public-API
+comparison showed a clear InstantML chart-read advantage, but it did not prove
+that InstantML is faster than W&B for every run-list, search, or sort
+operation.
 
 ## Current hosted result
 
@@ -113,8 +112,7 @@ npm run benchmark:cloud-run
 ```
 
 The committed May 23 result used the Python `benchmark-instantml --direct`
-fallback because the deployed API at the time was older than the Node validator.
-Use the Node command for fresh reruns. Direct fallback records observed row
+fallback. Use the Node command for fresh reruns. Direct fallback records observed row
 counts but does not enforce the `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS` guard, so
 direct fallback results must be labeled and checked manually before publishing.
 
@@ -189,3 +187,10 @@ Set `WANDB_API_KEY` and `WANDB_ENTITY` for W&B. Set `INSTANTML_API_KEY` and the
 hosted InstantML API base for the read-only InstantML run. Keep raw JSON outputs
 out of public artifacts until API keys, signed URLs, org IDs, user IDs, and raw
 hosts have been reviewed.
+
+## Next steps
+
+- [InstantML as a W&B alternative](/guides/wandb-alternative)
+- [InstantML vs MLflow](/guides/instantml-vs-mlflow)
+- [Google Cloud ClickHouse architecture](/architecture/google-clickhouse)
+- [Observability](/guides/observability)

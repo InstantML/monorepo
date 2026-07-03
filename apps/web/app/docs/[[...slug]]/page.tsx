@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Download,
   FileText,
   FlaskConical,
   Gauge,
@@ -20,6 +21,7 @@ import {
   type LucideIcon,
   Package,
   Rocket,
+  Table2,
   Terminal,
   Zap,
 } from "lucide-react";
@@ -38,6 +40,7 @@ import {
   loadDocsPage,
   mapDocsAssetSrc,
 } from "../../../src/docs";
+import { serializeJsonLd } from "../../../src/json-ld.js";
 
 type DocsParams = {
   params: Promise<{ slug?: string[] }>;
@@ -58,7 +61,15 @@ type DocsBlock =
   | { type: "code"; language: string; code: string }
   | { type: "table"; headers: string[]; rows: string[][] }
   | { type: "list"; ordered: boolean; items: string[] }
+  | { type: "callout"; kind: "note" | "tip" | "warning" | "info"; text: string }
   | { type: "cards"; cards: Array<{ title: string; icon: string; href: string; description: string }> };
+
+const CALLOUT_LABELS: Record<string, string> = {
+  note: "Note",
+  tip: "Tip",
+  warning: "Warning",
+  info: "Info",
+};
 
 export const runtime = "nodejs";
 export const dynamic = "force-static";
@@ -77,6 +88,7 @@ const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
   "building-2": Building2,
   "chart-line": ChartLine,
   "credit-card": CreditCard,
+  download: Download,
   "file-text": FileText,
   "flask-conical": FlaskConical,
   gauge: Gauge,
@@ -84,6 +96,7 @@ const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
   "line-chart": ChartLine,
   package: Package,
   rocket: Rocket,
+  "table-2": Table2,
   terminal: Terminal,
   zap: Zap,
 };
@@ -91,6 +104,19 @@ const DOCS_CARD_ICONS: Record<string, LucideIcon> = {
 function docsRoutePath(pagePath: string) {
   if (pagePath === "index") return "/docs";
   return `/docs/${pagePath}`;
+}
+
+// Rich-result breadcrumbs: Docs → page. Tabs and groups have no URLs of
+// their own, and every item except the last needs one, so the trail is flat.
+function breadcrumbJsonLd(page: { path: string; title: string }) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Docs", item: `${SITE_URL}/docs` },
+      { "@type": "ListItem", position: 2, name: page.title, item: `${SITE_URL}${docsRoutePath(page.path)}` },
+    ],
+  };
 }
 
 export async function generateStaticParams() {
@@ -105,9 +131,11 @@ export async function generateMetadata({ params }: DocsParams): Promise<Metadata
   try {
     const page = await loadDocsPage(slug);
     const routePath = docsRoutePath(page.path);
-    const title = `${page.title} | InstantML Docs`;
+    // Absolute: the root layout template would otherwise append a second
+    // "· InstantML" after the docs branding.
+    const title = `${page.title} · InstantML Docs`;
     return {
-      title,
+      title: { absolute: title },
       description: page.description,
       alternates: { canonical: routePath },
       robots: { index: true, follow: true },
@@ -115,19 +143,19 @@ export async function generateMetadata({ params }: DocsParams): Promise<Metadata
         type: "website",
         url: `${SITE_URL}${routePath}`,
         siteName: "InstantML",
-        title: `${title} · InstantML`,
+        title,
         description: page.description,
         locale: "en_US",
       },
       twitter: {
         card: "summary_large_image",
-        title: `${title} · InstantML`,
+        title,
         description: page.description,
       },
     };
   } catch {
     return {
-      title: "InstantML Docs",
+      title: { absolute: "InstantML Docs" },
       description: "InstantML documentation.",
       alternates: { canonical: "/docs" },
       robots: { index: true, follow: true },
@@ -149,6 +177,12 @@ export default async function DocsPage({ params }: DocsParams) {
 
   return (
     <main className="docs-route">
+      {page.path === "index" ? null : (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd(page)) }}
+        />
+      )}
       <DocsMobileInert />
       <header className="docs-route-topbar">
         <div className="docs-route-topbar-row docs-route-topbar-row-primary">
@@ -398,6 +432,15 @@ function DocsBlockView({ block }: { block: DocsBlock }) {
 
   if (block.type === "paragraph") {
     return <p>{renderInline(block.text)}</p>;
+  }
+
+  if (block.type === "callout") {
+    return (
+      <aside className={`docs-callout docs-callout-${block.kind}`} role="note">
+        <span className="docs-callout-label">{CALLOUT_LABELS[block.kind] ?? "Note"}</span>
+        <p>{renderInline(block.text)}</p>
+      </aside>
+    );
   }
 
   if (block.type === "image") {
