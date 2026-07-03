@@ -38,6 +38,7 @@ import {
   loadDocsPage,
   mapDocsAssetSrc,
 } from "../../../src/docs";
+import { serializeJsonLd } from "../../../src/json-ld.js";
 
 type DocsParams = {
   params: Promise<{ slug?: string[] }>;
@@ -93,6 +94,19 @@ function docsRoutePath(pagePath: string) {
   return `/docs/${pagePath}`;
 }
 
+// Rich-result breadcrumbs: Docs → page. Tabs and groups have no URLs of
+// their own, and every item except the last needs one, so the trail is flat.
+function breadcrumbJsonLd(page: { path: string; title: string }) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Docs", item: `${SITE_URL}/docs` },
+      { "@type": "ListItem", position: 2, name: page.title, item: `${SITE_URL}${docsRoutePath(page.path)}` },
+    ],
+  };
+}
+
 export async function generateStaticParams() {
   const pages = await loadPublicDocsPages();
   return pages.map((page: { path: string }) => ({
@@ -105,9 +119,11 @@ export async function generateMetadata({ params }: DocsParams): Promise<Metadata
   try {
     const page = await loadDocsPage(slug);
     const routePath = docsRoutePath(page.path);
-    const title = `${page.title} | InstantML Docs`;
+    // Absolute: the root layout template would otherwise append a second
+    // "· InstantML" after the docs branding.
+    const title = `${page.title} · InstantML Docs`;
     return {
-      title,
+      title: { absolute: title },
       description: page.description,
       alternates: { canonical: routePath },
       robots: { index: true, follow: true },
@@ -115,19 +131,19 @@ export async function generateMetadata({ params }: DocsParams): Promise<Metadata
         type: "website",
         url: `${SITE_URL}${routePath}`,
         siteName: "InstantML",
-        title: `${title} · InstantML`,
+        title,
         description: page.description,
         locale: "en_US",
       },
       twitter: {
         card: "summary_large_image",
-        title: `${title} · InstantML`,
+        title,
         description: page.description,
       },
     };
   } catch {
     return {
-      title: "InstantML Docs",
+      title: { absolute: "InstantML Docs" },
       description: "InstantML documentation.",
       alternates: { canonical: "/docs" },
       robots: { index: true, follow: true },
@@ -149,6 +165,12 @@ export default async function DocsPage({ params }: DocsParams) {
 
   return (
     <main className="docs-route">
+      {page.path === "index" ? null : (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(breadcrumbJsonLd(page)) }}
+        />
+      )}
       <DocsMobileInert />
       <header className="docs-route-topbar">
         <div className="docs-route-topbar-row docs-route-topbar-row-primary">
