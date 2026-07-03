@@ -1,6 +1,6 @@
 ---
 title: "Run Detail"
-description: "Inspect one run's metrics, config, source context, logs, artifacts, and rich objects."
+description: "Inspect one run's summary, metrics, traces, logs, files, system metadata, and lineage."
 ---
 
 # Run Detail
@@ -30,32 +30,46 @@ Cards appear only when the underlying signal exists:
 - **Throughput** and **GPU utilization** when system metrics are logged.
 - **ETA**, estimated from the recent step rate for running runs with a target.
 
-## Run Detail tabs
+## Run Detail sections
 
 Run Detail has its own tabs, separate from the global dashboard navigation. The
-Metrics and Artifacts tabs carry a count badge:
+Data and Files sections carry count badges when the run has logged metric rows
+or evidence.
 
 | Tab | Use |
 | --- | --- |
-| Overview | KPI cockpit, headline charts, config, checkpoints, alerts, and timeline |
-| Metrics | Metric curve chart and the metric summary table |
-| Artifacts | Artifact, checkpoint, media, table, histogram, and evaluation evidence |
+| Summary | KPI cockpit, headline charts, checkpoints, alerts, tags, notes, and timeline |
+| Data | Metric curve chart and the metric summary table |
+| Traces | Recent product traces for this run, linked into the full Traces workspace |
 | Logs | Stdout/stderr style logs for the selected run |
-| Config | Config plus source/system metadata captured by the SDK |
-| Lineage | Conditional relationship/evidence graph surfaces when graph data exists |
+| Files | Artifact, checkpoint, media, table, histogram, and evaluation evidence |
+| System | Config plus source/system metadata captured by the SDK |
+| Graph | Parent, checkpoint, and child-run lineage when graph data exists |
 
-Logs and object manifests load only when the relevant tab is opened. User-facing
-metric summaries cover logged training metrics; internal SDK telemetry
-(`system/instantml/*`) lives on the Config tab.
+Logs, traces, objects, and lineage load only when the relevant section is
+opened. User-facing metric summaries cover logged training metrics; internal SDK
+telemetry (`system/instantml/*`) lives on the System section.
+
+## Traces
+
+![Run Detail recent traces](/images/product/dashboard-run-detail-traces.png)
+
+The Traces section lists the latest traces for the selected run. It fetches
+`GET /api/traces?run_id=...&limit=20` only after you open the section, then
+links each trace to the full Traces workspace with the exact `run_id`,
+`trace_id`, and root `span_id`.
+
+Use this section when you are already inspecting one run and want to jump from a
+metric regression or failed checkpoint to the execution tree that produced it.
 
 ## Tags and notes
 
 Use the small editor to update tags and notes without leaving the run. These
 fields are searchable and appear in Compare.
 
-## Artifacts
+## Files and artifacts
 
-The Artifacts tab previews checkpoints, uploaded files, media objects, tables,
+The Files section previews checkpoints, uploaded files, media objects, tables,
 histograms, and binary classification evaluation bundles through existing
 artifact and object routes. Classification eval previews render PR/ROC curves,
 a confusion matrix, per-class metrics, and optional prediction rows from typed

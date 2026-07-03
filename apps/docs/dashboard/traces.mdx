@@ -1,0 +1,77 @@
+---
+title: "Traces"
+description: "Inspect nested rollout, evaluator, model, tool, and reward spans in the dashboard."
+---
+
+# Traces
+
+![Traces workspace](/images/product/dashboard-traces.png)
+
+The Traces workspace is a run-scoped debugger for execution trees. It shows
+trace summaries on the left, a lazy-loading span tree in the center, and a span
+inspector on the right.
+
+## What the workspace shows
+
+Each trace summary includes:
+
+- Status.
+- Root span name.
+- Run name and span kinds.
+- Span count.
+- Duration.
+- Last update time.
+
+Select a trace to load its root spans. Expanding a node fetches direct child
+spans with `GET /api/runs/:run_id/traces/:trace_id/spans`, so large traces do
+not need to load all spans at once.
+
+## Filters
+
+Use the top filters to narrow the list:
+
+| Filter | Use |
+| --- | --- |
+| Run | Show traces for one run. |
+| Status | Find failed, running, interrupted, or completed traces. |
+| Kind | Focus on rollout, model, tool, retrieval, reward, evaluator, or custom spans. |
+| Search | Match root name, trace id prefix, rollout id, or thread id. |
+
+The workspace deep-links with `run_id`, `trace_id`, and `span_id` query
+parameters, so copied URLs reopen the exact selected span.
+
+## Span inspector
+
+The inspector shows:
+
+- Span id and trace id.
+- Status, kind, duration, step, rank, and child count.
+- Input, output, and error previews when preview capture was enabled.
+- Attributes, metrics, and links.
+
+Previews are bounded and redacted by the SDK before they reach the API. In the
+example screenshot, the reward span keeps debugging context while masking the
+authorization token, API key, and returned secret.
+
+## Run Detail entry point
+
+![Run Detail recent traces](/images/product/dashboard-run-detail-traces.png)
+
+Run Detail has a local **Traces** section. It fetches only when opened, lists
+the latest traces for the selected run, and links each row into the full Traces
+workspace with the exact trace and root span selected.
+
+Use the Run Detail section when you are already inspecting one run. Use the
+global Traces workspace when you want to filter across runs or inspect a tree in
+detail.
+
+## Common workflow
+
+1. Open a run from the Runs workspace.
+2. Click **Traces** in Run Detail.
+3. Open a recent trace.
+4. Expand the tree until the model, tool, reward, or evaluator span you need is
+   visible.
+5. Use the inspector to compare inputs, outputs, attributes, metrics, and error
+   previews.
+

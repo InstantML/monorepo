@@ -200,6 +200,7 @@ try {
     const traceId = "11111111111111111111111111111111";
     const rootSpanId = "2222222222222222";
     const childSpanId = "3333333333333333";
+    const rewardSpanId = "4444444444444444";
     const traceStartedAt = new Date().toISOString();
     const traceEndedAt = new Date(Date.now() + 125).toISOString();
     await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, {
@@ -244,6 +245,31 @@ try {
           output_preview: "{\"action\":1}",
           attributes: { model: "smoke-policy" },
           metrics: { "gen_ai.usage.input_tokens": 4, "gen_ai.usage.output_tokens": 2 },
+          links: [],
+          content_policy: "preview",
+          redaction_state: "captured",
+          truncated: false,
+        },
+        {
+          trace_id: traceId,
+          span_id: rewardSpanId,
+          parent_span_id: rootSpanId,
+          event_id: "00000000-0000-4000-8000-000000000104",
+          sequence: 1,
+          event_kind: "finished",
+          name: "reward.score",
+          kind: "reward",
+          status: "ok",
+          step: 1,
+          thread_id: "ui-smoke-thread",
+          rollout_id: "ui-smoke-rollout",
+          started_at: traceStartedAt,
+          ended_at: traceEndedAt,
+          duration_ms: 21,
+          input_preview: "{\"action\":1,\"authorization\":\"[REDACTED]\",\"obs\":[0.1,0.2]}",
+          output_preview: "{\"reward\":44,\"secret\":\"[REDACTED]\"}",
+          attributes: { api_key: "[REDACTED]", component: "reward" },
+          metrics: { reward: 44 },
           links: [],
           content_policy: "preview",
           redaction_state: "captured",
@@ -430,7 +456,7 @@ try {
   traceUrls.length = 0;
   objectNotFoundUrls.length = 0;
 
-  if (docsScreenshotMode) {
+  if (docsScreenshotMode && !tracesOnlySmoke) {
     await captureDocScreenshots(page, webBaseUrl);
     if (browser) await browser.close().catch(() => {});
     if (nextServer) {
@@ -1885,12 +1911,7 @@ try {
 
 async function captureDocScreenshots(page, webBaseUrl) {
   const cap = async (name, settleMs = 700) => {
-    await page.waitForTimeout(settleMs);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.waitForTimeout(200);
-    await page.screenshot({ path: path.join(docsProductDir, name) });
-    await page.setViewportSize({ width: 1440, height: 1100 });
+    await captureDocsProductScreenshot(page, name, settleMs);
   };
   const shot = async (name, fn) => {
     try {
@@ -2081,7 +2102,30 @@ async function captureDocScreenshots(page, webBaseUrl) {
       }, null, { timeout: 8000 }).catch(() => {});
     });
 
-    // 12. Checkpoints (Overview's Resume Code action makes this checkpoint-centric
+    // 12. Run Detail trace list (lazy trace fetch only after opening Traces).
+    await shot("dashboard-run-detail-traces.png", async () => {
+      await detailTab("Traces").catch(() => {});
+      await page.waitForSelector(".pd-trace-row", { timeout: 10000 });
+      await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa rollout trace"), null, { timeout: 8000 });
+    });
+
+    // 13. Full Traces workspace with a redacted reward span selected.
+    await shot("dashboard-traces.png", async () => {
+      await page.goto(`${webBaseUrl}/dashboard/traces?run_id=${seedRunId}&trace_id=11111111111111111111111111111111&span_id=4444444444444444`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".traces-workspace", { timeout: 12000 });
+      await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("qa rollout trace"), null, { timeout: 8000 });
+      const rootNode = page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first();
+      if (await rootNode.count()) await rootNode.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
+      const rewardNode = page.locator(".trace-node-button", { hasText: "reward.score" }).first();
+      if (await rewardNode.count()) await rewardNode.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForFunction(() => {
+        const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+        return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
+      }, null, { timeout: 8000 });
+    });
+
+    // 14. Checkpoints (Overview's Resume Code action makes this checkpoint-centric
     // and visually distinct from the Run Detail shot).
     await shot("dashboard-checkpoints.png", async () => {
       await detailTab("Overview").catch(() => {});
@@ -2093,7 +2137,7 @@ async function captureDocScreenshots(page, webBaseUrl) {
       }
     });
 
-    // 13. Artifacts evidence (Artifacts tab previews objects + eval bundles).
+    // 15. Artifacts evidence (Artifacts tab previews objects + eval bundles).
     await shot("dashboard-artifacts-evidence.png", async () => {
       await detailTab("Artifacts").catch(() => {});
       await page.waitForSelector(".evidence-panel, .rich-object-card", { timeout: 10000 }).catch(() => {});
@@ -2104,18 +2148,18 @@ async function captureDocScreenshots(page, webBaseUrl) {
       }
     });
 
-    // 14. Distributed (rank metrics for the inspected run).
+    // 16. Distributed (rank metrics for the inspected run).
     await shot("dashboard-distributed.png", async () => {
       await navTo("Distributed", ".tab-pane.active");
       await page.waitForFunction(() => !/No rank metrics/i.test(document.querySelector(".tab-pane.active")?.textContent ?? ""), null, { timeout: 6000 }).catch(() => {});
     });
 
-    // 15. Artifacts browser (inspected-run artifact collections).
+    // 17. Artifacts browser (inspected-run artifact collections).
     await shot("dashboard-artifacts-browser.png", async () => {
       await navTo("Artifacts", ".tab-pane.active");
     });
 
-    // 16. Checkpoint fork modal.
+    // 18. Checkpoint fork modal.
     await navTo("Runs", ".workspace-run-row");
     await openSeed44();
     await detailTab("Overview").catch(() => {});
@@ -2132,7 +2176,7 @@ async function captureDocScreenshots(page, webBaseUrl) {
       ]);
       await page.waitForTimeout(800);
     }
-    // 17. Lineage graph — re-open the parent (seed-44); its Lineage tab now lists the child.
+    // 19. Lineage graph — re-open the parent (seed-44); its Lineage tab now lists the child.
     await navTo("Runs", ".workspace-run-row");
     await openSeed44();
     await shot("dashboard-lineage-graph.png", async () => {
@@ -2144,6 +2188,15 @@ async function captureDocScreenshots(page, webBaseUrl) {
   } catch (err) {
     console.log(`[doc-shot] phase B aborted: ${String(err.message ?? err).split("\n")[0]}`);
   }
+}
+
+async function captureDocsProductScreenshot(page, name, settleMs = 700) {
+  await page.waitForTimeout(settleMs);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(docsProductDir, name) });
+  await page.setViewportSize({ width: 1440, height: 1100 });
 }
 
 async function chooseSelect(page, selector, valueOrOptions) {
@@ -2562,6 +2615,9 @@ async function assertVisibleRunDetailTraceLink(page, traceUrls) {
   assert.match(traceLink ?? "", /run_id=/);
   assert.match(traceLink ?? "", /trace_id=11111111111111111111111111111111/);
   assert.match(traceLink ?? "", /span_id=2222222222222222/);
+  if (docsScreenshotMode) {
+    await captureDocsProductScreenshot(page, "dashboard-run-detail-traces.png");
+  }
   await page.locator("#run-detail .pd-trace-row", { hasText: "qa rollout trace" }).first().click();
   await page.waitForURL(/\/dashboard\/traces\?/);
   await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("qa rollout trace"));
@@ -2569,6 +2625,16 @@ async function assertVisibleRunDetailTraceLink(page, traceUrls) {
     const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
     return inspector.includes("qa rollout trace") && inspector.includes("2222222222222222");
   });
+  if (docsScreenshotMode) {
+    await page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first().click({ timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
+    await page.locator(".trace-node-button", { hasText: "reward.score" }).first().click({ timeout: 5000 });
+    await page.waitForFunction(() => {
+      const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+      return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
+    }, null, { timeout: 8000 });
+    await captureDocsProductScreenshot(page, "dashboard-traces.png");
+  }
 }
 
 function isExpectedForbiddenResource(response) {

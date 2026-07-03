@@ -64,8 +64,23 @@ graph.
 
 Run Detail focuses on one run. A KPI cockpit summarizes step progress, the
 headline eval metric, loss, throughput, GPU utilization, and ETA, with header
-actions to fork a checkpoint, jump to Compare, or request a stop. Its tabs cover
-the overview, metrics, artifacts, logs, config and source context, and lineage.
+actions to fork a checkpoint, jump to Compare, or request a stop. Its local
+sections cover summary, data, traces, logs, files, system context, and graph
+lineage.
+
+![Run Detail traces section](/images/product/dashboard-run-detail-traces.png)
+
+The Traces section fetches recent traces only when opened. Each row links to the
+full trace tree with the exact run, trace, and root span selected.
+
+## Traces
+
+![Traces workspace](/images/product/dashboard-traces.png)
+
+Traces is a run-scoped debugger for rollout, model, tool, retrieval, reward, and
+evaluator spans. Filter by run/status/kind/search text, expand child spans
+without loading the full tree up front, and inspect redacted previews,
+attributes, metrics, and links in the side panel.
 
 ![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
 
