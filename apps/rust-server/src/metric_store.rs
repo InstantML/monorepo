@@ -125,6 +125,22 @@ pub struct M4BucketRow {
     pub max_val: f64,
 }
 
+/// M4 bucket row for batched multi-run downsampling.
+#[derive(Row, Deserialize)]
+pub struct M4BucketRowWithRun {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    pub bucket: u32,
+    pub first_step: f64,
+    pub first_val: f64,
+    pub last_step: f64,
+    pub last_val: f64,
+    pub min_step: f64,
+    pub min_val: f64,
+    pub max_step: f64,
+    pub max_val: f64,
+}
+
 /// Compact per-run count for a single metric key, used by the M4 threshold check.
 #[derive(Row, Deserialize)]
 pub struct RunPointCountRow {
@@ -628,6 +644,52 @@ impl MetricStore {
             .bind(run_id)
             .bind(key)
             .fetch_all::<M4BucketRow>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
+    /// Run M4 downsampling for a single metric key across multiple runs in one
+    /// ClickHouse query. The result is ordered by `(run_id, bucket)` so callers
+    /// can rebuild per-run chart payloads without issuing N long-series scans.
+    pub async fn query_points_m4_for_runs(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        key: &str,
+        buckets: u32,
+    ) -> AppResult<Vec<M4BucketRowWithRun>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = "WITH bounds AS ( \
+                     SELECT run_id, min(step) AS lo, max(step) AS hi \
+                     FROM metric_points \
+                     WHERE org_id = ? AND run_id IN ? AND key = ? \
+                     GROUP BY run_id \
+                   ) \
+                   SELECT \
+                     p.run_id AS run_id, \
+                     toUInt32(if(b.hi = b.lo, 0, \
+                       floor((p.step - b.lo) * ? / (b.hi - b.lo + 1)))) AS bucket, \
+                     argMin(p.step, p.step)  AS first_step, argMin(p.value, p.step)  AS first_val, \
+                     argMax(p.step, p.step)  AS last_step,  argMax(p.value, p.step)  AS last_val, \
+                     argMin(p.step, p.value) AS min_step,   min(p.value)             AS min_val, \
+                     argMax(p.step, p.value) AS max_step,   max(p.value)             AS max_val \
+                   FROM metric_points AS p \
+                   INNER JOIN bounds AS b ON p.run_id = b.run_id \
+                   WHERE p.org_id = ? AND p.run_id IN ? AND p.key = ? \
+                   GROUP BY p.run_id, bucket \
+                   ORDER BY p.run_id, bucket";
+        self.client
+            .query(sql)
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(key)
+            .bind(buckets)
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(key)
+            .fetch_all::<M4BucketRowWithRun>()
             .await
             .map_err(clickhouse_read_error)
     }

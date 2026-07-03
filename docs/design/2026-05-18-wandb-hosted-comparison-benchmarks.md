@@ -149,6 +149,11 @@ claim boundary explicit: benchmark reports can pass measured historical read
 latency gates while still marking wider ingest, step-count, or metric-cardinality
 claims as unmeasured until a payload contains those measurements.
 
+The hosted Cloud Run benchmark also records the dashboard-style M4 selected-run
+series path. M4 bucket requests are sanitized as benchmark metadata and validated
+against the same 120,000-point batched-series response cap, so long-run chart
+benchmarks cover both query latency and response-size discipline.
+
 ## Review Notes
 
 Fresh reviewer 1:

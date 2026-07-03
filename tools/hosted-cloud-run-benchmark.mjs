@@ -33,6 +33,7 @@ Useful overrides:
   INSTANTML_CLOUD_RUN_BENCH_SEARCH_SELECTED_RUNS=1000
   INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS=2000
   INSTANTML_CLOUD_RUN_BENCH_SELECTION_QUERY=seed-13
+  INSTANTML_CLOUD_RUN_BENCH_M4_BUCKETS=1200
   INSTANTML_CLOUD_RUN_BENCH_SAMPLES=8
   INSTANTML_CLOUD_RUN_BENCH_WARMUPS=2
   INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH=/tmp/instantml-cloud-run-benchmark.json
@@ -70,6 +71,7 @@ const searchSelectedRunCount = positiveInt("INSTANTML_CLOUD_RUN_BENCH_SEARCH_SEL
 const selectedRunCount = positiveInt("INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS", 2_000);
 const selectionSearchQuery = process.env.INSTANTML_CLOUD_RUN_BENCH_SELECTION_QUERY || "seed-13";
 const chartLimit = positiveInt("INSTANTML_CLOUD_RUN_BENCH_CHART_LIMIT", Math.min(5_000, expectedSteps));
+const m4Buckets = positiveInt("INSTANTML_CLOUD_RUN_BENCH_M4_BUCKETS", 1_200);
 const samples = positiveInt("INSTANTML_CLOUD_RUN_BENCH_SAMPLES", 8);
 const warmups = positiveInt("INSTANTML_CLOUD_RUN_BENCH_WARMUPS", 2);
 const resultPath = process.env.INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH || "";
@@ -127,6 +129,7 @@ const result = sanitizeHostedBenchmarkResult({
     observed_metric_points: preflight.observedMetricPoints,
     expected_steps_per_run: expectedSteps,
     chart_limit: chartLimit,
+    m4_buckets: m4Buckets,
     selected_run_count: preflight.selectedRunIds.length,
     default_selected_run_count: preflight.defaultSelectedRunIds.length,
     search_selected_run_count: preflight.searchSelectedRunIds.length,
@@ -392,6 +395,29 @@ function benchmarkCases(preflight) {
     expect_non_empty: true,
     total_point_cap: 120000,
   });
+  const m4Limit = Math.max(
+    Math.min(chartLimit, adaptiveMetricSeriesLimit(preflight.selectedRunIds.length)),
+    maxM4RowsPerSeries(preflight.selectedRunIds.length, m4Buckets),
+  );
+  cases.push({
+    name: `batched_series_m4_max_${preflight.selectedRunIds.length}_${slug(metricKey)}`,
+    kind: "batched_series",
+    group: "batched_series",
+    method: "POST",
+    route_template: "/api/metrics/series",
+    path: "/api/metrics/series",
+    body: {
+      key: metricKey,
+      run_ids: preflight.selectedRunIds,
+      limit: m4Limit,
+      buckets: m4Buckets,
+    },
+    limit: m4Limit,
+    budget_ms: preflight.selectedRunIds.length >= 1000 ? 8000 : undefined,
+    expected_series: preflight.selectedRunIds.length,
+    expect_non_empty: true,
+    total_point_cap: 120000,
+  });
 
   return cases.map((caseDefinition) => ({
     ...caseDefinition,
@@ -459,6 +485,12 @@ function adaptiveMetricSeriesLimit(runCount) {
   if (runCount >= 100) return 250;
   if (runCount >= 50) return 500;
   return 1000;
+}
+
+function maxM4RowsPerSeries(runCount, requestedBuckets) {
+  if (runCount <= 0) return requestedBuckets * 4;
+  const maxBucketsPerRun = Math.max(1, Math.floor(120000 / runCount / 4));
+  return Math.min(requestedBuckets, maxBucketsPerRun) * 4;
 }
 
 async function preflightCases(cases) {

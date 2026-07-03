@@ -123,10 +123,10 @@ use crate::{
     },
     errors::{AppError, AppResult},
     metric_store::{
-        ConsoleLogInsertRow, ConsoleLogReadRow, M4BucketRow, MetricPointRow as ChMetricPointRow,
-        MetricStore, OperationalRecordRow, RankMetricCanonicalRow,
-        RankMetricPointRow as ChRankMetricPointRow, RankMetricStepWindow, SeriesReadRow,
-        SeriesSortMode, SystemUsageAggregateRow,
+        ConsoleLogInsertRow, ConsoleLogReadRow, M4BucketRow, M4BucketRowWithRun,
+        MetricPointRow as ChMetricPointRow, MetricStore, OperationalRecordRow,
+        RankMetricCanonicalRow, RankMetricPointRow as ChRankMetricPointRow, RankMetricStepWindow,
+        SeriesReadRow, SeriesSortMode, SystemUsageAggregateRow,
     },
 };
 

@@ -50,7 +50,10 @@ assumes `INSTANTML_DATA_API_BASE` or `INSTANTML_API_BASE` points at the hosted
 API and validates `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS` across the configured
 benchmark projects before timing requests. The default minimum is 100,000 runs;
 set it lower only for a named showcase dataset and record that in the result
-summary.
+summary. The selected-run series workload includes dashboard-style M4
+downsampling (`INSTANTML_CLOUD_RUN_BENCH_M4_BUCKETS`, default 1,200) and
+validates the actual rows returned against the 120,000-point batched-series
+response cap.
 
 Committed summaries for this benchmark should include the same sanitized fields
 as the hosted ClickHouse benchmark plus the API host only, never full URLs or API

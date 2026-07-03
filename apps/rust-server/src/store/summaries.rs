@@ -360,6 +360,10 @@ pub(super) fn series_row_from_aggregate(aggregate: SeriesReadRow) -> MetricSerie
     }
 }
 
+pub(super) fn metric_point_value(row: crate::metric_store::PointReadRow) -> Value {
+    json!({ "key": row.key, "step": row.step, "value": row.value, "created_at": row.created_at })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -399,8 +403,4 @@ mod tests {
         assert_eq!(first_keys, vec!["loss", "accuracy"]);
         assert_eq!(grouped.get(&second).unwrap()[0].key, "loss");
     }
-}
-
-pub(super) fn metric_point_value(row: crate::metric_store::PointReadRow) -> Value {
-    json!({ "key": row.key, "step": row.step, "value": row.value, "created_at": row.created_at })
 }

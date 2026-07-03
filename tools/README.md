@@ -230,7 +230,7 @@ INSTANTML_SCALE_RUNS=5 INSTANTML_SCALE_METRICS=4 INSTANTML_SCALE_POINTS=100 node
 
 ## Rust Large-Run Benchmark
 
-`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 100,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 20,000-step chart series. It starts disposable ClickHouse, applies the Rust ClickHouse schema, seeds operational records and metric rows directly into ClickHouse, starts the Rust API, and prints JSON p50/p95 timings for newest pages, literal search, field search, boolean search, regex search, metric sort, and chart reads.
+`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 100,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 20,000-step chart series. It starts disposable ClickHouse, applies the Rust ClickHouse schema, seeds operational records and metric rows directly into ClickHouse, starts the Rust API, and prints JSON p50/p95 timings for newest pages, literal search, field search, boolean search, regex search, metric sort, single-run chart reads, and batched selected-run M4 reads.
 
 ```bash
 npm run benchmark:large-runs
@@ -326,12 +326,13 @@ default selection, 1,000-result search selection, and 2,000-run max selection,
 name/tag/config/notes searches, status filters, combined search/filter,
 selected-metric sorting, org/project overview, single-run chart series, and
 batched selected-run `POST /api/metrics/series` calls for every configured
-dashboard metric. By default the chart workload mirrors the current UI:
-100 selected runs on fresh load, 1,000 selected `seed-13` search results, and
-2,000 selected all-project results with adaptive per-run point limits. The
-benchmark verifies the server-side 120,000-point batched-series cap. Results
-are sanitized to host-only API metadata and never include API keys, raw URLs,
-cookies, org IDs, or response bodies.
+dashboard metric, including an explicit full-range M4 case with the dashboard's
+bucket count. By default the chart workload mirrors the current UI: 100
+selected runs on fresh load, 1,000 selected `seed-13` search results, and 2,000
+selected all-project results with adaptive per-run point limits. The benchmark
+verifies the server-side 120,000-point batched-series cap against actual
+returned rows. Results are sanitized to host-only API metadata and never include
+API keys, raw URLs, cookies, org IDs, or response bodies.
 
 Useful environment variables:
 
@@ -345,6 +346,7 @@ Useful environment variables:
 - `INSTANTML_CLOUD_RUN_BENCH_SELECTED_RUNS`: selected runs for the max-selection chart workload. Default: `2000`.
 - `INSTANTML_CLOUD_RUN_BENCH_SELECTION_QUERY`: query used for the search-result selection workload. Default: `seed-13`.
 - `INSTANTML_CLOUD_RUN_BENCH_CHART_LIMIT`: per-series chart row limit. Default: `1000`.
+- `INSTANTML_CLOUD_RUN_BENCH_M4_BUCKETS`: requested full-range M4 bucket count for selected-run series. Default: `1200`.
 - `INSTANTML_CLOUD_RUN_BENCH_SAMPLES`: measured requests per endpoint. Default: `8`.
 - `INSTANTML_CLOUD_RUN_BENCH_WARMUPS`: warmup requests per endpoint before timing. Default: `2`.
 - `INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH`: optional sanitized JSON output path.

@@ -66,6 +66,7 @@ try {
   const firstPage = await fetchJson(`${apiBaseUrl}/api/runs/summary?${new URLSearchParams({ project, limit: "25", sort_by: "created", metric_key: "eval/return_mean" })}`);
   const firstRunId = firstPage.runs?.[0]?.id;
   if (!firstRunId) throw new Error("benchmark seed did not produce runs");
+  const selectedRunIds = firstPage.runs.slice(0, Math.min(25, firstPage.runs.length)).map((run) => run.id);
 
   const seed13Total = seededRunsForSeed(13);
   const seed14Total = seededRunsForSeed(14);
@@ -101,6 +102,29 @@ try {
       assertSummaryTotal("summary_sort_metric_best", payload, runCount);
     }),
     chart_series: await measureEndpoint("chart_series", `/runs/${firstRunId}/metrics?${new URLSearchParams({ key: "eval/return_mean", limit: "5000" })}`),
+    batched_series_m4: await measureEndpoint(
+      "batched_series_m4",
+      "/api/metrics/series",
+      (payload) => {
+        if (!Array.isArray(payload.series)) throw new Error("batched_series_m4 returned malformed series payload");
+        if (payload.series.length !== selectedRunIds.length) {
+          throw new Error(`batched_series_m4 returned ${payload.series.length} series, expected ${selectedRunIds.length}`);
+        }
+        const rows = payload.series.reduce((sum, series) => sum + (Array.isArray(series.metrics) ? series.metrics.length : 0), 0);
+        if (rows <= 0) throw new Error("batched_series_m4 returned no points");
+        if (rows > payload.total_point_cap) throw new Error("batched_series_m4 exceeded total point cap");
+        if (!Number.isFinite(Number(payload.effective_buckets))) throw new Error("batched_series_m4 did not report effective_buckets");
+      },
+      {
+        method: "POST",
+        body: {
+          key: "eval/return_mean",
+          run_ids: selectedRunIds,
+          limit: 1000,
+          buckets: 100,
+        },
+      },
+    ),
   };
 
   let web = null;
@@ -122,6 +146,7 @@ try {
       summary_search_and_sort_p95: 500,
       summary_advanced_search_p95: 750,
       chart_series_p95: 200,
+      batched_series_m4_p95: 250,
       web_first_useful_render: 2000,
     },
     measurements,
@@ -294,12 +319,12 @@ async function insertMetricPoints(points) {
   );
 }
 
-async function measureEndpoint(name, pathSuffix, validate) {
-  for (let index = 0; index < warmups; index += 1) await fetchJson(apiBaseUrl + pathSuffix);
+async function measureEndpoint(name, pathSuffix, validate, options = {}) {
+  for (let index = 0; index < warmups; index += 1) await fetchJson(apiBaseUrl + pathSuffix, options);
   const timings = [];
   for (let index = 0; index < samples; index += 1) {
     const started = performance.now();
-    const payload = await fetchJson(apiBaseUrl + pathSuffix);
+    const payload = await fetchJson(apiBaseUrl + pathSuffix, options);
     timings.push(performance.now() - started);
     if (name.startsWith("summary") && !Array.isArray(payload.runs)) throw new Error(`${name} returned malformed runs payload`);
     if (name === "chart_series" && !Array.isArray(payload.metrics)) throw new Error("chart_series returned malformed metrics payload");
@@ -387,12 +412,23 @@ function budgetFailures(result) {
     if (result.measurements[key].p95_ms > result.budgets_ms.summary_advanced_search_p95) failures.push(`${key} p95 exceeded 750 ms`);
   }
   if (result.measurements.chart_series.p95_ms > result.budgets_ms.chart_series_p95) failures.push("chart_series p95 exceeded 200 ms");
+  if (result.measurements.batched_series_m4.p95_ms > result.budgets_ms.batched_series_m4_p95) failures.push("batched_series_m4 p95 exceeded 250 ms");
   if (result.web && result.web.first_useful_render_ms > result.budgets_ms.web_first_useful_render) failures.push("web first useful render exceeded 2000 ms");
   return failures;
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url);
+async function fetchJson(url, options = {}) {
+  const headers = {};
+  let body;
+  if (options.body !== undefined) {
+    headers["content-type"] = "application/json";
+    body = JSON.stringify(options.body);
+  }
+  const response = await fetch(url, {
+    method: options.method || "GET",
+    headers,
+    body,
+  });
   if (!response.ok) throw new Error(`${url} failed with ${response.status}: ${await response.text()}`);
   return response.json();
 }
