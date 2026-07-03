@@ -3062,7 +3062,6 @@ button.compare-row-head.active {
   color: var(--faint);
   font: 700 10px/1 var(--font-mono);
   opacity: 0;
-  text-transform: uppercase;
   visibility: hidden;
 }
 .shell.nav-pinned .tab-group-label,
