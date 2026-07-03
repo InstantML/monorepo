@@ -586,6 +586,28 @@ test("metric catalog rows aggregate without repeated per-metric scans", async ()
   assert.equal(missing.mean, null);
 });
 
+test("metric catalog rows iterate sparse aggregate entries instead of probing every key", async () => {
+  const { buildMetricCatalogRows } = await importDashboardModelsForTest();
+  const metricKeys = Array.from({ length: 1000 }, (_, index) => `metric/${String(index).padStart(4, "0")}`);
+  let aggregateReads = 0;
+  const metric_aggregates = new Proxy({
+    "metric/0420": { latest: 1, min: 1, max: 2, mean: 1.5, count: 2, best_step: 7 },
+  }, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && property.startsWith("metric/")) aggregateReads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+
+  const rows = buildMetricCatalogRows([
+    { id: "run-a", name: "run A", metric_aggregates },
+  ], metricKeys, ["run-a"]);
+
+  assert.equal(rows.find((row) => row.key === "metric/0420")?.selectedCount, 1);
+  assert.equal(rows.find((row) => row.key === "metric/0000")?.runCount, 0);
+  assert.ok(aggregateReads <= 2, `expected sparse aggregate reads, saw ${aggregateReads}`);
+});
+
 test("saved-view import requires a current dry-run preview and bounded JSON", () => {
   const shell = readFileSync(`${root}app/dashboard/dashboard-shell.tsx`, "utf8");
 

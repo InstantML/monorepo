@@ -428,36 +428,48 @@ export function buildMetricCatalogRows(runs: RunSummary[], metricKeys: string[],
     bestStep: null as number | null,
     bestRunName: "-",
   }));
+  type WorkingMetricCatalogRow = (typeof rows)[number];
+  const rowsByKey = new Map<string, WorkingMetricCatalogRow[]>();
+  for (const row of rows) {
+    const matching = rowsByKey.get(row.key);
+    if (matching) {
+      matching.push(row);
+    } else {
+      rowsByKey.set(row.key, [row]);
+    }
+  }
   for (const run of runs) {
     const isSelected = selected.has(run.id);
     const aggregates = run.metric_aggregates ?? {};
-    for (const row of rows) {
-      const aggregate = aggregates[row.key];
-      if (!aggregate) continue;
-      const count = numberValue(aggregate?.count, 0) ?? 0;
-      const latest = numberValue(aggregate?.latest, null);
-      const min = numberValue(aggregate?.min, null);
-      const best = numberValue(row.goal === "minimize" ? aggregate?.min : aggregate?.max, null);
-      const step = numberValue(row.goal === "minimize" ? aggregate?.min_step : aggregate?.best_step, null);
-      row.runCount += 1;
-      if (isSelected) row.selectedCount += 1;
-      row.pointCount += count;
-      if (latest !== null) row.latest = latest;
-      if (min !== null && (row.min === null || min < row.min)) row.min = min;
-      if (
-        best !== null &&
-        (
-          row.best === null ||
-          (row.goal === "minimize" ? best < row.best : best > row.best) ||
-          (best === row.best && (step ?? -Infinity) > (row.bestStep ?? -Infinity))
-        )
-      ) {
-        row.best = best;
-        row.bestStep = step;
-        row.bestRunName = run.name;
+    for (const [key, aggregate] of Object.entries(aggregates)) {
+      const matchingRows = rowsByKey.get(key);
+      if (!matchingRows) continue;
+      for (const row of matchingRows) {
+        const count = numberValue(aggregate?.count, 0) ?? 0;
+        const latest = numberValue(aggregate?.latest, null);
+        const min = numberValue(aggregate?.min, null);
+        const best = numberValue(row.goal === "minimize" ? aggregate?.min : aggregate?.max, null);
+        const step = numberValue(row.goal === "minimize" ? aggregate?.min_step : aggregate?.best_step, null);
+        row.runCount += 1;
+        if (isSelected) row.selectedCount += 1;
+        row.pointCount += count;
+        if (latest !== null) row.latest = latest;
+        if (min !== null && (row.min === null || min < row.min)) row.min = min;
+        if (
+          best !== null &&
+          (
+            row.best === null ||
+            (row.goal === "minimize" ? best < row.best : best > row.best) ||
+            (best === row.best && (step ?? -Infinity) > (row.bestStep ?? -Infinity))
+          )
+        ) {
+          row.best = best;
+          row.bestStep = step;
+          row.bestRunName = run.name;
+        }
+        const mean = numberValue(aggregate?.mean, null);
+        if (mean !== null) row.meanNumerator += mean * count;
       }
-      const mean = numberValue(aggregate?.mean, null);
-      if (mean !== null) row.meanNumerator += mean * count;
     }
   }
   for (const row of rows) {
