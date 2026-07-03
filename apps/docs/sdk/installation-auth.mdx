@@ -1,25 +1,24 @@
 ---
 title: "Install and authenticate the SDK"
-description: "Install InstantML, choose the hosted API, and provide SDK credentials."
+description: "Install the instantml package and give it credentials with CLI login or an API key."
 ---
 
-# Install and authenticate the SDK
+Set up the Python SDK once so every training script can create runs without
+extra configuration.
 
-The Python package is named `instantml` and is usually imported as `im`.
+## Install the SDK
 
-```python
-import instantml as im
-```
-
-## Install
-
-InstantML ships as a Python package:
+InstantML ships as a Python package, usually imported as `im`:
 
 ```bash
 python3 -m pip install instantml
 ```
 
-Optional extras install lazily used integrations:
+```python
+import instantml as im
+```
+
+Install optional extras only when your scripts need them:
 
 ```bash
 python3 -m pip install "instantml[media]"
@@ -28,18 +27,12 @@ python3 -m pip install "instantml[all]"
 ```
 
 Use `media` when you create image, audio, or video objects from in-memory data.
-Use `system` when you want psutil/NVML-style system metrics.
+Use `system` for psutil/NVML-style system metrics.
 
-## API host
+## Set the API host
 
-Hosted API:
-
-```text
-https://api.instantml.ai
-```
-
-The SDK defaults to the hosted API. Set an explicit host only when your team has
-been given a different hosted endpoint:
+The SDK defaults to the hosted API at `https://api.instantml.ai`. Set an
+explicit host only when your team has been given a different endpoint:
 
 ```python
 run = im.init(project="cartpole", base_url="https://api.instantml.ai")
@@ -54,73 +47,83 @@ run = client.init(project="cartpole", name="ppo-seed-42")
 
 ## Authenticate
 
-Hosted InstantML requires an SDK API key. Browser sessions and Clerk tokens are
-for the dashboard; they are not SDK credentials.
-
-Credential resolution order:
+Hosted InstantML requires an SDK API key. Browser sessions are for the
+dashboard; they are not SDK credentials. The SDK resolves credentials in this
+order:
 
 1. Explicit `api_key=` argument.
 2. `INSTANTML_API_KEY` environment variable.
 3. `~/.instantml/credentials`, written by `instantml login`.
 
-Explicit key:
-
-```python
-run = im.init(
-    project="cartpole",
-    base_url="https://api.instantml.ai",
-    api_key="instantml_...",
-)
-```
-
-Environment key:
-
-```bash
-export INSTANTML_API_KEY="instantml_..."
-python3 train.py
-```
-
-Device login:
+For an interactive machine, log in once and the SDK reads the stored
+credential automatically:
 
 ```bash
 instantml login
 instantml whoami
 ```
 
-After login, `im.init(...)` can read the stored credential file without another
-argument.
+Device-code login mints a credential with the `sdk:ingest`, `artifacts:write`,
+`imports:write`, and `export:read` scopes. That covers creating runs, logging
+metrics, uploading files and checkpoints, running imports, and reading or
+exporting data. Use a dashboard-created key only when a job needs scopes beyond
+those, such as `artifacts:manage` or `runs:control`.
 
-Device-code credentials cover normal SDK ingest and read/export jobs. Uploading
-files, checkpoints, or artifact bytes needs a dashboard or onboarding API key
-that includes `artifacts:write`.
+For CI and remote jobs, set an environment variable:
 
-Top-level `im.init(...)` fails fast when no explicit key, environment key, or
-CLI credential exists. Lower-level `Client(...)` objects can still be
-constructed without credentials, but authenticated hosted writes fail once they
-make a request.
+```bash
+export INSTANTML_API_KEY="instantml_..."
+python3 train.py
+```
 
-`instantml login --api-host ...` changes the host used by the login flow. It
-does not change the SDK host for later Python scripts; use
-`INSTANTML_API_BASE_URL` or `base_url=...` for a non-default hosted endpoint.
+Or pass the key explicitly:
 
-## API-key scopes
+```python
+run = im.init(project="cartpole", api_key="instantml_...")
+```
 
-Create keys from onboarding or from the dashboard API tab. Use the smallest
-scope set that matches the job.
+Top-level `im.init(...)` fails fast when no credential is found. Lower-level
+`Client(...)` objects can be constructed without credentials, but authenticated
+writes fail once they make a request.
+
+<Note>
+`instantml login --api-host ...` only changes the host the login flow contacts.
+It does not change the SDK host for later scripts; use `INSTANTML_API_BASE_URL`
+or `base_url=...` for that.
+</Note>
+
+## Choose API-key scopes
+
+Create keys from onboarding or the dashboard API tab. Use the smallest scope
+set that matches the job.
 
 | Scope | Allows |
 | --- | --- |
 | `sdk:ingest` | Create runs, update run status, log metrics, logs, attributes, and rich objects. |
 | `artifacts:write` | Create artifact metadata and upload artifact bytes. |
+| `artifacts:manage` | Promote or delete artifact aliases, set retention, and delete artifact versions. |
 | `imports:write` | Run supported importer routes. |
 | `export:read` | Read tenant data, download artifacts, and export bounded data. |
 | `usage:read` | Read usage summaries and usage exports. |
-| `api_keys:write` | Administer organization API keys. |
+| `api_keys:write` | Administer workspace API keys. |
+| `runs:control` | Send stop requests to running runs. |
 
-Project-scoped keys can only access their assigned project. Org-scoped keys can
-access every project allowed by their scopes.
+Project-scoped keys can only access their assigned project. Workspace-scoped
+keys can access every project allowed by their scopes.
 
 ## Create keys from the dashboard
 
-Create keys from onboarding or the dashboard API tab. Copy the plaintext key
-when it is shown; after that InstantML only stores its hash.
+Create keys from onboarding or the dashboard API tab.
+
+<Warning>
+The plaintext key is shown once at creation. Copy it immediately — after that
+InstantML only stores its hash.
+</Warning>
+
+## Next steps
+
+- [CLI login](/sdk/cli-login) — the device-code flow in detail
+- [SDK logging](/sdk/logging) — create runs and log metrics
+- [Buffering, offline replay, and spool mode](/sdk/reliability) — durable upload modes
+- [Manage API keys in the dashboard](/dashboard/settings-api-keys)
+- [Quickstart](/quickstart) — end-to-end first run

@@ -1,19 +1,39 @@
 ---
 title: "Core concepts"
-description: "Understand projects, runs, metrics, configs, artifacts, objects, and usage limits."
+description: "Learn the workspace, project, run, metric, config, and artifact model behind the SDK, API, and dashboard."
 ---
 
-# Core concepts
+InstantML is built around a small set of training-loop concepts — once they
+are clear, the SDK, API, and dashboard all feel predictable.
 
-InstantML is built around a small set of training-loop concepts. If these are
-clear, the SDK, API, and dashboard all feel predictable.
+## How it works
 
-## Workspace / organization
+Every InstantML integration follows the same five-step loop:
 
-A workspace is the dashboard name for an organization. It owns members, roles,
+1. **Init** — `im.init(project=...)` creates a run inside a project.
+2. **Config** — the `config` dict you pass to `init` records why this run
+   differs from others.
+3. **Log** — `run.log({"train/loss": 0.42}, step=step)` appends points to
+   named metric series.
+4. **Finish** — `run.finish()` marks the run complete.
+5. **View** — open the dashboard to chart, search, and compare the run.
+
+The rest of this page defines each noun in that loop, plus the surrounding
+concepts: workspaces, artifacts, checkpoint forks, rich objects, reports, and
+usage limits.
+
+## Workspace
+
+A workspace is the top-level boundary in InstantML. It owns members, roles,
 billing, usage, API keys, reports, storage configuration, projects, and runs.
-Switching workspaces changes the organization context for every dashboard and
-API route.
+Switching workspaces changes the context for every dashboard page and API
+route.
+
+<Info>
+The API and billing surfaces call the same boundary an **organization** —
+org-scoped API keys, org IDs. The dashboard and these docs say workspace; API
+pages say organization where the API literally uses org.
+</Info>
 
 ## Project
 
@@ -27,12 +47,13 @@ Examples:
 - `rank-scale-rl`
 - `customer-support-finetune`
 
+Projects cannot be renamed, so pick names you can live with.
+
 Projects are also a useful API-key boundary. Project-scoped keys can restrict
 SDK logging and reads to one project.
 
 If you call `instantml.init()` without `project=`, the run lands in a shared
-project named **`default`**. You can rename or filter into it like any
-other project.
+project named **`default`**. You can filter into it like any other project.
 
 ## Run
 
@@ -50,13 +71,16 @@ Runs carry:
 - Source metadata when the SDK can capture it.
 - Artifacts, checkpoints, rich objects, logs, and media.
 
-If you call `instantml.init()` without `name=`, the server assigns a
-friendly default of the form `<adjective>-<noun>-<sequence>`, where
-sequence is the run's 1-indexed position in its project. Examples:
-`bold-falcon-1`, `serene-glacier-42`, `radiant-river-127`. The adjective
-and noun are rolled from OS entropy on each create, so concurrent runs
-that race on the same sequence still get distinct names. You can edit the
-name later from the Run Detail page or via the API.
+If you call `instantml.init()` without `name=`, the server assigns a unique
+name of the form `<adjective>-<noun>-<sequence>` — for example
+`bold-falcon-1` or `serene-glacier-42` — where the sequence is the run's
+1-indexed position in its project.
+
+<Note>
+Run names are not editable. After creation you can update a run's status,
+tags, and notes, but not its name — pass a name at init time when the name
+matters.
+</Note>
 
 ## Metric
 
@@ -75,12 +99,12 @@ Use consistent names across runs so the dashboard can compare them directly.
 
 Scalar metrics become line charts in Metrics, Run Detail, and Runs workspace
 line panels. Compare shows scalar metrics as sortable values and columns. The
-Runs workspace can also summarize loaded runs with latest-value bar panels,
-value histogram panels, dot plots, scatter plots, and seed/group distribution
-panels. Scatter combines any two numeric loaded-run fields, including metric
-aggregates, config fields, metadata fields, duration, or created time.
-Distribution panels group a numeric loaded-run field by categorical config,
-metadata, status, or first tag.
+Runs workspace can also summarize the runs you have loaded with latest-value
+bar panels, value histogram panels, dot plots, scatter plots, and seed/group
+distribution panels. Scatter panels combine any two numeric run fields —
+metric aggregates, config values, metadata, duration, or created time.
+Distribution panels group a numeric run field by a categorical config value,
+metadata field, status, or first tag.
 
 Choose the data shape before logging so each dashboard surface can stay fast
 and readable:
@@ -184,10 +208,11 @@ tabs do not load large object payloads by accident.
 
 Rich-object histograms are previewed in Run Detail and artifact/object
 surfaces. They are separate from Runs workspace value histogram panels, which
-plot scalar metric summary values across the currently selected or loaded runs.
-Saved logged-histogram timeline panels can read one selected run's histogram
-objects by explicit key. Classification evaluation bundles render typed PR/ROC,
-confusion-matrix, per-class, and optional prediction previews.
+plot scalar metric summary values across the runs currently selected or loaded
+in the workspace. Saved logged-histogram timeline panels can read one selected
+run's histogram objects by explicit key. Classification evaluation bundles
+render typed PR/ROC, confusion-matrix, per-class, and optional prediction
+previews.
 
 Keep arrays, tables, media, confusion matrices, and prediction examples as rich
 objects. Scalar metrics should stay finite numeric values so summary panels and
@@ -202,7 +227,7 @@ dashboard view.
 
 ## Usage and limits
 
-Usage is scoped to the current organization.
+Usage is scoped to the current workspace.
 
 Important limit types:
 
@@ -212,5 +237,15 @@ Important limit types:
 - Seats.
 - API keys.
 
-When a blocked limit is reached, write endpoints return a plan-limit error
-instead of silently accepting partial product state.
+When a blocking limit is reached, write endpoints return a plan-limit error
+instead of silently accepting a partial write. See
+[Pricing, limits, and billing](/guides/pricing-limits-billing) for the exact
+numbers per plan.
+
+## Next steps
+
+- [Quickstart](/quickstart)
+- [Log from Python](/sdk/logging)
+- [Runs workspace](/dashboard/runs-workspace)
+- [Compare runs](/dashboard/compare-runs)
+- [Pricing, limits, and billing](/guides/pricing-limits-billing)

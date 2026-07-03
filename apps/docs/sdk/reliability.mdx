@@ -1,14 +1,12 @@
 ---
 title: "Buffering, offline replay, and spool mode"
-description: "Choose the right SDK reliability mode for training loops."
+description: "Choose an SDK upload mode and recover queued data after interruptions."
 ---
 
-# Buffering, offline replay, and spool mode
+Pick the upload mode that matches your training loop's durability needs, and
+know how to recover queued data when a process exits early.
 
-The SDK starts simple and lets you opt into more durable modes when the training
-loop needs it.
-
-## Default initialization and async writes
+## Use the default async mode
 
 By default, `im.init(...)` starts run creation in the background, returns a run
 handle immediately, and uses async metric/log/status uploads after the run
@@ -22,7 +20,7 @@ run.log({"train/loss": 0.2}, step=1)
 run.finish(timeout=30)
 ```
 
-Use `run.wait_for_init()` when a script wants to fail before expensive training
+Use `run.wait_for_init()` when a script should fail before expensive training
 starts:
 
 ```python
@@ -38,8 +36,8 @@ run = im.init(project="demo", async_init=False)
 
 After initialization, scalar metrics, rank metrics, console logs, and final run
 status are queued locally and drained by the async uploader. Delivery failures
-surface through `Run.upload_status()`, dashboard upload-health metrics, and wait
-helpers rather than raising from hot-path `log(...)` calls.
+surface through `Run.upload_status()`, dashboard upload-health metrics, and
+wait helpers rather than raising from hot-path `log(...)` calls.
 
 ```python
 run.log({"train/loss": 0.2}, step=1)
@@ -56,7 +54,35 @@ run.log({"train/loss": 0.2}, step=1)
 run.finish()
 ```
 
-## In-memory buffering
+## Recover the async queue after finish() times out
+
+`run.finish()` drains the async queue within a time budget: an explicit
+`finish(timeout=...)` if you pass one, otherwise `INSTANTML_FINISH_DRAIN_SECONDS`
+if set, otherwise the client timeout (10 seconds by default). If the drain does
+not complete in time, the SDK warns and leaves the remaining rows on disk under
+the queue directory (`.instantml/async` by default, configurable with
+`queue_dir=` on `init`).
+
+Upload the leftover rows with the bundled uploader:
+
+```bash
+instantml-uploader --queue-dir .instantml/async
+```
+
+Or give slow-network jobs a larger drain budget up front:
+
+```bash
+export INSTANTML_FINISH_DRAIN_SECONDS=120
+python train.py
+```
+
+<Warning>
+Events still buffered inside the training process when it exits are lost —
+only rows already written to the on-disk queue can be recovered by the
+uploader.
+</Warning>
+
+## Batch writes in memory
 
 Use buffering to batch post-init SDK calls in memory:
 
@@ -72,13 +98,17 @@ run.finish()
 
 Call `flush()` before process exit or before you need writes visible in the UI.
 
-## Offline replay for existing runs
+## Replay failed requests with offline_dir
 
-Use `offline_dir` to store failed post-init requests and replay them later:
+Use `offline_dir` to store failed foreground requests and replay them later.
+It applies to requests that run in the foreground — sync-mode writes, buffered
+flushes, and calls such as configs, tags, artifacts, and objects. In the
+default async mode, hot-path writes go to the async queue instead (see above):
 
 ```python
 run = im.init(
     project="resilient-run",
+    upload_mode="sync",
     offline_dir=".instantml/offline",
 )
 
@@ -88,10 +118,10 @@ run.log({"train/loss": 0.2}, step=1)
 replayed = run.replay_offline()
 ```
 
-Current limitation: `init()` still needs a reachable server because run creation
-is not spooled yet.
+Current limitation: `init()` still needs a reachable server because run
+creation is not spooled yet.
 
-## Process-isolated spool mode
+## Isolate uploads with spool mode
 
 Use `upload_mode="spool"` when the training process should avoid post-init HTTP
 calls:
@@ -116,7 +146,7 @@ python -m instantml.uploader \
 Metric and console-log events send their event ID as `Idempotency-Key`, so a
 compatible server can safely accept retries.
 
-## Which mode should I use?
+## Pick a mode
 
 | Need | Mode |
 | --- | --- |
@@ -127,3 +157,10 @@ compatible server can safely accept retries.
 | Keep post-init HTTP out of the training process | `upload_mode="spool"` |
 
 Batch many scalar values into one metrics dictionary for high-frequency loops.
+
+## Next steps
+
+- [SDK logging](/sdk/logging) — create runs and log metrics
+- [Metrics and steps](/sdk/metrics-steps) — batching and step semantics
+- [Distributed training](/sdk/distributed-training) — rank metrics and multi-process runs
+- [Troubleshooting](/troubleshooting) — first checks when uploads stall

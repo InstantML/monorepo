@@ -3,69 +3,63 @@ title: "Storage model"
 description: "Control records, tenant records, metric tables, artifact bytes, and usage counters."
 ---
 
-# Storage model
-
 InstantML separates low-volume operational state from high-volume metric
-history. That keeps run tables and charts fast without turning every dashboard
+history, so run tables and charts stay fast without turning every dashboard
 view into a full history scan.
 
 ## Logical planes
 
 ```text
-Control plane:
-  Users, identities, organizations, memberships, sessions, API keys,
-  billing state, invitations, tenant routes, dashboard preferences,
-  saved workspace views, reports, report shares, and report Markdown exports.
+Control plane (account state):
+  Users, identities, workspaces (organizations), memberships, sessions,
+  API keys, service accounts, billing state, invitations, tenant routes,
+  dashboard preferences, and saved workspace views.
 
-Data plane:
-  Projects, runs, attributes, artifacts, imports, usage snapshots,
+Data plane (tenant product state):
+  Projects, runs, attributes, artifacts, reports, imports, usage snapshots,
   console logs, scalar metrics, rank metrics, and rich object rows.
 ```
 
-Local single-binary mode may keep both planes in one ClickHouse database.
-Hosted mode stores global account/control records in a control-plane Postgres
-database (Cloud SQL) and tenant product rows in the org's routed ClickHouse
-database. InstantML-hosted production and staging keep control records in
-Cloud SQL Postgres and tenant run data in an InstantML-owned self-hosted
-ClickHouse deployment on Google Cloud.
+In hosted mode, control-plane records live in a Postgres database and tenant
+product rows live in the workspace's routed ClickHouse database. In local
+single-binary mode, both planes live in one ClickHouse database.
 
 ## Append-only operational records
 
-Durable low-volume records are append-only. A newer record for the same entity
-replaces the in-memory projection when replayed, but older records remain in
-ClickHouse until compaction exists.
+Durable low-volume tenant records are append-only. A newer record for the same
+entity replaces the previous one in the serving index when records are
+replayed; older record versions remain in storage.
 
-Operational records include:
+Tenant operational records include:
 
 - Projects.
 - Runs.
 - Attributes.
-- Artifacts.
+- Artifacts (raw rows and versioned collections).
+- Reports and report shares.
 - Imports.
-- Reports and report share state when running in local or single-service mode.
 - Idempotency records.
 - Usage snapshots.
 - Table preview rows.
-- Local-mode user/org/session/API-key records.
+- Local-mode user, workspace, session, and API-key records.
 
-Hosted control-plane records (stored in Cloud SQL Postgres) include:
+Hosted control-plane records (Postgres) include:
 
 - Users and identities.
-- Organizations and memberships.
+- Workspaces (organizations) and memberships.
 - Sessions.
 - API keys and service accounts.
-- Billing projections and events.
+- Billing accounts, subscriptions, and events.
 - Invitations and email deliveries.
-- Tenant routes.
+- Tenant routes and data-cell placement.
 - Dashboard preferences and saved workspace views.
-- Reports, report share tokens, and report Markdown export state in hosted
-  split mode.
 
 ## Metric tables
 
-Scalar metrics are stored in raw `metric_points` rows and maintained summary
-tables. Rank-aware metrics are stored separately so distributed dashboards can
-compute per-rank reducers, coverage, heatmaps, and outliers.
+Scalar metrics are stored as raw `metric_points` rows plus a maintained
+summary table. Rank-aware metrics are stored separately so distributed
+training dashboards can compute per-rank reducers, coverage, heatmaps, and
+outliers.
 
 Metric row shape:
 
@@ -82,13 +76,13 @@ Metric row shape:
 ```
 
 Summary reads derive count, min, max, latest, best, mean, and variance from
-maintained aggregate state. Raw series reads remain bounded by run ID, key,
-step range, time range, and limit.
+aggregate state that is maintained on insert. Raw series reads are always
+bounded by run ID, key, step range, time range, and limit.
 
 ## Console logs
 
-Console logs are stored as bounded line records per run and stream. The
-dashboard fetches them only when the selected run's Logs section is opened.
+Console logs are stored as bounded line records per run and stream, and the
+dashboard fetches them only when you open a run's Logs section.
 
 Streams:
 
@@ -97,28 +91,40 @@ Streams:
 
 ## Artifacts
 
-Artifact metadata lives in ClickHouse. Artifact bytes live in a byte backend:
+Artifact metadata lives in ClickHouse. Artifact bytes live in a separate byte
+backend:
 
 | Backend | Use |
 | --- | --- |
-| Cloudflare R2 private per-org buckets | Hosted artifact uploads. |
-| External URI metadata | Records pointers to customer storage without uploading bytes. |
+| Local disk | Single-binary and self-hosted deployments store bytes under the configured artifact root. |
+| Private object storage (per-workspace buckets) | Hosted artifact uploads. |
+| External URI reference | Metadata-only pointer to your own storage; no bytes are uploaded. |
 
 Stored bytes use opaque `instantml://artifacts/<id>` URIs in public artifact
-rows. Raw bucket names, storage keys, and signed URLs are not returned in
-public metadata.
+rows. Raw bucket names, storage keys, and signed URLs are never returned in
+public metadata; downloads stream through the API.
 
 ## Usage counters
 
-Usage combines current retained-resource counts and current-period ingest
-counters:
+Usage combines retained-resource counts with current-period ingest counters:
 
-- Metric points reset by UTC calendar month.
+- Metric points and API requests reset by UTC calendar month.
 - Projects, runs, seats, API keys, artifacts, metric series, and storage are
   retained-resource counts.
 - Hosted storage can include exact artifact bytes and exact tenant warehouse
-  table bytes when available.
-- Customer-owned ClickHouse storage counts only InstantML-owned artifact bytes.
+  table bytes when the workspace has a dedicated database.
+- Customer-owned ClickHouse workspaces count only InstantML-managed artifact
+  bytes, not tables in your own deployment.
 
-Writes can fail with plan-limit or payment-required errors when a new write
-would cross an enforced limit.
+<Warning>
+Writes fail with a plan-limit or payment-required error when a new write would
+cross an enforced limit. See [Pricing, limits, and billing](/guides/pricing-limits-billing).
+</Warning>
+
+## Next steps
+
+- [Schema reference](/architecture/schema-reference)
+- [Google Cloud ClickHouse](/architecture/google-clickhouse)
+- [Artifacts API](/api/artifacts)
+- [Import, export, and usage API](/api/import-export-usage)
+- [Export, usage, and limits guide](/guides/export-usage-limits)

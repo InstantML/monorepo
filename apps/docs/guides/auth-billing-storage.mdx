@@ -3,19 +3,13 @@ title: "Auth, billing, and storage"
 description: "Understand browser sessions, API keys, billing states, hosted storage, and customer-owned storage."
 ---
 
-# Auth, billing, and storage
+Learn how the operational pieces fit together: who can sign in, what API keys can do, how billing state affects writes, and where your bytes live.
 
-This page connects the user-facing operational pieces: identity, API keys,
-billing state, and storage.
+## Sign in with a browser session
 
-## Browser sessions
+Humans use browser sessions for the dashboard through the hosted InstantML identity flow. Browser sessions are scoped to a workspace and role.
 
-Humans use browser sessions for the dashboard through the hosted InstantML
-identity flow.
-
-Browser sessions are scoped to an organization and role.
-
-## SDK API keys
+## Authenticate automation with API keys
 
 SDKs, uploaders, importers, exports, and automation use bearer API keys.
 
@@ -23,27 +17,19 @@ SDKs, uploaders, importers, exports, and automation use bearer API keys.
 export INSTANTML_API_KEY="instantml_..."
 ```
 
-API keys can be unrestricted for an org or restricted to a project depending on
-how they were created.
+API keys can be unrestricted for a workspace or restricted to a project, depending on how they were created. Create and manage keys in [Settings and API keys](/dashboard/settings-api-keys).
 
-## Billing states
+## Understand billing states
 
 Paid signup and billing changes go through hosted checkout or portal flows.
 
-When an org is pending payment or payment-failed, product write routes can
-return a payment-required error. Reads remain separate from write gates.
+When a workspace is pending payment or payment-failed, product write routes can return a payment-required error. Reads keep working; only writes are blocked.
 
-Free organizations are blocked at included monthly API request and hosted
-storage allowances. Paid Pro and Premium subscriptions attach Stripe-metered
-overage items for hosted storage and API requests. See
-[Pricing, limits, and billing](/guides/pricing-limits-billing) for the current
-plan allowances and rates.
+Free workspaces are blocked at included monthly API request and hosted storage allowances. Paid Pro and Premium subscriptions attach Stripe-metered overage items for hosted storage and API requests. See [Pricing, limits, and billing](/guides/pricing-limits-billing) for the current plan allowances and rates.
 
-## Hosted storage
+## Know where hosted data lives
 
-Uploaded artifact bytes are stored by the API in the org's configured artifact
-backend. The public artifact row returns opaque InstantML metadata rather than a
-raw storage URL.
+Uploaded artifact bytes are stored by the API in the workspace's configured artifact backend. The public artifact row returns opaque InstantML metadata rather than a raw storage URL.
 
 Downloads go through:
 
@@ -51,19 +37,13 @@ Downloads go through:
 GET /api/artifacts/:artifact_id/download
 ```
 
-InstantML-hosted workspace data currently uses InstantML-owned ClickHouse on
-Google Cloud for User Data and tenant databases. Hosted artifact bytes use
-private Cloudflare R2 buckets and stay separate from metric ingestion.
+InstantML-hosted workspace data currently uses InstantML-owned ClickHouse on Google Cloud for User Data and tenant databases. Hosted artifact bytes use private Cloudflare R2 buckets and stay separate from metric ingestion.
 
-## Customer-owned storage posture
+## Use customer-owned storage
 
-Teams that need stronger data-control boundaries can use Premium
-customer-owned storage setup where product data routes to their self-hosted GCP
-ClickHouse deployment. Hosted artifact bytes and customer-owned ClickHouse
-bytes are accounted for differently in usage surfaces; InstantML storage
-guardrails count only artifact bytes stored by InstantML.
+Teams that need stronger data-control boundaries can use the Premium customer-owned storage setup, where product data routes to their self-hosted GCP ClickHouse deployment. Hosted artifact bytes and customer-owned ClickHouse bytes are accounted for differently in usage surfaces; InstantML storage guardrails count only artifact bytes stored by InstantML. See [Customer-owned GCP ClickHouse](/guides/customer-owned-clickhouse) for setup.
 
-## Secret handling
+## Keep secrets out of version control
 
 Do not commit:
 
@@ -72,3 +52,11 @@ Do not commit:
 - Auth provider secrets.
 - ClickHouse credentials.
 - Object-storage credentials.
+
+## Next steps
+
+- [Settings and API keys](/dashboard/settings-api-keys)
+- [Pricing, limits, and billing](/guides/pricing-limits-billing)
+- [Customer-owned GCP ClickHouse](/guides/customer-owned-clickhouse)
+- [Export, usage, and limits](/guides/export-usage-limits)
+- [Install and authenticate the SDK](/sdk/installation-auth)

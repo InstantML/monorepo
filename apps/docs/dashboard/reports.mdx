@@ -3,15 +3,22 @@ title: "Reports"
 description: "Create block-based experiment writeups with live panels, share links, and Markdown export."
 ---
 
-# Reports
+Turn dashboard context into persisted report documents for experiment recaps, ablation notes, checkpoint decisions, launch notes, sweep summaries, and teammate handoffs.
 
-The Reports tab turns dashboard context into persisted report documents for
-experiment recaps, ablation notes, checkpoint decisions, launch notes, sweep
-summaries, and teammate handoffs.
+![Reports editor with block-based content and live metric panels](/images/product/dashboard-reports-editor.png)
 
-![Reports editor](/images/product/dashboard-reports-editor.png)
+## Create a report
 
-## What reports contain
+Open the Reports tab and use either create button:
+
+- **Start from template** creates a report from the "Experiment readout" template, a prefilled starter document for a standard experiment writeup.
+- **New report** creates a blank report.
+
+Both open the editor at `/dashboard/reports/{report_id}`. Creating and editing reports requires workspace write access; viewers can read reports but not change them.
+
+The Reports list shows every report visible to the active workspace.
+
+## Build with blocks
 
 Reports are block-based documents. Current block types include:
 
@@ -19,35 +26,35 @@ Reports are block-based documents. Current block types include:
 - Images.
 - Panel grids with live metric charts, scalar panels, run comparers, markdown, code, and image panels.
 
-Legacy LLM summary blocks remain readable in existing reports so older writeups
-keep rendering. New reports should use narrative blocks and panel grids.
+<Note>
+Legacy LLM summary blocks remain readable in existing reports so older writeups keep rendering, but they are read-only. New reports should use narrative blocks and panel grids.
+</Note>
 
-The Reports list shows every report visible to the active workspace. Opening a
-report mounts the editor at `/dashboard/reports/{report_id}`.
+## Edit with auto-save
 
-## Editing and auto-save
+The editor auto-saves title, description, visibility, and block changes through the reports API. The toolbar shows save state, undo/redo controls, share, and Markdown export.
 
-The editor auto-saves title, description, visibility, and block changes through
-the reports API. The toolbar shows save state, undo/redo controls, share, and
-Markdown export.
+## Choose visibility
 
-Use visibility to choose the audience:
+Use the visibility selector to choose the audience:
 
-| Visibility | Meaning |
+| Visibility | Who can see it |
 | --- | --- |
-| Private | Workspace-authenticated report unless a share token exists |
-| Organization | Workspace report intended for team readout |
-| Public | Intended for public/shared read paths |
+| Private | Only you |
+| Organization | Your team — everyone in the workspace |
+| Public | Anyone with the link |
 
-## Sharing and export
+## Share and export
 
-The Share action creates or rotates a share token and exposes a public `/r/...`
-link. Export opens a Markdown response for review, archives, or follow-up
-analysis outside InstantML.
+The Share action creates or rotates a share token and exposes a public `/r/...` link. Export opens a Markdown response for review, archives, or follow-up analysis outside InstantML.
 
-## Relationship to saved views
+## Choose between reports and saved views
 
-Saved workspace views still preserve dashboard layout and filters from Runs.
-Reports are separate persisted documents. Use saved views for repeatable
-dashboard state, and use reports when the result needs narrative context,
-charts, evidence, and a shareable readout.
+Saved workspace views preserve dashboard layout and filters from Runs. Reports are separate persisted documents. Use saved views for repeatable dashboard state, and use reports when the result needs narrative context, charts, evidence, and a shareable readout.
+
+## Next steps
+
+- [Runs workspace](/dashboard/runs-workspace)
+- [Metrics and charts](/dashboard/metrics-charts)
+- [Compare runs](/dashboard/compare-runs)
+- [Reports API](/api/reports)

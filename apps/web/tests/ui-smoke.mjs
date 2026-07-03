@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -176,6 +177,25 @@ try {
       step: 1,
       metrics: { "eval/return_mean": 44, "eval/score_distribution": 0.8, "train/reward": 88, "train/loss": 0.37, "system/cpu_percent": 41 },
     });
+    if (docsScreenshotMode) {
+      // Extend the marquee run to a realistic-length training curve so Run
+      // Detail and workspace charts do not render two-point straight lines.
+      for (let step = 2; step <= 46; step += 1) {
+        const progress = step / 46;
+        const saturation = 1 - Math.exp(-2.6 * progress);
+        const wobble = Math.sin(step * 0.9) * 0.5;
+        await pageApiRequest(page, "POST", `/runs/${seedRunId}/metrics`, {
+          step,
+          metrics: {
+            "eval/return_mean": 42 + 10 * saturation + wobble,
+            "eval/score_distribution": Math.min(0.97, 0.7 + 0.25 * saturation),
+            "train/reward": 84 + 20 * saturation + wobble * 2,
+            "train/loss": Math.max(0.05, 0.42 * Math.exp(-2.2 * progress) + Math.abs(wobble) * 0.02),
+            "system/cpu_percent": 38 + 6 * saturation + Math.sin(step / 2) * 3,
+          },
+        });
+      }
+    }
     const imageArtifact = (await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
       type: "file",
       name: "qa-preview.png",
@@ -200,6 +220,38 @@ try {
       metadata: { caption: "qa preview" },
       summary: {},
     });
+    if (docsScreenshotMode) {
+      // Seed a versioned artifact collection so the Artifacts workspace shot
+      // shows the collections-first browser instead of its empty state. The
+      // local artifact backend hands back inline upload targets, so the whole
+      // flow is initiate -> complete with base64 content.
+      const versionedFiles = [
+        { path: "policy.safetensors", bytes: Buffer.from("ui-smoke synthetic policy weights v1"), mime: "application/octet-stream" },
+        { path: "config.json", bytes: Buffer.from(JSON.stringify({ algorithm: "ppo", seed: 44, learning_rate: 0.0001 })), mime: "application/json" },
+      ];
+      const initiate = await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifact-uploads`, {
+        collection: { name: "policy-model", type: "model", description: "PPO policy weights from the demo sweep" },
+        manifest: {
+          entries: versionedFiles.map((file) => ({
+            path: file.path,
+            kind: "file",
+            size_bytes: file.bytes.length,
+            sha256: createHash("sha256").update(file.bytes).digest("hex"),
+            mime_type: file.mime,
+          })),
+        },
+        aliases: ["best"],
+        source_step: 40,
+      });
+      const sessionFiles = initiate?.files ?? [];
+      await pageApiRequest(page, "POST", `/api/artifact-uploads/${initiate.upload_session.id}/complete`, {
+        files: sessionFiles.map((entry) => ({
+          entry_id: entry.entry_id,
+          content_base64: versionedFiles.find((file) => file.path === entry.path)?.bytes.toString("base64"),
+        })),
+      });
+      console.log("[doc-shot] seeded versioned artifact collection policy-model");
+    }
     await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/objects`, {
       key: "eval/samples",
       kind: "table",
@@ -311,10 +363,30 @@ try {
         step: 0,
         metrics: { "eval/return_mean": score, "train/reward": score * 2, "train/loss": 1 / (index + 2) },
       });
-      await pageApiRequest(page, "POST", `/runs/${run.id}/metrics`, {
-        step: 1,
-        metrics: { "eval/return_mean": score + 1.5, "train/reward": score * 2 + 3, "train/loss": 1 / (index + 3) },
-      });
+      if (docsScreenshotMode) {
+        // Full learning curves for the docs marquee shots; keeps the same
+        // final ordering as the two-point normal-mode seeding.
+        for (let step = 1; step < 40; step += 1) {
+          const progress = step / 39;
+          const saturation = 1 - Math.exp(-2.8 * progress);
+          const wobble = Math.sin(step * 1.3 + index) * 0.5;
+          await pageApiRequest(page, "POST", `/runs/${run.id}/metrics`, {
+            step,
+            metrics: {
+              "eval/return_mean": score + 1.5 * saturation + wobble * 0.3,
+              "eval/score_distribution": Math.min(0.95, 0.55 + 0.3 * saturation + index * 0.02),
+              "train/reward": (score + 3 * saturation) * 2 + wobble,
+              "train/loss": Math.max(0.04, (1 / (index + 2)) * Math.exp(-2.4 * progress) + Math.abs(wobble) * 0.01),
+              "system/cpu_percent": 34 + index * 1.2 + 6 * saturation + Math.sin(step / 3 + index) * 3,
+            },
+          });
+        }
+      } else {
+        await pageApiRequest(page, "POST", `/runs/${run.id}/metrics`, {
+          step: 1,
+          metrics: { "eval/return_mean": score + 1.5, "train/reward": score * 2 + 3, "train/loss": 1 / (index + 3) },
+        });
+      }
     }
   }
   for (let index = 1; index <= 30; index += 1) {
@@ -1812,6 +1884,12 @@ async function captureDocScreenshots(page, webBaseUrl) {
   }
   const openRunsDemo = async () => {
     await page.goto(`${webBaseUrl}/dashboard/runs`, { waitUntil: "domcontentloaded" });
+    // The Panels ⇄ Table toggle persists in localStorage (instantml:next:runs-view),
+    // and the compare shot flips it to Table, which unmounts the run rail. Force
+    // panels view back on before waiting for run rows.
+    const panelsBtn = page.getByRole("group", { name: "Runs view" }).getByRole("button", { name: "Panels" });
+    await panelsBtn.waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    await panelsBtn.click().catch(() => {});
     await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
     await chooseSelect(page, "#project-filter", "demo").catch(() => {});
     await page.waitForTimeout(400);
@@ -1902,23 +1980,10 @@ async function captureDocScreenshots(page, webBaseUrl) {
     await page.waitForSelector(".account-workspace-menu, [role=menu]", { timeout: 8000 }).catch(() => {});
   });
 
-  // 8. W&B import flow.
-  await shot("import-flow-wandb.png", async () => {
-    await gotoTab("imports", ".tab-pane.active");
-    const wandb = page.getByRole("button", { name: /W&B|Weights ?& ?Biases|wandb/i }).first();
-    if (await wandb.count()) await wandb.click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(600);
-  });
+  // The Imports dashboard tab was removed in #214, so the old import-flow-*.png
+  // captures are gone; the import guides are CLI-only now.
 
-  // 9. Neptune import flow.
-  await shot("import-flow-neptune.png", async () => {
-    await gotoTab("imports", ".tab-pane.active");
-    const neptune = page.getByRole("button", { name: /Neptune/i }).first();
-    if (await neptune.count()) await neptune.click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(600);
-  });
-
-  // 10. Logged-histogram timeline panel (workspace view keeps it content-rich).
+  // 8. Logged-histogram timeline panel (workspace view keeps it content-rich).
   await shot("dashboard-logged-histogram.png", async () => {
     await openRunsDemo();
     await openSeed44();

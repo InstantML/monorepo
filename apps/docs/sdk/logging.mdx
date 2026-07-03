@@ -1,19 +1,16 @@
 ---
 title: "SDK logging"
-description: "Create runs and log metrics, configs, tags, notes, artifacts, and buffered events."
+description: "Create runs, log metrics, and finish cleanly from your training loop."
 ---
 
-# SDK logging
-
-The Python package is imported as `instantml`.
-
-```python
-import instantml as im
-```
+Create a run at the start of your script, log metrics inside the loop, and
+finish the run when the script ends.
 
 ## Create a run
 
 ```python
+import instantml as im
+
 run = im.init(
     project="mnist",
     name="cnn-seed-7",
@@ -23,26 +20,28 @@ run = im.init(
 )
 ```
 
-Both `project` and `name` are optional. If you omit them, defaults apply:
-
-```python
-# No project → lands in the shared `default` project.
-# No name    → server assigns `<adjective>-<noun>-<sequence>` per project.
-run = im.init()
-print(run.name)  # e.g. "bold-falcon-1"
-```
+Both `project` and `name` are optional:
 
 | Field | Default when omitted | Notes |
 | --- | --- | --- |
 | `project` | `"default"` | A shared bucket. The project is created on first use. |
-| `name` | `<adjective>-<noun>-<N>` | `N` is the run's 1-indexed position in its project; e.g. the third run in `default` might be `serene-glacier-3`. Names are picked deterministically from `(org, project, N)` so concurrent creates that race on the same sequence still get distinct names. |
+| `name` | `<adjective>-<noun>-<sequence>` | Assigned by the server, e.g. `bold-falcon-1`. The adjective/noun pair is picked at random per create; the sequence is the run's 1-indexed position in its project. |
 
-Pass an explicit `name=` whenever the run is meaningful long-term (e.g.
-named after a hyperparameter sweep cell or experiment cohort). The
-auto-name is for quick iteration and smoke tests.
+The auto-name is assigned server-side and shown in the dashboard; the run
+handle does not expose it. Use `run.run_id` when a script needs a stable
+identifier:
 
-Use `im.Client(...)` when you want to reuse a base URL, timeout, API key, or
-offline directory across several runs:
+```python
+run = im.init()
+print(run.run_id)
+```
+
+Pass an explicit `name=` whenever the run is meaningful long-term, such as a
+sweep cell or experiment cohort. The auto-name is for quick iteration and
+smoke tests.
+
+Use `im.Client(...)` when you want to reuse a base URL, timeout, or API key
+across several runs:
 
 ```python
 client = im.Client(
@@ -57,8 +56,8 @@ run = client.init(project="cartpole", name="ppo-seed-42")
 ## Log scalar metrics
 
 `run.log(...)` is the ergonomic API. If `step` is omitted, the SDK
-auto-increments from `1`. If `step` is provided, it uses that value and advances
-the implicit counter to at least that step.
+auto-increments from `1`. If `step` is provided, it uses that value and
+advances the implicit counter to at least that step.
 
 ```python
 run.log({"train/reward": 100.0})
@@ -66,7 +65,8 @@ run.log({"train/loss": 0.12, "eval/accuracy": 0.91}, step=2)
 ```
 
 Metric steps must be finite, nonnegative numbers. The UI expects each metric's
-step values to move forward over time.
+step values to move forward over time. See
+[Metrics and steps](/sdk/metrics-steps) for naming and batching guidance.
 
 ## Add run context
 
@@ -95,33 +95,20 @@ with im.init(project="mnist", name="cnn-seed-7", config={"seed": 7}) as run:
 If the block exits normally, the SDK finishes the run as `finished`. If an
 exception escapes the block, the SDK marks it as `failed`.
 
-By default, run creation starts in the background so training scripts can avoid
+By default, run creation starts in the background so training scripts avoid
 waiting on startup. Call `run.wait_for_init()` before expensive work when you
 want credential or connectivity failures to surface immediately.
 
-## Buffering and offline replay
+## Choose an upload mode
 
-Use buffering when you want to batch post-init SDK calls in memory:
+The default async mode queues writes locally and drains them in the
+background. For batching, offline replay, or process-isolated spooling, see
+[Buffering, offline replay, and spool mode](/sdk/reliability).
 
-```python
-run = im.init(project="long-run", buffer_size=25)
-```
+## Next steps
 
-Use `offline_dir` to spool failed requests for an already-created run and replay
-them later. Current limitation: run creation still needs a reachable server.
-
-## Process-isolated spool mode
-
-Use `upload_mode="spool"` when your training process should avoid post-init HTTP
-calls. The SDK writes request events to disk, and a separate uploader drains
-them through the existing API.
-
-```python
-run = im.init(
-    project="long-run",
-    name="seed-42",
-    upload_mode="spool",
-)
-```
-
-Batch many scalar values into one metrics dictionary for high-frequency loops.
+- [Metrics and steps](/sdk/metrics-steps) — metric naming, steps, and batching
+- [Configs, tags, and notes](/sdk/config-tags-notes) — make runs searchable
+- [Buffering, offline replay, and spool mode](/sdk/reliability) — durable upload modes
+- [Artifacts and checkpoints](/sdk/artifacts-checkpoints) — upload files and checkpoints
+- [Query runs and metrics](/sdk/querying-data) — read runs back from scripts

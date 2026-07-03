@@ -3,18 +3,21 @@ title: "Dashboard control-state API"
 description: "Persist selected project preferences and saved workspace views."
 ---
 
-# Dashboard control-state API
+Store human UI preferences — the selected project and saved workspace views —
+through the dashboard control-state routes.
 
-Dashboard control-state routes store human UI preferences. SDK API keys are not
-accepted for these routes; use a browser session with organization membership.
+Authenticate with a browser session (`instantml_session` cookie) that has
+organization membership. SDK API keys are not accepted on these routes, with
+one exception: `POST /api/workspace-view-data` also accepts an API key with the
+`export:read` scope.
 
-## Project preference
+## Read and save the project preference
 
 Read:
 
-```http
-GET /api/dashboard/preferences
-Cookie: instantml_session=...
+```bash
+curl https://api.instantml.ai/api/dashboard/preferences \
+  -H "Cookie: instantml_session=..."
 ```
 
 Response when saved:
@@ -90,8 +93,122 @@ Content-Type: application/json
 
 Update accepts any subset of `name`, `project`, and `payload`.
 
-## Demo behavior
+## Delete a workspace view
+
+```http
+DELETE /api/workspace-views/{view_id}?expected_updated_at=2026-05-17T00:00:00Z
+Cookie: instantml_session=...
+```
+
+The `expected_updated_at` query parameter is required and must match the last
+`updated_at` you observed; a stale value returns `409` so concurrent edits are
+not silently destroyed. A successful delete returns:
+
+```json
+{
+  "deleted": true,
+  "view_id": "86d2c75c-0c88-4d7c-8711-e461a77d4edc",
+  "deleted_at": "2026-05-17T00:00:00Z"
+}
+```
+
+## Export a workspace view
+
+```http
+GET /api/workspace-views/{view_id}/export
+Cookie: instantml_session=...
+```
+
+Returns a portable JSON envelope you can store, share, or re-import:
+
+```json
+{
+  "kind": "instantml.workspace_view",
+  "schema_version": 1,
+  "exported_at": "2026-05-17T00:00:00Z",
+  "source": { "product": "instantml", "format": "workspace_view" },
+  "view": {
+    "name": "Daily comparison",
+    "project": "cartpole",
+    "payload": {}
+  },
+  "integrity": { "payload_sha256": "64-hex" }
+}
+```
+
+`integrity.payload_sha256` lets the importer detect payload corruption or
+tampering before applying the view.
+
+## Import a workspace view
+
+```http
+POST /api/workspace-views/import
+Cookie: instantml_session=...
+Content-Type: application/json
+
+{
+  "exported_view": { "kind": "instantml.workspace_view", "schema_version": 1, "...": "..." },
+  "dry_run": true,
+  "name": "Imported comparison",
+  "project": "cartpole"
+}
+```
+
+`exported_view` (a full export envelope) and `dry_run` are required. Optional
+fields: `name` and `project` override the exported values; `existing_view_id`
+plus `expected_updated_at` target an existing view for overwrite; and
+`conflict_strategy` is `create` (default) or `replace`. A stale
+`expected_updated_at` returns `409`.
+
+The response reports what happened (or would happen when `dry_run` is true):
+
+```json
+{
+  "dry_run": true,
+  "action": "create",
+  "name": "Imported comparison",
+  "project": "cartpole",
+  "payload_bytes": 2048,
+  "warnings": [],
+  "workspace_view": null
+}
+```
+
+Run a `dry_run` first, review `warnings`, then repeat with `dry_run: false` to
+persist; the persisted call returns the created or updated `workspace_view`.
+
+## Fetch data for a portable view
+
+```http
+POST /api/workspace-view-data
+Authorization: Bearer instantml_...
+Content-Type: application/json
+
+{
+  "view": { "schema_version": 1, "tab": "runs", "workspace_view": {} },
+  "run_ids": ["4d14b2ea-7f49-4c7b-8d38-bb8437b5b029"],
+  "options": { "max_panels": 8, "metric_point_limit": 500 }
+}
+```
+
+Unlike the other routes on this page, this data read accepts an API key with
+`export:read` or a browser session. Send the view payload (`view`) and explicit
+`run_ids`; `options.max_panels` and `options.metric_point_limit` cap the
+projection. The response's `view_data` object contains `schema_version`,
+`generated_at`, `run_ids`, `runs`, `metric_keys`, `metric_series`, `panels`,
+`warnings`, and `limits` — a bounded projection sized for rendering the view
+without further queries. Runs that are missing or not visible to the caller
+return `404`.
+
+## Understand demo behavior
 
 Shared demo sessions are read-only and cannot save dashboard control state.
 If the control-state API is temporarily unavailable, the dashboard keeps the
 current page usable and retries later.
+
+## Next steps
+
+- [Work in the Runs workspace](/dashboard/runs-workspace)
+- [Authenticate API calls](/api/authentication)
+- [Query run summaries over HTTP](/api/projects-runs)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)

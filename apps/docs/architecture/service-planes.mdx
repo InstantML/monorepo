@@ -1,19 +1,21 @@
 ---
 title: "Service planes"
-description: "Control and data service roles behind the hosted InstantML API."
+description: "Control, data, and combined service roles behind the InstantML API."
 ---
 
-# Service planes
+The InstantML API binary runs in one of three service-plane roles, and the
+hosted deployment splits control-plane and data-plane responsibilities behind
+one public API URL.
 
-The hosted InstantML API is split into control-plane and data-plane
-responsibilities behind one public API URL.
+## Service roles
 
-| Mode | Routes | Typical use |
+| Role | Routes | Typical use |
 | --- | --- | --- |
-| `control` | Auth, sessions, orgs, seats, billing, API keys, tenant routes, dashboard preference state, reports, report shares, and Markdown export. | Hosted control service. |
-| `data` | Projects, runs, metrics, logs, artifacts, objects, imports, export, and usage. | Hosted tenant product service. |
+| `combined` | All control and data routes in one process. | Local development and single-binary self-hosting (the Docker Compose default). |
+| `control` | Auth, sessions, workspaces, seats, invitations, billing, API-key admin, dashboard preferences, and saved workspace views. | Hosted account service. |
+| `data` | Projects, runs, metrics, console logs, attributes, rich objects, artifacts, reports, imports, export, and usage. | Hosted tenant product service. |
 
-Platform routes exist on every service:
+Platform routes exist on every service regardless of role:
 
 - `GET /health`
 - `GET /healthz`
@@ -22,37 +24,46 @@ Platform routes exist on every service:
 - `GET /openapi.json`
 - `GET /api/auth/config`
 
-`/openapi.json` and `/api/auth/config` report the active service plane so
-operators can verify which role is serving a request.
+`/openapi.json` and `/api/auth/config` report the active service plane, so you
+can verify which role served a request.
 
-## Split Cloud Run topology
+## Hosted split topology
 
 | Source | Route | Backing data |
 | --- | --- | --- |
-| Browser / Next frontend | Public HTTPS API URL | Control service for auth, billing, seats, API keys, tenant routes, dashboard preferences, and reports. |
-| Python SDK / uploader | Public HTTPS API URL | Data service for projects, runs, metrics, logs, artifacts, objects, imports, export, and usage. |
-| Control service | Control-plane Postgres (Cloud SQL) | Account, session, billing, API-key, and tenant-route records. |
-| Data service | Tenant databases on Google Cloud ClickHouse | Tenant product records and metric tables. |
+| Browser / dashboard | Public HTTPS API URL | Control service for auth, billing, seats, API keys, preferences, and workspace views; data service for product reads. |
+| Python SDK / uploader | Public HTTPS API URL | Data service for projects, runs, metrics, logs, artifacts, objects, reports, imports, export, and usage. |
+| Control service | Control-plane Postgres | Account, session, billing, API-key, and tenant-route records. |
+| Data service | Routed tenant ClickHouse databases | Tenant product records and metric tables. |
 
-Path-based routing is enough for a single data cell. Many cells require a
-discovery step or app-level router because a plain load balancer cannot inspect
-an org hidden inside a bearer token before authentication.
+Requests are routed by path for a single data cell. A plain load balancer
+cannot inspect the workspace hidden inside a bearer token before
+authentication, so scaling to many cells adds a discovery step at the
+application layer rather than a central hot-path proxy.
 
-The current InstantML-hosted data store is self-hosted ClickHouse on Google
-Cloud. Control and data services use routed databases on that deployment for
-InstantML-owned workspaces, while Premium customer-owned self-hosted GCP
-ClickHouse remains a separate storage option.
+The default hosted data store is InstantML-owned ClickHouse on Google Cloud.
+Premium workspaces can instead route their tenant data to
+[customer-owned ClickHouse](/guides/customer-owned-clickhouse).
 
 ## Readiness
 
 `/readyz` fails until ClickHouse is reachable and the process-local control
-projection has loaded. Data-plane auth misses force one control-record refresh
-and retry, so fresh API keys and browser sessions can become usable without
-waiting for the next background refresh tick.
+projection (tenant routes, memberships, API keys) has loaded. After that, a
+data-plane auth miss forces one control-record refresh and retry, so a freshly
+created API key or browser session becomes usable without waiting for the next
+background refresh.
 
 ## Scaling posture
 
-Control and data services are scaled conservatively to preserve tenant
-isolation, predictable routing, and consistent control-record replay. Serious
-customers can use dedicated cells when they need stronger isolation,
-noisy-neighbor protection, or custom retention.
+Control and data services scale conservatively to preserve tenant isolation,
+predictable routing, and consistent control-record replay. Teams that need
+stronger isolation, noisy-neighbor protection, or custom retention can run on
+a dedicated data cell or bring their own ClickHouse deployment.
+
+## Next steps
+
+- [System overview](/architecture/system-overview)
+- [Storage model](/architecture/storage-model)
+- [Google Cloud ClickHouse](/architecture/google-clickhouse)
+- [Health and observability API](/api/health-observability)
+- [API authentication](/api/authentication)

@@ -3,20 +3,22 @@ title: "Import, export, and usage API"
 description: "Run migration importers, export bounded data, and inspect usage guardrails."
 ---
 
-# Import, export, and usage API
+Migrate tracked data in, export bounded archives out, and inspect the usage
+guardrails that gate writes.
 
-Use these endpoints for migration, backup, account administration, and usage
-debugging.
+Authenticate with an `Authorization: Bearer instantml_...` API key or a browser
+session. Exports need the `export:read` scope, importer writes need
+`imports:write`, import history reads need `export:read` or `imports:write`,
+and usage routes need `usage:read`.
 
-## Export
+## Export data
 
-```http
-GET /api/export?project=cartpole&status=finished&q=tag%3Abaseline%20NOT%20tag%3Adebug
-Authorization: Bearer instantml_...
+```bash
+curl "https://api.instantml.ai/api/export?project=cartpole&status=finished&q=tag%3Abaseline%20NOT%20tag%3Adebug" \
+  -H "Authorization: Bearer instantml_..."
 ```
 
-Requires tenant read access. API keys need `export:read`; browser sessions need
-viewer or higher role.
+API keys need `export:read`; browser sessions need viewer or higher role.
 
 Export accepts the same bounded run filters as `GET /runs`, including
 `project`, `status`, `sort_by`, `metric_key`, and the shared run-search `q`
@@ -67,15 +69,15 @@ artifacts, 25,000 table rows, 500 import records, and 25 MiB CSV responses.
 If `truncated` is true, or the `X-InstantML-Export-Truncated` header is `true`,
 narrow the filters before treating the file as a complete archive.
 
-## Usage summary
+## Read the usage summary
 
 ```http
 GET /api/usage
 Authorization: Bearer instantml_...
 ```
 
-Requires unrestricted org API key with `usage:read` or an owner/admin browser
-session.
+Requires an unrestricted org API key with `usage:read` or an owner/admin
+browser session.
 
 Usage includes:
 
@@ -97,34 +99,37 @@ request allowance, while paid Pro/Premium request overage is Stripe-metered.
 Short-window `429` rate limits protect the service independently from monthly
 request quotas.
 
-## Usage export
+## Export usage records
 
 ```http
 GET /api/usage/export
 Authorization: Bearer instantml_...
 ```
 
-Use usage export for account audits and support handoff. It should match the
-same org and permission rules as usage summary.
+Use usage export for account audits and support handoff. It follows the same
+org and permission rules as the usage summary.
 
-## Importers
+## Run importers
 
 Import v2 is the recommended migration API for SDK/CLI-driven imports:
 
 ```http
 POST /api/imports/jobs
+GET  /api/imports/jobs/{import_id}
 POST /api/imports/jobs/{import_id}/chunks
 POST /api/imports/jobs/{import_id}/commit
 POST /api/imports/jobs/{import_id}/cancel
 Authorization: Bearer instantml_...
 ```
 
-The create response returns an import job. Chunk uploads carry canonical runs,
-metric points, artifact references, warnings, source identity, and a `final`
-marker. Commit is allowed only after the final chunk has passed validation. Use
-cancel for abandoned dry-runs. Accepted chunk payloads count toward retained
-operational storage, are checked against storage plan capacity when appended,
-and are bounded by a per-job staged-payload byte ceiling.
+The create response returns an import job; read it back with
+`GET /api/imports/jobs/{import_id}` to poll status and progress. Chunk uploads
+carry canonical runs, metric points, artifact references, warnings, source
+identity, and a `final` marker. Commit is allowed only after the final chunk
+has passed validation. Use cancel for abandoned dry-runs. Accepted chunk
+payloads count toward retained operational storage, are checked against storage
+plan capacity when appended, and are bounded by a per-job staged-payload byte
+ceiling.
 
 Committed external artifact references are stored as legacy raw artifact rows
 and mirrored into run-level metadata-only versioned artifact bundles. The
@@ -137,20 +142,23 @@ Legacy transformed JSON routes remain supported for compatibility:
 - `POST /api/imports/wandb`
 - `POST /api/imports/mlflow`
 
-Importer API keys need `imports:write`. CLI device login grants import,
-artifact, export, and SDK ingest scopes so one login can dry-run imports,
-commit them, sync TensorBoard, and log normal training runs.
+Importer write routes need API keys with `imports:write`. Reading a job with
+`GET /api/imports/jobs/{import_id}` needs `export:read` or `imports:write`.
+CLI device login grants import, artifact, export, and SDK ingest scopes so one
+login can dry-run imports, commit them, sync TensorBoard, and log normal
+training runs.
 
-## Import history
+## Read import history
 
 ```http
 GET /api/imports
 Authorization: Bearer instantml_...
 ```
 
-Import history is read-only. It accepts a same-org browser session or same-org
-API key and does not require `imports:write`; use that scope only for creating
-new W&B, MLflow, or Neptune imports.
+Import history is read-only. It accepts a same-org browser session, or an API
+key with `export:read` or `imports:write`. Reserve `imports:write` for keys
+that create new W&B, MLflow, or Neptune imports; a read-only `export:read` key
+is enough to audit history.
 
 Practical migration flow:
 
@@ -163,3 +171,11 @@ Practical migration flow:
 
 Imports can write many records. Treat importer retries as operational jobs and
 keep the returned import ID with logs or support tickets.
+
+## Next steps
+
+- [Migrate from W&B, Neptune, or MLflow](/guides/imports)
+- [Follow the W&B import guide](/guides/wandb-import-guide)
+- [Understand export and usage limits](/guides/export-usage-limits)
+- [Understand plan pricing and limits](/guides/pricing-limits-billing)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)

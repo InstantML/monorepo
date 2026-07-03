@@ -1,113 +1,108 @@
 ---
 title: "Imports"
-description: "Import W&B, Neptune Exporter, MLflow, and TensorBoard data through local-first migration jobs."
+description: "Import W&B, Neptune, MLflow, and TensorBoard experiment history into InstantML with local-first CLI jobs."
 ---
 
-# Imports
+Bring existing experiment history into an InstantML workspace without handing vendor credentials to InstantML servers. The `instantml` CLI reads source data on your machine, normalizes it into import chunks, uploads a preview first with `--dry-run`, and commits only after you review the result.
 
-InstantML includes local-first import tooling so teams can evaluate without
-starting from an empty project or handing third-party credentials to InstantML
-servers. The Python CLI reads source data on your machine, normalizes it into
-Import v2 chunks, uploads a dry-run summary first, and commits only after you
-review the result.
+<Info>
+An import job is a staged migration: the CLI uploads normalized run data, the server reports counts and warnings, and nothing lands in your project until the job commits.
+</Info>
 
-For a screenshot walkthrough of the app flow, see
-[W&B and Neptune imports](/guides/wandb-neptune-imports).
+## Choose an import path
 
-## Recommended CLI flow
+Each source has one command. Install the matching extra before you run it.
 
-Use `instantml login` once, then run the source-specific import locally:
+| Source | Command | Install extra |
+| --- | --- | --- |
+| W&B, direct from the local `wandb` SDK | `instantml import wandb --entity ... --source-project ...` | `instantml[wandb]` |
+| W&B, transformed JSON export file | `instantml import wandb --project my-project --input wandb.json` | none |
+| Neptune Exporter Parquet directory | `instantml import neptune --input ./neptune-export/data` | `instantml[imports]` (pyarrow) |
+| MLflow, transformed JSON export file | `instantml import mlflow --input ./mlflow-export.json` | none |
+| TensorBoard scalar event files | `instantml sync tensorboard ./runs --project my-project` | `instantml[tensorboard]` |
+
+<CardGroup cols={2}>
+  <Card title="W&B migration guide" href="/guides/wandb-import-guide">
+    Migrate W&B run history directly through the local W&B SDK, with dry-run review and a low-risk rollout plan.
+  </Card>
+  <Card title="W&B and Neptune export-file imports" href="/guides/wandb-neptune-imports">
+    Import W&B export files and Neptune Exporter Parquet directories step by step.
+  </Card>
+</CardGroup>
+
+## Preview with a dry run, then commit
+
+Authenticate once with `instantml login`, then run any import with `--dry-run` to stage the job without writing runs:
 
 ```bash
-# W&B via the official local wandb SDK.
-instantml import wandb --project cartpole --entity my-team --source-project old-project --dry-run
-
-# Real Neptune Exporter Parquet directories.
-instantml import neptune --project cartpole --input ./neptune-export --dry-run
-
-# TensorBoard scalar event files (TensorBoard lives under `sync`, not `import`).
-instantml sync tensorboard ./runs --project cartpole --dry-run
-
-# Transformed MLflow JSON.
-instantml import mlflow --project cartpole --input ./mlflow-export.json --dry-run
+instantml login
+instantml import wandb \
+  --project cartpole \
+  --entity my-team \
+  --source-project old-project \
+  --dry-run
 ```
 
-Remove `--dry-run` only after the summary, warnings, and counts look right.
-TensorBoard sync can be repeated; matching imported TensorBoard runs append new
-scalar points instead of replacing existing history.
+The CLI prints the job id, job status, and run, metric, and artifact counts. When they look right, rerun the same command without `--dry-run` to commit the import.
 
-## Supported server routes
+<Tip>
+TensorBoard sync is safe to repeat: rerunning `instantml sync tensorboard` appends new scalar points to matching imported runs instead of replacing existing history.
+</Tip>
 
-| Source shape | Route |
+## Manage import jobs over the API
+
+Import jobs are also addressable over the REST API with a bearer API key that has import/write permission. Use these routes to check on or cancel a staged job:
+
+| Action | Route |
 | --- | --- |
-| Import v2 jobs | `POST /api/imports/jobs` |
-| Import v2 chunks | `POST /api/imports/jobs/{import_id}/chunks` |
-| Import v2 commit | `POST /api/imports/jobs/{import_id}/commit` |
-| Import v2 cancel | `POST /api/imports/jobs/{import_id}/cancel` |
-| W&B transformed JSON | `POST /api/imports/wandb` |
-| MLflow transformed JSON | `POST /api/imports/mlflow` |
-| Neptune-shaped transformed JSON | `POST /api/imports/neptune` |
+| List import jobs | `GET /api/imports` |
+| Create an import job | `POST /api/imports/jobs` |
+| Upload staged chunks | `POST /api/imports/jobs/{import_id}/chunks` |
+| Check job status, warnings, and progress | `GET /api/imports/jobs/{import_id}` |
+| Commit a staged job | `POST /api/imports/jobs/{import_id}/commit` |
+| Cancel a staged job | `POST /api/imports/jobs/{import_id}/cancel` |
+| W&B transformed JSON (legacy) | `POST /api/imports/wandb` |
+| MLflow transformed JSON (legacy) | `POST /api/imports/mlflow` |
+| Neptune-shaped transformed JSON (legacy) | `POST /api/imports/neptune` |
 
-These routes accept transformed JSON inputs. They are not raw vendor database
-readers. Imports count against the same project, run, metric-point, and
-metadata/operational-storage plan limits as SDK writes. Accepted Import v2 chunk
-payloads also count as retained operational storage and each import job has a
-hard staged-payload byte ceiling, so abandoned dry-run jobs cannot consume
-unbounded space. Artifact counts and declared external byte totals are visible
-in usage summaries, but importers do not copy source artifact bytes into
-InstantML-hosted storage. Storage-heavy migration projects should use Premium
-or custom terms before separately uploading retained artifact bytes.
+For example, check a job's status and cancel it if the preview looks wrong:
 
-Imported artifact references appear in both places users expect: the legacy raw
-run artifact list for backwards-compatible Run Detail and Compare workflows,
-and the versioned Artifacts catalog as run-level, metadata-only external
-manifest bundles. Those imported catalog versions participate in artifact
-lineage, but downloads stay unavailable until you upload the actual bytes with
-the SDK.
+```bash
+curl https://api.instantml.ai/api/imports/jobs/42 \
+  -H "Authorization: Bearer instantml_..."
 
-The legacy JSON routes remain for backward compatibility. New migration work
-should prefer Import v2 through the SDK/CLI because it supports dry-run
-readiness, warning previews, chunked uploads, real Neptune Exporter Parquet,
-direct W&B export, and TensorBoard sync.
+curl -X POST https://api.instantml.ai/api/imports/jobs/42/cancel \
+  -H "Authorization: Bearer instantml_..."
+```
 
-## What importers preserve
+The legacy JSON routes accept transformed JSON payloads and remain for backward compatibility. Prefer the CLI flow: it adds dry-run readiness, warning previews, chunked uploads, real Neptune Exporter Parquet support, direct W&B export, and TensorBoard sync.
 
-Importer payloads should preserve the useful experiment-tracking spine:
+## Know what importers preserve
 
-- Projects.
-- Runs.
-- Config/params.
+Importers carry over the experiment-tracking spine:
+
+- Projects and runs.
+- Config values and params.
 - Tags and notes when present.
 - Metric history and summaries.
-- External artifact references, declared sizes, MIME types, metadata, and
-  metadata-only artifact catalog bundles for lineage.
+- External artifact references: declared sizes, MIME types, metadata, and metadata-only artifact catalog bundles for lineage.
 - Import status and diagnostics.
 
-## API-key auth
+Importers write artifact references only — they never copy source artifact bytes into InstantML-hosted storage. Imported references appear in the raw run artifact list and in the versioned Artifacts catalog, and they participate in lineage, but downloads stay unavailable until you upload the actual bytes with the SDK.
 
-Importer calls use bearer API keys with import/write permission:
+## Understand limits
 
-```bash
-curl https://api.instantml.ai/api/imports/mlflow \
-  -H "Authorization: Bearer instantml_..." \
-  -H "Content-Type: application/json" \
-  --data @mlflow-transformed.json
-```
+Imports count against the same project, run, metric-point, and metadata/operational-storage plan limits as SDK writes. Accepted chunks count as retained operational storage, and each job has a 2 GiB staged-payload ceiling, so abandoned dry-run jobs cannot consume unbounded space. Storage-heavy migrations should use Premium or custom terms before separately uploading retained artifact bytes.
 
-## Practical migration flow
+## Respect compatibility boundaries
 
-1. Install the optional integration extra, for example
-   `pip install "instantml[imports]"`, `instantml[wandb]`, or
-   `instantml[tensorboard]`.
-2. Run a dry-run import against one representative project.
-3. Review counts, warnings, configs, notes, and artifact references.
-4. Open the dashboard and inspect runs, metric counts, configs, notes, and
-   artifacts.
-5. Repeat for larger projects once the shape looks right.
+Importers do not claim full vendor parity for W&B sweeps, reports, or launch, full Neptune namespace semantics, TensorBoard media, or server-side hosted vendor credential pulls. Source credentials stay local.
 
-## Compatibility boundaries
+## Next steps
 
-Importers preserve runs, scalar metrics, configs/params, tags, notes, source
-provenance, and artifact references. They do not claim full vendor parity for
-W&B sweeps/reports/launch, full Neptune namespace semantics, TensorBoard media,
-or server-side hosted vendor credential pulls. Source credentials stay local.
+- [W&B import guide](/guides/wandb-import-guide) — the full W&B migration walkthrough.
+- [W&B and Neptune imports](/guides/wandb-neptune-imports) — step-by-step export-file imports.
+- [Import, export, and usage API](/api/import-export-usage) — request and response shapes for the import routes.
+- [CLI login](/sdk/cli-login) — authenticate the CLI before importing.
+- [Pricing, limits, and billing](/guides/pricing-limits-billing) — the plan limits imports count against.
+- [Troubleshooting](/troubleshooting) — diagnose pyarrow, Parquet, and TensorBoard import issues.

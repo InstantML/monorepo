@@ -1,14 +1,13 @@
 ---
 title: "Dashboard tour"
-description: "A screenshot-backed tour of the main InstantML dashboard surfaces."
+description: "Walk through every main dashboard surface and learn when to use each one."
 ---
 
-# Dashboard tour
+Follow this tour to learn where each surface lives and the loop the dashboard is
+built for: scan many runs, chart a metric, open one run, then compare
+candidates.
 
-The dashboard is organized around repeated research work: scan many runs,
-inspect metric behavior, open one run, then compare candidates.
-
-## Navigation
+## Navigate the dashboard
 
 The left rail groups surfaces into three sections:
 
@@ -16,73 +15,74 @@ The left rail groups surfaces into three sections:
 | --- | --- |
 | Operate | Runs, Metrics, Distributed |
 | Data | Datasets, Artifacts, Insights |
-| System | Run Health, Reports, Settings, API |
+| System | Run Health, Reports, API |
 
-Run Detail is not a rail item — you reach it by opening a run. Comparison is not
-a rail item either; it lives inside the Runs **Table** view. The top-right
-account menu switches workspaces and opens settings or billing.
+Two surfaces are reachable without a rail item:
 
-## Runs workspace
+- **Run Detail** — open any run from the Runs workspace.
+- **Compare** — select two or more runs in the Runs **Table** view.
 
-![Runs workspace with selected runs](/images/product/dashboard-runs.png)
+Settings is not in the rail. Open the profile menu in the top right and choose
+**Workspace settings** to open it as a centered modal. The same menu holds
+**New workspace**, the light/dark theme toggle, and **Sign out**; billing lives
+inside the Workspace settings modal as its own section.
 
-Use Runs for the broadest view of a project:
+## Scan runs in the Runs workspace
 
-- Filter by project, status, search text, and sort mode.
-- Select runs from the rail.
-- Toggle between **Panels** (run selector plus chart canvas) and **Table** (a
-  flat, sortable run list with an embedded comparison).
-- Export selected runs as bounded CSV, or review stop requests, from the **Runs
-  actions** menu.
-- Review maintained summary values without loading full metric history.
-- Build line panels from metric series, summary panels from metric aggregates,
-  scatter panels from two loaded numeric run fields, seed/group distribution
-  panels, and selected-run logged histogram timeline panels.
-- Save named workspace views when the layout should survive a reload.
+![Runs workspace showing the run rail and metric panels](/images/product/dashboard-runs.png)
 
-## Organizations and workspaces
+Runs is the broadest view of a project. Filter by project, status, search text,
+and sort mode, then select runs from the rail. Toggle between **Panels** (run
+selector plus chart canvas) and **Table** (a flat, sortable run list with an
+embedded comparison). The **Runs actions** menu exports selected runs as CSV
+and reviews stop requests. Save a named view when a layout should survive a
+reload. See [Runs workspace](/dashboard/runs-workspace) for panel types,
+search syntax, and shortcuts.
+
+## Switch workspaces
 
 ![Organization workspace switcher](/images/product/dashboard-org-workspaces.png)
 
-Use the top-right account menu to see the active workspace, switch
-organizations, create a personal or organization workspace, and open settings
-or billing for the current workspace.
+The top-right account menu shows the active workspace and switches between your
+personal and organization workspaces. It also creates new workspaces and opens
+the Workspace settings modal. See
+[Organizations and workspaces](/dashboard/organizations-workspaces) for
+hierarchy and roles.
 
-## Metrics
+## Chart metrics
 
 ![Metrics dashboard](/images/product/dashboard-metrics.png)
 
 Metrics is line-chart first. A metric browser on the left groups logged keys by
-namespace; the chart supports smoothing, a step/time x-axis, a linear/log
-y-axis, grouped averages, and a series table you can show, hide, or pin from.
-Chart export downloads the plotted CSV sample or an SVG image of the visible
+namespace. The chart supports smoothing, a step/time x-axis, a linear/log
+y-axis, and grouped averages, with a series table for showing, hiding, and
+pinning runs. Export downloads the plotted CSV sample or an SVG of the visible
 graph.
 
-## Run Detail
+## Inspect one run
 
 ![Run detail page](/images/product/dashboard-run-detail.png)
 
-Run Detail focuses on one run. A KPI cockpit summarizes step progress, the
-headline eval metric, loss, throughput, GPU utilization, and ETA, with header
-actions to fork a checkpoint, jump to Compare, or request a stop. Its tabs cover
-the overview, metrics, artifacts, logs, config and source context, and lineage.
+Run Detail focuses on a single run. A KPI cockpit summarizes step progress, the
+headline eval metric, loss, throughput, GPU util, and ETA. Header actions fork
+the newest checkpoint, jump to Compare, or request a stop. Tabs cover the
+overview, metrics, artifacts, logs, config and source context, and lineage.
 
-![Run Detail files evidence](/images/product/dashboard-artifacts-evidence.png)
+![Run Detail Artifacts tab showing checkpoints and evaluation evidence](/images/product/dashboard-artifacts-evidence.png)
 
-The Artifacts tab shows checkpoints, rich objects, evaluation bundles, media, and
-artifact metadata for the selected run without loading those payloads on the
-initial summary view.
+The Artifacts tab lists checkpoints, rich objects, evaluation bundles, media,
+and artifact metadata without loading those payloads on the initial summary
+view.
 
-## Compare
+## Compare candidates
 
-![Compare dashboard](/images/product/dashboard-compare.png)
+![Compare view embedded in the Runs Table](/images/product/dashboard-compare.png)
 
 Comparison lives at the top of the Runs **Table** view. Select two or more runs
-in the table and they render side by side with a reference run, goal-aware
-deltas, and addable metric columns. Use it after the Runs workspace has narrowed
-the candidate set.
+and they render side by side with a reference run, goal-aware deltas, and
+addable metric columns. Use it after Runs has narrowed the candidate set.
 
-## Distributed and Insights
+## Analyze distributed runs and Insights
 
 ![Distributed dashboard](/images/product/dashboard-distributed.png)
 
@@ -93,11 +93,11 @@ coverage, per-rank snapshots, heatmaps, and outliers from metrics logged with
 ![Insights dashboard](/images/product/dashboard-insights.png)
 
 Insights has two views — **GPU & System** usage and **Run Analysis** (grouped
-reducers, hyperparameter scatter, k-means clusters, evaluation summary cards, and
-parallel-coordinate sweep traces). Both operate over the loaded or selected run
-summaries.
+reducers, hyperparameter scatter, k-means clusters, evaluation summary cards,
+and parallel-coordinate sweep traces). Both operate over the loaded or selected
+run summaries.
 
-## Checkpoint forks and lineage
+## Fork checkpoints and trace lineage
 
 ![Checkpoint fork modal](/images/product/dashboard-checkpoint-fork.png)
 
@@ -108,22 +108,29 @@ to that run and logs new data.
 ![Lineage graph showing a forked child run with no direct children yet](/images/product/dashboard-lineage-graph.png)
 
 The Lineage tab shows the selected run's direct parent, checkpoint, and bounded
-child context. The captured state is a forked child run with no direct children
-yet.
+child context.
 
-## Artifacts
+## Browse artifacts
 
-![Artifacts workspace](/images/product/dashboard-artifacts-browser.png)
+![Artifacts workspace showing a versioned model collection with aliases, manifest, and lineage](/images/product/dashboard-artifacts-browser.png)
 
 The Artifacts workspace shows versioned collections first: aliases such as
 `latest` and `best`, manifest entries, retention/delete controls for owners and
-admins, and bounded producer/consumer lineage. Raw run files and media remain
-available through the Run Detail Artifacts tab so legacy evidence stays separate
-from the version registry.
+admins, and bounded producer/consumer lineage. Raw run files and media stay in
+the Run Detail Artifacts tab.
 
-## Reports
+## Write reports
 
 ![Reports editor](/images/product/dashboard-reports-editor.png)
 
-Reports are block-based writeups with live panel grids, share links, Markdown
-export, and legacy LLM-summary rendering for existing report documents.
+Reports are block-based writeups with live panel grids, share links, and
+Markdown export. Start one from the Reports surface with **New report** or
+**Start from template**.
+
+## Next steps
+
+- [Runs workspace](/dashboard/runs-workspace)
+- [Metrics and charts](/dashboard/metrics-charts)
+- [Run Detail](/dashboard/run-detail)
+- [Compare runs](/dashboard/compare-runs)
+- [Organizations and workspaces](/dashboard/organizations-workspaces)

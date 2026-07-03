@@ -3,13 +3,62 @@ title: "Use InstantML with agents"
 description: "Expose InstantML runs, metrics, comparisons, exports, and reports to MCP-compatible agents."
 ---
 
-# Use InstantML with agents
+Connect an MCP-compatible agent to InstantML so it can inspect runs, fetch bounded metric series, compare selected runs, export evidence, and draft reports through the same API your SDK and dashboard use.
 
-InstantML ships an MCP server that lets compatible agents inspect runs, fetch
-bounded metric series, compare selected runs, export evidence, and draft
-reports through the same InstantML API your SDK and dashboard use.
+## Tool summary
 
-## Hosted server
+The MCP server exposes two groups of tools. Run tools read run, metric, and artifact data; report tools create and manage reports.
+
+### Run tools
+
+| Tool | Use it for |
+| --- | --- |
+| `tracker.list_projects` | Discover projects visible to the API key before choosing a run-search scope. |
+| `tracker.list_runs` | Search and page run summaries by project, query, status, metric sort, and cursor. |
+| `tracker.compare_matching_runs` | Rank matching runs server-side and return candidate evidence plus optional side-by-side difference rows. |
+| `tracker.get_run` | Fetch one run summary by UUID. |
+| `tracker.list_metrics` | Discover metric keys and latest/min/max/mean summary values for a run. |
+| `tracker.query_metrics` | Fetch bounded metric points for one run and one metric key. |
+| `tracker.get_metric_series_batch` | Fetch one metric across many run IDs through the batched series endpoint. |
+| `tracker.compare_runs` | Compare up to 50 already selected runs by config, metadata, tags, attributes, and metric summaries. |
+| `tracker.get_run_lineage` | Inspect direct parent/fork lineage for a run. |
+| `tracker.list_run_artifacts` | List raw artifact metadata attached to a run. |
+| `tracker.list_run_artifact_edges` | List versioned artifact input/output edges for a run. |
+| `tracker.list_artifact_collections` | Discover versioned artifact collections, including checkpoint collections via `type: "checkpoint"`. |
+| `tracker.get_artifact_version` | Fetch one versioned artifact by UUID. |
+| `tracker.list_artifact_versions` | List available versions in a collection. |
+| `tracker.resolve_artifact_version` | Resolve references such as `policy:latest` or `checkpoint/policy:best`. |
+| `tracker.list_artifact_manifest` | Page manifest entries for a versioned artifact. |
+| `tracker.get_artifact_lineage` | Inspect runs that produced or consumed a versioned artifact. |
+| `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV. |
+| `tracker.workspace_view_data` | Resolve a portable dashboard view plus explicit run IDs into bounded panel data. |
+
+### Report tools
+
+| Tool | Use it for |
+| --- | --- |
+| `tracker.list_reports` | List reports in the workspace. |
+| `tracker.get_report` | Read one report, including its ordered block body. |
+| `tracker.create_report` | Create a block-based report. |
+| `tracker.update_report` | Patch a report title, description, visibility, or blocks. |
+| `tracker.delete_report` | Delete a report. |
+| `tracker.export_report_markdown` | Export a report as Markdown text, optionally using a share token. |
+| `tracker.share_report` | Generate a public share token for a report. |
+| `tracker.report_block_schema` | Fetch the canonical block and panel schema example. |
+| `tracker.list_org_panels` | Discover existing report panel specs to reuse. |
+| `tracker.add_panel_to_report` | Append a panel to an existing report panel grid. |
+
+## Prerequisites
+
+- An InstantML API key with `export:read` for run-analysis tools.
+- A workspace-scoped key when the agent should create or update reports across the workspace.
+- Node.js only when your client needs the `mcp-remote` bridge shown below.
+
+<Warning>
+Keep API keys out of checked-in config files. Prefer environment variables for shared workspaces or team repositories.
+</Warning>
+
+## Connect to the hosted server
 
 Use the hosted MCP server for the fastest setup:
 
@@ -17,55 +66,34 @@ Use the hosted MCP server for the fastest setup:
 https://mcp.instantml.ai/mcp
 ```
 
-You do not need to deploy your own InstantML backend, clone the InstantML
-repository, or keep a local MCP process running. Your agent connects over
-Streamable HTTP and sends an InstantML API key in the `Authorization` header.
+You do not need to deploy your own InstantML backend, clone the InstantML repository, or keep a local MCP process running. Your agent connects over Streamable HTTP and sends an InstantML API key in the `Authorization` header.
 
-## Fastest setup
+## Set up from the dashboard
 
 1. Open the InstantML dashboard and go to **API**.
 2. Create an API key named `Agent MCP key`.
-3. Copy the setup snippet for Claude Code, Codex, Cursor, VS Code, or a local
-   bridge from the **Connect Agent** panel.
-4. Restart or reconnect the client, then ask it to list your latest InstantML
-   runs.
+3. Copy the setup snippet for Claude Code, Codex, Cursor, VS Code, or a local bridge from the **Connect Agent** panel.
+4. Restart or reconnect the client, then ask it to list your latest InstantML runs.
 
-This dashboard flow is the preferred setup because it keeps key creation and
-agent configuration in one place. Use the manual snippets below when setting up
-an agent before opening the dashboard.
+This dashboard flow keeps key creation and agent configuration in one place. Use the manual snippets below when setting up an agent before opening the dashboard.
 
-## Browser sign-in (OAuth, preview)
+## Sign in through the browser (OAuth, preview)
 
-OAuth-capable clients can connect by URL alone and sign in through the browser
-instead of pasting a key. In the **Connect Agent** panel, choose **Browser
-sign-in** and copy the tokenless snippet, for example:
+OAuth-capable clients can connect by URL alone and sign in through the browser instead of pasting a key. In the **Connect Agent** panel, choose **Browser sign-in** and copy the tokenless snippet, for example:
 
 ```bash
 claude mcp add --transport http instantml "https://mcp.instantml.ai/mcp?org_id=<workspace-id>"
 ```
 
-On first connect the client discovers the InstantML authorization server, opens
-a browser for you to approve access for your organization, and receives a
-short-lived token — there is no key to copy, rotate, or commit. Clients without
-OAuth support keep using the API-key snippets below.
+On first connect the client discovers the InstantML authorization server, opens a browser for you to approve access for your workspace, and receives a short-lived token — there is no key to copy, rotate, or commit. Clients without OAuth support keep using the API-key snippets below.
 
-Browser sign-in is scoped to the workspace selected in the dashboard when you
-copy the snippet. If you belong to multiple workspaces, add one MCP server per
-workspace rather than using one connection for all orgs.
+Browser sign-in is scoped to the workspace selected in the dashboard when you copy the snippet. If you belong to multiple workspaces, add one MCP server per workspace rather than using one connection for all of them.
 
-This path is in preview: when a workspace has not enabled OAuth, use an API key.
+<Note>
+Browser sign-in is in preview. When a workspace has not enabled OAuth, use an API key instead.
+</Note>
 
-## Prerequisites
-
-- An InstantML API key with `export:read` for run-analysis tools.
-- An org-scoped key when the agent should create or update reports across the
-  workspace.
-- Node.js only when your client needs the `mcp-remote` bridge shown below.
-
-Keep API keys out of checked-in config files. Prefer environment variables for
-shared workspaces or team repositories.
-
-## Claude Code
+## Connect Claude Code
 
 Register the hosted MCP server from your terminal:
 
@@ -74,11 +102,9 @@ claude mcp add --transport http instantml https://mcp.instantml.ai/mcp \
   --header "Authorization: Bearer instantml_..."
 ```
 
-Add `--scope user` to make the server available across all Claude Code
-projects. After adding the server, run `/mcp` inside Claude Code to confirm the
-server is connected.
+Add `--scope user` to make the server available across all Claude Code projects. After adding the server, run `/mcp` inside Claude Code to confirm the server is connected.
 
-## Codex
+## Connect Codex
 
 Export your InstantML API key:
 
@@ -94,7 +120,7 @@ url = "https://mcp.instantml.ai/mcp"
 bearer_token_env_var = "INSTANTML_API_KEY"
 ```
 
-## Cursor
+## Connect Cursor
 
 Open Cursor Settings, go to Tools and MCP, then add a custom MCP server:
 
@@ -115,7 +141,7 @@ Open Cursor Settings, go to Tools and MCP, then add a custom MCP server:
 
 Restart Cursor after saving the config.
 
-## VS Code
+## Connect VS Code
 
 Create or update `.vscode/mcp.json` in your workspace:
 
@@ -133,13 +159,11 @@ Create or update `.vscode/mcp.json` in your workspace:
 }
 ```
 
-Open the Command Palette and run `MCP: List Servers`, then start the InstantML
-server.
+Open the Command Palette and run `MCP: List Servers`, then start the InstantML server.
 
-## Claude Desktop and local-only clients
+## Bridge Claude Desktop and local-only clients
 
-Some clients launch local stdio servers but do not yet support authenticated
-remote MCP headers. Use `mcp-remote` as a local bridge:
+Some clients launch local stdio servers but do not yet support authenticated remote MCP headers. Use `mcp-remote` as a local bridge:
 
 ```json
 {
@@ -161,10 +185,9 @@ remote MCP headers. Use `mcp-remote` as a local bridge:
 }
 ```
 
-Restart the client after saving the config. The bridge runs locally and forwards
-requests to the hosted MCP server with your bearer token.
+Restart the client after saving the config. The bridge runs locally and forwards requests to the hosted MCP server with your bearer token.
 
-## Other MCP clients
+## Configure other MCP clients
 
 Use these connection settings:
 
@@ -191,29 +214,64 @@ Ask your agent:
 List my InstantML projects and show the latest five runs.
 ```
 
-The agent should discover the InstantML tools, call `tracker.list_projects` if
-it needs to choose a project, and then call `tracker.list_runs`. For run
-analysis, try:
+The agent should discover the InstantML tools, call `tracker.list_projects` if it needs to choose a project, and then call `tracker.list_runs`.
+
+## Guide the agent's workflow
+
+Ask the agent to narrow candidates before fetching detailed data:
 
 ```text
 Find the best finished cartpole runs tagged baseline, compare the top five by
 eval/return_mean, and summarize the config differences.
 ```
 
-## Troubleshooting
+The agent should usually call:
+
+1. `tracker.list_projects` if the project name is unknown.
+2. `tracker.list_runs` with `project`, `query`, `sort_by: "metric-best"`, and `metric_key`.
+3. `tracker.list_metrics` if the metric key is unknown.
+4. `tracker.get_metric_series_batch` for bounded curves across the selected run IDs.
+5. `tracker.compare_runs` after narrowing to at most 50 run IDs.
+6. `tracker.export_runs` when you need portable evidence for a notebook or spreadsheet.
+
+## Search with run queries
+
+`tracker.list_runs` uses the same run search language as the dashboard:
+
+```text
+tag:baseline status:finished
+notes:"reward stability" -tag:debug
+(tag:baseline OR tag:candidate) config:lr
+re:/seed-(13|14)/
+```
+
+Bare text, such as `seed 13 reward`, searches name, tags, notes, config, metadata, status, project, and ID as implicit `AND` terms.
+
+## Stay inside MCP limits
+
+InstantML keeps MCP reads bounded:
+
+- Run summary pages are capped at 1,000 rows.
+- Batched metric series accepts up to 2,000 run IDs and caps total returned points.
+- Selected-run comparison accepts up to 50 run IDs and 5,000 compare rows.
+- Workspace-view data accepts up to 100 run IDs, 50 panels, 500 points per series, and 50,000 total metric points.
+- Selected export accepts up to 100 exact run IDs.
+
+If an agent needs broad project analysis, ask it to start with summaries and metric aggregates, then fetch detailed series only for the candidate runs it selects.
+
+## Troubleshoot the connection
 
 | Symptom | Fix |
 | --- | --- |
 | The server is not listed | Restart the client and check that the MCP config file is in the right location. |
 | `401` or authentication errors | Check that the `Authorization` header starts with `Bearer ` and uses a valid InstantML API key. |
-| The server connects but run tools fail | Use a key with `export:read`; use an org-scoped key for cross-workspace report actions. |
+| The server connects but run tools fail | Use a key with `export:read`; use a workspace-scoped key for cross-workspace report actions. |
 | The client cannot connect to a remote URL | Use the `mcp-remote` bridge or the local preview fallback below. |
 | Tools return too much data | Ask the agent to start with summaries, then fetch bounded series only for selected runs. |
 
-## Local preview fallback
+## Run the server locally (preview fallback)
 
-During internal development, you can run the MCP server from a repository
-checkout instead of using the hosted endpoint:
+During internal development, you can run the MCP server from a repository checkout instead of using the hosted endpoint:
 
 ```json
 {
@@ -231,97 +289,12 @@ checkout instead of using the hosted endpoint:
 }
 ```
 
-The local fallback runs next to the agent over stdio. `INSTANTML_API_URL`
-defaults to `https://api.instantml.ai`, and `INSTANTML_WEB_URL` defaults to
-`https://instantml.ai` for report share links, so consumers normally only need
-to set `INSTANTML_API_KEY`.
+The local fallback runs next to the agent over stdio. `INSTANTML_API_URL` defaults to `https://api.instantml.ai`, and `INSTANTML_WEB_URL` defaults to `https://instantml.ai` for report share links, so consumers normally only need to set `INSTANTML_API_KEY`.
 
-## Available run tools
+## Next steps
 
-| Tool | Use it for |
-| --- | --- |
-| `tracker.list_projects` | Discover projects visible to the API key before choosing a run-search scope. |
-| `tracker.list_runs` | Search and page run summaries by project, query, status, metric sort, and cursor. |
-| `tracker.compare_matching_runs` | Rank matching runs server-side and return candidate evidence plus optional side-by-side difference rows. |
-| `tracker.get_run` | Fetch one run summary by UUID. |
-| `tracker.list_metrics` | Discover metric keys and latest/min/max/mean summary values for a run. |
-| `tracker.query_metrics` | Fetch bounded metric points for one run and one metric key. |
-| `tracker.get_metric_series_batch` | Fetch one metric across many run IDs through the batched series endpoint. |
-| `tracker.compare_runs` | Compare up to 50 already selected runs by config, metadata, tags, attributes, and metric summaries. |
-| `tracker.get_run_lineage` | Inspect direct parent/fork lineage for a run. |
-| `tracker.list_run_artifacts` | List raw artifact metadata attached to a run. |
-| `tracker.list_run_artifact_edges` | List versioned artifact input/output edges for a run. |
-| `tracker.list_artifact_collections` | Discover versioned artifact collections, including checkpoint collections via `type: "checkpoint"`. |
-| `tracker.get_artifact_version` | Fetch one versioned artifact by UUID. |
-| `tracker.list_artifact_versions` | List available versions in a collection. |
-| `tracker.resolve_artifact_version` | Resolve references such as `policy:latest` or `checkpoint/policy:best`. |
-| `tracker.list_artifact_manifest` | Page manifest entries for a versioned artifact. |
-| `tracker.get_artifact_lineage` | Inspect runs that produced or consumed a versioned artifact. |
-| `tracker.export_runs` | Export selected or filtered runs as bounded JSON or CSV. |
-| `tracker.workspace_view_data` | Resolve a portable dashboard view plus explicit run IDs into bounded panel data. |
-
-## Available report tools
-
-| Tool | Use it for |
-| --- | --- |
-| `tracker.list_reports` | List reports in the organization. |
-| `tracker.get_report` | Read one report, including its ordered block body. |
-| `tracker.create_report` | Create a block-based report. |
-| `tracker.update_report` | Patch a report title, description, visibility, or blocks. |
-| `tracker.delete_report` | Delete a report. |
-| `tracker.export_report_markdown` | Export a report as Markdown text, optionally using a share token. |
-| `tracker.share_report` | Generate a public share token for a report. |
-| `tracker.report_block_schema` | Fetch the canonical block and panel schema example. |
-| `tracker.list_org_panels` | Discover existing report panel specs to reuse. |
-| `tracker.add_panel_to_report` | Append a panel to an existing report panel grid. |
-
-## Recommended workflow
-
-Ask the agent to narrow candidates before fetching detailed data:
-
-```text
-Find the best finished cartpole runs tagged baseline, compare the top five by
-eval/return_mean, and summarize the config differences.
-```
-
-The agent should usually call:
-
-1. `tracker.list_projects` if the project name is unknown.
-2. `tracker.list_runs` with `project`, `query`, `sort_by: "metric-best"`, and
-   `metric_key`.
-3. `tracker.list_metrics` if the metric key is unknown.
-4. `tracker.get_metric_series_batch` for bounded curves across the selected run
-   IDs.
-5. `tracker.compare_runs` after narrowing to at most 50 run IDs.
-6. `tracker.export_runs` when you need portable evidence for a notebook or
-   spreadsheet.
-
-## Search examples
-
-`tracker.list_runs` uses the same run search language as the dashboard:
-
-```text
-tag:baseline status:finished
-notes:"reward stability" -tag:debug
-(tag:baseline OR tag:candidate) config:lr
-re:/seed-(13|14)/
-```
-
-Bare text, such as `seed 13 reward`, searches name, tags, notes, config,
-metadata, status, project, and ID as implicit `AND` terms.
-
-## Limits
-
-InstantML keeps MCP reads bounded:
-
-- Run summary pages are capped at 1,000 rows.
-- Batched metric series accepts up to 2,000 run IDs and caps total returned
-  points.
-- Selected-run comparison accepts up to 50 run IDs and 5,000 compare rows.
-- Workspace-view data accepts up to 100 run IDs, 50 panels, 500 points per
-  series, and 50,000 total metric points.
-- Selected export accepts up to 100 exact run IDs.
-
-If an agent needs broad project analysis, ask it to start with summaries and
-metric aggregates, then fetch detailed series only for the candidate runs it
-selects.
+- [Create and manage API keys](/dashboard/settings-api-keys)
+- [Build reports in the dashboard](/dashboard/reports)
+- [Query runs, metrics, and objects from Python](/sdk/querying-data)
+- [API authentication and scopes](/api/authentication)
+- [Reports API reference](/api/reports)

@@ -3,34 +3,38 @@ title: "Artifacts API"
 description: "Create artifact metadata, upload bytes, list artifacts, and download stored bytes."
 ---
 
-# Artifacts API
+Attach files, checkpoints, rollouts, and media evidence to a run — as
+metadata-only external references, server-managed stored bytes, or immutable
+versioned artifacts with manifests, aliases, and lineage.
 
-Artifacts attach files, checkpoints, rollouts, and media evidence to a run.
-They can be metadata-only external references or server-managed stored bytes.
-Rich media objects are modeled through object APIs that link to stored artifact
-bytes; reports are a separate API surface. Raw artifact routes remain available
-for existing file/media/checkpoint workflows. Versioned artifact routes add
-immutable manifests, aliases, and lineage for reproducible datasets, models, and
-checkpoints.
+Authenticate with an `Authorization: Bearer instantml_...` API key or a browser
+session. Reads need the `export:read` scope; raw and versioned uploads need
+`artifacts:write`; alias, retention, and delete routes need `artifacts:manage`
+or an owner/admin browser session.
+
+<Note>
+Rich media objects are modeled through the [objects API](/api/attributes-objects)
+and link to stored artifact bytes; reports are a separate API surface. Raw
+artifact routes remain available for existing file/media/checkpoint workflows.
+</Note>
 
 ## Create metadata
 
-```http
-POST /api/runs/{run_id}/artifacts
-Authorization: Bearer instantml_...
-Content-Type: application/json
-
-{
-  "type": "checkpoint",
-  "name": "policy.pt",
-  "uri": "s3://bucket/policy.pt",
-  "step": 1,
-  "size_bytes": 12345,
-  "sha256": "hex",
-  "mime_type": "application/octet-stream",
-  "metadata": {},
-  "path": "policy.pt"
-}
+```bash
+curl -X POST https://api.instantml.ai/api/runs/{run_id}/artifacts \
+  -H "Authorization: Bearer instantml_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "checkpoint",
+    "name": "policy.pt",
+    "uri": "s3://bucket/policy.pt",
+    "step": 1,
+    "size_bytes": 12345,
+    "sha256": "hex",
+    "mime_type": "application/octet-stream",
+    "metadata": {},
+    "path": "policy.pt"
+  }'
 ```
 
 Requires `artifacts:write` or a writable browser session.
@@ -84,8 +88,7 @@ GET /api/runs/{run_id}/artifacts?limit=100
 Authorization: Bearer instantml_...
 ```
 
-Requires tenant read access. API keys need `export:read`; browser sessions need
-viewer or higher role.
+API keys need `export:read`; browser sessions need viewer or higher role.
 
 The limit caps at 1,000.
 
@@ -112,7 +115,7 @@ backend streams the full file and ignores `Range`.
 
 External metadata-only artifact rows are not downloadable through this endpoint.
 
-## Versioned artifacts
+## Create versioned artifacts
 
 Create versioned artifacts through upload sessions. The SDK uses this route for
 `VersionedArtifact`; direct API callers should send the same manifest fields.
@@ -175,32 +178,54 @@ a stable `vN` label, moves `latest`, applies requested custom aliases such as
 client-computed manifest digest used for reproducibility and deduplication; the
 API does not re-download hosted objects on the request path just to recompute it.
 
-Useful read and management routes:
+Use `POST /api/artifact-uploads/{upload_session_id}/abort` to discard an
+unfinished session and `POST /api/artifact-uploads/{upload_session_id}/renew`
+to refresh expiring upload targets.
+
+## Read and manage versions
 
 ```http
 GET /api/artifact-collections?project=cartpole&type=model&q=policy
+GET /api/artifact-collections/{collection_id}
 GET /api/artifact-collections/{collection_id}/versions
 GET /api/artifact-versions/resolve?ref=policy-checkpoints:best&type=model&project=cartpole
+GET /api/artifact-versions/{version_id}
 GET /api/artifact-versions/{version_id}/manifest
 GET /api/artifact-versions/{version_id}/lineage
 GET /api/artifact-entries/{entry_id}/download
-PUT /api/artifact-collections/{collection_id}/aliases/best
+PUT /api/artifact-collections/{collection_id}/aliases/{alias}
+DELETE /api/artifact-collections/{collection_id}/aliases/{alias}
 PATCH /api/artifact-versions/{version_id}/retention
 DELETE /api/artifact-versions/{version_id}
 POST /api/runs/{run_id}/artifact-inputs
 ```
 
-Reads require tenant read access. Uploads require `artifacts:write`; alias,
-retention, and delete routes require `artifacts:manage` or an owner/admin
-browser session. Delete is a soft-delete in this slice; soft-deleted or expired
-versions are hidden from resolution, manifest, lineage, and download reads.
-Physical byte cleanup is handled by later retention/garbage-collection work.
-Alias move/delete request bodies must include `confirm` equal to the alias and a
-non-empty `reason`. Retention and version-delete request bodies must include
-`confirm` equal to the version id and a non-empty `reason`.
+Reads require `export:read` or a browser session. Uploads require
+`artifacts:write`; alias, retention, and delete routes require
+`artifacts:manage` or an owner/admin browser session.
+`POST /api/runs/{run_id}/artifact-inputs` records an input lineage edge from a
+consumed version to the run.
 
-## UI behavior
+Delete is a soft-delete in this slice; soft-deleted or expired versions are
+hidden from resolution, manifest, lineage, and download reads. Physical byte
+cleanup is handled by later retention/garbage-collection work.
+
+<Warning>
+Alias move/delete request bodies must include `confirm` equal to the alias and
+a non-empty `reason`; retention and version-delete bodies must include
+`confirm` equal to the version ID and a non-empty `reason`.
+</Warning>
+
+## Preview artifacts in the dashboard
 
 Run Detail and Compare preview safe same-origin images, audio, and video when
 stored bytes and supported MIME types are available. Unsupported artifacts still
 show metadata and copy/download actions when applicable.
+
+## Next steps
+
+- [Version checkpoints from the SDK](/sdk/artifacts-checkpoints)
+- [Browse artifacts and files in the dashboard](/dashboard/artifacts-files)
+- [Track datasets and models](/dashboard/datasets)
+- [Log rich media objects](/api/attributes-objects)
+- [Handle errors, pagination, and limits](/api/errors-and-limits)

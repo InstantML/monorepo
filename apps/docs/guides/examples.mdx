@@ -3,27 +3,27 @@ title: "Examples"
 description: "Run bundled training examples against hosted InstantML and know what to inspect."
 ---
 
-# Examples
+Run the companion examples to exercise different training-loop shapes against hosted InstantML and confirm what lands in the dashboard.
 
-The companion examples exercise different training-loop shapes. For hosted SaaS
-usage, authenticate once:
+## Prerequisites
+
+- Authenticate once with the CLI:
 
 ```bash
 instantml login
 ```
 
-For CI or remote jobs that cannot use browser login, set an SDK key instead:
+- For CI or remote jobs that cannot use browser login, set an SDK key instead:
 
 ```bash
 export INSTANTML_API_KEY="instantml_..."
 ```
 
-The examples use the same public Python SDK calls that production training
-scripts use. When an example accepts `--server`, pass the hosted API URL.
+The examples use the same public Python SDK calls that production training scripts use. When an example accepts `--server`, pass the hosted API URL.
 
-## Iris classification
+## Classify Iris species
 
-Real-data NumPy softmax classifier on the UCI Iris dataset.
+Train a real-data NumPy softmax classifier on the UCI Iris dataset.
 
 ```bash
 PYTHONPATH=packages/python-sdk:examples/iris-classification \
@@ -39,9 +39,9 @@ What to inspect:
 - Config rows for seed, learning rate, and L2.
 - Uploaded artifacts: dataset profile, model JSON, predictions, confusion matrix.
 
-## Checkpoints
+## Save and resume checkpoints
 
-Tiny deterministic checkpoint workflow with upload and resume.
+Run a tiny deterministic checkpoint workflow with upload and resume.
 
 ```bash
 PYTHONPATH=packages/python-sdk \
@@ -52,12 +52,11 @@ PYTHONPATH=packages/python-sdk \
   --checkpoint-every 4
 ```
 
-Open Run Detail and inspect checkpoint artifacts. The dashboard should expose
-download and resume-code actions.
+Open Run Detail and inspect checkpoint artifacts. The dashboard should expose download and resume-code actions.
 
-## RL CartPole-style
+## Log RL-style metrics
 
-Deterministic RL-style metrics without requiring a simulator dependency.
+Generate deterministic CartPole-style RL metrics without a simulator dependency.
 
 ```bash
 PYTHONPATH=packages/python-sdk:examples/rl-cartpole \
@@ -67,9 +66,9 @@ PYTHONPATH=packages/python-sdk:examples/rl-cartpole \
 
 Use this example to test scalar logging, status transitions, and spool mode.
 
-## Q-learning gridworld
+## Train a Q-learning gridworld
 
-Small tabular Q-learning loop with checkpoints and rollout metadata.
+Run a small tabular Q-learning loop with checkpoints and rollout metadata.
 
 ```bash
 PYTHONPATH=packages/python-sdk \
@@ -77,12 +76,11 @@ PYTHONPATH=packages/python-sdk \
   --server https://api.instantml.ai
 ```
 
-Compare `train/episode_return`, `train/success_rate`, `train/td_error`, and
-`train/epsilon`.
+Compare `train/episode_return`, `train/success_rate`, `train/td_error`, and `train/epsilon`.
 
-## Contextual bandit
+## Run a contextual bandit
 
-Online bandit workflow with multiple policies and seeds.
+Exercise an online bandit workflow with multiple policies and seeds.
 
 ```bash
 PYTHONPATH=packages/python-sdk:examples/contextual-bandit \
@@ -90,13 +88,11 @@ PYTHONPATH=packages/python-sdk:examples/contextual-bandit \
   --server https://api.instantml.ai
 ```
 
-Compare `eval/return_mean`, `train/click_rate_50`,
-`train/cumulative_regret`, `eval/optimality_gap`, and
-`policy/arm_entropy`.
+Compare `eval/return_mean`, `train/click_rate_50`, `train/cumulative_regret`, `eval/optimality_gap`, and `policy/arm_entropy`.
 
-## Supervised regression
+## Sweep a supervised regression
 
-Synthetic tabular regression sweep.
+Run a synthetic tabular regression sweep across seeds.
 
 ```bash
 PYTHONPATH=packages/python-sdk:examples/supervised-regression \
@@ -106,12 +102,11 @@ PYTHONPATH=packages/python-sdk:examples/supervised-regression \
   --epochs 30
 ```
 
-Inspect train/validation loss, RMSE, MAE, R2, optimizer grad norm, and artifact
-metadata.
+Inspect train/validation loss, RMSE, MAE, R2, optimizer grad norm, and artifact metadata.
 
-## Rank insights
+## Seed Distributed and Insights
 
-Distributed-rank and sweep-analysis seed data for Distributed and Insights.
+Generate distributed-rank and sweep-analysis data for the Distributed and Insights panels.
 
 ```bash
 PYTHONPATH=packages/python-sdk \
@@ -119,13 +114,11 @@ PYTHONPATH=packages/python-sdk \
   --server https://api.instantml.ai
 ```
 
-Open the dashboard, select the generated rank-insights project, and inspect
-Distributed and Insights for rank coverage, outliers, reducer differences, and
-clustered run groups.
+Open the dashboard, select the generated rank-insights project, and inspect Distributed and Insights for rank coverage, outliers, reducer differences, and clustered run groups.
 
-## Query API
+## Query runs from a script
 
-Post-hoc SDK query workflow for notebooks and automation.
+Run the post-hoc SDK query workflow for notebooks and automation.
 
 ```bash
 PYTHONPATH=packages/python-sdk \
@@ -133,18 +126,22 @@ PYTHONPATH=packages/python-sdk \
   --server https://api.instantml.ai
 ```
 
-The script creates 20 short runs by default, then calls `Api.query_runs()`,
-`Api.iter_runs()`, `Api.query_metrics()`, `Api.query_objects(run_id=...)`, and
-`Api.object_rows()` and prints a compact JSON summary. Use `--skip-seed` to
-query an existing `query-api-demo` project.
+The script creates 20 short runs by default, then calls `Api.query_runs()`, `Api.iter_runs()`, `Api.query_metrics()`, `Api.query_objects(run_id=...)`, and `Api.object_rows()` and prints a compact JSON summary. Use `--skip-seed` to query an existing `query-api-demo` project.
 
-## What to capture
+## Verify the results
 
 After running an example, confirm:
 
 - The project appears in the project selector.
 - Runs have expected tags, notes, and config values.
-- Metrics are chartable in Runs, Metrics, and Run Detail, and visible as
-  sortable values in Compare.
+- Metrics are chartable in Runs, Metrics, and Run Detail, and visible as sortable values in Compare.
 - Artifact metadata or uploaded bytes appear in Run Detail and Artifacts.
 - Failed scripts mark runs as `failed` instead of leaving them `running`.
+
+## Next steps
+
+- [Quickstart](/quickstart)
+- [SDK examples and patterns](/sdk/examples-patterns)
+- [Query data with the SDK](/sdk/querying-data)
+- [Artifacts and checkpoints](/sdk/artifacts-checkpoints)
+- [Compare runs in the dashboard](/dashboard/compare-runs)

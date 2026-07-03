@@ -3,25 +3,27 @@ title: "Distributed and Insights"
 description: "Use research dashboards for rank-aware metrics, grouped reducers, and exploratory summaries."
 ---
 
-# Distributed and Insights
+Use Distributed and Insights when a scalar line chart is not enough: rank-aware
+views for one distributed run, and exploratory summaries over many runs.
 
-Some training workflows need more than a scalar line chart. InstantML includes
-Runs workspace panels for line, bar, value histogram, dot, scatter,
-seed/group distribution, and selected-run logged histogram timeline
-visualizations, plus research-oriented surfaces for distributed runs and
-loaded-summary analysis. These views operate on the selected run, selected
-runs, or the currently loaded summary page; they do not pull every run across
-every page in a project.
+<Note>
+Both surfaces operate on the selected run, selected runs, or the currently
+loaded summary page; they do not pull every run across every page in a
+project.
+</Note>
 
-## Distributed
+## Analyze a distributed run
 
 ![Distributed dashboard](/images/product/dashboard-distributed.png)
 
 Distributed (titled **Rank reducers**) is scoped to one selected run and is
 aimed at jobs where individual ranks or workers each log values. Pick a run and
-a rank key to see reducer lines (mean, weighted mean, median, with a p05–p95
-band), rank coverage versus the expected world size, a per-rank snapshot at the
-latest step, a deviation heatmap, and the highest-deviation rank/step outliers.
+a rank key to see:
+
+- Reducer lines — mean, weighted mean, and median, with a p05–p95 band.
+- Rank coverage versus the expected world size.
+- A per-rank snapshot at the latest step.
+- A deviation heatmap and the highest-deviation rank/step outliers.
 
 Log the inputs with rank-aware metrics:
 
@@ -34,12 +36,12 @@ run.log_rank_metrics(
 )
 ```
 
-## Insights
+## Explore run summaries in Insights
 
 ![Insights dashboard](/images/product/dashboard-insights.png)
 
-Insights has two views, switched with the toggle in its header and defaulting to
-**Run Analysis**:
+Insights has two views, switched with the toggle in its header and defaulting
+to **Run Analysis**:
 
 - **GPU & System** summarizes GPU and system-usage telemetry across the loaded
   or selected runs.
@@ -69,7 +71,7 @@ run = im.init(
 run.log_metrics({"eval/accuracy": accuracy, "train/loss": loss}, step=epoch)
 ```
 
-## When to use each surface
+## Pick the right surface
 
 | Surface | Use it when |
 | --- | --- |
@@ -79,3 +81,10 @@ run.log_metrics({"eval/accuracy": accuracy, "train/loss": loss}, step=epoch)
 | Compare (Runs → Table) | You have a candidate set and need differences |
 | Distributed | Rank/worker context matters |
 | Insights | You want exploratory summaries over the loaded/selected runs |
+
+## Next steps
+
+- [Runs workspace](/dashboard/runs-workspace)
+- [Distributed training in the SDK](/sdk/distributed-training)
+- [Metrics and charts](/dashboard/metrics-charts)
+- [Compare runs](/dashboard/compare-runs)

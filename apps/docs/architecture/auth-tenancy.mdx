@@ -1,81 +1,111 @@
 ---
 title: "Auth and tenancy"
-description: "Browser sessions, SDK API keys, organization isolation, scopes, and permission checks."
+description: "Browser sessions, SDK API keys, workspace isolation, scopes, and permission checks."
 ---
 
-# Auth and tenancy
-
-InstantML uses different credentials for humans and training jobs.
+InstantML deliberately uses different credentials for humans and training
+jobs, and both resolve to exactly one workspace before any product data is
+read or written.
 
 | Credential | Transport | Main use |
 | --- | --- | --- |
 | Browser session | `instantml_session` HttpOnly cookie | Dashboard after hosted sign-in. |
 | SDK API key | `Authorization: Bearer instantml_...` | SDK, uploader, imports, exports, and automation. |
-| Bootstrap token | `X-InstantML-Bootstrap-Token` | Operator-only bootstrap routes. |
 
-The Clerk session token never becomes the SDK credential. The SDK API key never
-depends on Clerk. Both browser sessions and API keys resolve to one
-organization before product data is read or written.
+The identity provider's session token never becomes the SDK credential, and
+the SDK API key never depends on the identity provider.
 
 ## Browser sign-in flow
 
 | Step | Caller | Action |
 | ---: | --- | --- |
-| 1 | Browser | `GET /api/auth/config` to learn available auth providers. |
-| 2 | Browser | Sign in or sign up with the configured identity provider. |
-| 3 | Browser | Submit the provider token to `POST /api/auth/clerk` or `POST /api/auth/dev/google`. |
-| 4 | Rust API | Verify the token and email. |
-| 5 | Rust API | Upsert user, organization, membership, and session records in the control-plane Postgres database. |
-| 6 | Rust API | Provision or load the tenant route. |
-| 7 | Rust API | Return the auth payload and set the browser session cookie. |
+| 1 | Browser | `GET /api/auth/config` to learn the available auth providers. |
+| 2 | Browser | Sign in or sign up with the configured identity provider (Clerk on the hosted service). |
+| 3 | Browser | Submit the provider token to `POST /api/auth/clerk`. |
+| 4 | InstantML API | Verify the token signature, issuer, and verified email. |
+| 5 | InstantML API | Upsert user, workspace, membership, and session records in the control plane. |
+| 6 | InstantML API | Provision or load the workspace's tenant route. |
+| 7 | InstantML API | Return the auth payload and set the browser session cookie. |
 
-Cookie-authenticated mutating requests validate `Origin` against allowed
+<Note>
+Local single-binary deployments run in dev auth mode instead and sign in
+through `POST /api/auth/dev/google`. That route is disabled on the hosted
+service.
+</Note>
+
+Cookie-authenticated mutating requests validate `Origin` against the allowed
 frontend origins. Bearer-token SDK requests are not origin-gated because they
 are not browser-cookie requests.
+
+The CLI signs in without a browser cookie: `instantml login` uses the
+device-code flow (`/api/auth/device-code/*`) to mint an API key after you
+confirm the code in the dashboard. See [CLI login](/sdk/cli-login).
 
 ## API-key flow
 
 | Stage | What happens |
 | --- | --- |
 | Bearer key | The request presents `Authorization: Bearer instantml_...`. |
-| Key authentication | The API authenticates the key hash. |
-| Tenant resolution | The API resolves `org_id` and any project scope attached to the key. |
-| Route lookup | The API loads the tenant route for that organization. |
+| Key authentication | The API authenticates the key hash; plaintext keys are never stored. |
+| Tenant resolution | The API resolves the workspace (`org_id`) and any project scope attached to the key. |
+| Route lookup | The API loads the tenant route for that workspace. |
 | Scope checks | The route handler enforces API-key scopes and project boundaries. |
 | Product access | The request reads or mutates tenant data. |
 
-Project-scoped API keys can only read or mutate their project. Org-scoped keys
-can access every project allowed by their scopes.
+Project-scoped API keys can only read or mutate their project. Workspace-scoped
+keys can access every project allowed by their scopes.
+
+## API-key scopes
+
+| Scope | Grants |
+| --- | --- |
+| `sdk:ingest` | Create projects and runs, log metrics, logs, attributes, and objects. |
+| `artifacts:write` | Upload artifacts and create artifact versions. |
+| `artifacts:manage` | Manage artifact collections, aliases, and retention. |
+| `imports:write` | Create import jobs. |
+| `export:read` | Read data exports. |
+| `usage:read` | Read usage summaries (unrestricted workspace keys only). |
+| `api_keys:write` | Administer API keys. |
+| `runs:control` | Record cooperative stop signals for runs. |
 
 ## Permission matrix
 
-| Route class | API key | Owner/admin session | Write/read (`member`) session | Read only (`viewer`) session |
+| Route class | API key | Owner/admin session | Member session | Viewer session |
 | --- | --- | --- | --- | --- |
-| Dashboard reads | Scope and org/project checks | Allowed | Allowed | Allowed |
+| Dashboard reads | Scope and workspace/project checks | Allowed | Allowed | Allowed |
 | Run/project mutations | `sdk:ingest` | Allowed | Allowed | Denied |
 | Artifact mutations | `artifacts:write` | Allowed | Allowed | Denied |
 | Imports | `imports:write` | Allowed | Denied | Denied |
-| Reports | Same-org key for writes; same-org key or share token for reads | Allowed | Read/write allowed | Workspace reads allowed; writes denied |
-| Usage reads | Unrestricted org key with `usage:read` | Allowed | Denied | Denied |
-| API-key admin | `api_keys:write` org key | Allowed | Denied | Denied |
+| Reports | Same-workspace key for writes; same-workspace key or share token for reads | Allowed | Read/write allowed | Reads allowed; writes denied |
+| Usage reads | Unrestricted workspace key with `usage:read` | Allowed | Denied | Denied |
+| API-key admin | `api_keys:write` workspace key | Allowed | Denied | Denied |
 | Seat and invitation admin | Not a public SDK flow | Allowed | Denied | Denied |
 
 ## Shared demo sessions
 
-The shared demo organization is read-only. Demo browser sessions can browse and
-export sample data, but they cannot create runs, mutate artifacts, import data,
-administer API keys, change seats, or write control-plane records.
+The shared demo workspace is read-only. Demo credentials are treated as
+`export:read` at authorization time, so demo sessions can browse and export
+sample data but cannot create runs, mutate artifacts, import data, administer
+API keys, or change seats.
 
 ## Tenant boundaries
 
-Every tenant-owned product row carries `org_id`. Run and project helpers reject
-rows from a different org. Project-scoped keys add a second boundary around one
-project.
+Every tenant-owned product row carries the workspace's `org_id`, and run and
+project helpers reject rows from a different workspace. Project-scoped keys
+add a second boundary around a single project.
 
 ## Sign-out and revocation
 
 `POST /api/auth/logout` revokes the current browser session and clears the
 cookie. Revoked or expired sessions are rejected on the next request.
 
-Removing a user from an organization invalidates their effective access because
-session payload creation requires an active membership.
+Removing a user from a workspace invalidates their effective access
+immediately, because building a session payload requires an active membership.
+
+## Next steps
+
+- [API authentication](/api/authentication)
+- [SDK installation and auth](/sdk/installation-auth)
+- [CLI login](/sdk/cli-login)
+- [Settings and API keys](/dashboard/settings-api-keys)
+- [Service planes](/architecture/service-planes)

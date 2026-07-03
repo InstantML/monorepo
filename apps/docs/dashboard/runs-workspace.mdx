@@ -3,18 +3,16 @@ title: "Runs workspace"
 description: "Search, select, sort, visualize, and save workspace views for many runs."
 ---
 
-# Runs workspace
+Use the Runs workspace as your daily command center: it combines a run
+selector, summary stats, visualization panels, saved views, and a bounded
+server-backed run list.
 
 ![Runs workspace](/images/product/dashboard-runs.png)
 
-The Runs workspace is the daily command center. It combines a run selector,
-summary stats, visualization panels, saved views, and a bounded server-backed
-run list.
+## Switch between Panels and Table
 
-## Panels and Table views
-
-The Runs command bar carries a metric selector, a **Panels ⇄ Table** toggle, and
-a **Runs actions** menu:
+The Runs command bar carries a metric selector, a **Panels ⇄ Table** toggle,
+and a **Runs actions** menu:
 
 - **Panels** is the run selector rail plus the chart canvas described below.
 - **Table** is a flat, sortable run list with selectable columns and pinned
@@ -24,25 +22,25 @@ a **Runs actions** menu:
 
 The chosen view is remembered per browser.
 
-## Search and sort
+## Search and sort runs
 
 Use the search field for names, tags, notes, configs, and indexed run context.
 Bare text such as `reward stability` keeps implicit-AND matching. Add precise
 filters with `tag:baseline`, `status:finished`, `name:"long context"`,
 `-tag:debug`, `(tag:baseline OR tag:candidate) notes:ablated`, or
-`re:/seed-(13|14)/`. The help icon beside the dashboard search box mirrors this
-syntax and invalid searches keep the last valid results visible.
+`re:/seed-(13|14)/`. The help icon beside the search box mirrors this syntax,
+and invalid searches keep the last valid results visible.
 
-Sort modes include:
+The **Sort** selector offers:
 
-- Newest.
-- Selected metric latest value.
-- Selected metric best value.
-- Name.
-- Status.
-- Duration.
+- **Newest**
+- **Latest metric** — the selected metric's latest value.
+- **Best metric** — the selected metric's goal-aware best value.
+- **Name**
+- **Status**
+- **Duration**
 
-## Bulk selection
+## Select runs in bulk
 
 The run rail supports:
 
@@ -56,60 +54,75 @@ fetch full metric aggregates for every selected run.
 
 ## Export selected runs
 
-Use **Export CSV** in the **Runs actions** menu to download the selected runs and
-their bounded project, metric, attribute, artifact, rich-object row, and import
-metadata. The dashboard calls `GET /api/export?format=csv&run_ids=...`, so the
-download follows the same org, project, role, and API-key rules as the API.
+Use **Export CSV** in the **Runs actions** menu to download the selected runs
+and their bounded project, metric, attribute, artifact, rich-object row, and
+import metadata. The dashboard calls `GET /api/export?format=csv&run_ids=...`,
+so the download follows the same org, project, role, and API-key rules as the
+API.
 
+<Note>
 Synchronous selected-run export is capped at 100 run IDs. If nothing is
 selected, or the selection is above the cap, the menu announces the reason
 instead of silently exporting a partial subset.
+</Note>
 
-## Panels
+## Build panels
 
-The workspace builds a capped high-signal set of line panels from logged metric
-keys. Use **Add panels** to add only the charts you need, **Rebuild layout** to
-regenerate the default set, and remove panels you don't want.
+The workspace starts with a capped, high-signal set of line panels built from
+logged metric keys. Manage the set with three controls:
 
-Current visualization panel types:
+- **Add panels** — the plus-icon button in the canvas toolbar. It opens a
+  drawer where you add only the charts you need.
+- **Rebuild layout** — a refresh-icon button that regenerates the default panel
+  set from logged metrics. It appears only after you have customized the
+  layout.
+- Per-panel remove, so you can drop charts you don't want.
 
-- Line panels for metric series.
-- Bar panels for latest values.
-- Value histogram panels for latest-value distributions across the current run
-  set.
-- Dot panels for point-style comparisons.
-- Scatter panels for two numeric loaded-run fields, such as a config value
-  versus a best metric aggregate.
-- Distribution panels for visible-sample seed or ablation stability by a
-  categorical config, metadata, status, or first-tag field. Small groups render
-  strip points plus a median; larger groups add compact box summaries.
-- Logged histogram timeline panels for one primary run and one explicit
-  histogram object key. These use `GET /api/runs/:id/objects?kind=histogram`
-  with a key filter and render the latest 100 frames as a compatible-bin
-  heatmap or a selected-frame fallback when bins changed.
-  Add them by typing the histogram object key; metric rows are only suggestions
-  when a scalar metric happens to share the same key.
+The workspace supports seven panel types:
+
+| Panel type | Data source | Shows |
+| --- | --- | --- |
+| Line | Selected-run metric series | A metric over step or time |
+| Bar | Loaded run summaries | Latest values ranked across runs |
+| Value histogram | Loaded run summaries | The spread of latest values across the current run set |
+| Dot plot | Loaded run summaries | Point-style comparisons that preserve run identity |
+| Scatter | Loaded run summaries | Two numeric run fields, such as a config value versus a best metric aggregate |
+| Distribution | Loaded run summaries | Seed or ablation stability grouped by a categorical config, metadata, status, or first-tag field |
+| Logged histogram timeline | One selected run's histogram objects | A distribution evolving over steps |
+
+Two panel types have extra behavior worth knowing:
+
+- **Distribution** — small groups render strip points plus a median; larger
+  groups add compact box summaries.
+- **Logged histogram timeline** — takes one primary run and one explicit
+  histogram object key. It uses `GET /api/runs/:id/objects?kind=histogram`
+  with a key filter and renders the latest 100 frames as a compatible-bin
+  heatmap, or a selected-frame fallback when bins changed. Add one by typing
+  the histogram object key; metric rows are only suggestions when a scalar
+  metric happens to share the same key.
 
 ## Choose the right graph
 
-Most Runs workspace panels come from scalar metrics logged with
-`run.log_metrics(...)`. Logged histogram timeline panels are the rich-object
-exception: they read selected-run histogram objects logged with
-`run.log_objects(...)`.
+Most panels come from scalar metrics logged with `run.log_metrics(...)`.
+Logged histogram timelines are the rich-object exception: they read
+selected-run histogram objects logged with `run.log_objects(...)`.
 
 | Graph | Log this | Use when |
 | --- | --- | --- |
 | Line | Scalar metric per step, such as `train/loss` | Training dynamics, smoothing, and step/time inspection. |
-| Bar / dot / value histogram | Same scalar metric key across runs | Latest-value comparison: bars rank, dots preserve run identity, histograms show spread. |
+| Bar / dot plot / value histogram | Same scalar metric key across runs | Latest-value comparison: bars rank, dots preserve run identity, histograms show spread. |
 | Scatter | Two numeric summary fields | Tradeoffs such as learning rate vs accuracy, duration vs score, or loss vs F1. |
 | Distribution | Scalar outcome plus group and seed config | Seed variance or ablation stability by variant, method, dataset, model, status, metadata, or tag. |
 | Logged histogram timeline | Histogram object key plus shared bins | One selected run's confidence, activation, reward, latency, or calibration distribution over time. |
 | Parallel coordinates | Numeric config plus metric summaries | HPO/sweep tradeoffs in Insights, not saved Runs workspace panels. |
 
-For chart-friendly runs, keep metric keys stable and namespace them by purpose:
-`train/loss`, `eval/accuracy`, `eval/return_mean`, `optimizer/lr`, or
-`system/gpu_utilization`. Put repeatable experiment settings in `config`, such
-as `seed`, `variant`, `learning_rate`, `batch_size`, `model`, and `dataset`.
+To keep runs chart-friendly:
+
+- Keep metric keys stable and namespace them by purpose: `train/loss`,
+  `eval/accuracy`, `eval/return_mean`, `optimizer/lr`,
+  `system/gpu_utilization`.
+- Put repeatable experiment settings in `config`: `seed`, `variant`,
+  `learning_rate`, `batch_size`, `model`, `dataset`.
 
 ```python
 import instantml as im
@@ -137,11 +150,15 @@ run.log_objects(
 )
 ```
 
-Use `run.log_classification_eval(...)` instead of screenshot artifacts for
-binary classification evals. Run Detail renders the typed PR/ROC curves,
-confusion matrix, per-class metrics, and optional prediction rows.
-Keep logging scalar eval metrics such as accuracy, F1, AUC, or loss when you
-also want sorting, scatter, distribution, or comparison columns.
+<Tip>
+For binary classification evals, use `run.log_classification_eval(...)` instead
+of screenshot artifacts — Run Detail renders the typed PR/ROC curves, confusion
+matrix, per-class metrics, and optional prediction rows. Keep logging scalar
+eval metrics such as accuracy, F1, AUC, or loss when you also want sorting,
+scatter, distribution, or comparison columns.
+</Tip>
+
+## Know what each panel fetches
 
 Line panels load selected-run series through bounded chunked requests. Dense
 series render paths on canvas while preserving axes, legends, hover readouts,
@@ -149,15 +166,18 @@ raw values, and smoothed values when smoothing is active. Large comparisons use
 the stable chart palette first, then dashed line styles after the palette wraps
 so overlapping runs stay distinguishable.
 
-Scatter, distribution, bar, value histogram, and dot panels use already loaded
-run summaries, so they do not fetch full metric histories. Their scope is
-selected runs when a selection is active, otherwise the visible loaded run page
-capped by the panel limit. Scatter fields must be numeric: metric summaries,
-numeric config or metadata, duration, or created time. Distribution value fields
-are numeric too, while grouping fields can be categorical config, metadata,
-status, or first tag. Scatter and distribution panels are summary-only and do
-not make metric series or rich-object reads. These summary panels do not include
-lasso selection, density overlays, or project-wide all-matching queries.
+Scatter, distribution, bar, value histogram, and dot plot panels are
+summary-only:
+
+- They use already loaded run summaries and never fetch full metric histories
+  or rich objects.
+- Their scope is the selected runs when a selection is active, otherwise the
+  visible loaded run page capped by the panel limit.
+- Scatter fields must be numeric: metric summaries, numeric config or metadata,
+  duration, or created time. Distribution value fields are numeric too, while
+  grouping fields can be categorical config, metadata, status, or first tag.
+- They do not include lasso selection, density overlays, or project-wide
+  all-matching queries.
 
 The panel below shows a selected-run histogram timeline with shared bin edges
 across frames. Open it fullscreen to scrub frame-by-frame.
@@ -167,16 +187,17 @@ across frames. Open it fullscreen to scrub frame-by-frame.
 Parallel coordinates remain in **Insights** as an exploratory HPO/sweep view
 over loaded summaries rather than a saved Runs workspace panel.
 
-Line panels include chart CSV and SVG image export for the visible plotted sample.
-Summary panels are designed for fast visual comparison inside the workspace;
-use selected-run CSV export when you need raw run rows.
+Line panels include chart CSV and SVG image export for the visible plotted
+sample. Summary panels are designed for fast visual comparison inside the
+workspace; use selected-run CSV export when you need raw run rows.
 
-## Layouts and saved views
+## Save layouts and views
 
 Panels can be moved, resized, collapsed, edited, and opened fullscreen. Named
-layouts are saved through the control-plane workspace-view API.
+layouts are saved through the control-plane workspace-view API, so a saved view
+survives reloads and browser changes.
 
-## Keyboard shortcuts
+## Use keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
@@ -189,3 +210,11 @@ layouts are saved through the control-plane workspace-view API.
 | `Cmd/Ctrl+J` | Move focus between Runs selector and canvas |
 | `1`–`9` | Jump to tab in rail order (1 = Runs) |
 | Left/Right Arrow | Traverse fullscreen panels |
+
+## Next steps
+
+- [Metrics and charts](/dashboard/metrics-charts)
+- [Compare runs](/dashboard/compare-runs)
+- [Run Detail](/dashboard/run-detail)
+- [Distributed and Insights](/dashboard/research-dashboards)
+- [Logging metrics from the SDK](/sdk/metrics-steps)

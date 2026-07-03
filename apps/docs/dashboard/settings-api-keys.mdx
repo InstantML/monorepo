@@ -1,59 +1,59 @@
 ---
 title: "Settings and API keys"
-description: "Manage plan usage, seats, invitations, billing controls, storage mode, and SDK API keys."
+description: "Open the Workspace settings modal to manage plan usage, billing, and seats, and create SDK API keys from the API tab."
 ---
 
-# Settings and API keys
+Manage the operational side of your workspace: plan usage, billing, seats, storage, and the SDK keys your training jobs authenticate with.
 
-Settings and the API tab are the operational side of the dashboard.
+## Open Workspace settings
 
-Settings are scoped to the active workspace. Confirm the workspace selector in
-the top-right account menu before inviting teammates, creating API keys, or
-opening billing. See
-[Organizations and workspaces](/dashboard/organizations-workspaces) for the
-workspace hierarchy and role model.
+Settings is a centered **Workspace settings** modal, not a nav-rail tab. To open it:
 
-## Plan and usage
+1. Click your account menu in the top-right of the dashboard.
+2. Choose **Workspace settings**.
 
-The topbar shows a compact plan usage badge. Settings shows more detail:
+The modal has five sections: **Plan Usage**, **Billing**, **Seats**, **Workspace**, and **Defaults**. It is scoped to the active workspace — the account menu shows which workspace is current, so confirm it before inviting teammates or changing billing. See [Organizations and workspaces](/dashboard/organizations-workspaces) for the workspace hierarchy and role model.
+
+## Check plan usage
+
+The topbar shows a compact plan usage badge. The **Plan Usage** section shows more detail:
 
 - Current plan.
-- Metric-point usage for the current UTC calendar month.
-- API request usage for the current UTC calendar month.
-- General and ingest API rate policies.
-- Seat usage.
-- Storage usage and accounting notes.
+- **Metric points this month** — usage for the current UTC calendar month.
+- **API requests this month** — usage for the current UTC calendar month.
+- **General API rate** and **Ingest API rate** policies.
+- **Monthly reset** — the next UTC reset time.
+- Seat usage, storage usage, and accounting notes.
 
-Metric-point and API-request usage reset monthly. Free/non-billable API request
-overage is blocked; paid Pro/Premium overage is Stripe-metered. Storage and
-seats are retained-resource posture. API-key counts and route snippets live in
-the API tab.
+Metric-point and API-request usage reset monthly. Free-plan API request overage is blocked; paid Pro/Premium overage is metered through Stripe. Storage and seats measure what you currently hold, so they do not reset monthly.
 
-## Billing controls
+API-key counts and route snippets live in the [API tab](/dashboard/api-tab), not the settings modal.
 
-Paid signup and plan changes use hosted billing flows. When an org is pending
-payment or payment-failed, write routes can return a payment-required error.
+## Manage billing
 
-## Seats and invitations
+The **Billing** section handles plan changes through hosted billing flows. It exposes plan upgrade/downgrade actions, **Open portal** for the Stripe customer portal, and **Cancel subscription**, where your workspace role allows it.
 
-Admins can invite teammates, resend pending invitations, revoke pending
-invitations, and see seat accounting that includes active members plus
-unexpired pending invitations.
+When a workspace is pending payment or payment-failed, write routes can return a payment-required error until billing recovers.
 
-Owners and admins can manage seats. Members can write runs, artifacts, reports,
-and saved views. Viewers can inspect dashboard data but cannot mutate product
-state.
+## Manage seats and invitations
 
-## API keys
+From the **Seats** section, admins can invite teammates, resend pending invitations, revoke pending invitations, and see seat accounting that includes active members plus unexpired pending invitations.
 
-The API tab lists active keys, creates copy-once default SDK keys by name,
-revokes keys, and shows copyable route snippets for the hosted REST surface.
-Use the key immediately when it is revealed; InstantML only stores a hash after
-creation.
+Owners and admins can manage seats. Members can write runs, artifacts, reports, and saved views. Viewers can inspect dashboard data but cannot change anything.
 
-![API key creation and copyable REST routes](/images/product/dashboard-api-keys.png)
+## Create API keys
 
-API keys should be stored in environment variables or a secrets manager:
+SDK keys are managed in the [API tab](/dashboard/api-tab) in the nav rail. It lists active keys, creates copy-once keys by name, revokes keys, and shows copyable route snippets for the hosted REST surface.
+
+![API tab showing API key management and the Connect an agent MCP setup panel](/images/product/dashboard-api-keys.png)
+
+The screenshot also shows the **Connect an agent** panel, which generates MCP setup snippets so coding agents like Claude Code can query your runs. See the [API tab](/dashboard/api-tab) page for the panel walkthrough and [Agent access over MCP](/sdk/agent-mcp) for the full tool reference.
+
+<Warning>
+Copy a new key immediately when it is revealed. InstantML stores only a hash after creation, so the plaintext key cannot be recovered later.
+</Warning>
+
+Store keys in environment variables or a secrets manager:
 
 ```bash
 export INSTANTML_API_KEY="instantml_..."
@@ -76,14 +76,18 @@ curl https://api.instantml.ai/projects \
   -H "Authorization: Bearer $INSTANTML_API_KEY"
 ```
 
-Never commit API keys, session cookies, Clerk secrets, ClickHouse credentials,
-or storage credentials.
+Never commit API keys, session cookies, Clerk secrets, ClickHouse credentials, or storage credentials.
 
-## Storage mode
+## Choose a storage mode
 
-Hosted artifact bytes can use InstantML-owned storage. Customer-owned
-ClickHouse setup is handled in onboarding for Premium teams that need to route
-product data to their own self-hosted GCP ClickHouse deployment. Dashboard and
-API-key access remain locked until the storage state is ready. Settings shows
-storage usage and accounting notes for the active workspace, but the current
-ClickHouse connection form lives in onboarding rather than Settings.
+Hosted artifact bytes can use InstantML-owned storage. Customer-owned ClickHouse setup is handled in onboarding for Premium teams that need to route product data to their own self-hosted GCP ClickHouse deployment. Dashboard and API-key access remain locked until the storage state is ready.
+
+Workspace settings shows storage usage and accounting notes for the active workspace, but the ClickHouse connection form lives in onboarding rather than settings.
+
+## Next steps
+
+- [API tab](/dashboard/api-tab)
+- [Onboarding, team, and billing](/dashboard/onboarding-team-billing)
+- [Organizations and workspaces](/dashboard/organizations-workspaces)
+- [Pricing, limits, and billing](/guides/pricing-limits-billing)
+- [Customer-owned ClickHouse](/guides/customer-owned-clickhouse)

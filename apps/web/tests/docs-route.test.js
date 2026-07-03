@@ -14,6 +14,7 @@ import {
   loadDocsPage,
   loadPublicDocsPages,
   mapDocsAssetSrc,
+  mdxToMarkdown,
   pagePathToTitle,
   parseDocsMdx,
 } from "../src/docs.js";
@@ -254,6 +255,44 @@ run.log({"loss": 0.1}, step=1)
   assert.equal(parsed.blocks.find((block) => block.type === "code")?.language, "python");
 });
 
+test("docs parser extracts Note/Tip/Warning/Info callouts as callout blocks", () => {
+  const parsed = parseDocsMdx(`---
+title: "Callouts"
+---
+
+<Note>Single-line note with \`inline code\`.</Note>
+
+<Warning>
+Keys are shown once. Copy the value
+before closing the dialog.
+</Warning>
+
+Regular paragraph after callouts.
+`);
+
+  const callouts = parsed.blocks.filter((block) => block.type === "callout");
+  assert.equal(callouts.length, 2);
+  assert.equal(callouts[0].kind, "note");
+  assert.equal(callouts[0].text, "Single-line note with `inline code`.");
+  assert.equal(callouts[1].kind, "warning");
+  assert.equal(callouts[1].text, "Keys are shown once. Copy the value before closing the dialog.");
+  assert.ok(parsed.blocks.some((block) => block.type === "paragraph" && block.text.startsWith("Regular paragraph")));
+});
+
+test("docs markdown mirrors degrade callouts to labeled blockquotes", () => {
+  const markdown = mdxToMarkdown(`---
+title: "Callouts"
+---
+
+<Tip>
+Use \`instantml login\` on interactive machines.
+</Tip>
+`);
+
+  assert.match(markdown, /^> \*\*Tip:\*\* Use `instantml login` on interactive machines\.$/m);
+  assert.ok(!markdown.includes("<Tip>"));
+});
+
 test("public docs card icons are mapped by the same-origin docs renderer", async () => {
   const route = await readFile(path.join(webRoot, "app", "docs", "[[...slug]]", "page.tsx"), "utf8");
   const mappedIcons = new Set(
@@ -351,18 +390,19 @@ test("dashboard workflow docs expose product screenshots through the route parse
 
 test("import docs describe metadata-only artifact bundles", async () => {
   const importsGuide = await loadDocsMarkdown(["guides", "imports.md"]);
-  assert.match(importsGuide.markdown, /run-level,\s+metadata-only external\s+manifest bundles/);
+  assert.match(importsGuide.markdown, /artifact references only[\s\S]*never copy source artifact bytes/);
   assert.match(importsGuide.markdown, /downloads stay unavailable until you upload the actual bytes/);
 
   const importApi = await loadDocsMarkdown(["api", "import-export-usage.md"]);
-  assert.match(importApi.markdown, /run-level metadata-only versioned artifact bundles/);
+  assert.match(importApi.markdown, /metadata-only/);
 });
 
 test("buyer-intent docs expose comparison and W&B import guidance", async () => {
   const wandbAlternative = await loadDocsMarkdown(["guides", "wandb-alternative.md"]);
-  assert.match(wandbAlternative.markdown, /^# W&B alternative for small ML teams/m);
-  assert.match(wandbAlternative.markdown, /W&B-style workflow/);
+  assert.match(wandbAlternative.markdown, /^# W&B alternative/m);
+  assert.match(wandbAlternative.markdown, /W&B-style/);
   assert.match(wandbAlternative.markdown, /\[W&B import guide\]\(\/docs\/guides\/wandb-import-guide\.md\)/);
+  assert.match(wandbAlternative.markdown, /\(\/docs\/benchmarks\.md\)/);
 
   const mlflowComparison = await loadDocsMarkdown(["guides", "instantml-vs-mlflow.md"]);
   assert.match(mlflowComparison.markdown, /^# InstantML vs MLflow/m);
@@ -371,7 +411,7 @@ test("buyer-intent docs expose comparison and W&B import guidance", async () => 
 
   const wandbImportGuide = await loadDocsMarkdown(["guides", "wandb-import-guide.md"]);
   assert.match(wandbImportGuide.markdown, /^# W&B import guide/m);
-  assert.match(wandbImportGuide.markdown, /Your W&B\s+credentials stay on your machine/);
+  assert.match(wandbImportGuide.markdown, /credentials never reach InstantML servers/);
   assert.match(wandbImportGuide.markdown, /instantml import wandb/);
 });
 
@@ -395,5 +435,5 @@ test("docs markdown loader mirrors pages and agent indexes", async () => {
 
   const full = await loadDocsMarkdownFull();
   assert.match(full, /Source: \/docs\/quickstart\.md/);
-  assert.match(full, /Shadow a W&B run/);
+  assert.match(full, /Shadow W&B alongside InstantML/);
 });

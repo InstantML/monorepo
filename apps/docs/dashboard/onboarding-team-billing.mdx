@@ -1,63 +1,55 @@
 ---
 title: "Onboarding, team, and billing"
-description: "Understand signup, first API key creation, invitations, plans, and billing recovery."
+description: "Sign up, create your first API key, invite teammates, and understand plans and billing recovery."
 ---
 
-# Onboarding, team, and billing
+Go from sign-in to a working workspace: pick a plan, choose storage, create your first SDK key, and bring in your team.
 
-Hosted onboarding takes a user from sign-in to an organization, plan, storage
-choice, and first SDK key.
+<Info>
+A workspace is the boundary that holds your team, projects, and billing. The API and billing surfaces call the same boundary an organization (org-scoped keys, `org_id`).
+</Info>
 
-Workspaces are organizations in the product model. A user can belong to several
-workspaces and switch between them from the account menu after signup.
+## Sign up and get your first key
 
-## Signup and first key
+New hosted users choose a plan and enter the dashboard through onboarding. Free hosted signups can receive a copy-once SDK key immediately. Paid plans may redirect through hosted checkout before write access is unlocked.
 
-New hosted users choose a plan and enter the dashboard through onboarding. Free
-hosted signups can receive a copy-once SDK key immediately. Paid plans may
-redirect through hosted checkout before write access is unlocked.
-
-The account menu can also create additional workspaces:
+The account menu (top right) can also create additional workspaces with **New workspace**:
 
 - Personal workspace: single-seat, useful for individual experiments.
-- Organization workspace: team-oriented, with invitations, roles, billing, and
-  shared projects.
+- Organization workspace: team-oriented, with invitations, roles, billing, and shared projects.
 
-Paid workspace creation can start checkout before teammate invitations are sent
-or write access is unlocked.
+Paid workspace creation can start checkout before teammate invitations are sent or write access is unlocked.
 
-## Plans
+## Choose a plan
 
 The current product tiers are Free, Pro, and Premium:
 
 | Plan | Price | Included storage | API requests / month |
 | --- | ---: | ---: | ---: |
-| Free | $0 / org / month | 2 GiB | 500k |
-| Pro | $199 / org / month | 1 TiB | 25M |
-| Premium | $699 / org / month | 5 TiB | 150M |
+| Free | $0 / workspace / month | 2 GiB | 500k |
+| Pro | $199 / workspace / month | 1 TiB | 25M |
+| Premium | $699 / workspace / month | 5 TiB | 150M |
 
-Premium can include customer-owned self-hosted GCP ClickHouse setup for teams
-that need tenant data routed to their own deployment.
+Premium can include customer-owned self-hosted GCP ClickHouse setup for teams that need tenant data routed to their own deployment.
 
-For the full limit table, storage overage, request overage, and API rate-limit
-policy, see [Pricing, limits, and billing](/guides/pricing-limits-billing).
+For the full limit table, storage overage, request overage, and API rate-limit policy, see [Pricing, limits, and billing](/guides/pricing-limits-billing).
 
-## Invitations
+## Invite teammates
 
-Admins can invite teammates from Settings. Invite links open the hosted invite
-page, preview the organization and role, then require the recipient to sign in
-before accepting.
+Admins invite teammates from the Seats section of the Workspace settings modal (account menu, then **Workspace settings**). Invite links open the hosted invite page, preview the workspace and role, then require the recipient to sign in before accepting.
 
 Admins can resend or revoke pending invitations while they are active.
 
-Invitation acceptance keeps the invited role. `Read only` (`viewer`) invites
-land in read-only dashboard access; `Write/read` (`member`), admin, and owner
-roles unlock the write and administration surfaces allowed by that role.
+Invitation acceptance keeps the invited role. `Read only` (`viewer`) invites land in read-only dashboard access; `Write/read` (`member`) and admin roles unlock the write and administration surfaces allowed by that role.
 
-## Billing states
+## Recover from billing problems
 
-When an organization is pending payment or payment-failed, write routes can
-return a payment-required error. The dashboard exposes hosted billing actions
-for checkout, plan changes, customer portal access, and cancellation where the
-organization role allows it. Paid subscriptions include Stripe-metered hosted
-storage and API request overage items.
+When a workspace is pending payment or payment-failed, write routes can return a payment-required error. The dashboard exposes hosted billing actions for checkout, plan changes, customer portal access, and cancellation where your workspace role allows it. Paid subscriptions include Stripe-metered hosted storage and API request overage items.
+
+## Next steps
+
+- [Settings and API keys](/dashboard/settings-api-keys)
+- [Organizations and workspaces](/dashboard/organizations-workspaces)
+- [Pricing, limits, and billing](/guides/pricing-limits-billing)
+- [SDK installation and auth](/sdk/installation-auth)
+- [Customer-owned ClickHouse](/guides/customer-owned-clickhouse)

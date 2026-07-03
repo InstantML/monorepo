@@ -3,12 +3,7 @@ title: "Hugging Face Transformers"
 description: "Track Hugging Face Trainer fine-tuning runs in InstantML with a Transformers callback that logs metrics and checkpoints."
 ---
 
-# Hugging Face Transformers
-
-`im.TransformersCallback` is a `TrainerCallback` for the Hugging Face `Trainer`.
-It logs scalar metrics as training progresses and records each saved checkpoint
-as an artifact. It is rank-zero safe, so only the main process logs in
-distributed training.
+Add `im.TransformersCallback` to the Hugging Face `Trainer` to log scalar metrics as training progresses and record each saved checkpoint as an artifact. The callback is rank-zero safe, so only the main process logs in distributed training.
 
 ## Install
 
@@ -16,37 +11,71 @@ distributed training.
 python -m pip install "instantml[frameworks]"
 ```
 
-## Use it
+Authenticate with [`instantml login`](/sdk/installation-auth) or `INSTANTML_API_KEY` if you haven't already.
 
-Add the callback to an existing `Trainer`:
+## Add the callback to the Trainer
+
+This complete example fine-tunes a tiny BERT on a synthetic classification dataset:
 
 ```python
 import instantml as im
-from transformers import Trainer, TrainingArguments
+import torch
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    Trainer,
+    TrainingArguments,
+)
 
-run = im.init(project="sft", name="llama-lora-seed-7", config={"lr": 2e-4})
+model_name = "prajjwal1/bert-tiny"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2)
+
+texts = ["great run", "bad run"] * 32
+labels = [1, 0] * 32
+encodings = tokenizer(texts, truncation=True, padding=True)
+
+
+class TinyDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        item = {k: torch.tensor(v[idx]) for k, v in self.encodings.items()}
+        item["labels"] = torch.tensor(self.labels[idx])
+        return item
+
+
+run = im.init(project="sft", name="bert-tiny-demo", config={"lr": 5e-5})
 
 trainer = Trainer(
     model=model,
-    args=TrainingArguments(output_dir="out", report_to="none"),
-    train_dataset=train_ds,
-    eval_dataset=eval_ds,
+    args=TrainingArguments(
+        output_dir="out",
+        num_train_epochs=2,
+        logging_steps=5,
+        report_to="none",
+    ),
+    train_dataset=TinyDataset(encodings, labels),
+    callbacks=[im.TransformersCallback(run=run)],
 )
-trainer.add_callback(im.TransformersCallback(run=run))
 trainer.train()
 run.finish()
 ```
 
-You can also pass it in the `Trainer` constructor with
-`callbacks=[im.TransformersCallback(...)]`.
+Open the project at [instantml.ai](https://instantml.ai) to watch the training loss chart by `global_step`. You can also attach the callback to an existing `Trainer` with `trainer.add_callback(im.TransformersCallback(run=run))`.
 
-Set `report_to="none"` in `TrainingArguments` so the Trainer's built-in loggers
-do not double-report.
+<Tip>
+Set `report_to="none"` in `TrainingArguments` so the Trainer's built-in loggers do not double-report.
+</Tip>
 
 ## Let the callback create the run
 
-If you do not pass `run=`, the callback creates one on first log. Extra keyword
-arguments are forwarded to `im.init(...)`:
+If you do not pass `run=`, the callback creates one on first log. Extra keyword arguments are forwarded to `im.init(...)`:
 
 ```python
 trainer.add_callback(
@@ -54,12 +83,16 @@ trainer.add_callback(
 )
 ```
 
-When no project is given it falls back to a `project` attribute on the
-`TrainingArguments`, then to `"transformers"`.
+When no project is given it falls back to a `project` attribute on the `TrainingArguments`, then to `"transformers"`.
 
 ## What gets logged
 
-- **Metrics** — scalar values from the Trainer's `on_log` events (loss,
-  learning rate, eval metrics) at the current `global_step`.
-- **Checkpoints** — on each `on_save`, the `output_dir` is recorded as a
-  `checkpoint` artifact tied to the current step.
+- **Metrics** — scalar values from the Trainer's `on_log` events (loss, learning rate, eval metrics) at the current `global_step`.
+- **Checkpoints** — on each `on_save`, the `output_dir` is recorded as a `checkpoint` artifact tied to the current step.
+
+## Next steps
+
+- [Understand metrics and steps](/sdk/metrics-steps)
+- [Work with checkpoint artifacts](/sdk/artifacts-checkpoints)
+- [Log from distributed training](/sdk/distributed-training)
+- [Explore a run in the dashboard](/dashboard/run-detail)

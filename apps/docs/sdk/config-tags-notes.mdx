@@ -1,14 +1,12 @@
 ---
 title: "Configs, tags, and notes"
-description: "Make runs searchable and comparable with structured config, tags, and notes."
+description: "Attach config, tags, and notes so runs stay searchable and comparable."
 ---
 
-# Configs, tags, and notes
+Give each run enough identity — config, tags, and notes — to explain what
+changed without rereading the code.
 
-Runs are easier to compare when each one carries enough identity to explain
-what changed.
-
-## Configs
+## Set config
 
 Pass config at run creation:
 
@@ -35,10 +33,10 @@ run.log_config({"schedule": {"warmup_steps": 500}})
 
 Use config for values that should appear in Run Detail and Compare.
 
-## Tags
+## Tag runs
 
 Use `set_tags(...)` for the tags you want the Runs list, search, and Compare
-views to treat as run identity.
+views to treat as run identity:
 
 ```python
 run.set_tags(["baseline", "ready-for-compare"])
@@ -50,9 +48,9 @@ Use `add_tags(...)` when you want to append tag-style history:
 run.add_tags(["manual-review"])
 ```
 
-## Notes
+## Write notes
 
-Notes are searchable free text.
+Notes are searchable free text:
 
 ```python
 run.set_notes("New tokenizer improved eval accuracy but increased train loss.")
@@ -61,7 +59,7 @@ run.set_notes("New tokenizer improved eval accuracy but increased train loss.")
 Good notes explain what a future reviewer would otherwise have to reconstruct
 from memory.
 
-## How they show up in the UI
+## Find them in the UI
 
 | SDK input | Dashboard surface |
 | --- | --- |
@@ -69,7 +67,7 @@ from memory.
 | `tags` | Run rows, run selector chips, Run Detail, Compare, run search |
 | `notes` | Runs list, Run Detail, Compare, run search |
 
-## Practical pattern
+## Put it together
 
 ```python
 run = im.init(
@@ -85,3 +83,10 @@ run = im.init(
     notes="Baseline before adding retrieval examples.",
 )
 ```
+
+## Next steps
+
+- [SDK logging](/sdk/logging) — create runs and log metrics
+- [Metrics and steps](/sdk/metrics-steps) — metric naming and step semantics
+- [Query runs and metrics](/sdk/querying-data) — search by tag, config, and notes
+- [Compare runs in the dashboard](/dashboard/compare-runs)
