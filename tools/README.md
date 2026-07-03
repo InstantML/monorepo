@@ -350,6 +350,20 @@ Useful environment variables:
 - `INSTANTML_CLOUD_RUN_BENCH_RESULT_PATH`: optional sanitized JSON output path.
 - `INSTANTML_CLOUD_RUN_BENCH_ENFORCE=1`: exit nonzero if hosted p95 budgets fail.
 
+Run the competitive gates after a sanitized result is written:
+
+```bash
+npm run benchmark:competitive-gates -- \
+  --input /tmp/instantml-cloud-run-benchmark.json \
+  --format markdown
+```
+
+`tools/competitive-benchmark-gates.mjs` reads the hosted benchmark payload and
+reports `pass`, `fail`, or `not_measured` for public W&B scale guidance, the
+committed historical W&B hosted comparison, and a conservative Neptune
+thousand-metric gate. Add `--strict` when an unmeasured public target should
+fail the command.
+
 ## Hosted Tenant Scale Seed
 
 `hosted-tenant-scale-seed.mjs` is a guarded live cutover/load-test helper for an

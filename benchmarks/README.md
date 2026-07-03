@@ -56,6 +56,32 @@ Committed summaries for this benchmark should include the same sanitized fields
 as the hosted ClickHouse benchmark plus the API host only, never full URLs or API
 keys.
 
+After writing a sanitized Cloud Run JSON result, run the competitive gates:
+
+```bash
+npm run benchmark:competitive-gates -- \
+  --input /tmp/instantml-cloud-run-benchmark.json \
+  --format markdown
+```
+
+The gate report compares the result against three public/reference targets:
+
+- W&B's published at-scale guidance for Multi-tenant Cloud projects:
+  10,000 runs/project, 500,000 steps/run, 100,000 metric keys/project,
+  1,000 log rows/minute, and 100,000 scalar values/minute
+  (`https://docs.wandb.ai/models/track/limits`).
+- The committed historical W&B public-API comparison in `benchmarks/RESULTS.md`,
+  using the matching InstantML route names and a 10% tolerance because that W&B
+  seed only exposed 4,321 visible runs and some closest-public-equivalent cases.
+- Neptune's public claim that its app can visualize and compare thousands of
+  metrics in seconds (`https://docs.neptune.ai/about`), represented as a
+  conservative >=1,000 metric-key gate with p95 <= 5 seconds.
+
+Default reports may contain `not_measured` gates when a payload does not include
+matching dataset cardinality, ingest throughput, or metric-catalog measurements.
+Use `--strict` only when a release or marketing claim requires every public
+target to be measured in that run.
+
 The latest current-path result is
 `benchmarks/2026-05-23-gcp-clickhouse-cloud-run-results.md`: Cloud Run direct to
 self-hosted GCP ClickHouse, reading the `normal-runs-50k` project with 50,000
