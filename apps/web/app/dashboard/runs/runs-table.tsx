@@ -35,8 +35,7 @@ function lossValue(run: RunSummary) {
   return key !== undefined && typeof metrics[key] === "number" ? metrics[key] : null;
 }
 
-function latestStep(run: RunSummary, series: MetricSeries[] | undefined) {
-  const points = series?.find((item) => item.id === run.id)?.points;
+function latestStep(run: RunSummary, points: MetricSeries["points"] | undefined) {
   const seriesStep = points?.length ? points[points.length - 1]?.step : null;
   if (typeof seriesStep === "number" && Number.isFinite(seriesStep)) return seriesStep;
   const aggregateSteps = Object.values(run.metric_aggregates ?? {})
@@ -182,12 +181,22 @@ export function RunsTable({
 
   const metricSeries = workspaceSeries[metricKey];
   const goal = metricGoal(metricKey);
-  const metricValues = filteredRuns
-    .map((run) => bestMetric(run, metricKey))
-    .filter((value): value is number => typeof value === "number");
-  const viewBest = metricValues.length
-    ? goal === "minimize" ? Math.min(...metricValues) : Math.max(...metricValues)
-    : null;
+  const metricSeriesByRunId = useMemo(() => new Map((metricSeries ?? []).map((item) => [item.id, item])), [metricSeries]);
+  const viewBest = useMemo(() => {
+    let best: number | null = null;
+    for (const run of filteredRuns) {
+      const value = bestMetric(run, metricKey);
+      if (typeof value !== "number") continue;
+      if (best === null) {
+        best = value;
+      } else if (goal === "minimize") {
+        best = Math.min(best, value);
+      } else {
+        best = Math.max(best, value);
+      }
+    }
+    return best;
+  }, [filteredRuns, goal, metricKey]);
 
   const groups = useMemo(() => {
     if (groupMode === "flat") return [{ key: "", runs: filteredRuns }];
@@ -208,7 +217,8 @@ export function RunsTable({
     ...(query ? [{ key: "query", value: query }] : []),
   ];
 
-  const visibleRunIds = filteredRuns.map((run) => run.id);
+  const visibleRunIds = useMemo(() => filteredRuns.map((run) => run.id), [filteredRuns]);
+  const selectedRunIdSet = useMemo(() => new Set(selectedRunIds), [selectedRunIds]);
   const selectionState = visibleSelectionState(selectedRunIds, visibleRunIds);
   const totalPages = Math.max(1, Math.ceil(Math.max(summaryTotal, runs.length) / Math.max(1, pageSize)));
   const currentPage = summaryTotal ? Math.floor((pageStart - 1) / Math.max(1, pageSize)) + 1 : 1;
@@ -220,21 +230,22 @@ export function RunsTable({
     + (columns.tags ? 1 : 0)
     + (columns.started ? 1 : 0)
     + pinnedMetrics.length;
-  const runIndexById = new Map(runs.map((run, index) => [run.id, index]));
+  const runIndexById = useMemo(() => new Map(runs.map((run, index) => [run.id, index])), [runs]);
 
   function renderRunRow(run: RunSummary) {
-    const selected = selectedRunIds.includes(run.id);
+    const selected = selectedRunIdSet.has(run.id);
     const inspected = run.id === primaryRunId;
     const metricValue = bestMetric(run, metricKey);
     const isBest = typeof metricValue === "number" && viewBest !== null && metricValue === viewBest;
     const loss = lossValue(run);
-    const step = latestStep(run, metricSeries);
+    const runSeries = metricSeriesByRunId.get(run.id);
+    const step = latestStep(run, runSeries?.points);
     const total = totalSteps(run);
     const owner = runOwner(run);
     const displayStatus = displayStatusForRun(run);
     const running = run.status === "running";
     const canStopRun = canRequestStop(run, canControlRuns);
-    const values = sparkValues(metricSeries?.find((item) => item.id === run.id)?.points);
+    const values = sparkValues(runSeries?.points);
     const sparkColor = running
       ? chartColor(stableChartIndex(run.id || run.name, runIndexById.get(run.id) ?? 0))
       : "var(--chart-tick)";

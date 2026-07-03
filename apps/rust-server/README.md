@@ -783,6 +783,7 @@ list of handlers still on the legacy hand-rolled spec path.
 - Rust is the default backend; preserve documented route shapes and run `npm run test:contract` after behavior changes.
 - Keep `npm run test:contract:node` available when a change might break legacy Node compatibility or future JSON migration assumptions.
 - Keep scalar metric summaries maintained by ClickHouse materialized views; summary/list endpoints must not scan raw metric history.
+- Keep run-summary hydration page-scoped after ClickHouse reads return: group metric-series rows by run once and avoid per-run scans of the full page series list.
 - Keep run list endpoints cursor/page bounded.
 - Keep compatibility org context explicit: API-key mode uses the key org, local mode uses the fixed local org.
 - Keep project-scoped API keys flowing through project-aware helpers before returning run-derived data.

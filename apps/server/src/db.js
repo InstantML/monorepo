@@ -1716,13 +1716,16 @@ function validateArtifactInput(state, runId, input) {
 
 function latestMetricsForRun(state, runId) {
   const latest = {};
-  for (const series of state.metricSeries.filter((candidate) => candidate.run_id === runId)) latest[series.key] = series.latest;
+  for (const series of state.metricSeries) {
+    if (series.run_id === runId) latest[series.key] = series.latest;
+  }
   return latest;
 }
 
 function metricAggregatesForRun(state, runId) {
   const aggregates = {};
-  for (const series of state.metricSeries.filter((candidate) => candidate.run_id === runId)) {
+  for (const series of state.metricSeries) {
+    if (series.run_id !== runId) continue;
     aggregates[series.key] = {
       latest: series.latest,
       min: series.min,
@@ -1732,6 +1735,15 @@ function metricAggregatesForRun(state, runId) {
       count: series.count,
       best_step: series.best_step,
     };
+  }
+  return aggregates;
+}
+
+function metricAggregateByRunForSort(state, runs, metricKey) {
+  const runIds = new Set(runs.map((run) => run.id));
+  const aggregates = new Map();
+  for (const series of state.metricSeries) {
+    if (series.key === metricKey && runIds.has(series.run_id)) aggregates.set(series.run_id, series);
   }
   return aggregates;
 }
@@ -2375,8 +2387,11 @@ function sortRunRecords(state, runs, sortBy, metricKey) {
   const copy = [...runs];
   if (sortBy === "name") return copy.sort((a, b) => a.name.localeCompare(b.name));
   if (sortBy === "status") return copy.sort((a, b) => a.status.localeCompare(b.status) || a.name.localeCompare(b.name));
-  if (sortBy === "metric-latest") return copy.sort((a, b) => numericDesc(metricAggregatesForRun(state, a.id)[metricKey]?.latest, metricAggregatesForRun(state, b.id)[metricKey]?.latest));
-  if (sortBy === "metric-best") return copy.sort((a, b) => numericDesc(metricAggregatesForRun(state, a.id)[metricKey]?.max, metricAggregatesForRun(state, b.id)[metricKey]?.max));
+  if (sortBy === "metric-latest" || sortBy === "metric-best") {
+    const aggregates = metricAggregateByRunForSort(state, copy, metricKey);
+    const field = sortBy === "metric-latest" ? "latest" : "max";
+    return copy.sort((a, b) => numericDesc(aggregates.get(a.id)?.[field], aggregates.get(b.id)?.[field]));
+  }
   if (sortBy === "duration") return copy.sort((a, b) => numericDesc(durationSeconds(a), durationSeconds(b)));
   return copy.sort((a, b) => b.created_at.localeCompare(a.created_at));
 }

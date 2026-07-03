@@ -471,7 +471,7 @@ async fn metric_sorted_page(
 ) -> AppResult<Vec<RunRow>> {
     let run_by_id = runs
         .iter()
-        .map(|run| (run.id, run.clone()))
+        .map(|run| (run.id, run))
         .collect::<HashMap<_, _>>();
     let mode = metric_sort_mode(sort_by, metric_key);
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
@@ -483,7 +483,7 @@ async fn metric_sorted_page(
             .await?;
         let page = rows
             .into_iter()
-            .filter_map(|row| run_by_id.get(&row.run_id).cloned())
+            .filter_map(|row| run_by_id.get(&row.run_id).copied().cloned())
             .collect::<Vec<_>>();
         if page.len() >= target || fetch_limit == runs.len() {
             break page;

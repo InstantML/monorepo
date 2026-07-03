@@ -189,6 +189,8 @@ Response adds:
   - Run summary p95 under 300 ms for default newest page.
   - Metric chart p95 under 200 ms for one run/key with 1,000 points.
 
+2026-07-03 implementation follow-up: after bounded ClickHouse reads return, Rust summary hydration groups `MetricSeriesRow`s by `run_id` once and passes only the current run's series into summary serialization. Metric-sorted pages keep a borrowed `run_id -> &RunRow` lookup and clone only rows that enter the ordered page. The deprecated Node compatibility server also precomputes the requested metric aggregate by run before metric sorts instead of rescanning all maintained metric summaries inside the sort comparator. These changes preserve the existing response shape while removing avoidable O(page rows * page series) and O(sort comparisons * metric series) CPU work.
+
 ## Simplicity Review
 
 This design reuses the existing route, summary DTOs, search column, and web controls. The only new backend concept is an opaque cursor, and the only new SDK concept is a read-only `Api` helper. It avoids a broad filter DSL, a search service, caching, and persistent workspace API changes.
