@@ -60,7 +60,7 @@ test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", ()
   assert.match(configSrc, /id: "system"/);
   assert.doesNotMatch(configSrc, /id: "overview"/);
   assert.match(configSrc, /id: "alerts", label: "Run Health"/);
-  for (const id of ["runs", "metrics", "distributed", "insights", "artifacts", "reports", "alerts", "datasets", "settings", "api"]) {
+  for (const id of ["runs", "metrics", "distributed", "insights", "artifacts", "reports", "alerts", "datasets", "settings", "agent"]) {
     assert.match(configSrc, new RegExp(`id: "${id}"`), `tab id ${id} must survive the regroup`);
   }
   // CK2: the Checkpoints tab merged into Run Detail; its nav slot is gone but
@@ -73,6 +73,7 @@ test("nav groups follow the OPERATE/DATA/SYSTEM mockup without changing ids", ()
   assert.match(routesSrc, /\["checkpoints", "detail"\]/);
   assert.match(routesSrc, /\["models", "detail"\]/);
   assert.match(routesSrc, /\["compare", "runs"\]/);
+  assert.match(routesSrc, /\["api", "agent"\]/);
   const runDetailSrc = read("app/dashboard/detail/run-detail.tsx");
   assert.match(runDetailSrc, /checkpoint-uri/);
   assert.match(runDetailSrc, /eval_return/);
@@ -99,7 +100,7 @@ test("runs tab offers a persisted panels/table view toggle", () => {
 test("dashboard page headers carry no serif flourish", () => {
   const flourishFiles = [
     "app/dashboard/alerts/tab-pane.tsx",
-    "app/dashboard/api/tab-pane.tsx",
+    "app/dashboard/agent/tab-pane.tsx",
     "app/dashboard/artifacts/tab-pane.tsx",
     "app/dashboard/compare/tab-pane.tsx",
     "app/dashboard/datasets/tab-pane.tsx",
@@ -114,6 +115,24 @@ test("dashboard page headers carry no serif flourish", () => {
     const src = read(file);
     assert.doesNotMatch(src, /serif-em|emphasis=/, `${file} must not use the serif flourish`);
   }
+});
+
+test("agent capability overflow chips expand hidden tools inline", () => {
+  const paneSrc = read("app/dashboard/agent/tab-pane.tsx");
+  const css = read("app/styles/overhaul.css");
+
+  assert.match(paneSrc, /const \[expandedTools, setExpandedTools\] = useState<Record<string, boolean>>\(\{\}\)/);
+  assert.match(paneSrc, /const expanded = Boolean\(expandedTools\[title\]\)/);
+  assert.match(paneSrc, /const visibleTools = expanded \? tools : tools\.slice\(0, VISIBLE_TOOL_CHIPS\)/);
+  assert.match(paneSrc, /className="agent-capability-tools-toggle"/);
+  assert.match(paneSrc, /aria-expanded=\{expanded\}/);
+  assert.match(paneSrc, /aria-label=\{expanded \? `Collapse \$\{title\} tools` : `Show \$\{tools\.length - VISIBLE_TOOL_CHIPS\} more \$\{title\} tools`\}/);
+  assert.match(paneSrc, /setExpandedTools\(\(prev\) => \(\{ \.\.\.prev, \[title\]: !expanded \}\)\)/);
+  assert.match(paneSrc, /\{expanded \? "less" : `\+\$\{tools\.length - VISIBLE_TOOL_CHIPS\} more`\}/);
+  assert.doesNotMatch(paneSrc, /title=\{tools\.slice\(VISIBLE_TOOL_CHIPS\)/);
+
+  assert.match(css, /\.agent-capability-tools code,\s*\.agent-capability-tools-toggle/);
+  assert.match(css, /\.agent-capability-tools-toggle:hover,\s*\.agent-capability-tools-toggle:focus-visible/);
 });
 
 // ST1 — settings no longer echoes transient filter/selection state.

@@ -9,6 +9,7 @@ import { MetricCatalog } from "./metric-catalog";
 import { MetricChart } from "./metric-chart";
 import { SeriesTable, siStep } from "./series-table";
 import { PageHead } from "../ui/page-head";
+import { SkeletonChartLines } from "../ui/skeleton";
 import { formatNumber } from "../../../src/state.js";
 import type { HoverPoint, MetricCatalogRow, MetricSeries, RunSummary } from "../../dashboard-types";
 
@@ -196,13 +197,8 @@ export function MetricsTabPane({
             </div>
             <div className="mx-chart-body">
               {seriesLoading && !visibleSeries.length ? (
-                <div className="chart-area workspace-chart-loading" aria-label={`Loading ${metricKey || "metric"} series`}>
-                  <div className="chart-loading-frame">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                  <div className="empty">Loading metric series...</div>
+                <div className="chart-area workspace-chart-loading" role="status" aria-label={`Loading ${metricKey || "metric"} series`}>
+                  <SkeletonChartLines minHeight={320} />
                 </div>
               ) : (
                 <MetricChart
@@ -263,7 +259,7 @@ export function MetricsTabPane({
           ) : null}
           <section className="mx-panel mx-series-panel" aria-label="Series">
             <div className="mx-panel-head">
-              <span className="mx-mlabel">Series</span>
+              <span className="mx-mlabel mx-series-title">Series</span>
               <span className="mx-unit">{windowLabel}</span>
             </div>
             <div className="mx-series-scroll">

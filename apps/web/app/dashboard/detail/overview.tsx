@@ -9,6 +9,7 @@ import { displayStatusForRun, formatNumber, uploadHealthForRun } from "../../../
 import { artifactHasStoredBytes, buildAlertRows, compactValue, formatBytes, lastMetricStep } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { RunMetadataEditor } from "../runs/run-metadata-editor";
+import { SkeletonChartLines } from "../ui/skeleton";
 import { useFocusTrap } from "../ui/use-focus-trap";
 import type { Artifact, MetricSeries, RunSummary, RunTimelineRow } from "../../dashboard-types";
 
@@ -45,6 +46,8 @@ async function copyText(value: string) {
 /* ------------------------------------------------------------------ */
 
 function ChartPanel({ loading, spec }: { loading: boolean; spec: OverviewChartSpec }) {
+  const chartHeight = spec.fullWidth ? 120 : 150;
+  const awaitingSeries = loading && !spec.series.some((item) => item.points?.length);
   return (
     <div className={`pd-panel pd-chartpanel ${spec.modifier}`}>
       <div className="pd-panel-head">
@@ -52,16 +55,22 @@ function ChartPanel({ loading, spec }: { loading: boolean; spec: OverviewChartSp
         {spec.unit ? <span className="pd-unit">{spec.unit}</span> : null}
       </div>
       <div className="pd-panel-chart">
-        <MetricChart
-          emptyMessage={loading ? "Loading series..." : "No points logged yet."}
-          height={spec.fullWidth ? 120 : 150}
-          metricKey={spec.key}
-          padding={34}
-          series={spec.series}
-          showRange={false}
-          showYAxisControls={false}
-          xMode="step"
-        />
+        {awaitingSeries ? (
+          <div className="chart-area workspace-chart-loading" role="status" aria-label={`Loading ${spec.key} series`}>
+            <SkeletonChartLines legend={false} minHeight={chartHeight} />
+          </div>
+        ) : (
+          <MetricChart
+            emptyMessage="No points logged yet."
+            height={chartHeight}
+            metricKey={spec.key}
+            padding={34}
+            series={spec.series}
+            showRange={false}
+            showYAxisControls={false}
+            xMode="step"
+          />
+        )}
       </div>
     </div>
   );

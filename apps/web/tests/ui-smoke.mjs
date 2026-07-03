@@ -1967,9 +1967,9 @@ async function captureDocScreenshots(page, webBaseUrl) {
     await page.waitForTimeout(1200);
   });
 
-  // 6. API keys (API tab).
-  await shot("dashboard-api-keys.png", async () => {
-    await gotoTab("api", ".tab-pane.active");
+  // 6. Agent tab.
+  await shot("dashboard-agent.png", async () => {
+    await gotoTab("agent", ".tab-pane.active");
   });
 
   // 7. Org / workspaces menu.

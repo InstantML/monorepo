@@ -1,39 +1,24 @@
 ---
-title: "API tab"
-description: "Create copy-once SDK keys, connect coding agents over MCP, and copy hosted REST route snippets."
+title: "Agent tab"
+description: "Connect coding agents to your workspace over MCP and see what they can do with your runs."
 ---
 
-Create SDK keys, point a coding agent at the InstantML MCP server, and copy API snippets that match your current dashboard context.
+Point a coding agent at the InstantML MCP server from the **Agent** tab, then browse the tools and prompt starters it can use against your runs.
 
-![API tab showing key creation, the Connect an agent panel, and the API Surface route list](/images/product/dashboard-api-keys.png)
+![Agent tab showing the Connect panel with client setup snippets and the Agent Workspace capability cards](/images/product/dashboard-agent.png)
 
-## Create and revoke API keys
+<Note>
+This surface replaced the old API tab; `/dashboard/api` still opens it. API-key creation and revocation moved to the [Workspace settings modal](/dashboard/settings-api-keys) under **API**.
+</Note>
 
-API-key management is available to workspace owners and admins. From the API Keys panel you can:
+## Connect an agent
 
-- Create a copy-once key by name.
-- Copy the plaintext key while it is visible.
-- List active and revoked keys.
-- Revoke keys that should no longer be used.
-
-<Warning>
-Keys are shown once at creation and cannot be recovered later. Copy the key immediately and store it in a secrets manager or environment variable.
-</Warning>
-
-```bash
-export INSTANTML_API_KEY="instantml_..."
-```
-
-Keys are sent as an `Authorization: Bearer` header. Name keys per machine or pipeline so revoking one does not break the rest. The current form creates the default hosted SDK key shape; it does not expose per-scope or per-project controls yet.
-
-## Connect a coding agent
-
-The **Connect an agent** panel points your coding agent at the InstantML MCP server so it can inspect, compare, and report on runs. The server endpoint is `https://mcp.instantml.ai/mcp`.
+The **Connect** panel points your coding agent at the hosted MCP server at `https://mcp.instantml.ai/mcp`.
 
 Pick an authentication method:
 
-- **API key** — the agent sends a copy-once API key as a Bearer token. If you just created a key on this page, the snippet fills it in for you.
-- **Browser sign-in** (Preview) — connect by URL only. The agent opens a browser to sign in to InstantML and receives a short-lived token via MCP OAuth, so there is no key to copy, rotate, or commit. Sign-in is scoped to the active workspace: the connection URL carries its `org_id`.
+- **Browser sign-in** (default) — connect by URL only. The agent opens a browser to sign in to InstantML and receives a short-lived token via MCP OAuth, so there is no key to copy, rotate, or commit. Sign-in is scoped to the active workspace (the connection URL carries its `org_id`) and grants read-only access as the signed-in user.
+- **API key** — the agent sends an API key as a Bearer token. Create an `Agent MCP key` in **Workspace settings → API** and the snippet fills it in for you. Use a key when the agent needs write scopes such as report editing.
 
 Then pick your client — **Claude Code**, **Codex**, **Cursor**, **VS Code**, or **Local bridge** (Claude Desktop and other stdio clients via `mcp-remote`) — and copy the generated setup snippet. For example, the Claude Code snippet with an API key:
 
@@ -42,18 +27,16 @@ claude mcp add --transport http instantml https://mcp.instantml.ai/mcp \
   --header "Authorization: Bearer instantml_..."
 ```
 
-If you cannot create keys, use browser sign-in or ask a workspace admin for an API key. See [Agent access over MCP](/sdk/agent-mcp) for the full tool reference.
+Below the snippet, an activity line shows the most recent agent request and which key it used, so you can confirm the connection worked. **Copy guide for your agent** copies an agent-readable Markdown guide you can paste into a session, and **Open agent docs** opens [Agent access over MCP](/sdk/agent-mcp).
 
-## Copy API route snippets
+## Browse agent capabilities
 
-The API Surface panel shows route examples built from the current dashboard context: active project, selected run, selected metric, and selected run IDs. A "Current query context" section shows the exact IDs behind each snippet.
-
-Use the API guides when you need request bodies, limits, and permissions for a route.
+The **Agent Workspace** panel lists what a connected agent can do, grouped into capability cards with the `tracker.*` tool names each one uses. Expand a card's tool chips to see the full list, and copy a prompt starter to try a first request, such as listing your latest runs or comparing selected runs.
 
 ## Next steps
 
 - [Agent access over MCP](/sdk/agent-mcp)
+- [Settings and API keys](/dashboard/settings-api-keys)
 - [Authentication](/api/authentication)
 - [Projects and runs API](/api/projects-runs)
-- [Settings and API keys](/dashboard/settings-api-keys)
 - [SDK installation and auth](/sdk/installation-auth)

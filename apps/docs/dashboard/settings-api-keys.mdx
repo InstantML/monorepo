@@ -1,6 +1,6 @@
 ---
 title: "Settings and API keys"
-description: "Open the Workspace settings modal to manage plan usage, billing, and seats, and create SDK API keys from the API tab."
+description: "Open the Workspace settings modal to manage plan usage, billing, seats, and SDK API keys."
 ---
 
 Manage the operational side of your workspace: plan usage, billing, seats, storage, and the SDK keys your training jobs authenticate with.
@@ -12,7 +12,7 @@ Settings is a centered **Workspace settings** modal, not a nav-rail tab. To open
 1. Click your account menu in the top-right of the dashboard.
 2. Choose **Workspace settings**.
 
-The modal has five sections: **Plan Usage**, **Billing**, **Seats**, **Workspace**, and **Defaults**. It is scoped to the active workspace — the account menu shows which workspace is current, so confirm it before inviting teammates or changing billing. See [Organizations and workspaces](/dashboard/organizations-workspaces) for the workspace hierarchy and role model.
+The modal has six sections: **Plan Usage**, **Billing**, **Seats**, **Workspace**, **API**, and **Defaults**. It is scoped to the active workspace — the account menu shows which workspace is current, so confirm it before inviting teammates or changing billing. See [Organizations and workspaces](/dashboard/organizations-workspaces) for the workspace hierarchy and role model.
 
 ## Check plan usage
 
@@ -27,7 +27,6 @@ The topbar shows a compact plan usage badge. The **Plan Usage** section shows mo
 
 Metric-point and API-request usage reset monthly. Free-plan API request overage is blocked; paid Pro/Premium overage is metered through Stripe. Storage and seats measure what you currently hold, so they do not reset monthly.
 
-API-key counts and route snippets live in the [API tab](/dashboard/api-tab), not the settings modal.
 
 ## Manage billing
 
@@ -43,11 +42,9 @@ Owners and admins can manage seats. Members can write runs, artifacts, reports, 
 
 ## Create API keys
 
-SDK keys are managed in the [API tab](/dashboard/api-tab) in the nav rail. It lists active keys, creates copy-once keys by name, revokes keys, and shows copyable route snippets for the hosted REST surface.
+SDK keys are managed in the **API** section of the Workspace settings modal. Owners and admins can create a copy-once key by name, copy it while it is visible, see active and revoked keys with their prefixes, and revoke keys that should no longer be used. An **API reference** link at the bottom opens the generated route reference.
 
-![API tab showing API key management and the Connect an agent MCP setup panel](/images/product/dashboard-api-keys.png)
-
-The screenshot also shows the **Connect an agent** panel, which generates MCP setup snippets so coding agents like Claude Code can query your runs. See the [API tab](/dashboard/api-tab) page for the panel walkthrough and [Agent access over MCP](/sdk/agent-mcp) for the full tool reference.
+To connect a coding agent over MCP, use the [Agent tab](/dashboard/api-tab) in the nav rail — its setup snippets fill in a key you created here, or use browser sign-in with no key at all.
 
 <Warning>
 Copy a new key immediately when it is revealed. InstantML stores only a hash after creation, so the plaintext key cannot be recovered later.
@@ -86,7 +83,7 @@ Workspace settings shows storage usage and accounting notes for the active works
 
 ## Next steps
 
-- [API tab](/dashboard/api-tab)
+- [Agent tab](/dashboard/api-tab)
 - [Onboarding, team, and billing](/dashboard/onboarding-team-billing)
 - [Organizations and workspaces](/dashboard/organizations-workspaces)
 - [Pricing, limits, and billing](/guides/pricing-limits-billing)

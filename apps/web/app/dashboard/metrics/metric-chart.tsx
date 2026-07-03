@@ -11,6 +11,7 @@ import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadT
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
 import { formatNumber } from "../../../src/state.js";
 import { chartHeight, chartPadding, chartWidth, metricTitle } from "../../dashboard-models";
+import { chartTooltipPlacement, type TooltipPlacement } from "../ui/chart-tooltip-placement";
 import { useDetailsDismiss } from "../ui/use-details-dismiss";
 import { useMeasuredSize } from "../ui/use-measured-size";
 import type { HoverPoint } from "../../dashboard-types";
@@ -30,55 +31,11 @@ function sanitizeRange(range: ChartZoomRange | undefined, domain: any): ChartZoo
 }
 
 const TOOLTIP_ROW_LIMIT = 8;
-const TOOLTIP_OFFSET = 12;
-const TOOLTIP_MARGIN = 8;
 // Series this sparse render per-point markers — a 1–2 point polyline is
 // invisible or ambiguous without them.
 const SPARSE_POINT_THRESHOLD = 2;
 
-type TooltipPlacement = { left: number; top: number; side: "left" | "right"; vertical: "above" | "below" };
 type ChartView = "chart" | "summary";
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function chartTooltipPlacement({
-  anchorX,
-  anchorY,
-  boundsHeight,
-  boundsWidth,
-  tooltipHeight,
-  tooltipWidth,
-}: {
-  anchorX: number;
-  anchorY: number;
-  boundsHeight: number;
-  boundsWidth: number;
-  tooltipHeight: number;
-  tooltipWidth: number;
-}): TooltipPlacement {
-  const width = Math.max(1, tooltipWidth);
-  const height = Math.max(1, tooltipHeight);
-  const maxLeft = Math.max(TOOLTIP_MARGIN, boundsWidth - width - TOOLTIP_MARGIN);
-  const maxTop = Math.max(TOOLTIP_MARGIN, boundsHeight - height - TOOLTIP_MARGIN);
-  const rightLeft = anchorX + TOOLTIP_OFFSET;
-  const leftLeft = anchorX - width - TOOLTIP_OFFSET;
-  const fitsRight = rightLeft + width <= boundsWidth - TOOLTIP_MARGIN;
-  const side = fitsRight || leftLeft < TOOLTIP_MARGIN ? "right" : "left";
-  const aboveTop = anchorY - height - TOOLTIP_OFFSET;
-  const belowTop = anchorY + TOOLTIP_OFFSET;
-  const spaceAbove = anchorY - TOOLTIP_MARGIN - TOOLTIP_OFFSET;
-  const spaceBelow = boundsHeight - anchorY - TOOLTIP_MARGIN - TOOLTIP_OFFSET;
-  const vertical = aboveTop >= TOOLTIP_MARGIN || spaceAbove >= spaceBelow ? "above" : "below";
-
-  return {
-    left: Math.round(clamp(side === "right" ? rightLeft : leftLeft, TOOLTIP_MARGIN, maxLeft)),
-    top: Math.round(clamp(vertical === "above" ? aboveTop : belowTop, TOOLTIP_MARGIN, maxTop)),
-    side,
-    vertical,
-  };
-}
 
 // The chart renders in CSS pixels (viewBox matches the measured frame), so a
 // normalized point's x/y are already frame-local coordinates.

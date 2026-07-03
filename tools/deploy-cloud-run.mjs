@@ -40,7 +40,7 @@ Environment:
   INSTANTML_CLOUD_RUN_CONTROL_MAX_INSTANCES Auto-scaling control max instances. Default: 1.
   INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES Auto-scaling data min instances. Default: 0.
   INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES Auto-scaling data max instances. Default: 1.
-  INSTANTML_CLOUD_RUN_STARTUP_PROBE    Cloud Run startup probe. Default: HTTP /readyz on port 8000.
+  INSTANTML_CLOUD_RUN_STARTUP_PROBE    Cloud Run startup probe. Default: HTTP /readyz on port 8000 for up to 10 minutes.
   INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1  Permit data scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1  Permit control scaling above one instance for controlled tests only.
   INSTANTML_CLOUD_RUN_DATA_SESSION_AFFINITY  Enable Cloud Run session affinity for data as an optimization, not correctness.
@@ -71,6 +71,9 @@ Environment:
   STRIPE_STORAGE_OVERAGE_PRICE_ID        Optional Stripe metered storage overage price id.
   STRIPE_STORAGE_METER_ID                Optional Stripe Billing Meter id for storage overage.
   INSTANTML_STRIPE_STORAGE_METER_EVENT_NAME Optional Stripe meter event name for retained-storage overage.
+  INSTANTML_EMBED_ENABLED                Enable iframe embed API routes. Default: true for hosted deploys.
+  INSTANTML_EMBED_FRAME_ENABLED          Enable iframe frame-policy lookup. Default: true for hosted deploys.
+  INSTANTML_EMBED_TOKEN_HMAC_SECRET      Secret used to HMAC iframe bearer tokens at rest.
   RESEND_API_KEY                         Resend API key for organization invitation emails.
                                         Required for prod deploys; optional elsewhere.
   INSTANTML_EMAIL_FROM                   Verified invitation sender address. Required with Resend.
@@ -830,6 +833,7 @@ function deploySecretSpecs() {
     ["CLOUDFLARE_R2_SECRET_ACCESS_KEY", "instantml-cloudflare-r2-secret-access-key", false],
     ["STRIPE_SECRET_KEY", "instantml-stripe-secret-key", false],
     ["STRIPE_WEBHOOK_SECRET", "instantml-stripe-webhook-secret", false],
+    ["INSTANTML_EMBED_TOKEN_HMAC_SECRET", "instantml-embed-token-hmac-secret", false],
     ["RESEND_API_KEY", "instantml-resend-api-key", false],
   ];
 }
@@ -970,6 +974,9 @@ function buildRuntimeEnv(staticEgressIp) {
     INSTANTML_MAX_UPLOAD_BODY_BYTES: value("INSTANTML_MAX_UPLOAD_BODY_BYTES") || "50000000",
     INSTANTML_REQUEST_TIMEOUT_SECONDS: value("INSTANTML_REQUEST_TIMEOUT_SECONDS") || "900",
     INSTANTML_BILLING_ENABLED: value("INSTANTML_BILLING_ENABLED") || (value("STRIPE_SECRET_KEY") ? "true" : ""),
+    INSTANTML_EMBED_ENABLED: value("INSTANTML_EMBED_ENABLED") || "true",
+    INSTANTML_EMBED_FRAME_ENABLED: value("INSTANTML_EMBED_FRAME_ENABLED") || "true",
+    INSTANTML_EMBED_ORG_ALLOWLIST: value("INSTANTML_EMBED_ORG_ALLOWLIST"),
     STRIPE_API_VERSION: value("STRIPE_API_VERSION") || "2026-04-22.dahlia",
     STRIPE_PRO_PRICE_ID: value("STRIPE_PRO_PRICE_ID"),
     STRIPE_PREMIUM_PRICE_ID: value("STRIPE_PREMIUM_PRICE_ID"),
@@ -1145,7 +1152,7 @@ function appendStartupProbeArgs(args, containerPort) {
       "initialDelaySeconds=0",
       "timeoutSeconds=10",
       "periodSeconds=10",
-      "failureThreshold=30",
+      "failureThreshold=60",
     ].join(",");
   args.push("--startup-probe", probe);
 }
@@ -1549,22 +1556,25 @@ hostRules:
 pathMatchers:
 - name: instantml-api
   defaultService: ${dataBackend}
-  pathRules:
-  - paths:
-    - /api/auth
-    - /api/auth/*
-    - /api/invitations
-    - /api/invitations/*
-    - /api/billing
-    - /api/billing/*
-    - /api/dashboard/preferences
-    - /api/users
-    - /api/users/*
-    - /api/orgs
-    - /api/orgs/*
-    - /api/workspace-views
-    - /api/workspace-views/*
+  routeRules:
+  - priority: 100
     service: ${controlBackend}
+    matchRules:
+    - fullPathMatch: /api/auth
+    - prefixMatch: /api/auth/
+    - fullPathMatch: /api/invitations
+    - prefixMatch: /api/invitations/
+    - fullPathMatch: /api/billing
+    - prefixMatch: /api/billing/
+    - fullPathMatch: /api/dashboard/preferences
+    - fullPathMatch: /api/users
+    - prefixMatch: /api/users/
+    - fullPathMatch: /api/orgs
+    - prefixMatch: /api/orgs/
+    - fullPathMatch: /api/workspace-views
+    - prefixMatch: /api/workspace-views/
+    - pathTemplateMatch: /api/embed/sessions/*/frame-policy
+    - pathTemplateMatch: /api/embed/sessions/*/current
 tests:
 - description: Auth routes use control plane
   host: instantml.local
@@ -1581,6 +1591,14 @@ tests:
 - description: Workspace view routes use control plane
   host: instantml.local
   path: /api/workspace-views
+  service: ${controlBackend}
+- description: Embed frame policy uses control plane
+  host: instantml.local
+  path: /api/embed/sessions/11111111-1111-4111-8111-111111111111/frame-policy
+  service: ${controlBackend}
+- description: Embed current session uses control plane
+  host: instantml.local
+  path: /api/embed/sessions/11111111-1111-4111-8111-111111111111/current
   service: ${controlBackend}
 - description: Report routes use data plane
   host: instantml.local
@@ -1731,6 +1749,16 @@ async function verifyPublicRouter(url) {
       path: "/api/workspace-views",
       expect: (response, text) => response.status === 401 && /browser session required|missing bearer token/i.test(text),
       label: "control workspace views route",
+    },
+    {
+      path: "/api/embed/sessions/11111111-1111-4111-8111-111111111111/frame-policy",
+      expect: (response, text) => response.status === 404 && /embed session not found/i.test(text),
+      label: "control embed frame-policy route",
+    },
+    {
+      path: "/api/embed/sessions/11111111-1111-4111-8111-111111111111/current",
+      expect: (response, text) => response.status === 401 && /bearer token/i.test(text),
+      label: "control embed current route",
     },
     {
       path: "/api/reports",

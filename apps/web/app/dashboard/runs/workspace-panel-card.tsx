@@ -20,6 +20,7 @@ import {
 } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { CustomSelect } from "../ui/select";
+import { SkeletonChart, SkeletonChartLines } from "../ui/skeleton";
 import { useDetailsDismiss } from "../ui/use-details-dismiss";
 import { normalizedPanelLayout, resolveWorkspaceSettings } from "./panel-settings";
 import { AltChartTooltip, DistributionPanelChart, LatestMetricPanelChart, ScatterPanelChart, truncateMiddle, type AltChartHover } from "./summary-panel-charts";
@@ -62,13 +63,8 @@ function HistogramTimelinePanelChart({
   }
   if (timeline?.loading) {
     return (
-      <div className="chart-area workspace-chart-loading" aria-label={`Loading logged histogram timeline for ${objectKey}`}>
-        <div className="chart-loading-frame">
-          <span />
-          <span />
-          <span />
-        </div>
-        <div className="empty">Loading logged histogram frames...</div>
+      <div className="chart-area workspace-chart-loading" role="status" aria-label={`Loading logged histogram timeline for ${objectKey}`}>
+        <SkeletonChart />
       </div>
     );
   }
@@ -625,13 +621,8 @@ export function WorkspacePanelCard({
         {missingSeriesCount && !loadingSeries ? <span className="panel-data-gap">{scatterPanel || distributionPanel ? `${missingSeriesCount} missing field values` : `${missingSeriesCount} no data for metric`}</span> : null}
       </div>
       {loadingSeries ? (
-        <div className="chart-area workspace-chart-loading" aria-label={`Loading ${panel.title} metric series`}>
-          <div className="chart-loading-frame">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="empty">Loading metric series...</div>
+        <div className="chart-area workspace-chart-loading" role="status" aria-label={`Loading ${panel.title} metric series`}>
+          <SkeletonChartLines />
         </div>
       ) : (
         linePanel ? (

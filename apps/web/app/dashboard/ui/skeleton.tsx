@@ -10,6 +10,20 @@ import type { CSSProperties } from "react";
 // shape stable across renders so it doesn't twitch while data streams in.
 const CHART_BARS = [44, 66, 54, 80, 70, 90, 76, 94, 82, 68, 58, 78, 88, 72];
 
+// Faux training curves for the line-chart placeholder, normalized to a 100x56
+// box. Loss-shaped (steep drop, long flat tail) with slightly offset tails so
+// the placeholder reads as a bundle of runs, like the plotted chart it stands
+// in for.
+const CHART_LINES = [
+  "M0 3 C2 20 5 34 10 41 C17 47 28 50 44 51 C66 52 86 52.4 100 52.6",
+  "M0 8 C3 24 7 37 13 43 C21 48 34 50 50 50.8 C70 51.4 88 51.6 100 51.8",
+  "M0 5 C2.5 22 6 36 11.5 42 C19 47.5 31 49.4 47 50 C68 50.6 87 50.8 100 51",
+];
+
+// Faux legend label widths (percent of the chip) so the run list at the
+// bottom of the placeholder reads organic rather than stamped.
+const CHART_LEGEND_WIDTHS = [72, 56, 84, 62, 76, 50];
+
 export function Skeleton({
   className = "",
   width,
@@ -29,6 +43,43 @@ export function Skeleton({
       aria-hidden="true"
       style={{ width, height, borderRadius: radius, ...style }}
     />
+  );
+}
+
+// A line-chart placeholder that occupies the exact box the plotted chart will
+// take over, so the swap doesn't reflow the card. It stretches to fill its
+// grid cell; pass minHeight when the real chart has a fixed frame height.
+// A shimmering outline of faux series sits over the usual chart grid, with a
+// faux run legend along the bottom mirroring the plotted chart's legend row.
+// Pass legend={false} where the real chart renders without one (e.g. the
+// single-run overview minis).
+export function SkeletonChartLines({ label, legend = true, minHeight }: { label?: string; legend?: boolean; minHeight?: number }) {
+  return (
+    <div
+      aria-hidden={label ? undefined : true}
+      aria-label={label}
+      className="dash-skel-linechart"
+      role={label ? "status" : undefined}
+      style={minHeight === undefined ? undefined : { minHeight }}
+    >
+      <div className="dash-skel-linechart__frame">
+        <svg aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 100 56">
+          {CHART_LINES.map((d) => (
+            <path d={d} key={d} />
+          ))}
+        </svg>
+      </div>
+      {legend ? (
+        <div className="dash-skel-linechart__legend">
+          {CHART_LEGEND_WIDTHS.map((width, index) => (
+            <span className="dash-skel-linechart__legend-chip" key={index}>
+              <Skeleton className="dash-skel-linechart__legend-swatch" />
+              <Skeleton className="dash-skel-linechart__legend-label" width={`${width}%`} />
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

@@ -1231,6 +1231,7 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(DEFAULT_DASHBOARD_TAB, "runs");
   assert.equal(tabToPath("metrics"), "/dashboard/metrics");
   assert.equal(tabToPath("distributed"), "/dashboard/distributed");
+  assert.equal(tabToPath("agent"), "/dashboard/agent");
   // CK2: the Checkpoints tab merged into Run Detail; old ids stay routable.
   assert.equal(tabToPath("checkpoints"), "/dashboard/detail");
   assert.equal(tabToPath("models"), "/dashboard/detail");
@@ -1249,6 +1250,9 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   // The standalone Compare page collapsed into the Runs → Table view, so the
   // old slug canonicalizes to runs (like checkpoints/models → detail).
   assert.equal(tabFromPath("/dashboard/compare?x=1"), "runs");
+  assert.equal(tabFromPath("/dashboard/agent?x=1"), "agent");
+  assert.equal(tabFromPath("/dashboard/api?x=1"), "agent");
+  assert.equal(tabToPath("api"), "/dashboard/agent");
   assert.equal(tabFromPath("/dashboard/reports/report_123"), "reports");
   assert.equal(tabFromPath("/dashboard/not-real"), "runs");
   assert.equal(canonicalDashboardPath("/dashboard"), "/dashboard/runs");
@@ -1257,6 +1261,7 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(canonicalDashboardPath("/dashboard/checkpoints"), "/dashboard/detail");
   assert.equal(canonicalDashboardPath("/dashboard/integrations"), "/dashboard/runs");
   assert.equal(canonicalDashboardPath("/dashboard/imports"), "/dashboard/runs");
+  assert.equal(canonicalDashboardPath("/dashboard/api"), "/dashboard/agent");
   assert.equal(canonicalDashboardPath("/dashboard/metrics/extra"), "/dashboard/metrics");
   assert.equal(pathFromLegacyHash("#detail"), "/dashboard/detail");
   assert.equal(pathFromLegacyHash("#/detail"), "");

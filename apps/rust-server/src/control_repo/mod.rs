@@ -634,6 +634,23 @@ impl ControlDb {
         Ok(())
     }
 
+    /// Bump `last_used_at` without touching any other column. The auth path
+    /// calls this instead of `upsert_api_key` so a stale full-record write can
+    /// never clobber a concurrent revocation or scope change; the predicate
+    /// keeps the column monotonic when instances race.
+    pub async fn touch_api_key_last_used(&self, id: Uuid, used_at: DateTime<Utc>) -> AppResult<()> {
+        sqlx::query(
+            "UPDATE api_keys SET last_used_at = $2 \
+             WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $2)",
+        )
+        .bind(id)
+        .bind(used_at)
+        .execute(self.pool())
+        .await
+        .map_err(|err| internal("touch_api_key_last_used", err))?;
+        Ok(())
+    }
+
     pub async fn upsert_embed_session(&self, session: &EmbedSessionRow) -> AppResult<()> {
         let options = serde_json::to_value(&session.options)
             .map_err(|_| AppError::internal("embed session options serialization failed"))?;

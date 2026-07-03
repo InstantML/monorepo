@@ -10,6 +10,7 @@ import { AnalysisCard } from "../ui/analysis-card";
 import { PageHead } from "../ui/page-head";
 import { CustomSelect } from "../ui/select";
 import { AnalysisSkeleton } from "../ui/skeleton";
+import { useChartFrameWidth } from "../ui/use-measured-size";
 
 type RankReducerPoint = {
   step: number;
@@ -208,7 +209,10 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
 
 function ReducerChart({ metricKey, reducers }: { metricKey: string; reducers: RankReducerPoint[] }) {
   const [mode, setMode] = useState<ReducerMode>("central");
-  const geometry = useMemo(() => chartGeometry(reducers, mode), [mode, reducers]);
+  // Render the viewBox at the measured frame width so axis text keeps a
+  // constant pixel size instead of scaling with the card (see useChartFrameWidth).
+  const { frameRef, width } = useChartFrameWidth(REDUCER_FRAME_WIDTH);
+  const geometry = useMemo(() => chartGeometry(reducers, mode, width), [mode, reducers, width]);
   const help = (
     <>
       <strong>{metricTitle(metricKey)} reduced across ranks at each step.</strong>
@@ -241,15 +245,15 @@ function ReducerChart({ metricKey, reducers }: { metricKey: string; reducers: Ra
           value={mode}
         />
       </div>
-      <div className="analysis-chart-frame analysis-chart-frame--wide">
-        <svg className="analysis-line-chart" viewBox="0 0 720 280" role="img" aria-label={`Rank reducer chart showing ${reducerModeLabel(mode)} for ${metricKey}`}>
+      <div className="analysis-chart-frame analysis-chart-frame--wide" ref={frameRef}>
+        <svg className="analysis-line-chart" viewBox={`0 0 ${width} ${REDUCER_FRAME_HEIGHT}`} role="img" aria-label={`Rank reducer chart showing ${reducerModeLabel(mode)} for ${metricKey}`}>
           {geometry.yTicks.map((tick) => (
             <g key={tick}>
-              <line className="analysis-grid-line" x1="52" x2="700" y1={geometry.y(tick)} y2={geometry.y(tick)} />
+              <line className="analysis-grid-line" x1="52" x2={geometry.right} y1={geometry.y(tick)} y2={geometry.y(tick)} />
               <text className="analysis-tick" x="46" y={geometry.y(tick) + 4} textAnchor="end">{formatNumber(tick, 3)}</text>
             </g>
           ))}
-          <line className="analysis-axis-line" x1="52" x2="700" y1="244" y2="244" />
+          <line className="analysis-axis-line" x1="52" x2={geometry.right} y1="244" y2="244" />
           {["central", "bounds"].includes(mode) ? <polygon className="rank-band-area" points={[...bandTop, ...bandBottom].join(" ")} /> : null}
           {["central", "median"].includes(mode) ? <polyline className="rank-median-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.p50)}`).join(" ")} /> : null}
           {["central", "mean"].includes(mode) ? <polyline className="rank-mean-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.mean)}`).join(" ")} /> : null}
@@ -257,8 +261,8 @@ function ReducerChart({ metricKey, reducers }: { metricKey: string; reducers: Ra
           {mode === "bounds" ? <polyline className="rank-min-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.min)}`).join(" ")} /> : null}
           {mode === "bounds" ? <polyline className="rank-max-line" points={reducers.map((point) => `${geometry.x(point.step)},${geometry.y(point.max)}`).join(" ")} /> : null}
           <text className="analysis-tick" x="52" y="262">{formatNumber(geometry.minX, 0)}</text>
-          <text className="analysis-tick" x="700" y="262" textAnchor="end">{formatNumber(geometry.maxX, 0)}</text>
-          <text className="analysis-axis-title" x="376" y="276" textAnchor="middle">step</text>
+          <text className="analysis-tick" x={geometry.right} y="262" textAnchor="end">{formatNumber(geometry.maxX, 0)}</text>
+          <text className="analysis-axis-title" x={geometry.midX} y="276" textAnchor="middle">step</text>
         </svg>
       </div>
       <div className="analysis-legend">
@@ -472,7 +476,10 @@ function heatmapGrid(heatmap: RankHeatmapPoint[]) {
   return { ranks, steps, lookup, maxDelta };
 }
 
-function chartGeometry(points: RankReducerPoint[], mode: ReducerMode = "central") {
+const REDUCER_FRAME_WIDTH = 720;
+const REDUCER_FRAME_HEIGHT = 280;
+
+function chartGeometry(points: RankReducerPoint[], mode: ReducerMode = "central", width = REDUCER_FRAME_WIDTH) {
   if (!points.length) return null;
   const minX = Math.min(...points.map((point) => point.step));
   const maxX = Math.max(...points.map((point) => point.step));
@@ -485,10 +492,12 @@ function chartGeometry(points: RankReducerPoint[], mode: ReducerMode = "central"
   const lo = minY - pad;
   const hi = maxY + pad;
   const span = hi - lo;
-  const x = (value: number) => 52 + ((value - minX) / xSpan) * 648;
+  const right = Math.max(92, width - 20);
+  const midX = (52 + right) / 2;
+  const x = (value: number) => 52 + ((value - minX) / xSpan) * (right - 52);
   const y = (value: number) => 244 - ((value - lo) / span) * 212;
   const yTicks = [lo + span * 0.1, lo + span * 0.5, hi - span * 0.1];
-  return { x, y, yTicks, minX, maxX };
+  return { x, y, yTicks, minX, maxX, right, midX };
 }
 
 function reducerModeValues(point: RankReducerPoint, mode: ReducerMode) {

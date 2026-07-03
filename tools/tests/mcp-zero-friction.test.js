@@ -36,8 +36,8 @@ test("MCP installer prints client snippets for the hosted server", () => {
   assert.match(cursor, /"Authorization": "Bearer instantml_test"/);
 });
 
-test("API tab includes gated Connect Agent setup snippets", () => {
-  const tabPane = read("apps/web/app/dashboard/api/tab-pane.tsx");
+test("Agent tab includes gated Connect Agent setup snippets", () => {
+  const tabPane = read("apps/web/app/dashboard/agent/tab-pane.tsx");
   const panel = read("apps/web/app/dashboard/api/agent-setup.tsx");
   const snippets = read("apps/web/app/dashboard/api/agent-setup-snippets.ts");
 
@@ -57,6 +57,6 @@ test("Connect Agent snippets support tokenless OAuth (browser sign-in)", () => {
 
   // OAuth mode connects by URL only — no Bearer token in the generated config.
   assert.match(snippets, /type AgentAuthMode = "api-key" \| "oauth"/);
-  assert.match(snippets, /function oauthSnippets\(\)/);
+  assert.match(snippets, /function oauthSnippets\(orgId\?: string \| null\)/);
   assert.match(snippets, /browser to sign in/i);
 });

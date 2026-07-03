@@ -207,6 +207,43 @@ fn placement(cell_id: &str) -> TenantRoutePlacement {
 }
 
 #[sqlx::test]
+async fn touch_api_key_last_used_never_moves_backwards_or_revives(pool: PgPool) {
+    let db = ControlDb::from_pool(pool);
+    let o = org("api-key-touch", None);
+    db.upsert_org(&o).await.unwrap();
+    let service = service_account(o.id);
+    db.upsert_service_account(&service).await.unwrap();
+    let mut key = api_key(o.id, service.id);
+    key.row.revoked_at = Some(db_time_now());
+    db.upsert_api_key(&key).await.unwrap();
+
+    let used_at = db_time_now();
+    db.touch_api_key_last_used(key.row.id, used_at)
+        .await
+        .unwrap();
+    let loaded = load_api_key(&db, key.row.id).await;
+    assert_eq!(loaded.row.last_used_at, Some(used_at));
+    assert_eq!(loaded.row.revoked_at, key.row.revoked_at);
+
+    // An older timestamp (a slow instance racing a fresh one) must not move
+    // the column backwards.
+    db.touch_api_key_last_used(key.row.id, used_at - ChronoDuration::minutes(10))
+        .await
+        .unwrap();
+    let loaded = load_api_key(&db, key.row.id).await;
+    assert_eq!(loaded.row.last_used_at, Some(used_at));
+}
+
+async fn load_api_key(db: &ControlDb, id: Uuid) -> ApiKeyWithHash {
+    db.load_api_keys()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|key| key.row.id == id)
+        .expect("api key")
+}
+
+#[sqlx::test]
 async fn session_point_lookup_returns_one_control_session_or_none(pool: PgPool) {
     let db = ControlDb::from_pool(pool);
     let o = org("embed-point-lookup", None);

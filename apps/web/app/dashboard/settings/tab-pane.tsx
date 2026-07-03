@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
-import { AlertTriangle, Copy, CreditCard, ExternalLink, Gauge, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Copy, CreditCard, ExternalLink, Gauge, KeyRound, Plus, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
@@ -14,6 +14,7 @@ import type { components } from "../../../src/types/api.generated";
 
 type SeatRow = components["schemas"]["SeatRow"];
 type InvitationRow = components["schemas"]["PublicInvitationRow"];
+type ApiKeyRow = components["schemas"]["PublicApiKeyRow"];
 
 type UsageWarning = { code?: string; message?: string };
 type BillingStatus = {
@@ -67,22 +68,28 @@ function planDisplayName(value?: string) {
   return "Free";
 }
 
-type SectionId = "usage" | "billing" | "seats" | "workspace" | "defaults";
+type SectionId = "usage" | "billing" | "seats" | "workspace" | "api" | "defaults";
 
 const SECTIONS: { id: SectionId; label: string; Icon: ComponentType<{ size?: number }> }[] = [
   { id: "usage", label: "Plan Usage", Icon: Gauge },
   { id: "billing", label: "Billing", Icon: CreditCard },
   { id: "seats", label: "Seats", Icon: UserPlus },
   { id: "workspace", label: "Workspace", Icon: Settings },
+  { id: "api", label: "API", Icon: KeyRound },
   { id: "defaults", label: "Defaults", Icon: SlidersHorizontal },
 ];
 
 type Props = {
   accountUser: { display_name?: string | null; primary_email?: string | null } | null;
   activeLimitIncludedSeats: number;
+  activeOrgId: string;
   activePlan: string;
   activeUsageWarnings: UsageWarning[];
   adminBusy: boolean;
+  adminMessage: string;
+  adminMessageTone: "status" | "error";
+  apiKeyName: string;
+  apiKeys: ApiKeyRow[];
   canManageOrg: boolean;
   formatBytes: (n: number) => string;
   inviteEmail: string;
@@ -99,6 +106,10 @@ type Props = {
   apiRequestsLimit: number;
   generalRateLimitLabel: string;
   ingestRateLimitLabel: string;
+  onApiKeyNameChange: (name: string) => void;
+  onCopyNewApiKey: () => void;
+  onCreateApiKey: () => void;
+  onRevokeApiKey: (id: string) => void;
   onInviteEmail: (email: string) => void;
   onInviteRole: (role: string) => void;
   onInviteSeat: () => void;
@@ -125,14 +136,20 @@ type Props = {
   usageAvailable: boolean;
   xMode: string;
   billingStatus: BillingStatus | null;
+  newApiKey: string;
 };
 
 export function SettingsTabPane({
   accountUser,
   activeLimitIncludedSeats,
+  activeOrgId,
   activePlan,
   activeUsageWarnings,
   adminBusy,
+  adminMessage,
+  adminMessageTone,
+  apiKeyName,
+  apiKeys,
   canManageOrg,
   formatBytes,
   inviteEmail,
@@ -149,6 +166,10 @@ export function SettingsTabPane({
   apiRequestsLimit,
   generalRateLimitLabel,
   ingestRateLimitLabel,
+  onApiKeyNameChange,
+  onCopyNewApiKey,
+  onCreateApiKey,
+  onRevokeApiKey,
   onInviteEmail,
   onInviteRole,
   onInviteSeat,
@@ -175,6 +196,7 @@ export function SettingsTabPane({
   usageAvailable,
   xMode,
   billingStatus,
+  newApiKey,
 }: Props) {
   // Which settings section the modal's internal nav is showing.
   const [section, setSection] = useState<SectionId>("usage");
@@ -222,6 +244,8 @@ export function SettingsTabPane({
   const metricTone = usageTone(metricPercent);
   const apiRequestTone = usageTone(apiRequestsPercent);
   const visibleInvitations = invitations.filter((invitation) => invitation.status !== "accepted");
+  const visibleApiKeys = canManageOrg ? apiKeys : [];
+  const visibleNewApiKey = canManageOrg ? newApiKey : "";
   const checkoutRetryPlan = billingStatus?.access_state === "checkout_pending"
     ? billingStatus.requested_plan_tier ?? billingStatus.plan_tier ?? orgPlanTier
     : "";
@@ -459,6 +483,55 @@ export function SettingsTabPane({
                 {accountUser.display_name && accountUser.primary_email ? <SettingRow label="Email" value={accountUser.primary_email} /> : null}
               </>
             ) : null}
+          </div>
+            ) : null}
+            {section === "api" ? (
+          <div className="admin-stack settings-api-section">
+            <section className="settings-api-card" aria-label="API keys">
+              <div className="panel-subhead">
+                <strong><KeyRound size={14} /> API keys</strong>
+              </div>
+              {canManageOrg ? (
+                <>
+                  <div className="admin-form-row">
+                    <input aria-label="API key name" onChange={(event) => onApiKeyNameChange(event.target.value)} placeholder="Dashboard SDK key" value={apiKeyName} />
+                    <button className="primary-button" disabled={adminBusy || !activeOrgId} onClick={onCreateApiKey} type="button"><Plus size={14} /> Create</button>
+                  </div>
+                  <p className="admin-hint">
+                    Keys are shown once at creation and sent as <code>Authorization: Bearer</code>. Name keys per machine, pipeline, or agent so revoking one does not break the rest.
+                  </p>
+                </>
+              ) : (
+                <p className="empty">API-key management is available to workspace owners and admins.</p>
+              )}
+              {adminMessage ? <p className={`admin-message ${adminMessageTone}`} role={adminMessageTone === "error" ? "alert" : "status"}>{adminMessage}</p> : null}
+              {visibleNewApiKey ? (
+                <div className="api-key-reveal" role="status" aria-live="polite">
+                  <strong>Copy-once API key</strong>
+                  <code>{visibleNewApiKey}</code>
+                  <button className="secondary" onClick={onCopyNewApiKey} type="button"><Copy size={14} /> Copy</button>
+                </div>
+              ) : null}
+              <div className="admin-list">
+                {visibleApiKeys.map((key) => (
+                  <div className={`api-row ${key.revoked_at ? "muted" : ""}`} key={key.id}>
+                    <span>{key.revoked_at ? "Revoked" : "Active"}</span>
+                    <strong>{key.name}</strong>
+                    <code>{key.key_prefix}</code>
+                    {canManageOrg ? (
+                      <button className="ghost" disabled={adminBusy || Boolean(key.revoked_at)} onClick={() => onRevokeApiKey(key.id)} type="button" aria-label={`Revoke ${key.name}`}>
+                        <X size={14} />
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                {canManageOrg && !visibleApiKeys.length ? <p className="empty">No API keys loaded.</p> : null}
+              </div>
+            </section>
+
+            <a className="secondary compact-button settings-api-docs-link" href="/docs/api-reference" rel="noreferrer" target="_blank">
+              <BookOpen size={14} /> API reference
+            </a>
           </div>
             ) : null}
             {section === "defaults" ? (

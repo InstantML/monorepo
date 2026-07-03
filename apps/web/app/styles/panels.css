@@ -585,6 +585,11 @@
 
 .workspace-panel-grid > .empty {
   grid-column: 1 / -1;
+  /* The grid's implicit rows are fixed 78px tracks, but .empty carries a 140px
+   * min-height — in a single track it overflows past the section's bottom edge,
+   * where the section's content-visibility paint containment clips it mid-box.
+   * Span two tracks (2×78 + gap ≥ 140) so the row actually fits the box. */
+  grid-row: span 2;
 }
 
 /* Collapsed to nothing until a panel is actually being dragged — otherwise it
@@ -615,55 +620,10 @@
   opacity: 1;
 }
 
+/* The loading stand-in keeps the exact chart-area box the plotted chart will
+ * take over (see ui/skeleton.tsx), so the swap doesn't reflow the card. */
 .workspace-chart-loading {
-  display: grid;
-  min-height: 230px;
-  align-content: center;
-  gap: 12px;
-}
-
-.chart-loading-frame {
-  position: relative;
-  overflow: hidden;
-  display: block;
-  height: 150px;
-  padding: 16px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--control-radius);
-  background:
-    linear-gradient(var(--chart-grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
-    linear-gradient(180deg, transparent, var(--surface-soft));
-  background-size: 100% 34px, 72px 100%, 100% 100%;
-  background-position: 0 18px, 28px 0, 0 0;
-}
-
-.chart-loading-frame span {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  display: block;
-  height: 2px;
-  border-radius: 999px;
-  background: rgba(47, 128, 237, 0.22);
-  transform-origin: left center;
-}
-
-.chart-loading-frame span:first-child {
-  top: 98px;
-  transform: rotate(-8deg);
-}
-
-.chart-loading-frame span:nth-child(2) {
-  top: 72px;
-  background: rgba(18, 166, 122, 0.2);
-  transform: rotate(4deg);
-}
-
-.chart-loading-frame span:nth-child(3) {
-  top: 116px;
-  background: rgba(124, 92, 196, 0.16);
-  transform: rotate(-3deg);
+  align-content: stretch;
 }
 
 .workspace-empty {
@@ -1082,6 +1042,10 @@ kbd {
   position: relative;
   display: grid;
   grid-template-columns: 216px minmax(0, 1fr);
+  /* Pin the single row to the card height: an implicit auto row grows with
+     tall section content, so the pane body never hits its overflow and the
+     card's overflow:hidden clips it instead of scrolling. */
+  grid-template-rows: minmax(0, 1fr);
   width: min(900px, calc(100vw - 32px));
   height: min(660px, calc(100vh - var(--topbar-height) - 48px));
   overflow: hidden;

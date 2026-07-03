@@ -229,7 +229,7 @@ export type TabId =
   | "artifacts"
   | "reports"
   | "settings"
-  | "api";
+  | "agent";
 
 export type Tone = "good" | "bad" | "live" | "neutral" | "warn";
 
@@ -253,12 +253,6 @@ export type ReportRow = {
   id: string;
   name: string;
   scope: string;
-};
-
-export type ApiRow = {
-  method: string;
-  path: string;
-  description: string;
 };
 
 export type MetricCatalogRow = {

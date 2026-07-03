@@ -7,6 +7,18 @@ type DocsAgentMarkdownButtonProps = {
   href: string;
 };
 
+/** Fetch a static docs markdown page and copy it to the clipboard. */
+export async function copyDocsMarkdown(href: string): Promise<boolean> {
+  try {
+    const response = await fetch(href, { cache: "no-store" });
+    if (!response.ok) return false;
+    await navigator.clipboard.writeText(await response.text());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function DocsAgentMarkdownButton({ href }: DocsAgentMarkdownButtonProps) {
   const [copied, setCopied] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -22,13 +34,7 @@ export function DocsAgentMarkdownButton({ href }: DocsAgentMarkdownButtonProps) 
   }
 
   async function copyMarkdown() {
-    try {
-      const response = await fetch(href, { cache: "no-store" });
-      if (!response.ok) return;
-      await navigator.clipboard.writeText(await response.text());
-    } catch {
-      return;
-    }
+    if (!(await copyDocsMarkdown(href))) return;
     clearCopiedTimer();
     setCopied(true);
     timeoutRef.current = setTimeout(() => setCopied(false), 1600);
