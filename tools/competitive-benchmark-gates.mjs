@@ -69,6 +69,8 @@ const HISTORICAL_WANDB_GATES = Object.freeze([
 
 const NEPTUNE_MEASUREMENT_NAMES = Object.freeze([
   "metric_catalog_1000",
+  "metric_catalog_100000",
+  "metric_catalog_high_cardinality",
   "metrics_catalog_1000",
   "org_metric_catalog",
   "project_metric_catalog",
@@ -263,7 +265,7 @@ function neptuneMetricScaleGate(result) {
 }
 
 function hostedBudgetGate(result) {
-  const measurements = Array.isArray(result?.measurements) ? result.measurements : [];
+  const measurements = measurementEntries(result);
   const budgetedMeasurements = measurements.filter((measurement) => Number.isFinite(measurement?.budget_ms));
   if (!budgetedMeasurements.length) {
     return notMeasured(
@@ -272,7 +274,7 @@ function hostedBudgetGate(result) {
       "missing hosted benchmark measurements with budget_ms",
     );
   }
-  const failures = budgetFailures(result);
+  const failures = budgetFailures({ ...result, measurements });
   if (failures.length === 0) {
     return thresholdGate({
       id: "internal.hosted_budgets",
@@ -312,7 +314,7 @@ function notMeasured(id, target, message) {
 }
 
 function findMeasurement(result, names) {
-  const measurements = Array.isArray(result?.measurements) ? result.measurements : [];
+  const measurements = measurementEntries(result);
   for (const name of names) {
     const exact = measurements.find((measurement) => measurement?.name === name);
     if (exact) return exact;
@@ -322,6 +324,17 @@ function findMeasurement(result, names) {
     if (partial) return partial;
   }
   return undefined;
+}
+
+function measurementEntries(result) {
+  if (Array.isArray(result?.measurements)) return result.measurements;
+  if (!result?.measurements || typeof result.measurements !== "object") return [];
+  return Object.entries(result.measurements).map(([name, measurement]) => {
+    if (!measurement || typeof measurement !== "object" || Array.isArray(measurement)) {
+      return { name };
+    }
+    return { name, ...measurement };
+  });
 }
 
 function metricKeysFrom(result) {

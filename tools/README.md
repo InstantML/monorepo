@@ -230,17 +230,24 @@ INSTANTML_SCALE_RUNS=5 INSTANTML_SCALE_METRICS=4 INSTANTML_SCALE_POINTS=100 node
 
 ## Rust Large-Run Benchmark
 
-`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 100,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 20,000-step chart series. It starts disposable ClickHouse, applies the Rust ClickHouse schema, seeds operational records and metric rows directly into ClickHouse, starts the Rust API, and prints JSON p50/p95 timings for newest pages, literal search, field search, boolean search, regex search, metric sort, single-run chart reads, and batched selected-run M4 reads.
+`rust-large-run-benchmark.mjs` is the regression gate for the design-partner scale case: a 100,000-run project with realistic names, statuses, tags, notes, config, selected metric summaries, and one 20,000-step chart series. It starts disposable ClickHouse, applies the Rust ClickHouse schema, seeds operational records and metric rows directly into ClickHouse, starts the Rust API, and prints JSON p50/p95 timings for newest pages, literal search, field search, boolean search, regex search, metric sort, single-run chart reads, batched selected-run M4 reads, and optional high-cardinality run-detail metric catalog reads.
 
 ```bash
 npm run benchmark:large-runs
 INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 npm run benchmark:large-runs
+INSTANTML_BENCH_RUNS=10000 INSTANTML_BENCH_LONG_RUN_STEPS=500000 INSTANTML_BENCH_WIDE_METRIC_KEYS=100000 INSTANTML_BENCH_SAMPLES=3 INSTANTML_BENCH_WARMUPS=1 npm run benchmark:large-runs
 INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
 ```
 
 Useful environment variables:
 
 - `INSTANTML_BENCH_RUNS`: number of seeded runs. Default: `100000`.
+- `INSTANTML_BENCH_LONG_RUN_STEPS`: metric steps on the newest run. Default: `20000`.
+- `INSTANTML_BENCH_WIDE_METRIC_KEYS`: optional extra one-point metric keys on
+  a stable catalog run outside the newest page when the dataset is large enough.
+  Set `100000` to exercise W&B's published metric-cardinality guidance and the
+  conservative Neptune thousand-metric gate against the existing
+  `GET /runs/{run_id}` summary/catalog response.
 - `INSTANTML_BENCH_SAMPLES`: measured requests per endpoint. Default: `15`.
 - `INSTANTML_BENCH_WARMUPS`: warmup requests per endpoint. Default: `2`.
 - `INSTANTML_BENCH_WEB=1`: additionally build/start the Next app and measure first useful render.

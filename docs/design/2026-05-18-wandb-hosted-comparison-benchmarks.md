@@ -154,6 +154,14 @@ series path. M4 bucket requests are sanitized as benchmark metadata and validate
 against the same 120,000-point batched-series response cap, so long-run chart
 benchmarks cover both query latency and response-size discipline.
 
+The disposable Rust large-run benchmark can also seed
+`INSTANTML_BENCH_WIDE_METRIC_KEYS=100000` onto a stable catalog run and measure
+the existing `GET /runs/{run_id}` summary/catalog response. Competitive gates
+accept that object-shaped local benchmark payload for metric-cardinality
+evidence. This keeps high-cardinality validation on real Rust/ClickHouse query
+behavior without adding a product API; hosted marketing claims still need a
+sanitized Cloud Run result from the deployed request path.
+
 ## Review Notes
 
 Fresh reviewer 1:

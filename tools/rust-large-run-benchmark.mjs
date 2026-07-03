@@ -12,6 +12,7 @@ import { clickhousePost, ensureLocalClickHouse } from "./local-clickhouse.mjs";
 const repo = process.cwd();
 const runCount = numberEnv("INSTANTML_BENCH_RUNS", 100_000);
 const longRunSteps = numberEnv("INSTANTML_BENCH_LONG_RUN_STEPS", 20_000);
+const wideMetricKeys = nonNegativeNumberEnv("INSTANTML_BENCH_WIDE_METRIC_KEYS", 0);
 const samples = numberEnv("INSTANTML_BENCH_SAMPLES", 15);
 const warmups = numberEnv("INSTANTML_BENCH_WARMUPS", 2);
 const includeWeb = process.env.INSTANTML_BENCH_WEB === "1";
@@ -28,9 +29,11 @@ const benchUserId = "00000000-0000-0000-0000-00000000b001";
 const benchMembershipId = "00000000-0000-0000-0000-00000000b002";
 const benchSessionId = "00000000-0000-0000-0000-00000000b003";
 const benchSessionToken = "instantml_session_large_run_benchmark";
+const longRunMetricKeys = Object.freeze(["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"]);
 let apiServer = null;
 let webServer = null;
 let clickhouse = null;
+let metricCatalogRunId = null;
 
 try {
   clickhouse = await ensureLocalClickHouse({
@@ -126,20 +129,61 @@ try {
       },
     ),
   };
+  if (wideMetricKeys > 0) {
+    const metricCatalogName = `metric_catalog_${wideMetricKeys}`;
+    const catalogRunId = metricCatalogRunId || firstRunId;
+    measurements[metricCatalogName] = {
+      ...(await measureEndpoint(metricCatalogName, `/runs/${catalogRunId}`, (payload) => {
+        const run = payload.run;
+        if (!run || typeof run !== "object" || Array.isArray(run)) {
+          throw new Error(`${metricCatalogName} returned malformed run detail payload`);
+        }
+        const metricKeys = Array.isArray(run.metric_keys) ? run.metric_keys : [];
+        const wideKeys = metricKeys.filter((key) => typeof key === "string" && key.startsWith("wide/metric_"));
+        if (wideKeys.length !== wideMetricKeys) {
+          throw new Error(`${metricCatalogName} returned ${wideKeys.length} wide metric keys, expected ${wideMetricKeys}`);
+        }
+        if (!run.metric_aggregates || typeof run.metric_aggregates !== "object") {
+          throw new Error(`${metricCatalogName} returned malformed metric_aggregates`);
+        }
+        if (!Object.hasOwn(run.metric_aggregates, "wide/metric_000000")) {
+          throw new Error(`${metricCatalogName} did not include the first wide metric aggregate`);
+        }
+        if (!Object.hasOwn(run.latest_metrics || {}, "wide/metric_000000")) {
+          throw new Error(`${metricCatalogName} did not include the first wide latest metric`);
+        }
+      })),
+      budget_ms: 5_000,
+    };
+  }
 
   let web = null;
   if (includeWeb) web = await measureWebFirstUsefulRender();
+  const metricCardinality = longRunMetricKeys.length + wideMetricKeys;
   const result = {
     generated_at: new Date().toISOString(),
     environment: {
       run_count: runCount,
       long_run_steps: longRunSteps,
-      long_run_metric_keys: ["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"],
+      long_run_metric_keys: longRunMetricKeys,
+      wide_metric_keys: wideMetricKeys,
       samples,
       warmups,
       include_web: includeWeb,
       machine: os.hostname(),
       platform: `${process.platform} ${process.arch}`,
+    },
+    dataset: {
+      project,
+      observed_runs: runCount,
+      configured_runs: runCount,
+      long_run_steps: longRunSteps,
+      expected_steps_per_run: longRunSteps,
+      steps_per_run: longRunSteps,
+      metric_cardinality_per_project: metricCardinality,
+      observed_metric_cardinality: metricCardinality,
+      metric_keys: wideMetricKeys > 0 ? undefined : [...longRunMetricKeys],
+      wide_metric_keys: wideMetricKeys,
     },
     budgets_ms: {
       summary_newest_project_p95: 300,
@@ -147,6 +191,7 @@ try {
       summary_advanced_search_p95: 750,
       chart_series_p95: 200,
       batched_series_m4_p95: 250,
+      metric_catalog_p95: 5000,
       web_first_useful_render: 2000,
     },
     measurements,
@@ -224,11 +269,17 @@ async function seedBenchmarkData() {
   const metricRows = [];
   let newestRunId = null;
   let newestCreatedAt = null;
+  let wideRunId = null;
+  let wideCreatedAt = null;
   for (let index = 1; index <= runCount; index += 1) {
     const runId = randomUUID();
     const createdAt = new Date(now.getTime() - (runCount - index) * 1000);
     newestRunId = runId;
     newestCreatedAt = createdAt;
+    if (index === 1) {
+      wideRunId = runId;
+      wideCreatedAt = createdAt;
+    }
     const seed = index % 100;
     const model = index % 3 === 0 ? "llm" : "rl";
     const status = index % 97 === 0 ? "failed" : index % 11 === 0 ? "running" : "finished";
@@ -266,9 +317,8 @@ async function seedBenchmarkData() {
       await insertMetricPoints(metricRows.splice(0));
     }
   }
-  const longRunKeys = ["eval/return_mean", "train/loss", "train/reward", "system/tokens_per_second"];
   for (let step = 1; step <= longRunSteps; step += 1) {
-    for (const key of longRunKeys) {
+    for (const key of longRunMetricKeys) {
       metricRows.push({
         org_id: localOrgId,
         run_id: newestRunId,
@@ -278,6 +328,21 @@ async function seedBenchmarkData() {
         logged_at: clickhouseDate(newestCreatedAt),
       });
     }
+    if (metricRows.length >= 5000) {
+      await insertMetricPoints(metricRows.splice(0));
+    }
+  }
+  metricCatalogRunId = wideRunId ?? newestRunId;
+  const metricCatalogLoggedAt = wideCreatedAt ?? newestCreatedAt;
+  for (let index = 0; index < wideMetricKeys; index += 1) {
+    metricRows.push({
+      org_id: localOrgId,
+      run_id: metricCatalogRunId,
+      key: `wide/metric_${String(index).padStart(6, "0")}`,
+      step: 1,
+      value: index,
+      logged_at: clickhouseDate(metricCatalogLoggedAt),
+    });
     if (metricRows.length >= 5000) {
       await insertMetricPoints(metricRows.splice(0));
     }
@@ -413,6 +478,11 @@ function budgetFailures(result) {
   }
   if (result.measurements.chart_series.p95_ms > result.budgets_ms.chart_series_p95) failures.push("chart_series p95 exceeded 200 ms");
   if (result.measurements.batched_series_m4.p95_ms > result.budgets_ms.batched_series_m4_p95) failures.push("batched_series_m4 p95 exceeded 250 ms");
+  for (const [key, measurement] of Object.entries(result.measurements)) {
+    if (key.startsWith("metric_catalog_") && measurement.p95_ms > result.budgets_ms.metric_catalog_p95) {
+      failures.push(`${key} p95 exceeded 5000 ms`);
+    }
+  }
   if (result.web && result.web.first_useful_render_ms > result.budgets_ms.web_first_useful_render) failures.push("web first useful render exceeded 2000 ms");
   return failures;
 }
@@ -453,6 +523,14 @@ function numberEnv(name, fallback) {
   if (!raw) return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be a positive number`);
+  return Math.floor(value);
+}
+
+function nonNegativeNumberEnv(name, fallback) {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`${name} must be a non-negative number`);
   return Math.floor(value);
 }
 

@@ -94,6 +94,33 @@ test("competitive gates report fully measured public scale pass when payload con
   assert.equal(gateById(report, "neptune.metric_scale_seconds").status, "pass");
 });
 
+test("competitive gates accept local large-run object measurements for metric cardinality", () => {
+  const report = competitiveBenchmarkGates({
+    dataset: {
+      observed_runs: 10_000,
+      long_run_steps: 500_000,
+      metric_cardinality_per_project: 100_004,
+      ingest_values_per_minute: 125_000,
+    },
+    measurements: {
+      metric_catalog_100000: {
+        p50_ms: 1200,
+        p95_ms: 3200,
+        min_ms: 1000,
+        max_ms: 3200,
+        budget_ms: 5000,
+      },
+    },
+  });
+
+  assert.equal(gateById(report, "wandb_scale.runs").status, "pass");
+  assert.equal(gateById(report, "wandb_scale.steps_per_run").status, "pass");
+  assert.equal(gateById(report, "wandb_scale.metric_cardinality").status, "pass");
+  assert.equal(gateById(report, "wandb_scale.ingest_throughput").status, "pass");
+  assert.equal(gateById(report, "neptune.metric_scale_seconds").status, "pass");
+  assert.equal(gateById(report, "internal.hosted_budgets").status, "pass");
+});
+
 test("competitive gates read SDK producer throughput summaries", () => {
   const report = competitiveBenchmarkGates({
     ingest: {

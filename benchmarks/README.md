@@ -55,6 +55,21 @@ downsampling (`INSTANTML_CLOUD_RUN_BENCH_M4_BUCKETS`, default 1,200) and
 validates the actual rows returned against the 120,000-point batched-series
 response cap.
 
+For disposable local coverage of public high-cardinality guidance, run the Rust
+large-run benchmark with `INSTANTML_BENCH_WIDE_METRIC_KEYS=100000`. That path
+seeds 100,000 one-point metric keys on a stable catalog run and measures the
+existing `GET /runs/{run_id}` summary/catalog response. The competitive gate
+accepts that object-shaped local result for W&B metric-cardinality and Neptune
+thousand-metric evidence, but hosted latency claims still need a sanitized Cloud
+Run benchmark result from the deployed request path.
+
+The latest local public-scale result is
+`benchmarks/2026-07-03-local-public-scale-results.md`: 10,000 runs, 500,000
+steps on the newest long run, 100,004 metric keys/project, and a 3,834 ms p95
+for the 100,000-key run-detail metric catalog response. The same summary records
+the focused SDK producer-throughput result used for W&B's scalar-throughput
+gate.
+
 Committed summaries for this benchmark should include the same sanitized fields
 as the hosted ClickHouse benchmark plus the API host only, never full URLs or API
 keys.
