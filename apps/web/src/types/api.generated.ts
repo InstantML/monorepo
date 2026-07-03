@@ -9607,9 +9607,9 @@ export interface operations {
                 kind?: string;
                 /** @description Search root name, trace id prefix, rollout id, or thread id */
                 q?: string;
-                /** @description RFC3339 lower bound over started_at */
+                /** @description RFC3339 lower bound over started_at. Project-scoped lists default to a recent window; run_id lists are unbounded unless from/to is supplied. */
                 from?: string;
-                /** @description RFC3339 upper bound over started_at */
+                /** @description RFC3339 upper bound over started_at. Project-scoped lists default to now; run_id lists are unbounded unless from/to is supplied. */
                 to?: string;
                 /** @description Minimum trace step overlap */
                 min_step?: number;

@@ -7,8 +7,10 @@ import { ApiError, isAbortError, queryString, retryTransientRequest } from "../.
 import { formatNumber } from "../../../src/state.js";
 import type { components } from "../../../src/types/api.generated";
 import type { RunSummary } from "../../dashboard-types";
+import { formatDuration } from "../ui/duration";
 import { PageHead } from "../ui/page-head";
 import { relativeTime } from "../ui/relative-time";
+import { CustomSelect, type SelectOption } from "../ui/select";
 
 type TraceSummary = components["schemas"]["TraceSummaryItem"];
 type TraceListResponse = components["schemas"]["TraceListResponse"];
@@ -37,8 +39,21 @@ type ChildWindow = {
 const TRACE_PAGE_LIMIT = 50;
 const TRACE_SPAN_LIMIT = 500;
 const TRACE_CHILD_LIMIT = 100;
-const statusOptions = ["", "running", "ok", "error", "cancelled", "interrupted"];
-const kindOptions = ["", "rollout", "env_step", "model", "tool", "retrieval", "reward", "evaluator", "dataset", "checkpoint", "artifact", "system", "custom"];
+const statusOptions: SelectOption[] = ["", "running", "ok", "error", "cancelled", "interrupted"].map((status) => ({
+  value: status,
+  label: status || "All",
+}));
+const kindOptions: SelectOption[] = ["", "rollout", "env_step", "model", "tool", "retrieval", "reward", "evaluator", "dataset", "checkpoint", "artifact", "system", "custom"].map((kind) => ({
+  value: kind,
+  label: kind || "All",
+}));
+const EMPTY_CHILD_WINDOW: ChildWindow = {
+  spans: [],
+  nextCursor: null,
+  childCount: 0,
+  loading: false,
+  error: "",
+};
 
 export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project, sortedRuns }: Props) {
   const [runFilter, setRunFilter] = useState("");
@@ -55,6 +70,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
   const selectedTraceIdRef = useRef("");
   const selectedTraceKeyRef = useRef("");
   const urlStateHydratedRef = useRef(false);
+  const [urlStateReady, setUrlStateReady] = useState(false);
   const listControllerRef = useRef<AbortController | null>(null);
   const listRequestRef = useRef(0);
   const [detail, setDetail] = useState<TraceDetailResponse | null>(null);
@@ -62,16 +78,22 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
   const [detailError, setDetailError] = useState("");
   const [childrenByParent, setChildrenByParent] = useState<Record<string, ChildWindow>>({});
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const debouncedQuery = useDebouncedValue(query, 300);
 
   const runOptions = useMemo(() => sortedRuns.slice(0, 500).map((run) => ({ id: run.id, label: `${run.name} · ${run.project}` })), [sortedRuns]);
+  const runFilterOptions = useMemo<SelectOption[]>(() => [
+    { value: "", label: project ? `Project: ${project}` : "Select run" },
+    ...runOptions.map((run) => ({ value: run.id, label: run.label })),
+  ], [project, runOptions]);
   const selectedTrace = useMemo(
     () => traces.find((trace) => trace.trace_id === selectedTraceId && trace.run_id === selectedRunId) ?? null,
     [selectedRunId, selectedTraceId, traces],
   );
-  const selectedSpan = useMemo(() => {
-    const all = detail ? flattenDisplayedSpans(detail.spans, childrenByParent) : [];
-    return all.find((span) => span.span_id === selectedSpanId) ?? all[0] ?? null;
-  }, [childrenByParent, detail, selectedSpanId]);
+  const displayedSpanIndex = useMemo(
+    () => detail ? indexDisplayedSpans(detail.spans, childrenByParent) : { first: null, byId: new Map<string, TraceSpan>() },
+    [childrenByParent, detail],
+  );
+  const selectedSpan = selectedSpanId ? displayedSpanIndex.byId.get(selectedSpanId) ?? null : displayedSpanIndex.first;
 
   useEffect(() => {
     selectedTraceIdRef.current = selectedTraceId;
@@ -92,6 +114,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
         setSelectedTraceId("");
         setSelectedSpanId("");
         selectedTraceIdRef.current = "";
+        setUrlStateReady(true);
         return;
       }
       setRunFilter(next.runId);
@@ -99,6 +122,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
       setSelectedTraceId(next.traceId);
       setSelectedSpanId(next.spanId);
       selectedTraceIdRef.current = next.traceId;
+      setUrlStateReady(true);
     };
     applyUrlState();
     window.addEventListener("popstate", applyUrlState);
@@ -106,12 +130,18 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
   }, []);
 
   useEffect(() => {
+    if (!urlStateReady) return;
     if (urlStateHydratedRef.current || runFilter || !primaryRun?.id) return;
     setRunFilter(primaryRun.id);
-  }, [primaryRun?.id, runFilter]);
+  }, [primaryRun?.id, runFilter, urlStateReady]);
 
   const loadTraces = useCallback(async (cursor = "") => {
     listControllerRef.current?.abort();
+    if (!urlStateReady) {
+      listRequestRef.current += 1;
+      setListLoading(false);
+      return;
+    }
     if (!project && !runFilter) {
       listRequestRef.current += 1;
       setTraces([]);
@@ -132,7 +162,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
           run_id: runFilter,
           status: statusFilter,
           kind: kindFilter,
-          q: query.trim(),
+          q: debouncedQuery.trim(),
           limit: TRACE_PAGE_LIMIT,
           cursor,
         })}`, { signal: controller.signal }),
@@ -153,7 +183,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
       if (requestId === listRequestRef.current) setListLoading(false);
       if (listControllerRef.current === controller) listControllerRef.current = null;
     }
-  }, [api, kindFilter, project, query, runFilter, statusFilter]);
+  }, [api, debouncedQuery, kindFilter, project, runFilter, statusFilter, urlStateReady]);
 
   useEffect(() => {
     void loadTraces("");
@@ -209,19 +239,22 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     if (updateUrl) replaceTraceUrl(trace.run_id, trace.trace_id, trace.root_span_id);
   }
 
+  function clearSelectedTrace(nextRunId = runFilter) {
+    setSelectedRunId("");
+    setSelectedTraceId("");
+    setSelectedSpanId("");
+    selectedTraceIdRef.current = "";
+    selectedTraceKeyRef.current = "";
+    setExpanded(new Set());
+    setChildrenByParent({});
+    setDetail(null);
+    replaceTraceUrl(nextRunId, "", "");
+  }
+
   async function loadChildren(parentSpanId: string, cursor = "") {
     if (!selectedRunId || !selectedTraceId) return;
     const requestTraceKey = `${selectedRunId}:${selectedTraceId}`;
-    setChildrenByParent((current) => ({
-      ...current,
-      [parentSpanId]: {
-        spans: cursor ? current[parentSpanId]?.spans ?? [] : current[parentSpanId]?.spans ?? [],
-        nextCursor: current[parentSpanId]?.nextCursor ?? null,
-        childCount: current[parentSpanId]?.childCount ?? 0,
-        loading: true,
-        error: "",
-      },
-    }));
+    setChildrenByParent((current) => patchChildWindow(current, parentSpanId, { loading: true, error: "" }));
     try {
       const payload = await retryTransientRequest(
         () => api.get<TraceChildrenResponse>(
@@ -234,30 +267,21 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
       );
       if (selectedTraceKeyRef.current !== requestTraceKey) return;
       setChildrenByParent((current) => {
-        const previous = current[parentSpanId]?.spans ?? [];
-        const spans = cursor ? [...previous, ...(payload.spans ?? [])] : payload.spans ?? [];
-        return {
-          ...current,
-          [parentSpanId]: {
-            spans,
-            nextCursor: payload.next_cursor ?? null,
-            childCount: payload.child_count ?? spans.length,
-            loading: false,
-            error: "",
-          },
-        };
+        const previous = current[parentSpanId] ?? EMPTY_CHILD_WINDOW;
+        const spans = cursor ? [...previous.spans, ...(payload.spans ?? [])] : payload.spans ?? [];
+        return patchChildWindow(current, parentSpanId, {
+          spans,
+          nextCursor: payload.next_cursor ?? null,
+          childCount: payload.child_count ?? spans.length,
+          loading: false,
+          error: "",
+        });
       });
     } catch (error) {
       if (selectedTraceKeyRef.current !== requestTraceKey) return;
-      setChildrenByParent((current) => ({
-        ...current,
-        [parentSpanId]: {
-          spans: current[parentSpanId]?.spans ?? [],
-          nextCursor: current[parentSpanId]?.nextCursor ?? null,
-          childCount: current[parentSpanId]?.childCount ?? 0,
-          loading: false,
-          error: error instanceof ApiError ? error.safeMessage : error instanceof Error ? error.message : "Unable to load child spans.",
-        },
+      setChildrenByParent((current) => patchChildWindow(current, parentSpanId, {
+        loading: false,
+        error: error instanceof ApiError ? error.safeMessage : error instanceof Error ? error.message : "Unable to load child spans.",
       }));
     }
   }
@@ -296,40 +320,64 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
             </div>
           </div>
           <div className="trace-filter-row">
-            <label>
+            <div className="trace-filter-control">
               <span>Run</span>
-              <select value={runFilter} onChange={(event) => { setRunFilter(event.target.value); setSelectedTraceId(""); }}>
-                <option value="">{project ? `Project: ${project}` : "Select run"}</option>
-                {runOptions.map((run) => <option key={run.id} value={run.id}>{run.label}</option>)}
-              </select>
-            </label>
-            <label>
+              <CustomSelect
+                id="trace-run-filter"
+                label="Run"
+                labelClassName="visually-hidden"
+                onChange={(value) => {
+                  setRunFilter(value);
+                  clearSelectedTrace(value);
+                }}
+                options={runFilterOptions}
+                value={runFilter}
+              />
+            </div>
+            <div className="trace-filter-control">
               <span>Status</span>
-              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                {statusOptions.map((status) => <option key={status || "all"} value={status}>{status || "All"}</option>)}
-              </select>
-            </label>
-            <label>
+              <CustomSelect
+                id="trace-status-filter"
+                label="Status"
+                labelClassName="visually-hidden"
+                onChange={(value) => {
+                  setStatusFilter(value);
+                  clearSelectedTrace();
+                }}
+                options={statusOptions}
+                value={statusFilter}
+              />
+            </div>
+            <div className="trace-filter-control">
               <span>Kind</span>
-              <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value)}>
-                {kindOptions.map((kind) => <option key={kind || "all"} value={kind}>{kind || "All"}</option>)}
-              </select>
-            </label>
+              <CustomSelect
+                id="trace-kind-filter"
+                label="Kind"
+                labelClassName="visually-hidden"
+                onChange={(value) => {
+                  setKindFilter(value);
+                  clearSelectedTrace();
+                }}
+                options={kindOptions}
+                value={kindFilter}
+              />
+            </div>
             <label className="trace-search">
               <span>Search</span>
-              <span><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} /></span>
+              <span><Search size={14} /><input value={query} onChange={(event) => { setQuery(event.target.value); clearSelectedTrace(); }} /></span>
             </label>
           </div>
           {listError ? <div className="status-strip">{listError}</div> : null}
           {!project && !runFilter ? <div className="empty">Select a project or run to browse traces.</div> : null}
-          <div className="trace-table" role="table" aria-label="Trace summaries">
+          <div className="trace-table" role="listbox" aria-label="Trace summaries">
             {traces.map((trace) => (
               <button
+                aria-selected={trace.trace_id === selectedTraceId && trace.run_id === selectedRunId}
                 className={`trace-row ${trace.trace_id === selectedTraceId && trace.run_id === selectedRunId ? "active" : ""}`}
                 key={`${trace.run_id}:${trace.trace_id}`}
                 onClick={() => selectTrace(trace)}
+                role="option"
                 type="button"
-                role="row"
               >
                 <span className={`trace-status ${trace.status}`}>{trace.status}</span>
                 <span className="trace-row-main">
@@ -371,7 +419,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
                 />
                 {detail.truncated.partial_tree ? <div className="trace-truncation">Partial tree · {formatNumber(detail.trace.total_span_count, 0)} total spans</div> : null}
               </div>
-              <TraceInspector span={selectedSpan} summary={selectedTrace} />
+              <TraceInspector requestedSpanId={selectedSpanId} span={selectedSpan} summary={selectedTrace} />
             </div>
           ) : !detailLoading && !detailError ? <div className="empty">Select a trace to inspect its spans.</div> : null}
         </section>
@@ -445,7 +493,7 @@ function TraceTreeNode({
   ];
   const hasChildren = span.child_count > 0 || children.length > 0;
   return (
-    <div className="trace-node" role="treeitem" aria-expanded={hasChildren ? isExpanded : undefined}>
+    <div aria-expanded={hasChildren ? isExpanded : undefined} aria-selected={selectedSpanId === span.span_id} className="trace-node" role="treeitem">
       <button className={`trace-node-button ${selectedSpanId === span.span_id ? "active" : ""}`} style={{ paddingLeft: `${level * 14}px` }} type="button" onClick={() => onToggle(span)}>
         {hasChildren ? (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />) : <span className="trace-node-spacer" />}
         <span className={`trace-status ${span.status}`}>{span.status}</span>
@@ -481,7 +529,8 @@ function TraceTreeNode({
   );
 }
 
-function TraceInspector({ span, summary }: { span: TraceSpan | null; summary: TraceSummary | null }) {
+function TraceInspector({ requestedSpanId, span, summary }: { requestedSpanId: string; span: TraceSpan | null; summary: TraceSummary | null }) {
+  if (!span && requestedSpanId) return <aside className="trace-inspector empty">Span {requestedSpanId.slice(0, 8)} is outside the loaded tree window.</aside>;
   if (!span) return <aside className="trace-inspector empty">Select a span.</aside>;
   return (
     <aside className="trace-inspector">
@@ -548,6 +597,14 @@ function flattenDisplayedSpans(spans: TraceSpan[], childrenByParent: Record<stri
   return out;
 }
 
+function indexDisplayedSpans(spans: TraceSpan[], childrenByParent: Record<string, ChildWindow>) {
+  const ordered = flattenDisplayedSpans(spans, childrenByParent);
+  return {
+    first: ordered[0] ?? null,
+    byId: new Map(ordered.map((span) => [span.span_id, span])),
+  };
+}
+
 function groupKnownChildren(spans: TraceSpan[]) {
   return spans.reduce<Record<string, TraceSpan[]>>((groups, span) => {
     if (!span.parent_span_id) return groups;
@@ -558,10 +615,23 @@ function groupKnownChildren(spans: TraceSpan[]) {
   }, {});
 }
 
-function formatDuration(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
-  if (value < 1000) return `${Math.max(1, Math.round(value))}ms`;
-  return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}s`;
+function patchChildWindow(current: Record<string, ChildWindow>, parentSpanId: string, patch: Partial<ChildWindow>) {
+  return {
+    ...current,
+    [parentSpanId]: {
+      ...(current[parentSpanId] ?? EMPTY_CHILD_WINDOW),
+      ...patch,
+    },
+  };
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+  return debounced;
 }
 
 function traceUrlState() {
@@ -583,7 +653,8 @@ function replaceTraceUrl(runId: string, traceId: string, spanId: string) {
   else url.searchParams.delete("trace_id");
   if (spanId) url.searchParams.set("span_id", spanId);
   else url.searchParams.delete("span_id");
-  window.history.replaceState(null, "", `${url.pathname}?${url.searchParams.toString()}`);
+  const search = url.searchParams.toString();
+  window.history.replaceState(null, "", search ? `${url.pathname}?${search}` : url.pathname);
 }
 
 async function copyText(value: string) {

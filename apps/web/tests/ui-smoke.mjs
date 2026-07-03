@@ -2114,6 +2114,7 @@ async function captureDocScreenshots(page, webBaseUrl) {
       await page.goto(`${webBaseUrl}/dashboard/traces?run_id=${seedRunId}&trace_id=11111111111111111111111111111111&span_id=4444444444444444`, { waitUntil: "domcontentloaded" });
       await page.waitForSelector(".traces-workspace", { timeout: 12000 });
       await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("qa rollout trace"), null, { timeout: 8000 });
+      await page.locator(".trace-row", { hasText: "qa rollout trace" }).first().waitFor({ timeout: 10000 });
       const rootNode = page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first();
       if (await rootNode.count()) await rootNode.click({ timeout: 5000 }).catch(() => {});
       await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
@@ -2621,6 +2622,7 @@ async function assertVisibleRunDetailTraceLink(page, traceUrls) {
   await page.locator("#run-detail .pd-trace-row", { hasText: "qa rollout trace" }).first().click();
   await page.waitForURL(/\/dashboard\/traces\?/);
   await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("qa rollout trace"));
+  await page.locator(".trace-row", { hasText: "qa rollout trace" }).first().waitFor({ timeout: 10000 });
   await page.waitForFunction(() => {
     const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
     return inspector.includes("qa rollout trace") && inspector.includes("2222222222222222");

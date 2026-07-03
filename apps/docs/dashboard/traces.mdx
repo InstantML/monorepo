@@ -37,6 +37,11 @@ Use the top filters to narrow the list:
 | Kind | Focus on rollout, model, tool, retrieval, reward, evaluator, or custom spans. |
 | Search | Match root name, trace id prefix, rollout id, or thread id. |
 
+Project-scoped browsing uses the API's recent default window. Selecting a
+specific run, or opening a deep link with `run_id`, lists all traces for that
+run unless a date window is supplied, so older imported or backfilled runs do
+not disappear from the trace list.
+
 The workspace deep-links with `run_id`, `trace_id`, and `span_id` query
 parameters, so copied URLs reopen the exact selected span.
 
@@ -58,8 +63,9 @@ authorization token, API key, and returned secret.
 ![Run Detail recent traces](/images/product/dashboard-run-detail-traces.png)
 
 Run Detail has a local **Traces** section. It fetches only when opened, lists
-the latest traces for the selected run, and links each row into the full Traces
-workspace with the exact trace and root span selected.
+the latest traces for the selected run without applying the project-level
+lookback, and links each row into the full Traces workspace with the exact trace
+and root span selected.
 
 Use the Run Detail section when you are already inspecting one run. Use the
 global Traces workspace when you want to filter across runs or inspect a tree in
@@ -74,4 +80,3 @@ detail.
    visible.
 5. Use the inspector to compare inputs, outputs, attributes, metrics, and error
    previews.
-

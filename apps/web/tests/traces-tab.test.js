@@ -28,6 +28,9 @@ test("traces tab uses bounded list, detail, and child endpoints", () => {
   assert.match(paneSource, /TRACE_SPAN_LIMIT = 500/);
   assert.match(paneSource, /TRACE_CHILD_LIMIT = 100/);
   assert.match(paneSource, /listRequestRef/);
+  assert.match(paneSource, /useDebouncedValue\(query, 300\)/);
+  assert.match(paneSource, /urlStateReady/);
+  assert.match(paneSource, /if \(!urlStateReady\) \{/);
 });
 
 test("traces tab exposes tree, inspector, status, and responsive styles", () => {
@@ -36,6 +39,14 @@ test("traces tab exposes tree, inspector, status, and responsive styles", () => 
   assert.match(styles, /\.trace-node-button/);
   assert.match(styles, /\.trace-inspector/);
   assert.match(styles, /@media \(max-width: 720px\)/);
+  assert.match(paneSource, /<CustomSelect/);
+  assert.match(paneSource, /role="listbox"/);
+  assert.match(paneSource, /role="option"/);
+  assert.match(paneSource, /aria-selected=/);
+  assert.doesNotMatch(paneSource, /role="table"/);
+  assert.doesNotMatch(styles, /border-radius:\s*8px/);
+  assert.doesNotMatch(styles, /font-size:\s*11px/);
+  assert.doesNotMatch(styles, /font-size:\s*12px/);
 });
 
 test("run detail exposes recent traces lazily with exact deep links", () => {
@@ -44,8 +55,8 @@ test("run detail exposes recent traces lazily with exact deep links", () => {
   assert.match(detailSource, /\/api\/traces\$\{queryString\(runTraceListQuery\(run\)\)\}/);
   assert.match(detailSource, /run_id: run\.id/);
   assert.match(detailSource, /limit: RECENT_TRACE_LIMIT/);
-  assert.match(detailSource, /params\.from = new Date\(from\)\.toISOString\(\)/);
-  assert.match(detailSource, /params\.to = new Date\(Date\.now\(\) \+ 60_000\)\.toISOString\(\)/);
+  assert.doesNotMatch(detailSource, /params\.from\s*=/);
+  assert.doesNotMatch(detailSource, /params\.to\s*=/);
   assert.match(detailSource, /\/dashboard\/traces\$\{queryString\(\{/);
   assert.match(detailSource, /span_id: trace\.root_span_id \|\| undefined/);
   assert.match(runDetailStyles, /\.pd-trace-row/);

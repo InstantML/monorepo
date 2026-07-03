@@ -58,6 +58,7 @@ from .media import (
     _write_image_data,
     _write_video_data,
 )
+from .trace_payload import MAX_TRACE_EVENTS_PER_BATCH
 from .objects import (
     Artifact,
     Audio,
@@ -170,7 +171,6 @@ _QUERY_KEY_BYTES_MAX = 256
 _QUERY_Q_BYTES_MAX = 512
 _QUERY_POINT_LIMIT_MAX = 10_000
 _QUERY_BUCKETS_MAX = 2_000
-_TRACE_BATCH_MAX_EVENTS = 500
 _TRACE_BATCH_MAX_BYTES = 512 * 1024
 
 
@@ -3200,7 +3200,7 @@ class Run:
             if (
                 self._trace_events
                 and (
-                    len(self._trace_events) >= _TRACE_BATCH_MAX_EVENTS
+                    len(self._trace_events) >= MAX_TRACE_EVENTS_PER_BATCH
                     or self._trace_events_bytes + event_bytes > _TRACE_BATCH_MAX_BYTES
                 )
             ):
@@ -3210,7 +3210,7 @@ class Run:
         with self._lock:
             self._trace_events.append(event)
             self._trace_events_bytes += event_bytes
-            should_flush = len(self._trace_events) >= _TRACE_BATCH_MAX_EVENTS or self._trace_events_bytes >= _TRACE_BATCH_MAX_BYTES
+            should_flush = len(self._trace_events) >= MAX_TRACE_EVENTS_PER_BATCH or self._trace_events_bytes >= _TRACE_BATCH_MAX_BYTES
         if should_flush:
             self._flush_trace_events()
 

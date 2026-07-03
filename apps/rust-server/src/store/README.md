@@ -21,8 +21,10 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
   metric point/series reads.
 - `traces.rs`: run-scoped product trace ingest/read service logic, including
   batch validation, idempotency, billing/usage admission, accepted-batch
-  visibility, summary projection, list/detail response shaping, and lazy child
-  span expansion.
+  visibility, summary projection, list/detail response shaping, lazy child
+  span expansion, and trace-list window semantics. Project-scoped lists default
+  to the recent lookback; run-scoped lists are unbounded unless callers pass
+  `from`/`to`.
 - `objects.rs`: typed attributes, rich objects, table rows, raw artifact metadata, and raw upload metadata writes.
 - `artifact_versions.rs`: versioned artifact collections, immutable manifests,
   upload sessions, aliases, retention/delete state, run input/output lineage,

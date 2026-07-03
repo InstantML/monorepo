@@ -14,6 +14,12 @@ const TRACE_SUMMARY_RECOMPUTE_LIMIT: i64 = 100_001;
 const TRACE_SUMMARY_VISIBLE_SPAN_LIMIT: usize = 100_000;
 const DEFAULT_TRACE_LOOKBACK_DAYS: i64 = 7;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TraceListWindow {
+    from: Option<DateTime<Utc>>,
+    to: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Clone)]
 struct ValidTraceEvent {
     input: TraceEventInput,
@@ -54,18 +60,11 @@ pub async fn ingest_trace_events(
         .reserve_idempotency_key(ctx.org_id, &idempotency_key)
         .await?;
     let result = async {
-        let (run, project_name, run_name) = {
+        let run = {
             let data = store.data.lock().await;
-            let run = fetch_run_in_data(&data, ctx, run_id)?;
-            let project_name = data
-                .projects
-                .get(&run.project_id)
-                .map(|project| project.name.clone())
-                .unwrap_or_else(|| run.project.clone());
-            (run.clone(), project_name, run.name.clone())
+            fetch_run_in_data(&data, ctx, run_id)?
         };
         let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-        let _capacity_guard = store.trace_ingest_capacity_lock.lock().await;
         let existing_batch = ch_traces::trace_ingest_batch(
             &metric_store,
             ctx.org_id,
@@ -95,6 +94,8 @@ pub async fn ingest_trace_events(
             .map(|event| event.input.event_id)
             .collect::<BTreeSet<_>>()
             .len() as i64;
+        let capacity_lock = store.trace_ingest_capacity_lock(ctx.org_id).await;
+        let _capacity_guard = capacity_lock.lock().await;
         enforce_plan_capacity(
             store,
             ctx.org_id,
@@ -150,8 +151,6 @@ pub async fn ingest_trace_events(
             &metric_store,
             ctx.org_id,
             &run,
-            &project_name,
-            &run_name,
             &trace_ids,
             &idempotency_key,
             now,
@@ -207,18 +206,11 @@ pub async fn list_traces(
         .map(|value| validate_short_string(value, "q", MAX_TRACE_FIELD_BYTES))
         .transpose()?
         .filter(|value| !value.trim().is_empty());
-    let from = query
-        .get("from")
-        .map(|value| parse_rfc3339(value, "from"))
-        .transpose()?
-        .unwrap_or_else(|| Utc::now() - ChronoDuration::days(DEFAULT_TRACE_LOOKBACK_DAYS));
-    let to = query
-        .get("to")
-        .map(|value| parse_rfc3339(value, "to"))
-        .transpose()?
-        .unwrap_or_else(Utc::now);
-    if to <= from {
-        return Err(AppError::validation("to must be after from"));
+    let window = trace_list_window(query, run_id, Utc::now())?;
+    if let (Some(from), Some(to)) = (&window.from, &window.to) {
+        if to <= from {
+            return Err(AppError::validation("to must be after from"));
+        }
     }
     let min_step = query
         .get("min_step")
@@ -248,8 +240,8 @@ pub async fn list_traces(
             status,
             kind,
             q,
-            from,
-            to,
+            from: window.from,
+            to: window.to,
             min_step,
             max_step,
             cursor,
@@ -301,26 +293,22 @@ pub async fn trace_detail(
         fetch_run_in_data(&data, ctx, run_id)?
     };
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-    let mut root_rows = ch_traces::root_span_ids(
-        &metric_store,
-        ctx.org_id,
-        run.project_id,
-        run.id,
-        &trace_id,
-        span_limit + 1,
-    )
-    .await?;
-    let total_span_count =
-        ch_traces::total_span_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id)
-            .await?;
+    let (mut root_rows, total_span_count, root_count, orphan_count) = tokio::try_join!(
+        ch_traces::root_span_ids(
+            &metric_store,
+            ctx.org_id,
+            run.project_id,
+            run.id,
+            &trace_id,
+            span_limit + 1,
+        ),
+        ch_traces::total_span_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id,),
+        ch_traces::root_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id),
+        ch_traces::orphan_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id),
+    )?;
     if total_span_count == 0 {
         return Err(AppError::not_found("trace not found"));
     }
-    let root_count =
-        ch_traces::root_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id).await?;
-    let orphan_count =
-        ch_traces::orphan_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id)
-            .await?;
 
     let has_more_roots = root_rows.len() as i64 > span_limit;
     let spans = if root_rows.is_empty() {
@@ -438,32 +426,32 @@ pub async fn trace_children(
         fetch_run_in_data(&data, ctx, run_id)?
     };
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
-    let total_span_count =
-        ch_traces::total_span_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id)
-            .await?;
+    let (total_span_count, child_rows, child_count) = tokio::try_join!(
+        ch_traces::total_span_count(&metric_store, ctx.org_id, run.project_id, run.id, &trace_id,),
+        ch_traces::child_span_ids(
+            &metric_store,
+            ch_traces::TraceSpanWindowQuery {
+                org_id: ctx.org_id,
+                project_id: run.project_id,
+                run_id: run.id,
+                trace_id: &trace_id,
+                parent_span_id: &parent_span_id,
+                limit: limit + 1,
+                cursor,
+            },
+        ),
+        ch_traces::child_count_for_parent(
+            &metric_store,
+            ctx.org_id,
+            run.project_id,
+            run.id,
+            &trace_id,
+            &parent_span_id,
+        ),
+    )?;
     if total_span_count == 0 {
         return Err(AppError::not_found("trace not found"));
     }
-    let child_rows = ch_traces::child_span_ids(
-        &metric_store,
-        ctx.org_id,
-        run.project_id,
-        run.id,
-        &trace_id,
-        &parent_span_id,
-        limit + 1,
-        cursor,
-    )
-    .await?;
-    let child_count = ch_traces::child_count_for_parent(
-        &metric_store,
-        ctx.org_id,
-        run.project_id,
-        run.id,
-        &trace_id,
-        &parent_span_id,
-    )
-    .await?;
     let has_more = child_rows.len() as i64 > limit;
     let visible_rows = child_rows
         .into_iter()
@@ -587,24 +575,30 @@ async fn recompute_trace_summaries(
     metric_store: &MetricStore,
     org_id: Uuid,
     run: &RunRow,
-    _project_name: &str,
-    _run_name: &str,
     trace_ids: &[String],
     idempotency_key: &str,
     now: DateTime<Utc>,
 ) -> AppResult<Vec<TraceSummaryRow>> {
+    let all_spans = ch_traces::canonical_spans_for_summary_batch(
+        metric_store,
+        org_id,
+        run.project_id,
+        run.id,
+        trace_ids,
+        Some(idempotency_key),
+        TRACE_SUMMARY_RECOMPUTE_LIMIT,
+    )
+    .await?;
+    let mut spans_by_trace: BTreeMap<String, Vec<TraceSpanCanonicalRow>> = BTreeMap::new();
+    for span in all_spans {
+        spans_by_trace
+            .entry(span.trace_id.clone())
+            .or_default()
+            .push(span);
+    }
     let mut rows = Vec::with_capacity(trace_ids.len());
     for trace_id in trace_ids {
-        let mut spans = ch_traces::canonical_spans_for_summary(
-            metric_store,
-            org_id,
-            run.project_id,
-            run.id,
-            trace_id,
-            Some(idempotency_key),
-            TRACE_SUMMARY_RECOMPUTE_LIMIT,
-        )
-        .await?;
+        let mut spans = spans_by_trace.remove(trace_id).unwrap_or_default();
         if spans.is_empty() {
             continue;
         }
@@ -1404,12 +1398,75 @@ fn trace_billing_period(now: DateTime<Utc>) -> String {
     format!("{:04}-{:02}", now.year(), now.month())
 }
 
+fn trace_list_window(
+    query: &HashMap<String, String>,
+    run_id: Option<Uuid>,
+    now: DateTime<Utc>,
+) -> AppResult<TraceListWindow> {
+    let from = query
+        .get("from")
+        .map(|value| parse_rfc3339(value, "from"))
+        .transpose()?;
+    let to = query
+        .get("to")
+        .map(|value| parse_rfc3339(value, "to"))
+        .transpose()?;
+    if run_id.is_some() {
+        return Ok(TraceListWindow { from, to });
+    }
+    Ok(TraceListWindow {
+        from: Some(from.unwrap_or_else(|| now - ChronoDuration::days(DEFAULT_TRACE_LOOKBACK_DAYS))),
+        to: Some(to.unwrap_or(now)),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     fn trace_id() -> String {
         "7bba9f33312b3dbb8b2c2c62bb7abe2d".to_string()
+    }
+
+    fn fixed_now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 7, 3, 12, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn trace_list_window_defaults_project_scope_to_recent_range() {
+        let query = HashMap::new();
+        let window = trace_list_window(&query, None, fixed_now()).unwrap();
+
+        assert_eq!(
+            window.from.unwrap().timestamp(),
+            (fixed_now() - ChronoDuration::days(DEFAULT_TRACE_LOOKBACK_DAYS)).timestamp()
+        );
+        assert_eq!(window.to.unwrap().timestamp(), fixed_now().timestamp());
+    }
+
+    #[test]
+    fn trace_list_window_leaves_run_scope_unbounded_without_explicit_dates() {
+        let query = HashMap::new();
+        let window = trace_list_window(&query, Some(Uuid::new_v4()), fixed_now()).unwrap();
+
+        assert!(window.from.is_none());
+        assert!(window.to.is_none());
+    }
+
+    #[test]
+    fn trace_list_window_honors_explicit_run_scope_dates() {
+        let mut query = HashMap::new();
+        query.insert("from".to_string(), "2026-06-01T00:00:00Z".to_string());
+        query.insert("to".to_string(), "2026-06-02T00:00:00Z".to_string());
+
+        let window = trace_list_window(&query, Some(Uuid::new_v4()), fixed_now()).unwrap();
+
+        assert_eq!(
+            window.from.unwrap().to_rfc3339(),
+            "2026-06-01T00:00:00+00:00"
+        );
+        assert_eq!(window.to.unwrap().to_rfc3339(), "2026-06-02T00:00:00+00:00");
     }
 
     #[test]

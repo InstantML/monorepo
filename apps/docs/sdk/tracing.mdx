@@ -184,6 +184,10 @@ Open a run's **Traces** section to see recent traces for that run:
 Click a trace row to open the full Traces workspace. The full workspace lets you
 filter by run, status, kind, and search text; inspect the trace summary; expand
 child spans lazily; and copy span or trace identifiers for support tickets.
+Project-scoped browsing uses a recent default window, while run-scoped trace
+lists show all traces for that run unless a date window is supplied. That keeps
+older imported or backfilled runs reachable from Run Detail and copied deep
+links.
 
 ## Recommended RL shape
 
@@ -209,4 +213,3 @@ for episode in range(num_episodes):
 Log every scalar you need to compare, but trace only representative rollouts or
 failures. That keeps the dashboard fast while preserving enough execution
 evidence to debug regressions.
-

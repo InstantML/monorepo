@@ -242,8 +242,8 @@ pub struct TraceListQuery {
     pub status: Option<String>,
     pub kind: Option<String>,
     pub q: Option<String>,
-    pub from: DateTime<Utc>,
-    pub to: DateTime<Utc>,
+    pub from: Option<DateTime<Utc>>,
+    pub to: Option<DateTime<Utc>>,
     pub min_step: Option<f64>,
     pub max_step: Option<f64>,
     pub cursor: Option<TraceListCursor>,
@@ -254,6 +254,16 @@ pub struct TraceListQuery {
 pub struct TraceListCursor {
     pub started_at: DateTime<Utc>,
     pub trace_id: String,
+}
+
+pub struct TraceSpanWindowQuery<'a> {
+    pub org_id: Uuid,
+    pub project_id: Uuid,
+    pub run_id: Uuid,
+    pub trace_id: &'a str,
+    pub parent_span_id: &'a str,
+    pub limit: i64,
+    pub cursor: Option<(DateTime<Utc>, String)>,
 }
 
 pub async fn insert_trace_span_events(
@@ -406,10 +416,14 @@ pub async fn list_trace_summaries(
                FROM trace_ingest_batches \
                WHERE org_id = ? AND project_id = ? AND status = 'accepted' \
                GROUP BY run_id, idempotency_key \
-             ) \
-             AND started_at >= parseDateTime64BestEffort(?, 6, 'UTC') \
-             AND started_at < parseDateTime64BestEffort(?, 6, 'UTC')",
+             )",
     );
+    if query.from.is_some() {
+        sql.push_str(" AND started_at >= parseDateTime64BestEffort(?, 6, 'UTC')");
+    }
+    if query.to.is_some() {
+        sql.push_str(" AND started_at < parseDateTime64BestEffort(?, 6, 'UTC')");
+    }
     if query.run_id.is_some() {
         sql.push_str(" AND run_id = ?");
     }
@@ -451,9 +465,13 @@ pub async fn list_trace_summaries(
         .bind(org_id)
         .bind(query.project_id)
         .bind(org_id)
-        .bind(query.project_id)
-        .bind(query.from.to_rfc3339())
-        .bind(query.to.to_rfc3339());
+        .bind(query.project_id);
+    if let Some(from) = query.from {
+        q = q.bind(from.to_rfc3339());
+    }
+    if let Some(to) = query.to {
+        q = q.bind(to.to_rfc3339());
+    }
     if let Some(run_id) = query.run_id {
         q = q.bind(run_id);
     }
@@ -493,18 +511,24 @@ pub async fn root_span_ids(
     trace_id: &str,
     limit: i64,
 ) -> AppResult<Vec<TraceSpanIndexReadRow>> {
-    child_span_ids(store, org_id, project_id, run_id, trace_id, "", limit, None).await
+    child_span_ids(
+        store,
+        TraceSpanWindowQuery {
+            org_id,
+            project_id,
+            run_id,
+            trace_id,
+            parent_span_id: "",
+            limit,
+            cursor: None,
+        },
+    )
+    .await
 }
 
 pub async fn child_span_ids(
     store: &MetricStore,
-    org_id: Uuid,
-    project_id: Uuid,
-    run_id: Uuid,
-    trace_id: &str,
-    parent_span_id: &str,
-    limit: i64,
-    cursor: Option<(DateTime<Utc>, String)>,
+    query: TraceSpanWindowQuery<'_>,
 ) -> AppResult<Vec<TraceSpanIndexReadRow>> {
     let mut sql = String::from(
         "SELECT span_id, span_parent_id AS parent_span_id, first_started_at AS started_at \
@@ -521,7 +545,7 @@ pub async fn child_span_ids(
            GROUP BY span_id \
          ) WHERE 1",
     );
-    if cursor.is_some() {
+    if query.cursor.is_some() {
         sql.push_str(
             " AND (first_started_at > parseDateTime64BestEffort(?, 6, 'UTC') \
                OR (first_started_at = parseDateTime64BestEffort(?, 6, 'UTC') AND span_id > ?))",
@@ -532,19 +556,19 @@ pub async fn child_span_ids(
     let mut q = store
         .client()
         .query(&sql)
-        .bind(org_id)
-        .bind(project_id)
-        .bind(run_id)
-        .bind(trace_id)
-        .bind(parent_span_id)
-        .bind(org_id)
-        .bind(project_id)
-        .bind(run_id);
-    if let Some((started_at, span_id)) = cursor {
+        .bind(query.org_id)
+        .bind(query.project_id)
+        .bind(query.run_id)
+        .bind(query.trace_id)
+        .bind(query.parent_span_id)
+        .bind(query.org_id)
+        .bind(query.project_id)
+        .bind(query.run_id);
+    if let Some((started_at, span_id)) = query.cursor {
         let cursor_at = started_at.to_rfc3339();
         q = q.bind(cursor_at.clone()).bind(cursor_at).bind(span_id);
     }
-    q.bind(limit)
+    q.bind(query.limit)
         .fetch_all::<TraceSpanIndexReadRow>()
         .await
         .map_err(clickhouse_read_error)
@@ -696,6 +720,59 @@ pub async fn canonical_spans_for_summary(
         .bind(project_id)
         .bind(run_id)
         .bind(limit)
+        .fetch_all::<TraceSpanCanonicalRow>()
+        .await
+        .map_err(clickhouse_read_error)
+}
+
+pub async fn canonical_spans_for_summary_batch(
+    store: &MetricStore,
+    org_id: Uuid,
+    project_id: Uuid,
+    run_id: Uuid,
+    trace_ids: &[String],
+    include_idempotency_key: Option<&str>,
+    per_trace_limit: i64,
+) -> AppResult<Vec<TraceSpanCanonicalRow>> {
+    if trace_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut sql = CANONICAL_SPANS_FOR_TRACES_SQL.to_string();
+    if include_idempotency_key.is_some() {
+        sql = sql.replace(
+            "/* accepted_filter */",
+            "AND (idempotency_key = ? OR idempotency_key IN ( \
+               SELECT idempotency_key \
+               FROM trace_ingest_batches \
+               WHERE org_id = ? AND project_id = ? AND run_id = ? AND status = 'accepted' \
+               GROUP BY idempotency_key \
+             ))",
+        );
+    } else {
+        sql = sql.replace(
+            "/* accepted_filter */",
+            "AND idempotency_key IN ( \
+               SELECT idempotency_key \
+               FROM trace_ingest_batches \
+               WHERE org_id = ? AND project_id = ? AND run_id = ? AND status = 'accepted' \
+               GROUP BY idempotency_key \
+             )",
+        );
+    }
+    let mut q = store
+        .client()
+        .query(&sql)
+        .bind(org_id)
+        .bind(project_id)
+        .bind(run_id)
+        .bind(trace_ids.to_vec());
+    if let Some(idempotency_key) = include_idempotency_key {
+        q = q.bind(idempotency_key);
+    }
+    q.bind(org_id)
+        .bind(project_id)
+        .bind(run_id)
+        .bind(per_trace_limit)
         .fetch_all::<TraceSpanCanonicalRow>()
         .await
         .map_err(clickhouse_read_error)
@@ -885,3 +962,33 @@ const CANONICAL_SPANS_FOR_TRACE_SQL: &str = "SELECT \
   GROUP BY trace_id, span_id \
   ORDER BY started_at ASC, span_id ASC \
   LIMIT ?";
+
+const CANONICAL_SPANS_FOR_TRACES_SQL: &str = "SELECT \
+    trace_id, span_id, \
+    argMax(parent_span_id, tuple(sequence, created_at, event_id)) AS parent_span_id, \
+    argMax(name, tuple(sequence, created_at, event_id)) AS name, \
+    argMax(kind, tuple(sequence, created_at, event_id)) AS kind, \
+    argMax(status, tuple(sequence, created_at, event_id)) AS status, \
+    argMax(step, tuple(sequence, created_at, event_id)) AS step, \
+    argMax(rank, tuple(sequence, created_at, event_id)) AS rank, \
+    argMax(thread_id, tuple(sequence, created_at, event_id)) AS thread_id, \
+    argMax(rollout_id, tuple(sequence, created_at, event_id)) AS rollout_id, \
+    min(started_at) AS started_at, \
+    argMax(ended_at, tuple(sequence, created_at, event_id)) AS ended_at, \
+    argMax(duration_ms, tuple(sequence, created_at, event_id)) AS duration_ms, \
+    argMax(input_preview, tuple(sequence, created_at, event_id)) AS input_preview, \
+    argMax(output_preview, tuple(sequence, created_at, event_id)) AS output_preview, \
+    argMax(error_type, tuple(sequence, created_at, event_id)) AS error_type, \
+    argMax(error_preview, tuple(sequence, created_at, event_id)) AS error_preview, \
+    argMax(attributes_json, tuple(sequence, created_at, event_id)) AS attributes_json, \
+    argMax(metrics_json, tuple(sequence, created_at, event_id)) AS metrics_json, \
+    argMax(links_json, tuple(sequence, created_at, event_id)) AS links_json, \
+    argMax(content_policy, tuple(sequence, created_at, event_id)) AS content_policy, \
+    argMax(redaction_state, tuple(sequence, created_at, event_id)) AS redaction_state, \
+    argMax(truncated, tuple(sequence, created_at, event_id)) AS truncated \
+  FROM trace_span_events \
+  WHERE org_id = ? AND project_id = ? AND run_id = ? AND trace_id IN ? \
+  /* accepted_filter */ \
+  GROUP BY trace_id, span_id \
+  ORDER BY trace_id ASC, started_at ASC, span_id ASC \
+  LIMIT ? BY trace_id";

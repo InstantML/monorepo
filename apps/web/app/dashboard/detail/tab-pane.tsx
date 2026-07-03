@@ -12,6 +12,7 @@ import { compactValue, formatRunTime } from "../../dashboard-models";
 import { MetricChart } from "../metrics/metric-chart";
 import { RunEvidenceExplorer, RunGraphPanel, RunLogsPanel, RunSystemPanel } from "../components/run-workspace";
 import type { RunWorkspaceTabId } from "../components/run-workspace";
+import { formatDuration } from "../ui/duration";
 import { RunMetricTable } from "./run-detail";
 import { ConfigPanel, ForkCheckpointDialog, OverviewTab, newestCheckpoint } from "./overview";
 import type { ForkCheckpointOptions, OverviewChartSpec } from "./overview";
@@ -887,7 +888,7 @@ function RecentTracesPanel({
                     <small>{trace.kinds.slice(0, 3).join(", ") || "custom"} · {trace.thread_id || trace.rollout_id || trace.trace_id.slice(0, 8)}</small>
                   </span>
                   <span className="pd-trace-meta">{formatNumber(trace.span_count, 0)} spans</span>
-                  <span className="pd-trace-meta">{traceDuration(trace.duration_ms)}</span>
+                  <span className="pd-trace-meta">{formatDuration(trace.duration_ms)}</span>
                   <span className="pd-trace-meta">{formatRunTime(trace.updated_at)}</span>
                 </a>
               ))}
@@ -908,20 +909,8 @@ function traceHref(trace: TraceSummary) {
 }
 
 function runTraceListQuery(run: RunSummary) {
-  const params: Record<string, string | number | undefined> = {
+  return {
     run_id: run.id,
     limit: RECENT_TRACE_LIMIT,
   };
-  const from = Date.parse(run.started_at);
-  if (Number.isFinite(from)) {
-    params.from = new Date(from).toISOString();
-    params.to = new Date(Date.now() + 60_000).toISOString();
-  }
-  return params;
-}
-
-function traceDuration(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
-  if (value < 1_000) return `${formatNumber(value, 0)} ms`;
-  return `${formatNumber(value / 1_000, value >= 10_000 ? 1 : 2)} s`;
 }

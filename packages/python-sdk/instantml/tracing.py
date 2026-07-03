@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .trace_payload import (
+    MAX_TRACE_ATTRIBUTES_BYTES,
+    MAX_TRACE_METRICS_BYTES,
     build_trace_event,
     json_object,
     normalize_capture,
@@ -114,8 +116,8 @@ class TraceSpan:
         self.rank = normalize_rank(rank if rank is not None else inherited_rank)
         self.thread_id = normalize_optional_label(thread_id, "thread_id") or inherited_thread_id or self.trace_id
         self.rollout_id = normalize_optional_label(rollout_id, "rollout_id")
-        self.attributes = self._normalize_payload_dict(attributes, "attributes", 32 * 1024)
-        self.metrics = self._normalize_payload_dict(metrics, "metrics", 16 * 1024)
+        self.attributes = self._normalize_payload_dict(attributes, "attributes", MAX_TRACE_ATTRIBUTES_BYTES)
+        self.metrics = self._normalize_payload_dict(metrics, "metrics", MAX_TRACE_METRICS_BYTES)
         self.links = links
         self.capture = normalize_capture(capture)
         self.inputs = inputs
@@ -234,7 +236,7 @@ class TraceSpan:
 
     def add_attributes(self, values: dict[str, Any]) -> None:
         try:
-            self.attributes.update(json_object(values, "attributes", 32 * 1024))
+            self.attributes.update(json_object(values, "attributes", MAX_TRACE_ATTRIBUTES_BYTES))
             self._emit(event_kind="updated", status="running", attributes=self.attributes)
         except (TypeError, ValueError) as exc:
             if not self._drop_invalid_payload(exc):
@@ -243,7 +245,7 @@ class TraceSpan:
     def log_metric(self, key: str | dict[str, Any], value: Any | None = None) -> None:
         metrics = key if isinstance(key, dict) else {str(key): value}
         try:
-            normalized = json_object(metrics, "metrics", 16 * 1024)
+            normalized = json_object(metrics, "metrics", MAX_TRACE_METRICS_BYTES)
             self.metrics.update(normalized)
             self._emit(event_kind="updated", status="running", metrics=self.metrics)
         except (TypeError, ValueError) as exc:

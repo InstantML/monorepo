@@ -2543,13 +2543,13 @@ def test_trace_batch_flushes_before_and_after_size_thresholds(monkeypatch):
             return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
 
     run = Run(client=FakeClient(), run_id="run-1")
-    monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_EVENTS", 2)
+    monkeypatch.setattr(client_module, "MAX_TRACE_EVENTS_PER_BATCH", 2)
     run._record_trace_event({"trace_id": "1" * 32, "span_id": "1" * 16, "event_id": "a"})
     run._record_trace_event({"trace_id": "1" * 32, "span_id": "2" * 16, "event_id": "b"})
     assert [len(call[2]["events"]) for call in calls] == [2]
 
     calls.clear()
-    monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_EVENTS", 500)
+    monkeypatch.setattr(client_module, "MAX_TRACE_EVENTS_PER_BATCH", trace_payload.MAX_TRACE_EVENTS_PER_BATCH)
     first = {"trace_id": "2" * 32, "span_id": "3" * 16, "event_id": "c", "payload": "x" * 20}
     first_bytes = len(json.dumps(first, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_BYTES", first_bytes + 1)

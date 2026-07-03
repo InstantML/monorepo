@@ -215,7 +215,7 @@ pub struct Store {
     /// All personal/free orgs route here instead of getting a dedicated service.
     shared_cell_metric_store: Option<MetricStore>,
     inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
-    trace_ingest_capacity_lock: Arc<Mutex<()>>,
+    trace_ingest_capacity_locks: Arc<Mutex<HashMap<Uuid, Arc<Mutex<()>>>>>,
     artifact_upload_capacity_lock: Arc<Mutex<()>>,
     data: Arc<Mutex<StoreData>>,
     record_clock_micros: Arc<Mutex<i64>>,
@@ -394,7 +394,7 @@ impl Store {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
-            trace_ingest_capacity_lock: Arc::new(Mutex::new(())),
+            trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
@@ -1262,6 +1262,14 @@ impl Store {
             ));
         }
         Ok(())
+    }
+
+    pub(super) async fn trace_ingest_capacity_lock(&self, org_id: Uuid) -> Arc<Mutex<()>> {
+        let mut locks = self.trace_ingest_capacity_locks.lock().await;
+        locks
+            .entry(org_id)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     pub(super) async fn release_idempotency_key(&self, org_id: Uuid, key: &str) {
@@ -2625,7 +2633,7 @@ mod tests {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
-            trace_ingest_capacity_lock: Arc::new(Mutex::new(())),
+            trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),

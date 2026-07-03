@@ -1519,7 +1519,8 @@ Build now:
   `POST /api/runs/:run_id/traces/events`.
 - Project/run trace list with safe defaults:
   `GET /api/traces` requiring `project_id`, `run_id`, or active dashboard
-  project plus a recent time window.
+  project. Project-scoped lists default to a recent time window; run-scoped
+  lists return all traces for the run unless `from`/`to` is supplied.
 - Run-scoped trace detail and lazy child expansion:
   `GET /api/runs/:run_id/traces/:trace_id` and
   `GET /api/runs/:run_id/traces/:trace_id/spans`.
@@ -1927,10 +1928,10 @@ section before implementation is accepted.
 - Added the deferred Run Detail recent-traces panel now that exact trace
   deep-linking is available. The local `Traces` section fetches only while
   opened, requests the selected run's most recent 20 trace summaries through
-  `GET /api/traces?run_id=...`, bounds the query to the run lifetime so older
-  imported runs are not hidden by the dashboard default lookback, clears stale
-  rows immediately when switching runs, and links each row to the full Traces
-  workspace with `run_id`, `trace_id`, and root `span_id`.
+  `GET /api/traces?run_id=...`, relies on run-scoped trace lists being
+  unbounded by the dashboard default lookback so older imported runs stay
+  visible, clears stale rows immediately when switching runs, and links each row
+  to the full Traces workspace with `run_id`, `trace_id`, and root `span_id`.
 - Extended the authenticated UI smoke seed to ingest a native trace batch and
   verify Run Detail stays trace-lazy until the local Traces section is opened,
   then navigates through the exact full-workspace trace link.
@@ -1983,6 +1984,20 @@ section before implementation is accepted.
 - Required validation before closing this follow-up: run the real local
   Rust/ClickHouse backend, exercise a realistic decorator-backed trace in the
   dashboard, and verify it with Chrome/Computer Use.
+
+2026-07-03 PR review hardening:
+
+- Changed `GET /api/traces` time-window defaults so project-scoped browsing
+  keeps the bounded seven-day lookback, while `run_id` browsing is complete
+  unless callers explicitly pass `from` or `to`. This keeps Run Detail recent
+  traces, full Traces deep links, and direct API reads consistent for older
+  imported/backfilled runs.
+- Hardened the Traces tab review feedback: debounced search before API fetches,
+  shared dashboard duration formatting, shared select controls and ARIA
+  selection semantics, tokenized trace styles, stale deep-link handling for
+  unloaded spans, per-org trace-ingest capacity locking, batched trace-summary
+  recompute, parallel independent ClickHouse detail reads, and SDK trace limit
+  constants shared from the payload module.
 
 ## Decision
 

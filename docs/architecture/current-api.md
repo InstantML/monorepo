@@ -1259,7 +1259,7 @@ Query:
 | `status` | Optional status filter, or `all` |
 | `kind` | Optional span kind filter, or `all` |
 | `q` | Search root name, trace id prefix, rollout id, or thread id |
-| `from`, `to` | RFC3339 `started_at` window; defaults to the last 7 days |
+| `from`, `to` | Optional RFC3339 `started_at` window. Project-scoped lists default to the last 7 days through now; `run_id` lists are unbounded unless a window is supplied. |
 | `min_step`, `max_step` | Optional overlapping step range |
 | `limit` | Default 50, max 200 |
 | `cursor` | Opaque cursor returned by the previous page |

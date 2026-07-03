@@ -7624,7 +7624,7 @@
           {
             "name": "from",
             "in": "query",
-            "description": "RFC3339 lower bound over started_at",
+            "description": "RFC3339 lower bound over started_at. Project-scoped lists default to a recent window; run_id lists are unbounded unless from/to is supplied.",
             "required": false,
             "schema": {
               "type": "string"
@@ -7633,7 +7633,7 @@
           {
             "name": "to",
             "in": "query",
-            "description": "RFC3339 upper bound over started_at",
+            "description": "RFC3339 upper bound over started_at. Project-scoped lists default to now; run_id lists are unbounded unless from/to is supplied.",
             "required": false,
             "schema": {
               "type": "string"
