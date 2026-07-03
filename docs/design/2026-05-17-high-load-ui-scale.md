@@ -68,6 +68,8 @@ The dashboard may auto-select the first `DEFAULT_SELECTED_RUNS = 100` most recen
 
 Run-summary/search requests and bulk-selection page requests retry transient `429`/`5xx`/timeout failures with short bounded backoff before surfacing an error. This keeps the topbar from flashing a global "API issue" when a single Cloud Run or local Next proxy request fails during otherwise healthy high-load filtering.
 
+2026-07-03 implementation follow-up: render-time run resolution should keep a page-level `Map<run_id, run>` and share one resolver across selected runs, Compare, stop controls, and chart grouping. The previous selected-run and chart grouping paths repeatedly scanned the visible page with `Array.find`, which turns 2,000 selected runs into avoidable O(selected runs * visible rows) work during re-renders. Metric catalog row construction should also aggregate through one bounded pass over the requested metric keys per run, avoiding per-metric carrier arrays and repeated selected-count scans.
+
 ### Metric Series Fetching
 
 Keep the existing batched `POST /api/metrics/series` path and tune it for larger selections:

@@ -811,16 +811,17 @@ export function DashboardShell({
   const columnMetricOptionsForControls = useMemo(() => boundedOptions(columnMetricOptions, "", 80), [columnMetricOptions]);
 
   const sortedRuns = summary.runs;
+  const pageRunById = useMemo(() => new Map(sortedRuns.map((run) => [run.id, run])), [sortedRuns]);
+  const resolveRunSummary = useCallback((runId: string) => {
+    const pageRun = pageRunById.get(runId);
+    const cachedRun = runDirectoryRef.current.get(runId);
+    return richerRunSummary(selectedRunDetails[runId] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
+  }, [pageRunById, selectedRunDetails]);
   const selectedRuns = useMemo(() => {
-    const directory = runDirectoryRef.current;
     return selectedRunIds
-      .map((id) => {
-        const pageRun = sortedRuns.find((run) => run.id === id);
-        const cachedRun = directory.get(id);
-        return richerRunSummary(selectedRunDetails[id] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
-      })
+      .map((id) => resolveRunSummary(id))
       .filter(Boolean) as RunSummary[];
-  }, [selectedRunDetails, selectedRunIds, sortedRuns]);
+  }, [resolveRunSummary, selectedRunIds]);
   const metricSeriesRuns = useMemo(
     () => (selectedRunIds.length ? selectedRuns : sortedRuns).slice(0, MAX_SELECTED_RUNS),
     [selectedRunIds.length, selectedRuns, sortedRuns],
@@ -829,18 +830,19 @@ export function DashboardShell({
   // the set of run ids changes, not on every metadata poll (which replaces the
   // run objects). Lets the series effects gate on selection, not poll churn.
   const metricSeriesRunKey = useMemo(() => metricSeriesRuns.map((run) => run.id).join(","), [metricSeriesRuns]);
+  const metricSeriesRunIdSet = useMemo(() => new Set(metricSeriesRuns.map((run) => run.id)), [metricSeriesRunKey]);
   const hasLiveMetricSeriesRun = useMemo(() => metricSeriesRuns.some((run) => run.status === "running"), [metricSeriesRuns]);
-  const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
+  const primaryRun = (primaryRunId ? resolveRunSummary(primaryRunId) : null) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
   // The run detail chart plots the primary (opened) run, which may not belong to
   // the current chart selection — e.g. opening a run beyond the auto-selected
   // set. Always fetch its series on the detail tab so the curve renders instead
   // of the empty "select runs" state.
   const seriesFetchRuns = useMemo(() => {
-    if (activeTab === "detail" && primaryRun && !metricSeriesRuns.some((run) => run.id === primaryRun.id)) {
+    if (activeTab === "detail" && primaryRun && !metricSeriesRunIdSet.has(primaryRun.id)) {
       return [primaryRun, ...metricSeriesRuns].slice(0, MAX_SELECTED_RUNS);
     }
     return metricSeriesRuns;
-  }, [activeTab, metricSeriesRuns, primaryRun?.id]);
+  }, [activeTab, metricSeriesRunIdSet, metricSeriesRuns, primaryRun]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
@@ -879,17 +881,9 @@ export function DashboardShell({
     : selectedRunIds.length > MAX_EXPORT_SELECTED_RUNS
       ? `Synchronous CSV export supports up to ${MAX_EXPORT_SELECTED_RUNS} selected runs.`
       : `Export ${selectedRunIds.length} selected runs, metrics, attributes, and artifacts as CSV.`;
-  const compareRunIds = useMemo(() => selectedRuns.map((run) => run.id).slice(0, COMPARE_RUN_LIMIT), [selectedRuns]);
+  const compareRuns = useMemo(() => selectedRuns.slice(0, COMPARE_RUN_LIMIT), [selectedRuns]);
+  const compareRunIds = useMemo(() => compareRuns.map((run) => run.id), [compareRuns]);
   const compareRunKey = compareRunIds.join(",");
-  const compareRuns = useMemo(() => (
-    compareRunIds
-      .map((id) => {
-        const pageRun = sortedRuns.find((run) => run.id === id);
-        const cachedRun = runDirectoryRef.current.get(id);
-        return richerRunSummary(selectedRunDetails[id] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
-      })
-      .filter(Boolean) as RunSummary[]
-  ), [compareRunIds, selectedRunDetails, sortedRuns]);
   const compareOverflowCount = Math.max(0, selectedRuns.length - compareRunIds.length);
   const referenceRun = compareRuns.find((run) => run.id === referenceRunId) ?? compareRuns[0] ?? null;
   const compareConfigKeys = useMemo(() => {
@@ -918,13 +912,13 @@ export function DashboardShell({
   ), [artifacts, artifactsRunId, primaryRun?.id]);
   const currentMessageTone = messageTone(message);
   const seriesWithGroups = useMemo(() => series.map((item) => {
-    const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
+    const run = resolveRunSummary(item.id);
     return {
       ...item,
       group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
       identifier: (run ? identifierForRun(run, identifierMode) : undefined) ?? item.name,
     };
-  }), [groupBy, identifierMode, selectedRunDetails, series, sortedRuns]);
+  }), [groupBy, identifierMode, resolveRunSummary, series]);
 
   const displaySeries = useMemo(() => {
     const grouped = groupAverage ? averageGroupedSeries(seriesWithGroups) : seriesWithGroups;
@@ -949,7 +943,7 @@ export function DashboardShell({
       .map((metric) => {
         const rawSeries = panelSeries[metric] ?? [];
         const groupedSeries = rawSeries.map((item) => {
-          const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
+          const run = resolveRunSummary(item.id);
           return {
             ...item,
             group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
@@ -965,7 +959,7 @@ export function DashboardShell({
           zoomRange,
         };
       })
-  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns]);
+  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, resolveRunSummary, smoothing]);
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
@@ -3380,7 +3374,7 @@ export function DashboardShell({
         const next = { ...current };
         for (const run of matchingRuns) {
           if (!run?.id) continue;
-          const cached = runDirectoryRef.current.get(run.id) ?? sortedRuns.find((candidate) => candidate.id === run.id);
+          const cached = runDirectoryRef.current.get(run.id) ?? pageRunById.get(run.id);
           next[run.id] = richerRunSummary(run, current[run.id] ?? cached) ?? run;
         }
         return next;
@@ -3509,10 +3503,7 @@ export function DashboardShell({
   }
 
   function runSummaryForId(runId: string) {
-    return selectedRunDetails[runId]
-      ?? sortedRuns.find((run) => run.id === runId)
-      ?? runDirectoryRef.current.get(runId)
-      ?? null;
+    return resolveRunSummary(runId);
   }
 
   function stopCandidatesForIds(runIds: string[]) {
@@ -3667,7 +3658,7 @@ export function DashboardShell({
         let changed = false;
         const next = { ...current };
         for (const [runId, control] of controls.entries()) {
-          const existing = next[runId] ?? sortedRuns.find((run) => run.id === runId) ?? runDirectoryRef.current.get(runId);
+          const existing = next[runId] ?? pageRunById.get(runId) ?? runDirectoryRef.current.get(runId);
           if (!existing) continue;
           next[runId] = mergeRunControl(existing, control);
           runDirectoryRef.current.set(runId, next[runId]);
