@@ -13,6 +13,7 @@ pub async fn log_metrics(
     let timestamp = validate_timestamp(input.timestamp.as_deref())?;
     let request_hash = hash_idempotency(run_id, &raw)?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let now = Utc::now();
     let points = metrics
         .iter()
         .map(|(key, value)| ChMetricPointRow {
@@ -22,7 +23,7 @@ pub async fn log_metrics(
             step,
             value: *value,
             logged_at: timestamp,
-            created_at: Utc::now(),
+            created_at: now,
         })
         .collect::<Vec<_>>();
     if let Some(key) = idempotency_key {
