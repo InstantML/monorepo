@@ -604,6 +604,9 @@ textarea:focus {
 .org-switcher-option {
   display: flex;
   align-items: center;
+  /* Beat the base `button { justify-content: center }` so short org names
+     still hug the left edge of the dropdown. */
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
   padding: 8px 10px;
