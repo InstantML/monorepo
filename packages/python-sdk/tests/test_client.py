@@ -20,6 +20,8 @@ import instantml.async_queue as async_queue
 import instantml.client as client_module
 import instantml.serialization as serialization_module
 import instantml.source as source_module
+import instantml.trace_payload as trace_payload
+import instantml.tracing as tracing_module
 import instantml.uploader as uploader
 from instantml.async_queue import AsyncQueueRepository, DeliveryResult, EnqueueBatchResult, drain_queue_once
 from instantml.client import (
@@ -2259,6 +2261,302 @@ def test_trace_op_delivery_modes_preserve_trace_batch_idempotency(monkeypatch, t
     assert replay.replay_offline() == 1
     assert replay_calls[0][1] == "/api/runs/run-offline/traces/events"
     assert replay_calls[0][3] == spooled["idempotency_key"]
+
+
+def test_trace_payload_validation_and_redaction_edges(monkeypatch):
+    with pytest.raises(TypeError, match="name"):
+        trace_payload.normalize_name(13)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="non-empty"):
+        trace_payload.normalize_name("  ")
+    with pytest.raises(ValueError, match="512 bytes"):
+        trace_payload.normalize_name("x" * 513)
+
+    assert trace_payload.normalize_optional_label("", "thread_id") is None
+    with pytest.raises(TypeError, match="thread_id"):
+        trace_payload.normalize_optional_label(7, "thread_id")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="512 bytes"):
+        trace_payload.normalize_optional_label("x" * 513, "thread_id")
+
+    with pytest.raises(TypeError, match="rank"):
+        trace_payload.normalize_rank(True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="nonnegative"):
+        trace_payload.normalize_rank(-1)
+    with pytest.raises(TypeError, match="duration_ms"):
+        trace_payload.normalize_duration_ms("slow")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="finite"):
+        trace_payload.normalize_duration_ms(float("inf"))
+
+    with pytest.raises(TypeError, match="attributes"):
+        trace_payload.json_object([], "attributes", 100)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="links"):
+        trace_payload.json_object_or_array("bad", "links", 100)
+    with pytest.raises(ValueError, match="finite"):
+        trace_payload.json_object({"metric": float("nan")}, "attributes", 100)
+    with pytest.raises(TypeError, match="JSON serializable"):
+        trace_payload.json_object({"bad": object()}, "attributes", 100)
+    with pytest.raises(ValueError, match="serialized bytes"):
+        trace_payload.json_object({"large": "x" * 101}, "attributes", 100)
+
+    monkeypatch.setattr(trace_payload, "redact_json_value", lambda value, key=None: [])
+    with pytest.raises(TypeError, match="attributes"):
+        trace_payload.json_object({"ok": 1}, "attributes", 100)
+    monkeypatch.setattr(trace_payload, "redact_json_value", lambda value, key=None: "bad")
+    with pytest.raises(TypeError, match="links"):
+        trace_payload.json_object_or_array({"ok": 1}, "links", 100)
+
+
+def test_trace_payload_preview_and_identifier_edges():
+    class ExplodingString:
+        def __str__(self):
+            raise RuntimeError("boom")
+
+        def __repr__(self):
+            return "ExplodingString(value=instantml_SECRET123)"
+
+    class Unrepresentable:
+        def __str__(self):
+            raise RuntimeError("boom")
+
+        def __repr__(self):
+            raise RuntimeError("also boom")
+
+    text, truncated = trace_payload.preview_payload(ExplodingString(), "preview", "inputs")
+    assert text == "ExplodingString(value=[REDACTED])"
+    assert truncated is False
+    text, truncated = trace_payload.preview_payload(Unrepresentable(), "preview", "inputs")
+    assert text == "<unrepresentable>"
+    assert truncated is False
+    assert trace_payload.preview_payload(float("nan"), "preview", "inputs") == ('"nan"', False)
+    assert trace_payload.json_object({"items": {3, 1, 2}}, "attributes", 100) == {"items": [1, 2, 3]}
+
+    with pytest.raises(TypeError, match="trace_id"):
+        trace_payload.normalize_trace_id(123)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="32 hex"):
+        trace_payload.normalize_trace_id("not-hex")
+    with pytest.raises(ValueError, match="all zeros"):
+        trace_payload.normalize_trace_id("0" * 32)
+    with pytest.raises(TypeError, match="kind"):
+        trace_payload.normalize_kind(None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="kind"):
+        trace_payload.normalize_kind("unknown")
+
+    clipped, was_truncated = trace_payload._truncate_utf8("é" * 3000, trace_payload.MAX_TRACE_PREVIEW_BYTES + 1)
+    assert was_truncated is True
+    assert clipped
+    assert len(clipped.encode("utf-8")) <= trace_payload.MAX_TRACE_PREVIEW_BYTES + 1
+    assert trace_payload._truncate_utf8("é", 1) == ("", True)
+    with pytest.raises(TypeError, match="JSON serializable"):
+        trace_payload._ensure_serialized_size({"bad": object()}, "attributes", 100)
+
+
+def test_trace_context_attach_detach_start_span_and_wrap_inherit_parent():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.raises(TypeError, match="dictionary"):
+        run.attach_trace_context("bad")  # type: ignore[arg-type]
+
+    with run.trace("root", kind="rollout", thread_id="thread-a", rank=3) as trace:
+        assert trace.start() is trace
+        carrier = trace.context()
+        attached = run.attach_trace_context(carrier)
+        assert attached.__enter__() is attached
+        attached.__exit__(None, None, None)
+        attached.detach()
+        with run.attach_trace_context(carrier):
+            manual = run.start_span("worker.manual", kind="custom")
+            assert manual.parent_span_id == trace.span_id
+            assert manual.thread_id == "thread-a"
+            assert manual.rank == 3
+            assert manual._duration_ms() is not None
+            manual.finish(output={"ok": True})
+        direct = trace.start_span("trace.start-span", kind="custom")
+        assert direct.parent_span_id == trace.span_id
+        direct.finish()
+        wrapped = trace.wrap(lambda: run.start_span("worker.wrapped", kind="custom"))
+
+    wrapped_span = wrapped()
+    assert wrapped_span.parent_span_id == carrier["span_id"]
+    wrapped_span.finish()
+    run.flush()
+
+    events = [event for call in calls for event in call[2]["events"]]
+    assert any(event["name"] == "worker.manual" and event.get("parent_span_id") == carrier["span_id"] for event in events)
+    assert any(event["name"] == "worker.wrapped" and event.get("parent_span_id") == carrier["span_id"] for event in events)
+
+
+def test_trace_span_error_interrupt_double_finish_and_invalid_sync_payload():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.raises(RuntimeError, match="rollout failed"):
+        with run.trace("failing-rollout", kind="rollout", capture="preview"):
+            raise RuntimeError("rollout failed")
+
+    span = run.trace("manual-finish", kind="rollout")
+    span.finish(status="interrupted", output={"partial": True})
+    span.finish(status="ok")
+    assert span._duration_ms() is not None
+    manual_events = [event for call in calls for event in call[2]["events"] if event["name"] == "manual-finish"]
+    assert [event["event_kind"] for event in manual_events] == ["started", "interrupted"]
+
+    with pytest.raises(TypeError, match="JSON serializable"):
+        run.trace("bad-attributes", kind="rollout", attributes={"bad": object()})
+    with pytest.raises(ValueError, match="step"):
+        run.trace("bad-step", kind="rollout", step=float("nan")).start()
+    with pytest.raises(ValueError, match="status"):
+        run.trace("bad-finish-status", kind="rollout").finish(status="unknown")
+    pending = run.trace("pending-duration", kind="rollout")
+    assert pending._duration_ms() is None
+    pending.start()
+    pending.add_attributes({"phase": "eval"})
+    with pytest.raises(TypeError, match="JSON serializable"):
+        pending.add_attributes({"bad": object()})
+    with pytest.raises(ValueError, match="finite"):
+        pending.log_metric({"bad": float("nan")})
+    pending.finish()
+
+    run.flush()
+    events = [event for call in calls for event in call[2]["events"]]
+    failing_exception = next(event for event in events if event["name"] == "failing-rollout" and event["event_kind"] == "exception")
+    assert failing_exception["error_type"] == "RuntimeError"
+    manual_events = [event for event in events if event["name"] == "manual-finish"]
+    assert [event["event_kind"] for event in manual_events] == ["started", "interrupted"]
+
+
+def test_trace_async_invalid_start_finish_and_update_payloads_warn(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FailingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("trace batch should enqueue instead of using network")
+
+    run = Run(client=FailingClient(), run_id="run-async", upload_mode="async", queue_dir=str(tmp_path))
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        run.trace("bad-start", kind="rollout", step=float("nan")).start()
+
+    span = run.trace("bad-updates", kind="rollout")
+    span.start()
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        span.add_attributes({"bad": object()})
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        span.log_metric({"bad": float("nan")})
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        span.finish(status="unknown")
+
+    status = run.upload_status()
+    assert status["dropped"] == 4
+    assert status["pending"] == 1
+    assert run._async_buffer is not None
+    assert run._async_buffer.stop(timeout=1.0)
+    if run._async_queue is not None:
+        run._async_queue.close()
+    run._finished = True
+    client_module._unregister_active_run(run)
+
+
+def test_trace_op_decorator_fallbacks_and_helper_edges(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.raises(TypeError, match="callable"):
+        run.trace_op()(object())  # type: ignore[arg-type]
+
+    original_signature = tracing_module.inspect.signature
+
+    def flaky_signature(fn):
+        if getattr(fn, "__name__", "") == "signature_fallback":
+            raise ValueError("no signature")
+        return original_signature(fn)
+
+    monkeypatch.setattr(tracing_module.inspect, "signature", flaky_signature)
+
+    @run.trace_op(kind="tool", capture="preview")
+    def signature_fallback(*args, **kwargs):
+        return {"args": args, "kwargs": kwargs}
+
+    assert signature_fallback(1, token="instantml_SECRET123")["args"] == (1,)
+
+    @run.trace_op(kind="tool", capture="preview")
+    def one_arg(value):
+        return value
+
+    with pytest.raises(TypeError):
+        one_arg(1, 2)
+
+    assert tracing_module._redaction_state("off", True, False) == "not_captured"
+    assert tracing_module._redaction_state("preview", True, True) == "truncated"
+    assert tracing_module._redaction_state("preview", False, False) == "redacted"
+    assert tracing_module._error_preview(None, "preview") == (None, "", False)
+    assert tracing_module._error_preview("instantml_SECRET123", "preview") == ("Error", "[REDACTED]", False)
+
+    run.flush()
+    events = [event for call in calls for event in call[2]["events"]]
+    fallback_start = next(event for event in events if event["name"].endswith("signature_fallback") and event["event_kind"] == "started")
+    assert '"args":[1]' in fallback_start["input_preview"]
+    assert "instantml_SECRET123" not in fallback_start["input_preview"]
+    one_arg_start = next(event for event in events if event["name"].endswith("one_arg") and event["event_kind"] == "started")
+    assert '"args":[1,2]' in one_arg_start["input_preview"]
+    one_arg_exception = next(event for event in events if event["name"].endswith("one_arg") and event["event_kind"] == "exception")
+    assert one_arg_exception["error_type"] == "TypeError"
+
+
+def test_trace_batch_flushes_before_and_after_size_thresholds(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_EVENTS", 2)
+    run._record_trace_event({"trace_id": "1" * 32, "span_id": "1" * 16, "event_id": "a"})
+    run._record_trace_event({"trace_id": "1" * 32, "span_id": "2" * 16, "event_id": "b"})
+    assert [len(call[2]["events"]) for call in calls] == [2]
+
+    calls.clear()
+    monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_EVENTS", 500)
+    first = {"trace_id": "2" * 32, "span_id": "3" * 16, "event_id": "c", "payload": "x" * 20}
+    first_bytes = len(json.dumps(first, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_BYTES", first_bytes + 1)
+    run._record_trace_event(first)
+    run._record_trace_event({"trace_id": "2" * 32, "span_id": "4" * 16, "event_id": "d", "payload": "y" * 20})
+    run.flush()
+    assert [len(call[2]["events"]) for call in calls] == [1, 1]
 
 
 def test_trace_async_invalid_payload_warns_and_counts_drop(monkeypatch, tmp_path):
