@@ -361,20 +361,22 @@ test("deploy helper keeps public router split paths and backend timeout complete
   const source = fs.readFileSync(path.join(repo, "tools", "deploy-cloud-run.mjs"), "utf8");
 
   for (const path of [
-    "/api/auth/*",
-    "/api/invitations/*",
-    "/api/billing/*",
-    "/api/dashboard/preferences",
-    "/api/users/*",
-    "/api/orgs/*",
-    "/api/workspace-views/*",
+    "prefixMatch: /api/auth/",
+    "prefixMatch: /api/invitations/",
+    "prefixMatch: /api/billing/",
+    "fullPathMatch: /api/dashboard/preferences",
+    "prefixMatch: /api/users/",
+    "prefixMatch: /api/orgs/",
+    "prefixMatch: /api/workspace-views/",
+    "pathTemplateMatch: /api/embed/sessions/*/frame-policy",
+    "pathTemplateMatch: /api/embed/sessions/*/current",
   ]) {
-    assert.match(source, new RegExp(path.replaceAll("/", "\\/").replaceAll("*", "\\*")));
+    assert.match(source, new RegExp(path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  const urlMapPathBlock = source.match(/pathRules:\n  - paths:\n(?<paths>(?:    - .+\n)+)    service: \$\{controlBackend\}/)?.groups?.paths ?? "";
-  assert.ok(urlMapPathBlock, "public router control path rules should be inspectable");
-  const urlMapPaths = [...urlMapPathBlock.matchAll(/    - (.+)/g)].map((match) => match[1]);
-  assert.deepEqual(urlMapPaths, [...new Set(urlMapPaths)], "public router control path rules should be unique");
+  const urlMapRouteBlock = source.match(/routeRules:\n  - priority: 100\n    service: \$\{controlBackend\}\n    matchRules:\n(?<rules>(?:    - .+\n)+)tests:/)?.groups?.rules ?? "";
+  assert.ok(urlMapRouteBlock, "public router control route rules should be inspectable");
+  const urlMapRules = [...urlMapRouteBlock.matchAll(/    - (.+)/g)].map((match) => match[1]);
+  assert.deepEqual(urlMapRules, [...new Set(urlMapRules)], "public router control route rules should be unique");
   assert.doesNotMatch(
     source,
     /- \/api\/reports\s+- \/api\/reports\/\*\s+service: \$\{controlBackend\}/,
@@ -383,11 +385,19 @@ test("deploy helper keeps public router split paths and backend timeout complete
   assert.doesNotMatch(source, /- \/api\/admin(?:\n|$)/, "admin routes should not be exposed through the public router");
   assert.doesNotMatch(source, /path: \/api\/admin\//, "public router smoke should not exercise admin routes");
   assert.match(source, /Report routes use data plane/, "URL map tests should route reports through the data backend");
+  assert.match(source, /Embed frame policy uses control plane/, "URL map tests should route iframe frame policy through control");
+  assert.match(source, /Embed current session uses control plane/, "URL map tests should route iframe session metadata through control");
+  assert.match(source, /label: "control embed frame-policy route"/, "public router smoke should verify iframe frame policy routing");
+  assert.match(source, /label: "control embed current route"/, "public router smoke should verify iframe session metadata routing");
+  assert.match(source, /INSTANTML_EMBED_ENABLED: value\("INSTANTML_EMBED_ENABLED"\) \|\| "true"/);
+  assert.match(source, /INSTANTML_EMBED_FRAME_ENABLED: value\("INSTANTML_EMBED_FRAME_ENABLED"\) \|\| "true"/);
+  assert.match(source, /\["INSTANTML_EMBED_TOKEN_HMAC_SECRET", "instantml-embed-token-hmac-secret", false\]/);
   assert.match(source, /label: "data reports route"/, "public router smoke should verify the reports collection route");
   assert.match(source, /label: "data reports panels route"/, "public router smoke should verify report subroutes");
   assert.match(source, /response\.status === 401/, "protected control route smoke checks should accept auth failures, not route misses");
   assert.match(source, /function backendServiceTimeout/);
   assert.match(source, /--timeout", backendServiceTimeout\(\)/);
+  assert.match(source, /"failureThreshold=60"/, "startup probe should tolerate slow control-db replay during revision overlap");
   assert.match(source, /Timeout sec is not supported for a backend service with Serverless network endpoint groups/);
   assert.match(source, /function resetPreAttachTimeoutForServerlessBackend/);
 });

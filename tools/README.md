@@ -113,7 +113,7 @@ npm run deploy:cloud-run
 npm run deploy:cloud-run -- --help
 ```
 
-The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. The managed router pins auth, billing, org, dashboard preference, and workspace-view routes to control; tenant product routes such as `/api/reports` use the data backend. Admin endpoints stay on the control service for operator access and are not added to the public router path map. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
+The helper reads the repo-root `.env` plus process env, then enables required GCP APIs, creates or reuses Artifact Registry, Cloud Run, Secret Manager, VPC, Cloud Router, Cloud NAT, and a regional static egress IP, syncs ClickHouse/Clerk/embed secrets to Secret Manager, builds the existing Rust image through Cloud Build, deploys Cloud Run, verifies `/health`, `/readyz`, `/api/auth/config`, and `/openapi.json`, then writes hosted API settings to `.env` and `apps/web/.env.local`. Current prod/staging storage should point at the self-hosted GCP ClickHouse endpoint through database-mode tenant routing. Single-service deploys write `INSTANTML_API_BASE`; split deploys write `INSTANTML_CONTROL_API_BASE` and `INSTANTML_DATA_API_BASE` unless the managed HTTPS router is created, in which case all three local API base values point to the router URL. The managed router pins auth, billing, org, dashboard preference, workspace-view, and iframe embed metadata routes to control; tenant product routes such as `/api/reports`, iframe session creation, and iframe run-data reads use the data backend. Admin endpoints stay on the control service for operator access and are not added to the public router path map. Default localhost frontend development should still run `INSTANTML_WEB_API_ENV=staging npm run web:dev`; that setting points Next rewrites at `https://staging.api.instantml.ai` and overrides those helper-written API bases unless an explicit router-bypass session sets `INSTANTML_WEB_EXPLICIT_API_BASES=1`.
 
 When `INSTANTML_MCP_OAUTH_ENABLED=1`, the Rust data service also receives
 `CLERK_SECRET_KEY` and `CLERK_API_BASE` so read-only MCP OAuth calls can verify
@@ -122,9 +122,10 @@ the flag through `deploy-cloud-run.yml` (enabled 2026-07-02); staging and local
 deploys keep it unset for the API-key-only Rust auth path.
 
 For split deployments with the managed HTTPS router, auth, billing,
-organization, workspace-view, dashboard-preference, and invitation routes are
-routed to the control service. Report routes and other product data routes use
-the data service by default.
+organization, workspace-view, dashboard-preference, invitation, and
+`GET /api/embed/sessions/:session_id/{frame-policy,current}` routes are routed
+to the control service. Report routes, `POST /api/embed/sessions`, and
+`POST /api/embed/sessions/:session_id/runs/data` use the data service.
 
 Important environment variables:
 
@@ -139,6 +140,7 @@ Important environment variables:
 - `INSTANTML_CLOUD_RUN_DATA_MIN_INSTANCES` / `INSTANTML_CLOUD_RUN_DATA_MAX_INSTANCES`: auto-scaling bounds for data. Defaults: `0` and `1`.
 - `INSTANTML_CLOUD_RUN_UNSAFE_CONTROL_MULTI_INSTANCE=1`: permits control scaling above one instance for controlled tests only.
 - `INSTANTML_CLOUD_RUN_DATA_INSTANCES`: manual data instance count. Values above `1` fail unless `INSTANTML_CLOUD_RUN_UNSAFE_DATA_MULTI_WRITER=1` is set for a controlled test.
+- `INSTANTML_CLOUD_RUN_STARTUP_PROBE`: optional full Cloud Run startup probe override. By default the helper probes `/readyz` every 10 seconds with a 10-minute failure window so split-service revision overlap can tolerate slow control-database replay.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER=1`: creates or updates the managed HTTPS public router.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_DOMAIN`: DNS host for the router, for example `api.instantml.ai`. Required when public router creation is enabled.
 - `INSTANTML_CLOUD_RUN_PUBLIC_ROUTER_CERTIFICATE`: optional Google-managed SSL certificate resource name.
@@ -153,6 +155,10 @@ Important environment variables:
 - `INSTANTML_CLICKHOUSE_PROVISIONER=database`: current hosted GCP ClickHouse tenant-routing mode.
 - `INSTANTML_BYOC_EGRESS_CIDRS` / `INSTANTML_BYOC_EGRESS_SET_VERSION`: explicit static egress CIDRs and version label shown to BYOC customers. The deploy helper no longer falls back to legacy ClickHouse Cloud allowlist env for BYOC.
 - `INSTANTML_REQUEST_TIMEOUT_SECONDS`: app-level HTTP timeout. Default hosted deploy value is `900` so first workspace creation and tenant schema setup have room to finish.
+- `INSTANTML_EMBED_ENABLED`: enables iframe embed API routes. Hosted deploys default to `true`; set `false` only for an intentional hosted rollback.
+- `INSTANTML_EMBED_FRAME_ENABLED`: enables iframe frame-policy lookup used by the Next embed proxy. Hosted deploys default to `true`; if disabled, iframe pages fail closed with `frame-ancestors 'none'`.
+- `INSTANTML_EMBED_TOKEN_HMAC_SECRET`: HMAC secret for hashed embed bearer tokens. The helper syncs this to `instantml-embed-token-hmac-secret` and mounts it on control/data services.
+- `INSTANTML_EMBED_ORG_ALLOWLIST`: optional comma-separated org UUID allowlist for embed session creation.
 - `INSTANTML_ARTIFACT_BACKEND`: artifact byte backend. The helper defaults hosted deploys to `r2` when Cloudflare R2 credentials are present and to disabled local storage otherwise.
 - `CLOUDFLARE_R2_ACCOUNT_ID` / `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account used for per-org R2 buckets. The deploy helper normalizes either name to `CLOUDFLARE_ACCOUNT_ID` for the Rust service.
 - `CLOUDFLARE_R2_API_KEY` / `CLOUDFLARE_API_TOKEN`: Cloudflare token used for R2 bucket management and S3-compatible object access.
