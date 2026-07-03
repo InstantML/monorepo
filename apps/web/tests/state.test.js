@@ -599,15 +599,18 @@ test("redirect URL helpers allow only intended destinations", () => {
 
 test("summary helpers format stable UI values", () => {
   assert.deepEqual(metricKeysFromSummary({ metric_keys: ["b", "a", "a", "system/instantml/queued_events"] }), ["a", "b"]);
+  assert.deepEqual(metricKeysFromSummary({ metric_keys: ["a", "b", "b", "c"] }), ["a", "b", "c"]);
   assert.equal(isInternalInstantMlMetric("system/instantml/queued_events"), true);
   assert.equal(isInternalInstantMlMetric("train/system/instantml/queued_events"), false);
   assert.deepEqual(filterMetricKeys(["train/loss", "eval/return_mean", "train/reward", "system/instantml/queued_events"], "train/.*"), ["train/loss", "train/reward"]);
   assert.deepEqual(filterMetricKeys(["train/loss", "eval/return_mean"], "[bad"), []);
+  assert.deepEqual(filterMetricKeys(["metric/0001", "metric/0002", "metric/0002", "metric/0003"], ""), ["metric/0001", "metric/0002", "metric/0003"]);
   assert.equal(metricFilterIsRegex("train/.*"), true);
   assert.equal(metricFilterIsRegex("[bad"), false);
   assert.equal(preferredMetricKey(["model/weight_norm", "val/r2", "train/loss"]), "val/r2");
   assert.equal(preferredMetricKey(["model/weight_norm", "test/accuracy", "val/r2"]), "test/accuracy");
   assert.equal(preferredMetricKey(["model/weight_norm"]), "model/weight_norm");
+  assert.equal(preferredMetricKey(["system/instantml/queued_events"]), "system/instantml/queued_events");
   assert.equal(preferredMetricKey([]), "");
   assert.equal(metricGoal("train/loss"), "minimize");
   assert.equal(metricGoal("val/error_rate"), "minimize");

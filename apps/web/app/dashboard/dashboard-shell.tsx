@@ -803,9 +803,15 @@ export function DashboardShell({
   const allMetricOptions = useMemo(() => (
     actualMetricOptions.length ? actualMetricOptions : [DEFAULT_METRIC_KEY, "train/reward", "train/loss"]
   ), [actualMetricOptions]);
-  const metricOptions = useMemo(() => filterMetricKeys(allMetricOptions, metricFilter), [allMetricOptions, metricFilter]);
+  const metricOptions = useMemo(
+    () => (metricFilter.trim() ? filterMetricKeys(allMetricOptions, metricFilter) : allMetricOptions),
+    [allMetricOptions, metricFilter],
+  );
   const metricFilterValid = useMemo(() => metricFilterIsRegex(metricFilter), [metricFilter]);
-  const columnMetricOptions = useMemo(() => filterMetricKeys(allMetricOptions, columnMetricFilter), [allMetricOptions, columnMetricFilter]);
+  const columnMetricOptions = useMemo(
+    () => (columnMetricFilter.trim() ? filterMetricKeys(allMetricOptions, columnMetricFilter) : allMetricOptions),
+    [allMetricOptions, columnMetricFilter],
+  );
   const columnMetricFilterValid = useMemo(() => metricFilterIsRegex(columnMetricFilter), [columnMetricFilter]);
   const metricOptionsForControls = useMemo(() => boundedOptions(metricOptions, metricKey), [metricKey, metricOptions]);
   const columnMetricOptionsForControls = useMemo(() => boundedOptions(columnMetricOptions, "", 80), [columnMetricOptions]);
