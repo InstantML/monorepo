@@ -35,16 +35,15 @@
     align-items: center;
     gap: 12px;
   }
-  /* Logo + wordmark, left. */
+  /* Logo, left. */
   .topbar .brand-cell {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
     flex: none;
     text-decoration: none;
     /* The base .brand-cell carries a right hairline divider; give it room so it
-       isn't crammed against the wordmark (balances the gap to the project select). */
-    padding-right: 14px;
+       balances the gap to the project select. */
+    padding-right: 10px;
   }
   .topbar .brand-mark {
     display: inline-flex;
@@ -52,14 +51,6 @@
     justify-content: center;
     color: var(--accent);
   }
-  .topbar .brand-wordmark {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: var(--fs-title);
-    letter-spacing: -0.01em;
-    color: var(--text);
-  }
-  .topbar .brand-wordmark__accent { color: var(--accent); }
   /* Project selector, left (after the logo). */
   .topbar .brandbar-project { flex: none; }
   /* The org/workspace label, breadcrumb, and mobile menu button are owned by the
