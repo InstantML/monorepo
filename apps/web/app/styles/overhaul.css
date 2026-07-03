@@ -2354,31 +2354,6 @@ button.secondary.danger-action:hover:not(:disabled),
   line-height: 1.5;
 }
 
-.agent-activity-line {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  color: var(--text-2);
-  font-size: var(--fs-label);
-}
-
-.agent-activity-line code {
-  font-size: 11px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.agent-activity-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--line-strong);
-}
-
-.agent-activity-line.live .agent-activity-dot { background: var(--accent); }
-
 .agent-guide-row {
   display: flex;
   flex-wrap: wrap;
