@@ -1443,18 +1443,7 @@ struct ObjectAttributeIndexKey {
 
 impl ObjectAttributeIndexKey {
     fn from_attribute(attribute: &AttributeRow) -> Option<Self> {
-        if !matches!(
-            attribute.kind.as_str(),
-            "table"
-                | "image"
-                | "video"
-                | "audio"
-                | "histogram_series"
-                | "classification_eval"
-                | "string_series"
-        ) {
-            return None;
-        }
+        browsable_object_kind(&attribute.kind, &attribute.path)?;
         let (step_group, step_desc_key) = match attribute.step {
             Some(step) if step.is_finite() => (0, u64::MAX - f64_total_order_key(step)),
             Some(_) | None => (1, 0),

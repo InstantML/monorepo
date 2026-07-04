@@ -74,7 +74,9 @@ Backend adds `GET /api/objects/explorer`. The route reads:
 
 - rich-object attributes whose normalized object kind is `table`, `image`,
   `video`, `audio`, `histogram_series`, or `classification_eval`;
-- text attributes with `type = "string_series"`;
+- text attributes with `type = "string_series"`, excluding console-capture
+  paths `console/stdout` and `console/stderr` so captured logs stay in the Logs
+  surface instead of flooding object browsing;
 - same-run artifacts linked by `artifact_id`, but only after run/project
   visibility has already been checked.
 
@@ -82,7 +84,9 @@ The route does not stream artifact bytes. It only returns redacted artifact
 summary fields already suitable for media previews: `id`, `name`, `uri`,
 `mime_type`, `size_bytes`, and `storage_backend`. It never returns
 `storage_key`, `storage_path`, local filesystem paths, signed URLs, or raw
-object values larger than the preview budget.
+object values larger than the preview budget. Local, R2, and external artifact
+references all use the opaque `instantml://artifacts/<id>` URI on this route;
+external source bucket paths or signed query strings are never echoed.
 
 ## Object Identity
 
@@ -179,6 +183,9 @@ The route returns summaries plus tiny previews only:
   prediction arrays.
 - media preview: metadata only; bytes load through the artifact route on user
   action.
+- metadata and summary previews: serialized JSON capped to the same 2,000-byte
+  UTF-8 boundary as text previews when a stored object predates write-time
+  payload caps or came from an importer.
 
 Large, external, missing, or unsupported artifact bytes render explicit
 unavailable states. The UI must not expose local paths or raw storage details.
@@ -224,9 +231,10 @@ Docs:
 - Default page size 50, maximum 100.
 - Access filtering happens before artifact joins and pagination.
 - Broad reads are backed by the per-org object-attribute projection and
-  materialize only one lookahead candidate beyond the requested page. More
-  selective key/project/search filters may inspect additional index entries but
-  do not sort or clone the full object corpus.
+  seek into the cursor tuple before walking at most one lookahead candidate
+  beyond the requested page. More selective key/project/search filters may
+  inspect additional index entries but do not sort or clone the full object
+  corpus.
 - Initial tab load requests no artifact bytes.
 - Target local p95 under 150 ms for 1,000 matching objects in a 50-run project.
 - Target hosted p95 under 350 ms for sparse rich objects across 50,000 runs.

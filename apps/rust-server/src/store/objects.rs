@@ -1,6 +1,11 @@
 use super::*;
 
+#[cfg(test)]
 use std::cmp::Ordering;
+use std::{
+    cmp::Reverse,
+    ops::Bound::{Excluded, Unbounded},
+};
 
 use axum::http::StatusCode;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -13,7 +18,8 @@ const OBJECT_EXPLORER_KEY_MAX_BYTES: usize = 128;
 #[derive(Debug, Clone)]
 struct ObjectExplorerCandidate {
     row: AttributeRow,
-    run: RunRow,
+    run_name: String,
+    run_project: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -303,12 +309,12 @@ pub async fn list_objects(
     let offset = validate_offset(query.get("offset").map(String::as_str))? as usize;
     let kind = query
         .get("kind")
-        .map(|value| normalize_object_kind(value))
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(normalize_explorer_kind_filter)
         .transpose()?;
-    let key = query
-        .get("key")
-        .map(|value| validate_name(Some(value), "object key"))
-        .transpose()?;
+    let key = validate_object_explorer_key(query.get("key").map(String::as_str))?;
     let mut rows = data
         .attributes_by_run
         .get(&run_id)
@@ -316,18 +322,17 @@ pub async fn list_objects(
         .flatten()
         .filter_map(|id| data.attributes.get(&(ctx.org_id, *id)))
         .filter(|row| row.run_id == run_id)
-        .filter(|row| {
-            matches!(
-                row.kind.as_str(),
-                "table" | "image" | "video" | "audio" | "histogram_series" | "classification_eval"
-            )
-        })
+        .filter(|row| browsable_object_kind(&row.kind, &row.path).is_some())
         .filter(|row| {
             kind.as_ref()
-                .map(|value| row.kind == *value)
+                .map(|value| browsable_object_kind(&row.kind, &row.path) == Some(value.as_str()))
                 .unwrap_or(true)
         })
-        .filter(|row| key.as_ref().map(|value| row.path == *value).unwrap_or(true))
+        .filter(|row| {
+            key.as_ref()
+                .map(|value| row.path.contains(value))
+                .unwrap_or(true)
+        })
         .map(|row| object_value(&data, row))
         .collect::<Vec<_>>();
     rows.sort_by(|a, b| {
@@ -347,7 +352,10 @@ pub async fn list_objects_explorer(
     let limit = validate_object_explorer_limit(query.get("limit").map(String::as_str))?;
     let kind = query
         .get("kind")
-        .map(|value| normalize_explorer_kind_filter(value))
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(normalize_explorer_kind_filter)
         .transpose()?;
     let key = validate_object_explorer_key(query.get("key").map(String::as_str))?;
     let run_id = query
@@ -449,12 +457,21 @@ fn object_explorer_page_from_index(
 ) -> ObjectExplorerPage {
     let mut page = Vec::with_capacity(limit.saturating_add(1));
     let mut inspected_index_entries = 0;
-    for index_key in data
-        .object_attributes_by_org
-        .get(&ctx.org_id)
-        .into_iter()
-        .flat_map(|keys| keys.iter())
-    {
+    let Some(index_keys) = data.object_attributes_by_org.get(&ctx.org_id) else {
+        return ObjectExplorerPage {
+            candidates: page,
+            has_next: false,
+            inspected_index_entries,
+        };
+    };
+    let cursor_key = cursor.map(object_explorer_index_key_from_cursor);
+    let keys: Box<dyn Iterator<Item = &ObjectAttributeIndexKey> + '_> =
+        if let Some(cursor_key) = cursor_key {
+            Box::new(index_keys.range((Excluded(cursor_key), Unbounded)))
+        } else {
+            Box::new(index_keys.iter())
+        };
+    for index_key in keys {
         inspected_index_entries += 1;
         let Some(row) = data.attributes.get(&(ctx.org_id, index_key.attribute_id)) else {
             continue;
@@ -462,7 +479,7 @@ fn object_explorer_page_from_index(
         let Some(run) = run_by_id.get(&row.run_id) else {
             continue;
         };
-        let Some(row_kind) = explorer_kind_for_row(&row.kind) else {
+        let Some(row_kind) = explorer_kind_for_row(row) else {
             continue;
         };
         if kind
@@ -482,18 +499,11 @@ fn object_explorer_page_from_index(
         if !step_in_range(row.step, from_step, to_step) {
             continue;
         }
-        let candidate = ObjectExplorerCandidate {
+        page.push(ObjectExplorerCandidate {
             row: row.clone(),
-            run: run.clone(),
-        };
-        if cursor
-            .as_ref()
-            .map(|cursor| compare_candidate_to_cursor(&candidate, cursor) != Ordering::Greater)
-            .unwrap_or(false)
-        {
-            continue;
-        }
-        page.push(candidate);
+            run_name: run.name.clone(),
+            run_project: run.project.clone(),
+        });
         if page.len() > limit {
             break;
         }
@@ -631,17 +641,8 @@ fn object_explorer_invalid(message: impl Into<String>) -> AppError {
     AppError::with_code(StatusCode::BAD_REQUEST, "object_explorer_invalid", message)
 }
 
-fn explorer_kind_for_row(kind: &str) -> Option<&'static str> {
-    match kind {
-        "table" => Some("table"),
-        "image" => Some("image"),
-        "video" => Some("video"),
-        "audio" => Some("audio"),
-        "histogram_series" => Some("histogram"),
-        "classification_eval" => Some("classification_eval"),
-        "string_series" => Some("text"),
-        _ => None,
-    }
+fn explorer_kind_for_row(row: &AttributeRow) -> Option<&'static str> {
+    browsable_object_kind(&row.kind, &row.path)
 }
 
 fn step_in_range(step: Option<f64>, from_step: Option<f64>, to_step: Option<f64>) -> bool {
@@ -670,20 +671,41 @@ fn compare_object_explorer_candidates(
     )
 }
 
+#[cfg(test)]
 fn compare_candidate_to_cursor(
     candidate: &ObjectExplorerCandidate,
     cursor: &ObjectExplorerCursor,
 ) -> Ordering {
+    compare_row_to_cursor(&candidate.row, cursor)
+}
+
+#[cfg(test)]
+fn compare_row_to_cursor(row: &AttributeRow, cursor: &ObjectExplorerCursor) -> Ordering {
     compare_object_explorer_sort_tuple(
-        candidate.row.step,
-        candidate.row.created_at,
-        candidate.row.id,
+        row.step,
+        row.created_at,
+        row.id,
         cursor.step,
         cursor.created_at,
         cursor.id,
     )
 }
 
+fn object_explorer_index_key_from_cursor(cursor: &ObjectExplorerCursor) -> ObjectAttributeIndexKey {
+    let (step_group, step_desc_key) = match cursor.step {
+        Some(step) if step.is_finite() => (0, u64::MAX - f64_total_order_key(step)),
+        Some(_) | None => (1, 0),
+    };
+    ObjectAttributeIndexKey {
+        step_group,
+        step_desc_key,
+        created_desc: Reverse(cursor.created_at),
+        id_desc: Reverse(cursor.id),
+        attribute_id: cursor.id,
+    }
+}
+
+#[cfg(test)]
 fn compare_object_explorer_sort_tuple(
     left_step: Option<f64>,
     left_created_at: DateTime<Utc>,
@@ -728,13 +750,17 @@ fn decode_object_explorer_cursor(raw: &str) -> AppResult<ObjectExplorerCursor> {
 
 fn object_explorer_value(data: &StoreData, candidate: &ObjectExplorerCandidate) -> Value {
     let row = &candidate.row;
-    let kind = explorer_kind_for_row(&row.kind).unwrap_or("unknown");
-    let metadata = row
+    let kind = explorer_kind_for_row(row).unwrap_or("unknown");
+    let metadata_raw = row
         .value
         .get("metadata")
         .filter(|value| value.is_object())
         .cloned()
         .unwrap_or_else(|| json!({}));
+    let (metadata, metadata_truncated) =
+        object_explorer_bounded_json(&metadata_raw, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES);
+    let (summary, summary_truncated) =
+        object_explorer_bounded_json(&row.summary, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES);
     let artifact = row
         .artifact_id
         .and_then(|id| data.artifacts.get(&id))
@@ -743,30 +769,54 @@ fn object_explorer_value(data: &StoreData, candidate: &ObjectExplorerCandidate) 
             json!({
                 "id": artifact.id,
                 "name": artifact.name,
-                "uri": artifact.public_uri(),
+                "uri": redacted_artifact_uri(artifact),
                 "mime_type": artifact.mime_type,
                 "size_bytes": artifact.size_bytes,
                 "storage_backend": artifact.storage_backend
             })
         });
-    let preview = object_explorer_preview(kind, &row.value);
+    let mut preview = object_explorer_preview(kind, &row.value);
+    if let Value::Object(ref mut object) = preview {
+        object.insert(
+            "metadata_truncated".to_string(),
+            Value::Bool(metadata_truncated),
+        );
+        object.insert(
+            "summary_truncated".to_string(),
+            Value::Bool(summary_truncated),
+        );
+    }
     json!({
         "object_id": format!("attr:{}", row.id),
         "id": row.id,
         "run_id": row.run_id,
-        "run_name": candidate.run.name,
-        "project": candidate.run.project,
+        "run_name": candidate.run_name.as_str(),
+        "project": candidate.run_project.as_str(),
         "kind": kind,
         "key": row.path,
         "step": row.step,
         "created_at": row.created_at,
         "logged_at": row.logged_at,
-        "summary": row.summary,
+        "summary": summary,
         "metadata": metadata,
         "preview": preview,
         "artifact_id": row.artifact_id,
         "artifact": artifact
     })
+}
+
+fn object_explorer_bounded_json(value: &Value, max_bytes: usize) -> (Value, bool) {
+    let raw = serde_json::to_string(value).unwrap_or_default();
+    if raw.len() <= max_bytes {
+        return (value.clone(), false);
+    }
+    (
+        json!({
+            "preview": truncate_utf8(&raw, max_bytes),
+            "truncated": true
+        }),
+        true,
+    )
 }
 
 fn object_explorer_preview(kind: &str, value: &Value) -> Value {
@@ -776,7 +826,8 @@ fn object_explorer_preview(kind: &str, value: &Value) -> Value {
             .as_str()
             .map(str::to_string)
             .unwrap_or_else(|| serde_json::to_string(value).unwrap_or_default());
-        let (text, truncated) = truncate_utf8(&raw, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES);
+        let text = truncate_utf8(&raw, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES).to_string();
+        let truncated = raw.len() > OBJECT_EXPLORER_TEXT_PREVIEW_BYTES;
         preview.insert("text".to_string(), Value::String(text));
         preview.insert("truncated".to_string(), Value::Bool(truncated));
     } else {
@@ -854,17 +905,6 @@ fn matrix_preview(value: Option<&Value>, row_limit: usize, column_limit: usize) 
         .take(row_limit)
         .map(|row| Value::Array(row.iter().take(column_limit).cloned().collect()))
         .collect()
-}
-
-fn truncate_utf8(value: &str, max_bytes: usize) -> (String, bool) {
-    if value.len() <= max_bytes {
-        return (value.to_string(), false);
-    }
-    let mut end = max_bytes;
-    while end > 0 && !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    (value[..end].to_string(), true)
 }
 
 pub async fn create_artifact(
@@ -1171,22 +1211,21 @@ mod tests {
         }
     }
 
+    fn candidate(row: AttributeRow, run: &RunRow) -> ObjectExplorerCandidate {
+        ObjectExplorerCandidate {
+            row,
+            run_name: run.name.clone(),
+            run_project: run.project.clone(),
+        }
+    }
+
     #[test]
     fn object_explorer_cursor_uses_stable_sort_tuple() {
         let run = run(10, "seed-10");
         let mut rows = [
-            ObjectExplorerCandidate {
-                row: attribute(1, run.id, "image", Some(1.0), 1),
-                run: run.clone(),
-            },
-            ObjectExplorerCandidate {
-                row: attribute(2, run.id, "image", Some(3.0), 2),
-                run: run.clone(),
-            },
-            ObjectExplorerCandidate {
-                row: attribute(3, run.id, "image", None, 3),
-                run: run.clone(),
-            },
+            candidate(attribute(1, run.id, "image", Some(1.0), 1), &run),
+            candidate(attribute(2, run.id, "image", Some(3.0), 2), &run),
+            candidate(attribute(3, run.id, "image", None, 3), &run),
         ];
         rows.sort_by(compare_object_explorer_candidates);
         assert_eq!(
@@ -1234,6 +1273,50 @@ mod tests {
                 .map(|candidate| candidate.row.id)
                 .collect::<Vec<_>>(),
             (131..=150).rev().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn object_explorer_cursor_seeks_after_prior_page() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: None,
+        };
+        let run = run(10, "seed-10");
+        let mut data = StoreData::default();
+        for id in 1..=150 {
+            data.insert_attribute(attribute(id, run.id, "image", Some(id as f64), id));
+        }
+        let run_by_id = HashMap::from([(run.id, run)]);
+        let first = object_explorer_page_from_index(
+            &data, &ctx, &run_by_id, &None, &None, None, None, None, 20,
+        );
+        let cursor = decode_object_explorer_cursor(
+            &encode_object_explorer_cursor(first.candidates.last().unwrap()).unwrap(),
+        )
+        .unwrap();
+        let second = object_explorer_page_from_index(
+            &data,
+            &ctx,
+            &run_by_id,
+            &None,
+            &None,
+            None,
+            None,
+            Some(&cursor),
+            20,
+        );
+
+        assert!(second.has_next);
+        assert_eq!(second.inspected_index_entries, 21);
+        assert_eq!(
+            second
+                .candidates
+                .iter()
+                .map(|candidate| candidate.row.id)
+                .collect::<Vec<_>>(),
+            (111..=130).rev().collect::<Vec<_>>()
         );
     }
 
@@ -1331,7 +1414,7 @@ mod tests {
         });
         let mut row = attribute(1, run.id, "image", Some(3.0), 1);
         row.artifact_id = Some(artifact_id);
-        let value = object_explorer_value(&data, &ObjectExplorerCandidate { row, run });
+        let value = object_explorer_value(&data, &candidate(row, &run));
 
         assert_eq!(value["object_id"], json!("attr:1"));
         assert_eq!(value["artifact"]["mime_type"], json!("image/png"));
@@ -1344,5 +1427,88 @@ mod tests {
         assert!(!serde_json::to_string(&value)
             .unwrap()
             .contains("private-bucket"));
+    }
+
+    #[test]
+    fn object_explorer_value_redacts_external_artifact_uri() {
+        let run = run(10, "seed-10");
+        let artifact_id = Uuid::from_u128(20);
+        let mut data = StoreData::default();
+        data.insert_artifact(ArtifactRow {
+            id: artifact_id,
+            org_id: Uuid::from_u128(1),
+            run_id: run.id,
+            kind: "file".to_string(),
+            name: "imported.png".to_string(),
+            uri: "s3://secret-bucket/path/frame.png?X-Amz-Signature=secret".to_string(),
+            step: Some(3.0),
+            size_bytes: Some(1024),
+            sha256: None,
+            mime_type: Some("image/png".to_string()),
+            storage_backend: "external".to_string(),
+            storage_key: None,
+            storage_path: None,
+            metadata: json!({}),
+            created_at: epoch(),
+        });
+        let mut row = attribute(1, run.id, "image", Some(3.0), 1);
+        row.artifact_id = Some(artifact_id);
+        let value = object_explorer_value(&data, &candidate(row, &run));
+
+        assert_eq!(
+            value["artifact"]["uri"],
+            json!(format!("instantml://artifacts/{artifact_id}"))
+        );
+        assert!(!serde_json::to_string(&value)
+            .unwrap()
+            .contains("secret-bucket"));
+        assert!(!serde_json::to_string(&value)
+            .unwrap()
+            .contains("X-Amz-Signature"));
+    }
+
+    #[test]
+    fn object_explorer_value_bounds_summary_and_metadata() {
+        let run = run(10, "seed-10");
+        let mut row = attribute(1, run.id, "string_series", Some(3.0), 1);
+        row.value = json!({
+            "metadata": {
+                "blob": "é".repeat(OBJECT_EXPLORER_TEXT_PREVIEW_BYTES)
+            }
+        });
+        row.summary = json!({
+            "blob": "x".repeat(OBJECT_EXPLORER_TEXT_PREVIEW_BYTES + 200)
+        });
+        let data = StoreData::default();
+        let value = object_explorer_value(&data, &candidate(row, &run));
+
+        assert_eq!(value["preview"]["metadata_truncated"], json!(true));
+        assert_eq!(value["preview"]["summary_truncated"], json!(true));
+        assert_eq!(value["metadata"]["truncated"], json!(true));
+        assert_eq!(value["summary"]["truncated"], json!(true));
+        assert!(
+            value["metadata"]["preview"].as_str().unwrap().len()
+                <= OBJECT_EXPLORER_TEXT_PREVIEW_BYTES
+        );
+        assert!(
+            value["summary"]["preview"].as_str().unwrap().len()
+                <= OBJECT_EXPLORER_TEXT_PREVIEW_BYTES
+        );
+    }
+
+    #[test]
+    fn browsable_object_kind_excludes_console_text() {
+        assert_eq!(
+            browsable_object_kind("string_series", "notes/eval"),
+            Some("text")
+        );
+        assert_eq!(
+            browsable_object_kind("string_series", "console/stdout"),
+            None
+        );
+        assert_eq!(
+            browsable_object_kind("string_series", "console/stderr"),
+            None
+        );
     }
 }

@@ -220,6 +220,22 @@ pub(super) fn normalize_object_kind(kind: &str) -> AppResult<String> {
     }
 }
 
+pub(super) fn browsable_object_kind(kind: &str, path: &str) -> Option<&'static str> {
+    if matches!(path, "console/stdout" | "console/stderr") {
+        return None;
+    }
+    match kind {
+        "table" => Some("table"),
+        "image" => Some("image"),
+        "video" => Some("video"),
+        "audio" => Some("audio"),
+        "histogram_series" => Some("histogram"),
+        "classification_eval" => Some("classification_eval"),
+        "string_series" => Some("text"),
+        _ => None,
+    }
+}
+
 pub(super) fn validate_json_size(value: &Value, field: &str, max: usize) -> AppResult<()> {
     let size = serde_json::to_vec(value)
         .map_err(|_| AppError::validation(format!("{field} must be valid JSON")))?
@@ -714,11 +730,13 @@ pub(super) fn attribute_value(row: &AttributeRow) -> Value {
 }
 
 pub(super) fn object_value(data: &StoreData, row: &AttributeRow) -> Value {
-    let kind = if row.kind == "histogram_series" {
-        "histogram"
-    } else {
-        row.kind.as_str()
-    };
+    let kind = browsable_object_kind(&row.kind, &row.path).unwrap_or_else(|| {
+        if row.kind == "histogram_series" {
+            "histogram"
+        } else {
+            row.kind.as_str()
+        }
+    });
     let metadata = row
         .value
         .get("metadata")
@@ -732,7 +750,7 @@ pub(super) fn object_value(data: &StoreData, row: &AttributeRow) -> Value {
             json!({
                 "id": artifact.id,
                 "name": artifact.name,
-                "uri": artifact.uri,
+                "uri": redacted_artifact_uri(artifact),
                 "mime_type": artifact.mime_type,
                 "size_bytes": artifact.size_bytes,
                 "storage_backend": artifact.storage_backend
@@ -752,6 +770,10 @@ pub(super) fn object_value(data: &StoreData, row: &AttributeRow) -> Value {
         "artifact": artifact,
         "created_at": row.created_at
     })
+}
+
+pub(super) fn redacted_artifact_uri(artifact: &ArtifactRow) -> String {
+    format!("instantml://artifacts/{}", artifact.id)
 }
 
 pub(super) fn json_time(value: &Value) -> String {
@@ -921,7 +943,7 @@ impl std::io::Write for BoundedJsonWriter {
     }
 }
 
-fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
+pub(super) fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
     if value.len() <= max_bytes {
         return value;
     }
@@ -1319,6 +1341,10 @@ mod tests {
 
         assert_eq!(value["artifact"]["storage_backend"], "local");
         assert_eq!(value["artifact"]["mime_type"], "image/png");
+        assert_eq!(
+            value["artifact"]["uri"],
+            json!(format!("instantml://artifacts/{artifact_id}"))
+        );
     }
 
     #[test]
