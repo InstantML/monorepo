@@ -69,10 +69,11 @@ Current navigation, workspace, and comparison controls:
   without changing the legacy `run.status` contract.
 - Run lifecycle controls are available from the Runs rail, table rows,
   selected-runs command bar, and Run Detail. Archive hides active runs from the
-  default workspace without changing training status, restore returns archived
-  runs to the active view, and delete requires typing `delete` before sending
-  the soft-delete request. The lifecycle filter offers Active, Archived, and
-  Active + archived views; deleted runs are removed from visible selections.
+  default workspace without changing training status or retained usage, restore
+  returns archived runs to the active view, and delete requires typing `delete`
+  before sending the soft-delete request. The lifecycle filter offers Active,
+  Archived, and Active + archived views; deleted runs are removed from visible
+  selections.
 - Metrics, Run Detail, and Compare now share the analysis-suite layout: compact header stats, responsive toolbars, chart-first metric inspection, a Run Detail metric picker/dossier, and row-first comparison evidence that visually matches the Runs workspace.
 - Distributed is a rank-aware per-run dashboard backed by `GET /api/runs/:id/rank-metrics/summary`; it renders reduce mean/weighted mean/min/max/range/stddev/p50/p95, rank coverage, heatmap cells, and outlier rows only when the tab is active.
 - Traces is a project/run-scoped debugging workspace backed by `GET /api/traces`, `GET /api/runs/:run_id/traces/:trace_id`, and `GET /api/runs/:run_id/traces/:trace_id/spans`. It only fetches while the tab is active, supports run/status/kind/search filters, scroll-paginated trace summaries (an IntersectionObserver sentinel at the bottom of the list fetches the next cursor page as it nears view — no Load more button), deep links via `run_id`, `trace_id`, and `span_id`, stale-response guards, and lazy child-span expansion for large trees. List and trace-detail fetches render row/tree-shaped shimmer skeletons shared with the tab's page skeleton instead of loading text. Trace search splits up to eight whitespace terms and matches promoted summary fields, so users can find dotted names without a hidden exact-substring syntax. Project-scoped trace lists use the API's recent default window; run-scoped lists are complete unless a date window is supplied, so deep links to older imported runs stay visible.

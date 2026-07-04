@@ -256,19 +256,14 @@ async fn batch_run_lifecycle_once(
             "run_ids must include at least one run",
         ));
     }
-    if input.run_ids.len() > MAX_BATCH_RUN_LIFECYCLE {
+    let run_ids = dedupe_lifecycle_run_ids(input.run_ids);
+    if run_ids.len() > MAX_BATCH_RUN_LIFECYCLE {
         return Err(AppError::validation(format!(
             "batch lifecycle supports at most {MAX_BATCH_RUN_LIFECYCLE} run_ids"
         )));
     }
     validate_lifecycle_confirmation(action, input.confirm.as_deref())?;
     let reason = validate_lifecycle_reason(input.reason.as_deref())?;
-    let mut seen = HashSet::new();
-    let run_ids = input
-        .run_ids
-        .into_iter()
-        .filter(|run_id| seen.insert(*run_id))
-        .collect::<Vec<_>>();
     let mut results = Vec::with_capacity(run_ids.len());
     for run_id in run_ids {
         match apply_lifecycle_change(
@@ -302,20 +297,31 @@ async fn batch_run_lifecycle_once(
             })),
         }
     }
-    let updated = results
-        .iter()
-        .filter(|result| result.get("status").and_then(Value::as_str) == Some("updated"))
-        .count();
-    let failed = results
-        .iter()
-        .filter(|result| result.get("status").and_then(Value::as_str) == Some("error"))
-        .count();
+    let updated = lifecycle_result_status_count(&results, "updated");
+    let unchanged = lifecycle_result_status_count(&results, "unchanged");
+    let failed = lifecycle_result_status_count(&results, "error");
     Ok(json!({
         "action": action.as_str(),
         "results": results,
         "updated": updated,
+        "unchanged": unchanged,
         "failed": failed,
     }))
+}
+
+fn dedupe_lifecycle_run_ids(run_ids: Vec<Uuid>) -> Vec<Uuid> {
+    let mut seen = HashSet::new();
+    run_ids
+        .into_iter()
+        .filter(|run_id| seen.insert(*run_id))
+        .collect()
+}
+
+fn lifecycle_result_status_count(results: &[Value], status: &str) -> usize {
+    results
+        .iter()
+        .filter(|result| result.get("status").and_then(Value::as_str) == Some(status))
+        .count()
 }
 
 async fn lifecycle_response_for_change(
@@ -589,6 +595,8 @@ mod tests {
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
+            trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
+            write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
             record_clock_micros: Arc::new(Mutex::new(0)),
             control_projection_loaded: Arc::new(Mutex::new(false)),
@@ -725,6 +733,23 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(restore_deleted.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn batch_lifecycle_dedupes_before_cap_and_counts_unchanged() {
+        let run_id = Uuid::from_u128(42);
+        let deduped = dedupe_lifecycle_run_ids(vec![run_id; MAX_BATCH_RUN_LIFECYCLE + 50]);
+        assert_eq!(deduped, vec![run_id]);
+
+        let results = vec![
+            json!({ "status": "updated" }),
+            json!({ "status": "unchanged" }),
+            json!({ "status": "error" }),
+            json!({ "status": "unchanged" }),
+        ];
+        assert_eq!(lifecycle_result_status_count(&results, "updated"), 1);
+        assert_eq!(lifecycle_result_status_count(&results, "unchanged"), 2);
+        assert_eq!(lifecycle_result_status_count(&results, "error"), 1);
     }
 
     #[test]

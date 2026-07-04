@@ -185,12 +185,15 @@ def test_local_credentials_suppress_auth_only_for_loopback(tmp_path, monkeypatch
 
     assert Client(base_url="http://127.0.0.1:8000", api_key=None)._resolve_api_key() is None
     _check_credentials_or_raise(None, "http://127.0.0.1:8000")
-    assert Client(base_url="https://api.instantml.ai", api_key=None)._resolve_api_key() is None
+    with pytest.raises(InstantMLError, match="InstantML credentials"):
+        Client(base_url="https://api.instantml.ai", api_key=None)._resolve_api_key()
     with pytest.raises(InstantMLError, match="InstantML credentials"):
         _check_credentials_or_raise(None, "https://api.instantml.ai")
     with pytest.raises(InstantMLError, match="InstantML credentials"):
         _check_credentials_or_raise("local", "https://api.instantml.ai")
     monkeypatch.setenv("INSTANTML_API_KEY", "local")
+    with pytest.raises(InstantMLError, match="InstantML credentials"):
+        Client(base_url="https://api.instantml.ai", api_key=None)._resolve_api_key()
     with pytest.raises(InstantMLError, match="InstantML credentials"):
         _check_credentials_or_raise(None, "https://api.instantml.ai")
 

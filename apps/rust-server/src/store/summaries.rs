@@ -140,25 +140,7 @@ pub(super) fn selection_run_value(
             "run_control".to_string(),
             run_control_summary(&run, control, RunControlPrivacy::Public),
         );
-        let lifecycle_state = lifecycle
-            .get("state")
-            .and_then(Value::as_str)
-            .unwrap_or("active")
-            .to_string();
-        map.insert("lifecycle".to_string(), lifecycle.clone());
-        map.insert("lifecycle_state".to_string(), json!(lifecycle_state));
-        map.insert(
-            "lifecycle_updated_at".to_string(),
-            lifecycle.get("updated_at").cloned().unwrap_or(Value::Null),
-        );
-        map.insert(
-            "archived_at".to_string(),
-            lifecycle.get("archived_at").cloned().unwrap_or(Value::Null),
-        );
-        map.insert(
-            "deleted_at".to_string(),
-            lifecycle.get("deleted_at").cloned().unwrap_or(Value::Null),
-        );
+        insert_run_lifecycle_projection(map, &lifecycle);
     }
     Ok(value)
 }
@@ -205,25 +187,7 @@ pub(super) fn summarize_run(
             "run_control".to_string(),
             run_control_summary(&run, control, privacy),
         );
-        let lifecycle_state = lifecycle
-            .get("state")
-            .and_then(Value::as_str)
-            .unwrap_or("active")
-            .to_string();
-        map.insert("lifecycle".to_string(), lifecycle.clone());
-        map.insert("lifecycle_state".to_string(), json!(lifecycle_state));
-        map.insert(
-            "lifecycle_updated_at".to_string(),
-            lifecycle.get("updated_at").cloned().unwrap_or(Value::Null),
-        );
-        map.insert(
-            "archived_at".to_string(),
-            lifecycle.get("archived_at").cloned().unwrap_or(Value::Null),
-        );
-        map.insert(
-            "deleted_at".to_string(),
-            lifecycle.get("deleted_at").cloned().unwrap_or(Value::Null),
-        );
+        insert_run_lifecycle_projection(map, &lifecycle);
         map.insert("latest_metrics".to_string(), Value::Object(latest));
         map.insert("metric_aggregates".to_string(), Value::Object(aggregates));
         map.insert("metric_keys".to_string(), json!(keys));
@@ -238,6 +202,28 @@ fn metric_series_by_run(series: Vec<MetricSeriesRow>) -> HashMap<Uuid, Vec<Metri
         by_run.entry(item.run_id).or_default().push(item);
     }
     by_run
+}
+
+fn insert_run_lifecycle_projection(map: &mut Map<String, Value>, lifecycle: &Value) {
+    let lifecycle_state = lifecycle
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or("active")
+        .to_string();
+    map.insert("lifecycle".to_string(), lifecycle.clone());
+    map.insert("lifecycle_state".to_string(), json!(lifecycle_state));
+    map.insert(
+        "lifecycle_updated_at".to_string(),
+        lifecycle.get("updated_at").cloned().unwrap_or(Value::Null),
+    );
+    map.insert(
+        "archived_at".to_string(),
+        lifecycle.get("archived_at").cloned().unwrap_or(Value::Null),
+    );
+    map.insert(
+        "deleted_at".to_string(),
+        lifecycle.get("deleted_at").cloned().unwrap_or(Value::Null),
+    );
 }
 
 pub(super) fn artifact_counts_for_runs(

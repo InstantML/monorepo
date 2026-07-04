@@ -89,6 +89,21 @@ pub(super) fn ensure_run_visible_in_data(
     ensure_run_access_in_data(ctx, run)
 }
 
+pub(super) fn maybe_fetch_readable_run_in_data(
+    data: &StoreData,
+    ctx: &RequestContext,
+    run_id: Uuid,
+) -> AppResult<Option<RunRow>> {
+    let Some(run) = data.runs.get(&run_id).cloned() else {
+        return Ok(None);
+    };
+    if !is_readable_run(data, &run) {
+        return Ok(None);
+    }
+    ensure_run_access_in_data(ctx, &run)?;
+    Ok(Some(run))
+}
+
 pub(super) fn ensure_run_access_in_data(ctx: &RequestContext, run: &RunRow) -> AppResult<()> {
     if run.org_id != ctx.org_id {
         return Err(AppError::forbidden(

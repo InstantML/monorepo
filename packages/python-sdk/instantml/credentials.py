@@ -43,21 +43,27 @@ def _resolve_api_key(api_key: str | None, base_url: str | None = None) -> str | 
     effective_base_url = base_url or os.environ.get("INSTANTML_API_BASE_URL")
     if api_key:
         if _is_local_sentinel(api_key):
-            return None
+            return _resolve_local_sentinel(effective_base_url)
         return api_key
     env_key = os.environ.get("INSTANTML_API_KEY")
     if env_key:
         if _is_local_sentinel(env_key):
-            return None
+            return _resolve_local_sentinel(effective_base_url)
         return env_key
     creds = _credentials()
     file_key = creds.get("api_key")
     effective_base_url = effective_base_url or os.environ.get("INSTANTML_API_BASE_URL") or creds.get("api_host")
     if _is_local_sentinel(file_key):
-        return None
+        return _resolve_local_sentinel(effective_base_url)
     if file_key:
         return file_key
     return None
+
+
+def _resolve_local_sentinel(base_url: str | None) -> None:
+    if _is_loopback_base_url(base_url):
+        return None
+    raise _missing_credentials_error()
 
 
 def _check_credentials_or_raise(api_key: str | None, base_url: str | None = None) -> None:

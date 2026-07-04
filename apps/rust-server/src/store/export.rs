@@ -11,7 +11,7 @@ pub async fn side_by_side(
             "run_ids must include at most {MAX_SIDE_BY_SIDE_RUNS} runs"
         )));
     }
-    let reference_run_id = query
+    let requested_reference_run_id = query
         .get("reference_run_id")
         .and_then(|raw| Uuid::parse_str(raw).ok())
         .or_else(|| run_ids.first().copied());
@@ -23,7 +23,7 @@ pub async fn side_by_side(
         store,
         ctx,
         run_ids,
-        reference_run_id,
+        requested_reference_run_id,
         diff_only,
         None,
         false,
@@ -227,21 +227,26 @@ async fn build_side_by_side(
         let data = store.data.lock().await;
         let mut runs = Vec::new();
         let mut attributes = Vec::new();
-        for run_id in &run_ids {
-            let run = fetch_run_in_data(&data, ctx, *run_id)?;
-            ensure_run_access_in_data(ctx, &run)?;
+        for run_id in run_ids {
+            let Some(run) = maybe_fetch_readable_run_in_data(&data, ctx, run_id)? else {
+                continue;
+            };
             attributes.extend(
                 data.attributes_by_run
-                    .get(run_id)
+                    .get(&run.id)
                     .into_iter()
                     .flatten()
                     .filter_map(|id| data.attributes.get(&(ctx.org_id, *id)).cloned())
-                    .filter(|attribute| attribute.run_id == *run_id),
+                    .filter(|attribute| attribute.run_id == run.id),
             );
             runs.push(run);
         }
         (runs, attributes)
     };
+    let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
+    let reference_run_id = reference_run_id
+        .filter(|id| run_ids.contains(id))
+        .or_else(|| run_ids.first().copied());
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let series = match metric_keys.as_ref() {
         Some(keys) if keys.is_empty() => Vec::new(),
@@ -509,7 +514,9 @@ async fn export_runs(
         let data = store.data.lock().await;
         let mut runs = Vec::with_capacity(run_ids.len());
         for run_id in run_ids {
-            runs.push(export_selected_run_in_data(&data, ctx, query, run_id)?);
+            if let Some(run) = export_selected_run_in_data(&data, ctx, query, run_id)? {
+                runs.push(run);
+            }
         }
         return Ok((runs, 0));
     }
@@ -540,9 +547,9 @@ fn export_selected_run_in_data(
     ctx: &RequestContext,
     query: &HashMap<String, String>,
     run_id: Uuid,
-) -> AppResult<RunRow> {
+) -> AppResult<Option<RunRow>> {
     let Some(run) = data.runs.get(&run_id).cloned() else {
-        return Err(AppError::not_found("run not found"));
+        return Ok(None);
     };
     if !run_matches_lifecycle_filter(data, query, &run)
         || run.org_id != ctx.org_id
@@ -553,9 +560,9 @@ fn export_selected_run_in_data(
             .map(|id| id != run.project_id)
             .unwrap_or(false)
     {
-        return Err(AppError::not_found("run not found"));
+        return Ok(None);
     }
-    Ok(run)
+    Ok(Some(run))
 }
 
 fn export_artifact_public_uris_for_attributes(
@@ -1022,12 +1029,49 @@ mod tests {
         data.insert_run(visible);
 
         let query = HashMap::new();
-        assert!(export_selected_run_in_data(&data, &ctx, &query, hidden_id).is_err());
+        assert!(export_selected_run_in_data(&data, &ctx, &query, hidden_id)
+            .unwrap()
+            .is_none());
         assert_eq!(
             export_selected_run_in_data(&data, &ctx, &query, visible_id)
                 .unwrap()
+                .unwrap()
                 .id,
             visible_id
+        );
+    }
+
+    #[test]
+    fn selected_export_skips_archived_runs_unless_included() {
+        let org_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let ctx = RequestContext {
+            org_id,
+            auth: None,
+            session: None,
+        };
+        let mut data = StoreData::default();
+        let archived = test_run(org_id, project_id, "archived");
+        let archived_id = archived.id;
+        data.insert_run(archived);
+        data.insert_run_lifecycle(test_lifecycle(org_id, archived_id, "archived"));
+
+        assert!(
+            export_selected_run_in_data(&data, &ctx, &HashMap::new(), archived_id)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            export_selected_run_in_data(
+                &data,
+                &ctx,
+                &HashMap::from([("include_archived".to_string(), "true".to_string())]),
+                archived_id,
+            )
+            .unwrap()
+            .unwrap()
+            .id,
+            archived_id
         );
     }
 
@@ -1140,6 +1184,21 @@ mod tests {
             resumed_at: None,
             create_request_hash: None,
             lifecycle: Vec::new(),
+        }
+    }
+
+    fn test_lifecycle(org_id: Uuid, run_id: Uuid, state: &str) -> RunLifecycleRow {
+        RunLifecycleRow {
+            kind: "run_lifecycle".to_string(),
+            id: Uuid::new_v4(),
+            org_id,
+            run_id,
+            state: state.to_string(),
+            reason: None,
+            actor_id: None,
+            actor_type: "test".to_string(),
+            idempotency_key: None,
+            created_at: Utc::now(),
         }
     }
 }

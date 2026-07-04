@@ -184,9 +184,11 @@ Responses return updated run summaries or:
   "action": "archive",
   "results": [
     { "run_id": "...", "status": "updated", "run": {} },
+    { "run_id": "...", "status": "unchanged", "run": {} },
     { "run_id": "...", "status": "error", "code": "run_not_found", "error": "Run not found" }
   ],
   "updated": 1,
+  "unchanged": 1,
   "failed": 1
 }
 ```
@@ -211,6 +213,8 @@ Idempotency:
 - Single and batch routes accept `Idempotency-Key`.
 - Repeating archive on archived, restore on active, or delete on deleted returns
   the current projected state and `status: "unchanged"`.
+- Batch responses include an `unchanged` count, and batch size enforcement
+  applies after de-duplicating repeated run IDs.
 - Restore of deleted returns `409 run_lifecycle_conflict`.
 - Concurrent writes are last-write-wins by `created_at` then record id; tests pin
   deterministic replay order.
@@ -223,13 +227,15 @@ hydration, object/artifact joins, and export/report/embed run-set expansion.
 - Runs summary/search/overview: default active only; archived visible through
   lifecycle filter; deleted hidden.
 - Run detail: active/archived visible; deleted returns 404 for normal users.
-- Metrics series: explicit run ID reads for archived runs succeed only when the
-  caller can access archived state; deleted runs return 404/empty according to
-  existing route style, documented in tests.
+- Metrics series: explicit single-run reads for deleted runs return 404;
+  selected-run batch reads skip deleted or stale run IDs so one removed run does
+  not break the remaining chart selection.
 - Artifacts/objects: archived visible only through archived run context or object
   explorer lifecycle filters; deleted hidden.
-- Exports: active by default; `include_archived=true` includes archived; deleted
-  excluded.
+- Exports: active by default; `include_archived=true` includes archived;
+  deleted excluded. Exact selected-run exports skip selected IDs hidden by the
+  current lifecycle filter instead of failing the entire export, so stale UI
+  selections from a previous filter state do not block active-run exports.
 - Reports/embeds: saved run sets exclude archived by default unless an explicit
   lifecycle filter is present; deleted is always omitted.
 - Stop controls: stop/ack routes reject archived/deleted runs with conflict.
@@ -460,6 +466,15 @@ Re-review:
   readable non-deleted runs for usage while keeping archived runs retained, and
   by disabling the raw active-total fast path when an org has archived/deleted
   lifecycle rows. Added regression tests for both paths.
+- 2026-07-04: Addressed follow-up review comments by skipping stale
+  lifecycle-hidden selections in batch metrics, side-by-side comparisons, and
+  selected exports; reporting batch lifecycle `unchanged` counts after
+  de-duplication; failing closed when local SDK credentials target hosted URLs;
+  surfacing retained-usage behavior in UI/docs; and consolidating lifecycle
+  summary projection. Verification passed for focused Rust lifecycle, export,
+  metrics, summaries, retained-usage tests; Rust lint and format check; the
+  targeted SDK credential test plus compile check; and the dashboard shell
+  contract test.
 
 ## Coverage Exceptions
 

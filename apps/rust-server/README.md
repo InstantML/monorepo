@@ -34,8 +34,10 @@ This directory contains the primary Rust backend for InstantML. The current stor
 - Serve bounded user-owned exports through `GET /api/export`. JSON remains the
   default portable export shape; `format=csv` returns a normalized single CSV
   for selected runs or filtered runs, `run_ids`/`runs` selects exact visible
-  runs, synchronous selected export is capped at 100 run IDs, and CSV responses
-  use attachment/no-store/nosniff/sandbox headers.
+  runs, synchronous selected export is capped at 100 run IDs, selected IDs
+  hidden by the current lifecycle filter are skipped rather than aborting the
+  whole export, and CSV responses use attachment/no-store/nosniff/sandbox
+  headers.
 - Create short-lived iframe embed sessions for selected runs through
   `POST /api/embed/sessions`. Embed sessions are control-plane records with a
   hashed `instantml_embed_...` bearer token, one allowed parent origin, bounded
@@ -169,11 +171,13 @@ Control routes:
 - `POST /api/runs/batch-lifecycle`
 
 Archive and restore accept an optional `{ "reason": "..." }` body. Delete
-requires `{ "confirm": "delete" }`; batch requests cap `run_ids` at 100 and
-return per-run updated/error results. Repeating archive on an archived run,
-restore on an active run, or delete on a deleted run is idempotent; restoring a
-deleted run returns a lifecycle conflict. Archived and deleted runs reject
-cooperative stop-control writes.
+requires `{ "confirm": "delete" }`; batch requests de-duplicate run IDs before
+the 100-run cap and return per-run updated/unchanged/error results. Repeating
+archive on an archived run, restore on an active run, or delete on a deleted run
+is idempotent; restoring a deleted run returns a lifecycle conflict. Archived
+runs still count toward retained run usage, while soft-delete removes a run from
+the retained run count. Archived and deleted runs reject cooperative
+stop-control writes.
 
 ## Iframe Run Embeds
 

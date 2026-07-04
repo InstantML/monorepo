@@ -4208,7 +4208,7 @@ export function DashboardShell({
         let changed = false;
         const next = { ...current };
         for (const [runId, run] of runs.entries()) {
-          const existing = next[runId] ?? sortedRuns.find((candidate) => candidate.id === runId) ?? runDirectoryRef.current.get(runId);
+          const existing = next[runId] ?? runSummaryForId(runId);
           const merged = existing ? mergeRunLifecycleSummary(existing, run) : run;
           next[runId] = merged;
           runDirectoryRef.current.set(runId, merged);
@@ -4975,7 +4975,7 @@ function dismissTopOverlay() {
                 {lifecycleDialog.action === "delete"
                   ? "Deleted runs are hidden from normal read paths and cannot be restored in this version. Metrics and artifacts remain retained until a future purge path exists."
                   : lifecycleDialog.action === "archive"
-                    ? "Archived runs leave metrics and artifacts intact, stay available from the archived filter, and disappear from default active lists."
+                    ? "Archived runs leave metrics and artifacts intact, stay available from the archived filter, disappear from default active lists, and still count toward retained usage."
                     : "Restored runs return to the default active run list."}
               </p>
               <div className="checkpoint-fork-grid stop-request-grid">
