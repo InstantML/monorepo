@@ -102,6 +102,8 @@ def test_common_helpers_cover_redaction_bounds_and_optional_base(monkeypatch: py
     assert _common.sanitize_metric_key("x" * 600) is None
     assert _common.latest_scalar([]) is None
     assert _common.latest_scalar(object()) is None
+    assert _common.latest_scalar([(0.7, 0.03)]) == 0.7
+    assert _common.latest_scalar(SimpleNamespace(item=lambda: 2.5)) == 2.5
     assert _common.json_safe_config(None) == {}
     assert _common.json_safe_config(
         {
@@ -122,6 +124,16 @@ def test_common_helpers_cover_redaction_bounds_and_optional_base(monkeypatch: py
     bounded = _common.bounded_metadata({"kind": "huge", "items": ["x" * 2000 for _ in range(100)]})
     assert bounded["truncated"] is True
     assert bounded["kind"] == "huge"
+
+
+def test_common_scalar_collection_accepts_numpy_numbers_when_available() -> None:
+    np = pytest.importorskip("numpy")
+
+    metrics = _common.collect_scalar_metrics(
+        {"float32": np.float32(2.5), "int64": np.int64(7), "float64": np.float64(9.0)}
+    )
+
+    assert metrics == {"float32": 2.5, "int64": 7.0, "float64": 9.0}
 
 
 def test_optuna_callback_logs_completed_trial_metrics_and_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,6 +224,43 @@ def test_optuna_study_incomplete_does_not_auto_finish(monkeypatch: pytest.Monkey
     assert run.finished == []
 
 
+def test_optuna_multi_objective_properties_do_not_abort_callback(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_module(monkeypatch, "optuna")
+    run = FakeRun()
+    callback = optuna_module.InstantMLCallback(run=run)
+
+    class MultiObjectiveTrial:
+        number = 1
+        state = SimpleNamespace(name="COMPLETE")
+        params = {"lr": 0.1}
+        intermediate_values: dict[int, float] = {}
+        user_attrs: dict[str, float] = {}
+
+        @property
+        def value(self) -> float:
+            raise RuntimeError("multi-objective")
+
+    class MultiObjectiveStudy:
+        study_name = "multi"
+        trials = [MultiObjectiveTrial()]
+
+        @property
+        def direction(self) -> str:
+            raise RuntimeError("multi-objective")
+
+        @property
+        def best_value(self) -> float:
+            raise RuntimeError("multi-objective")
+
+    study = MultiObjectiveStudy()
+
+    callback(study, study.trials[0])
+    callback.study_complete(study)
+
+    assert run.logs == []
+    assert run.configs == [{"optuna": {"params": {"lr": 0.1}, "direction": "multi-objective", "study_name": "multi"}}]
+
+
 def test_xgboost_callback_subclasses_base_and_logs_latest_values(monkeypatch: pytest.MonkeyPatch) -> None:
     class TrainingCallback:
         pass
@@ -225,9 +274,9 @@ def test_xgboost_callback_subclasses_base_and_logs_latest_values(monkeypatch: py
     callback = xgboost_module.InstantMLCallback(run=run, params={"eta": 0.1, "bad": object()})
 
     assert isinstance(callback, TrainingCallback)
-    assert callback.after_iteration(None, 3, {"train": {"rmse": [2.0, 1.5]}, "valid": {"auc": 0.8}}) is False
+    assert callback.after_iteration(None, 3, {"train": {"rmse": [2.0, 1.5]}, "valid": {"auc": 0.8}, "cv": {"rmse": [(1.2, 0.1), (1.0, 0.05)]}}) is False
     assert run.configs == [{"xgboost": {"eta": 0.1}}]
-    assert run.logs == [({"train/rmse": 1.5, "valid/auc": 0.8}, 3)]
+    assert run.logs == [({"train/rmse": 1.5, "valid/auc": 0.8, "cv/rmse": 1.0}, 3)]
     assert callback.after_training("model") == "model"
     assert run.finished == []
 
@@ -276,6 +325,7 @@ def test_catboost_callback_logs_metrics_and_respects_finish_run(monkeypatch: pyt
     callback = catboost_module.InstantMLCallback(run=run, config={"depth": 6}, finish_run=True)
     info = SimpleNamespace(
         iteration=5,
+        total_iterations=5,
         metrics={"learn": {"Logloss": [0.8, 0.6]}, "validation": {"AUC": [0.7, 0.9], "ignored": "text"}},
     )
 
@@ -293,11 +343,10 @@ def test_catboost_adapter_created_run_finishes(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(_common, "init", lambda **kwargs: run)
     callback = catboost_module.InstantMLCallback(project="cat-owned")
 
-    callback.after_iteration(SimpleNamespace(iteration=1, metrics={"learn": {"loss": 1.0}}))
-    callback.close("failed")
+    callback.after_iteration(SimpleNamespace(iteration=1, total_iterations=1, metrics={"learn": {"loss": 1.0}}))
 
     assert run.logs == [({"learn/loss": 1.0}, 1)]
-    assert run.finished == ["failed"]
+    assert run.finished == ["finished"]
 
 
 def test_stable_baselines_callback_subclasses_base_and_logs_episode_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -321,10 +370,26 @@ def test_stable_baselines_callback_subclasses_base_and_logs_episode_values(monke
     assert isinstance(callback, BaseCallback)
     assert callback.verbose == 2
     assert callback._on_step() is True
+    callback._on_rollout_end()
+    callback._on_rollout_end()
     callback.log_rollout("rollouts/eval.mp4")
     callback._on_training_end()
 
-    assert run.logs == [({"rl/episode_reward": 8.0, "rl/episode_length": 39.0, "rl/train/fps": 300.0}, 128)]
+    assert run.logs == [
+        (
+            {
+                "rl/episode_reward": 9.75,
+                "rl/episode_reward_max": 11.5,
+                "rl/episode_reward_min": 8.0,
+                "rl/episode_length": 40.5,
+                "rl/episode_length_max": 42.0,
+                "rl/episode_length_min": 39.0,
+                "rl/episodes": 2.0,
+            },
+            128,
+        ),
+        ({"rl/train/fps": 300.0}, 128),
+    ]
     assert run.artifacts == [
         {"name": "rl/rollout", "uri": "file://rollouts/eval.mp4", "type": "rollout", "step": 128}
     ]
@@ -430,6 +495,13 @@ class SelectNoToListDataset:
         return SelectedByIndex()
 
 
+class EmptySelectDataset:
+    num_rows = 0
+
+    def select(self, rows: range) -> FakeSelectedDataset:
+        raise IndexError("empty dataset should not be selected")
+
+
 def test_dataset_preview_fallbacks_and_split_errors() -> None:
     run = FakeRun()
     metadata = log_hf_dataset(run, IndexableDataset(), key="indexed", include_preview=True)
@@ -443,10 +515,26 @@ def test_dataset_preview_fallbacks_and_split_errors() -> None:
     broken = log_hf_dataset(FakeRun(), BrokenSplitDict({"train": object()}), key="broken")
     assert broken["splits"]["train"] == {"error": "metadata unavailable"}
 
+    empty_run = FakeRun()
+    metadata = log_hf_dataset(empty_run, EmptySelectDataset(), key="empty", include_preview=True)
+    assert metadata["num_rows"] == 0
+    assert empty_run.logs == []
+
 
 def test_log_dvc_metadata_reads_local_metadata_files(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
+    data_dir = repo / "data"
+    data_dir.mkdir()
+    (data_dir / "train.csv.dvc").write_text(
+        """
+outs:
+- path: data/train.csv
+  md5: nested123
+  size: 10
+""",
+        encoding="utf-8",
+    )
     (repo / "dvc.lock").write_text(
         """
 schema: '2.0'
@@ -465,9 +553,12 @@ stages:
 
     assert metadata["kind"] == "dvc"
     assert metadata["repo"] == "repo"
-    assert metadata["files"][0]["path"] == "dvc.lock"
-    assert metadata["files"][0]["entries"][0]["path"] == "raw.csv"
-    assert metadata["files"][0]["entries"][0]["md5"] == "abc123"
+    files = {item["path"]: item for item in metadata["files"]}
+    assert files["dvc.lock"]["entries"][0]["path"] == "raw.csv"
+    assert files["dvc.lock"]["entries"][0]["md5"] == "abc123"
+    assert files["dvc.lock"]["entries"][0]["section"] == "outs"
+    assert files["data/train.csv.dvc"]["entries"][0]["path"] == "data/train.csv"
+    assert files["data/train.csv.dvc"]["entries"][0]["md5"] == "nested123"
     assert run.configs[0]["datasets"]["data"]["dvc"] == metadata
 
 

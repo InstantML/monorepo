@@ -724,6 +724,15 @@ log_dvc_metadata(run, repo_path=".")
 Adapters created with an explicit `run=` never finish that user-owned run unless
 `finish_run=True` is passed. Adapters that create a run themselves finish only
 through their documented training-end hook or explicit `finish()`/`close()`.
+Framework metric collectors accept Python numeric values plus NumPy-style scalar
+objects that expose `.item()`. XGBoost CV `(mean, std)` tuples log the mean
+under the metric key; LightGBM CV logs both `-mean` and `-stdv` keys.
+CatBoost-owned runs finish from the last `after_iteration` callback when the
+framework exposes total iteration count. Stable Baselines callbacks log episode
+completion metrics from `_on_step()` and logger snapshots from
+`_on_rollout_end()` once per timestep, avoiding duplicate per-environment-step
+logger points. Dataset helpers skip preview selection for empty datasets and
+scan bounded nested `*.dvc` pointer files in addition to root DVC metadata.
 
 W&B compatibility is opt-in and intentionally a small logging subset:
 

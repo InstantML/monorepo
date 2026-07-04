@@ -9,6 +9,7 @@ from ._common import (
     framework_adapter_new,
     optional_base,
     require_optional,
+    scalar_number,
 )
 
 
@@ -47,19 +48,22 @@ class InstantMLCallback(OwnedRunMixin):
             finish_run=finish_run,
             init_kwargs=init_kwargs,
         )
+        self._last_logger_step: int | float | None = None
 
     def _on_step(self) -> bool:
-        run = self._ensure_run()
         metrics = self._episode_metrics()
-        metrics.update(self._logger_metrics())
         if metrics:
-            run.log(metrics, step=getattr(self, "num_timesteps", None))
+            self._ensure_run().log(metrics, step=getattr(self, "num_timesteps", None))
         return True
 
     def _on_rollout_end(self) -> None:
+        step = getattr(self, "num_timesteps", None)
+        if step == self._last_logger_step:
+            return
         metrics = self._logger_metrics()
         if metrics:
-            self._ensure_run().log(metrics, step=getattr(self, "num_timesteps", None))
+            self._ensure_run().log(metrics, step=step)
+            self._last_logger_step = step
 
     def _on_training_end(self) -> None:
         self.finish()
@@ -74,12 +78,30 @@ class InstantMLCallback(OwnedRunMixin):
         )
 
     def _episode_metrics(self) -> dict[str, float]:
-        metrics: dict[str, float] = {}
+        rewards: list[float] = []
+        lengths: list[float] = []
         for info in (getattr(self, "locals", {}) or {}).get("infos", []) or []:
             episode = info.get("episode") if isinstance(info, dict) else None
             if not isinstance(episode, dict):
                 continue
-            metrics.update(collect_scalar_metrics({"episode_reward": episode.get("r"), "episode_length": episode.get("l")}, prefix="rl", warn_prefix="rl episode"))
+            reward = scalar_number(episode.get("r"))
+            length = scalar_number(episode.get("l"))
+            if reward is not None:
+                rewards.append(reward)
+            if length is not None:
+                lengths.append(length)
+        metrics: dict[str, float] = {}
+        if rewards:
+            metrics["rl/episode_reward"] = sum(rewards) / len(rewards)
+            metrics["rl/episodes"] = float(len(rewards))
+            if len(rewards) > 1:
+                metrics["rl/episode_reward_min"] = min(rewards)
+                metrics["rl/episode_reward_max"] = max(rewards)
+        if lengths:
+            metrics["rl/episode_length"] = sum(lengths) / len(lengths)
+            if len(lengths) > 1:
+                metrics["rl/episode_length_min"] = min(lengths)
+                metrics["rl/episode_length_max"] = max(lengths)
         return metrics
 
     def _logger_metrics(self) -> dict[str, float]:

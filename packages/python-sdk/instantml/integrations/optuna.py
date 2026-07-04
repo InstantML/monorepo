@@ -51,7 +51,7 @@ class InstantMLCallback(OwnedRunMixin):
         run = self._ensure_run()
         step = self._trial_step(trial)
         metrics: dict[str, float] = {}
-        value = getattr(trial, "value", None)
+        value = self._safe_trial_value(trial)
         if value is not None:
             key = sanitize_metric_key(self.metric_name)
             if key is not None:
@@ -83,7 +83,7 @@ class InstantMLCallback(OwnedRunMixin):
     def study_complete(self, study: Any | None = None) -> None:
         run = self._ensure_run()
         if study is not None:
-            best = getattr(study, "best_value", None)
+            best = self._safe_best_value(study)
             if best is not None:
                 run.log({"optuna/best_value": best})
         if self.finish_on_complete:
@@ -112,7 +112,7 @@ class InstantMLCallback(OwnedRunMixin):
             config.update(current)
         study_config = {
             "study_name": getattr(study, "study_name", None),
-            "direction": str(getattr(study, "direction", "")) or None,
+            "direction": self._safe_study_direction(study),
         }
         clean_study_config = {key: value for key, value in study_config.items() if value not in (None, "")}
         if clean_study_config:
@@ -129,9 +129,39 @@ class InstantMLCallback(OwnedRunMixin):
         if not trials:
             return False
         for trial in trials:
-            if not self._skip_trial(trial) and getattr(trial, "value", None) is None:
+            if not self._skip_trial(trial) and self._safe_trial_value(trial) is None:
                 return False
         return True
+
+    @staticmethod
+    def _safe_trial_value(trial: Any) -> Any | None:
+        try:
+            return getattr(trial, "value", None)
+        except (RuntimeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_best_value(study: Any) -> Any | None:
+        try:
+            return getattr(study, "best_value", None)
+        except (RuntimeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_study_direction(study: Any) -> str | None:
+        try:
+            directions = getattr(study, "directions", None)
+        except (RuntimeError, ValueError):
+            directions = None
+        if isinstance(directions, (list, tuple)) and directions:
+            if len(directions) > 1:
+                return "multi-objective"
+            return str(directions[0]) or None
+        try:
+            direction = getattr(study, "direction", None)
+        except (RuntimeError, ValueError):
+            return "multi-objective"
+        return str(direction) if direction not in (None, "") else None
 
 
 OptunaCallback = InstantMLCallback

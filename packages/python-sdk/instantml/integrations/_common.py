@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import math
+import numbers
 import re
 import warnings
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import Any
 
 from instantml.client import Run, init
 from instantml.errors import InstantMLError
-from instantml.validation import _is_scalar_number, _validate_text
+from instantml.validation import _coerce_scalar_number, _validate_text
 
 MAX_DATASET_METADATA_BYTES = 32 * 1024
 MAX_DATASET_PREVIEW_ROWS = 100
@@ -109,8 +110,9 @@ def sanitize_metric_key(*parts: Any) -> str | None:
 
 
 def latest_scalar(value: Any) -> float | None:
-    if _is_scalar_number(value):
-        return float(value)
+    scalar = scalar_number(value)
+    if scalar is not None:
+        return scalar
     if isinstance(value, (str, bytes, bool)) or value is None:
         return None
     try:
@@ -119,7 +121,39 @@ def latest_scalar(value: Any) -> float | None:
         return None
     if not values:
         return None
-    return latest_scalar(values[-1])
+    latest = values[-1]
+    scalar = scalar_number(latest)
+    if scalar is not None:
+        return scalar
+    if isinstance(latest, (list, tuple)):
+        for item in latest:
+            scalar = scalar_number(item)
+            if scalar is not None:
+                return scalar
+    return latest_scalar(latest)
+
+
+def scalar_number(value: Any) -> float | None:
+    if isinstance(value, (str, bytes, bool)) or value is None:
+        return None
+    coerced = _coerce_scalar_number(value)
+    if coerced is not None:
+        return coerced
+    if isinstance(value, numbers.Real):
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return number if math.isfinite(number) else None
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            item_value = item()
+        except (TypeError, ValueError, RuntimeError):
+            return None
+        if item_value is not value:
+            return scalar_number(item_value)
+    return None
 
 
 def collect_scalar_metrics(

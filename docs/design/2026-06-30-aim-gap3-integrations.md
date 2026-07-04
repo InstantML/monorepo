@@ -314,6 +314,25 @@ Re-review:
   `npm run docs:validate`; `git diff --check`.
   Docs validation emitted the existing duplicate sharp/libvips Objective-C
   warning but passed.
+- 2026-07-04: Review hardening pass fixed adapter edge cases:
+  NumPy-style scalar metrics and XGBoost CV `(mean, std)` tuples now preserve
+  the intended scalar value; CatBoost-owned runs finish from the last iteration
+  callback when total iteration metadata is available; empty HF datasets no
+  longer crash preview selection; DVC discovery includes bounded nested
+  `*.dvc` files; Optuna multi-objective/no-complete property reads no longer
+  abort callbacks; Stable Baselines logger values are logged once per rollout
+  timestep instead of every environment step, with simultaneous episode
+  completions aggregated instead of overwritten.
+- 2026-07-04: Validation passed:
+  `python3 -m compileall -q packages/python-sdk/instantml/integrations
+  packages/python-sdk/tests/test_integrations.py`;
+  `pytest packages/python-sdk/tests/test_integrations.py -q --no-cov`;
+  `python -m pytest packages/python-sdk/tests/test_integrations.py -q -o
+  addopts='' --cov=instantml.integrations --cov-report=term-missing
+  --cov-fail-under=0` (95% integration-package coverage);
+  `git diff --check`. A `python3 -m pytest ...` retry was not used because the
+  system `python3` interpreter lacks pytest; the repository `pytest`/`python`
+  environment is Python 3.11.5.
 
 ## Coverage Exceptions
 

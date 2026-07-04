@@ -15,6 +15,8 @@ from ._common import (
     redact_metadata,
 )
 
+MAX_DVC_METADATA_FILES = 100
+
 
 def log_hf_dataset(
     run: Run,
@@ -104,7 +106,10 @@ def _dataset_preview_rows(dataset: Any, limit: int) -> list[dict[str, Any]]:
     rows: list[Any]
     selector = getattr(dataset, "select", None)
     if callable(selector):
-        selected = selector(range(min(limit, int(getattr(dataset, "num_rows", limit) or limit))))
+        num_rows = _dataset_num_rows(dataset, limit)
+        if num_rows <= 0:
+            return []
+        selected = selector(range(min(limit, num_rows)))
         to_list = getattr(selected, "to_list", None)
         if callable(to_list):
             rows = to_list()
@@ -128,8 +133,35 @@ def _dataset_preview_rows(dataset: Any, limit: int) -> list[dict[str, Any]]:
 
 def _dvc_metadata_files(root: Path) -> list[Path]:
     candidates = [root / "dvc.lock", root / "dvc.yaml"]
-    candidates.extend(sorted(root.glob("*.dvc")))
-    return [path for path in candidates if path.is_file()]
+    nested: list[Path] = []
+    for path in root.rglob("*.dvc"):
+        if path.is_file():
+            nested.append(path)
+        if len(nested) >= MAX_DVC_METADATA_FILES:
+            break
+    candidates.extend(sorted(nested))
+    seen: set[Path] = set()
+    files: list[Path] = []
+    for path in candidates:
+        if not path.is_file():
+            continue
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        files.append(path)
+    return files[:MAX_DVC_METADATA_FILES]
+
+
+def _dataset_num_rows(dataset: Any, default: int) -> int:
+    raw = getattr(dataset, "num_rows", None)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return max(0, value)
 
 
 def _dvc_file_metadata(path: Path, root: Path) -> dict[str, Any]:
@@ -145,14 +177,20 @@ def _dvc_file_metadata(path: Path, root: Path) -> dict[str, Any]:
 def _parse_dvc_metadata_text(text: str) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     current: dict[str, Any] = {}
+    current_section: str | None = None
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
+            continue
+        if stripped in {"outs:", "deps:"}:
+            current_section = stripped[:-1]
             continue
         if stripped.startswith("- "):
             if current:
                 entries.append(current)
                 current = {}
+            if current_section is not None:
+                current["section"] = current_section
             stripped = stripped[2:].strip()
         if ":" not in stripped:
             continue
