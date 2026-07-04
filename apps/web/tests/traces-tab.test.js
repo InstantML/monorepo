@@ -34,6 +34,12 @@ test("traces tab uses bounded list, detail, and child endpoints", () => {
   assert.match(paneSource, /traceIdForActions/);
   assert.match(paneSource, /setDetail\(null\);/);
   assert.match(paneSource, /detail\?\.trace\.run_id === selectedRunId && detail\.trace\.trace_id === selectedTraceId/);
+  assert.match(paneSource, /function traceListQueryParams/);
+  assert.match(paneSource, /const scopedRunId = runFilter \|\| undefined/);
+  assert.match(paneSource, /project: scopedRunId \? undefined : project/);
+  assert.match(paneSource, /run_id: scopedRunId/);
+  assert.doesNotMatch(paneSource, /from:/);
+  assert.doesNotMatch(paneSource, /to:/);
 });
 
 test("traces tab exposes tree, inspector, status, and responsive styles", () => {

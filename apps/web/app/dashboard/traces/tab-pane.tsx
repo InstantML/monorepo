@@ -166,15 +166,15 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     setListError("");
     try {
       const payload = await retryTransientRequest(
-        () => api.get<TraceListResponse>(`/api/traces${queryString({
-          project: runFilter ? undefined : project,
-          run_id: runFilter,
-          status: statusFilter,
-          kind: kindFilter,
-          q: debouncedQuery.trim(),
+        () => api.get<TraceListResponse>(`/api/traces${queryString(traceListQueryParams({
+          project,
+          runFilter,
+          statusFilter,
+          kindFilter,
+          query: debouncedQuery.trim(),
           limit: TRACE_PAGE_LIMIT,
           cursor,
-        })}`, { signal: controller.signal }),
+        }))}`, { signal: controller.signal }),
         { signal: controller.signal },
       );
       if (requestId !== listRequestRef.current) return;
@@ -591,6 +591,35 @@ function JsonBlock({ title, value }: { title: string; value: unknown }) {
 function rootSpans(spans: TraceSpan[]) {
   const roots = spans.filter((span) => !span.parent_span_id);
   return roots.length ? roots : spans;
+}
+
+function traceListQueryParams({
+  project,
+  runFilter,
+  statusFilter,
+  kindFilter,
+  query,
+  limit,
+  cursor,
+}: {
+  project: string;
+  runFilter: string;
+  statusFilter: string;
+  kindFilter: string;
+  query: string;
+  limit: number;
+  cursor: string;
+}) {
+  const scopedRunId = runFilter || undefined;
+  return {
+    project: scopedRunId ? undefined : project,
+    run_id: scopedRunId,
+    status: statusFilter,
+    kind: kindFilter,
+    q: query,
+    limit,
+    cursor,
+  };
 }
 
 function flattenDisplayedSpans(spans: TraceSpan[], childrenByParent: Record<string, ChildWindow>) {
