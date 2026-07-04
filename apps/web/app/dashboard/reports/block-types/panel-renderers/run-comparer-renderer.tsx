@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient } from "../../../../../src/api.js";
+import { fetchRunByIdCached } from "../../runset-cache";
 import type { RunComparerPanelData, RunsetData } from "../types";
 
 type RunSummary = {
@@ -123,7 +124,11 @@ async function fetchRunById(
   const trimmed = id.trim();
   if (!trimmed) return null;
   try {
-    const payload = await api.get(`/runs/${encodeURIComponent(trimmed)}`, { signal });
+    // Shared short-TTL cache (B7): sibling comparer panels referencing the
+    // same run ids reuse one GET per run per TTL window.
+    const payload = (await fetchRunByIdCached(api, trimmed, signal)) as
+      | { run?: unknown }
+      | null;
     const run = payload?.run ?? payload;
     if (!run || typeof run !== "object") return null;
     return normalizeRunSummary(run as Record<string, unknown>);

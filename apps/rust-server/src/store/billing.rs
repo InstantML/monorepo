@@ -1327,13 +1327,12 @@ pub async fn operator_set_org_plan(
         .unwrap_or(0);
     org.plan_tier = target.clone();
     org.seat_limit = billing_seat_limit_for_org(&org, plan, paid_extra_seats);
-    {
-        let mut data = store.data.lock().await;
-        store
-            .persist_locked("organization", org.id, &org.id.to_string(), &org)
-            .await?;
-        data.insert_org(org.clone());
-    }
+    // Persist over the network first; take the global data lock only for the
+    // in-memory update so requests never stall behind the persist.
+    store
+        .persist_locked("organization", org.id, &org.id.to_string(), &org)
+        .await?;
+    store.data.lock().await.insert_org(org.clone());
     let mut account = existing.unwrap_or_else(|| default_billing_account(&org));
     account.access_state = if target == PLAN_FREE.id {
         BILLING_FREE_ACTIVE.to_string()
@@ -1356,13 +1355,12 @@ async fn apply_local_free_plan(
 ) -> AppResult<BillingAccountProjection> {
     org.plan_tier = "free".to_string();
     org.seat_limit = billing_seat_limit_for_org(&org, PLAN_FREE, 0);
-    {
-        let mut data = store.data.lock().await;
-        store
-            .persist_locked("organization", org.id, &org.id.to_string(), &org)
-            .await?;
-        data.insert_org(org.clone());
-    }
+    // Persist first, then lock briefly for the in-memory update (see
+    // `write_usage_daily_snapshots` for the pattern).
+    store
+        .persist_locked("organization", org.id, &org.id.to_string(), &org)
+        .await?;
+    store.data.lock().await.insert_org(org.clone());
     let account = default_billing_account(&org);
     persist_billing_account(store, account.clone()).await?;
     Ok(account)
@@ -1625,6 +1623,7 @@ mod tests {
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
+            write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(data)),
             record_clock_micros: Arc::new(Mutex::new(0)),
             control_projection_loaded: Arc::new(Mutex::new(false)),

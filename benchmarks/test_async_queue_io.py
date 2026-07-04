@@ -73,6 +73,8 @@ def sample(batch_size, write_us, drain_us):
         },
         "write_batches": 10,
         "drain_batches": 2,
+        "http_requests": 4,
+        "events_per_http_request": 25.0,
         "disk_after_write": {"bytes": 1024, "files": 3},
     }
 

@@ -26,6 +26,10 @@ pub struct AppConfig {
     pub bootstrap_token: String,
     pub auth_mode: AuthMode,
     pub dev_auth_enabled: bool,
+    /// Local-only escape hatch for load benchmarks. Honored solely when
+    /// `auth_mode` is `Local`, so it can never relax limits on an api-key
+    /// deployment even if the variable leaks into that environment.
+    pub disable_rate_limit: bool,
     pub managed_clerk_enabled: bool,
     pub clerk_secret_key: Option<String>,
     pub clerk_api_base: String,
@@ -390,6 +394,8 @@ impl AppConfig {
             dev_auth_enabled: matches!(auth_mode, AuthMode::Local)
                 && env_bool_optional("INSTANTML_DEV_AUTH_ENABLED")?
                     .unwrap_or_else(|| bind_addr.ip().is_loopback()),
+            disable_rate_limit: matches!(auth_mode, AuthMode::Local)
+                && env_bool_optional("INSTANTML_TEST_DISABLE_RATE_LIMIT")?.unwrap_or(false),
             managed_clerk_enabled: managed_clerk_requested,
             clerk_secret_key,
             clerk_api_base: env_string("CLERK_API_BASE", "https://api.clerk.com"),

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiClient } from "../../../../../src/api.js";
+import { resolveRunsetRuns } from "../../runset-cache";
 import { chartHeight, chartPadding, chartWidth } from "../../../../dashboard-models";
 import type {
   ParallelCoordinatesDimension,
@@ -283,19 +284,24 @@ async function fetchRuns(
   runset: RunsetFetchSpec,
   signal: AbortSignal,
 ): Promise<ResolvedRun[]> {
+  // Shared, short-TTL promise cache with parallel per-project fetches (B7).
+  // This renderer historically ignores pinned_run_ids; keep that behavior.
+  const rawRuns = await resolveRunsetRuns(
+    api,
+    runset,
+    {
+      perProjectLimit: Math.min(MAX_RUNS_PER_PANEL, runset.limit ?? MAX_RUNS_PER_PANEL),
+      maxRuns: MAX_RUNS_PER_PANEL,
+      pinnedLookupLimit: MAX_RUNS_PER_PANEL,
+      includePinned: false,
+    },
+    signal,
+  );
   const collected = new Map<string, ResolvedRun>();
-  const limit = Math.min(MAX_RUNS_PER_PANEL, runset.limit ?? MAX_RUNS_PER_PANEL);
-  for (const project of runset.projects) {
-    if (signal.aborted) break;
+  for (const { raw, project } of rawRuns) {
     if (collected.size >= MAX_RUNS_PER_PANEL) break;
-    const params = new URLSearchParams({ project, limit: String(limit) });
-    const payload = await api.get(`/runs?${params.toString()}`, { signal });
-    const runs = Array.isArray(payload?.runs) ? payload.runs : [];
-    for (const raw of runs) {
-      if (collected.size >= MAX_RUNS_PER_PANEL) break;
-      const resolved = normalize(raw, project);
-      if (resolved && !collected.has(resolved.id)) collected.set(resolved.id, resolved);
-    }
+    const resolved = normalize(raw, project);
+    if (resolved && !collected.has(resolved.id)) collected.set(resolved.id, resolved);
   }
   return Array.from(collected.values());
 }

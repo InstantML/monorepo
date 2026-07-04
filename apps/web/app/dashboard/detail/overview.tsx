@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, Download, GitFork, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { isAbortError, queryString } from "../../../src/api.js";
 import { buildCheckpointResumeCode, checkpointStep } from "../../../src/checkpoints.js";
@@ -88,9 +88,13 @@ type TailLine = {
   timestamp: string;
 };
 
-// The console-log API only pages forward (line_number ASC), so the tail is
-// approximated by following the cursor a bounded number of pages and keeping
-// the last lines seen. Very long logs fall back to the freshest page reached.
+// Newer servers accept `tail=<N>` (1..=500) on the console-log GET and return
+// exactly the last N lines ascending — one request per stream per poll. Older
+// servers ignore the param and only page forward (line_number ASC), so the
+// tail falls back to following the cursor a bounded number of pages and
+// keeping the last lines seen (very long logs then show the freshest page
+// reached). The fallback engages when a response returns more lines than the
+// requested tail — i.e. the server served a full first page instead.
 const TAIL_PAGE_LIMIT = 6;
 const TAIL_PAGE_SIZE = 250;
 const TAIL_LINES = 5;
@@ -130,19 +134,35 @@ export function LogTailPanel({
   const [lines, setLines] = useState<TailLine[]>([]);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
   const [tick, setTick] = useState(0);
+  // Sticky per-panel feature detection: once a server demonstrably ignores
+  // `tail=` we stop paying the probe request and walk the cursor directly.
+  const tailUnsupportedRef = useRef(false);
 
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(() => setTick((current) => current + 1), TAIL_POLL_MS);
-    return () => window.clearInterval(timer);
+    // Ticks are gated on tab visibility (B6): no background polling, and a
+    // return to the tab refreshes the tail once immediately.
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
+      setTick((current) => current + 1);
+    };
+    const timer = window.setInterval(poll, TAIL_POLL_MS);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", poll);
+    };
   }, [running]);
 
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
-    async function tailOf(stream: "stdout" | "stderr") {
-      let cursor = "";
-      let collected: TailLine[] = [];
+    async function walkTail(stream: "stdout" | "stderr", seed: TailLine[], seedCursor: string) {
+      // Legacy forward-only pagination: follow the cursor a bounded number of
+      // pages and keep the last lines seen.
+      let collected = seed.slice(-TAIL_LINES);
+      let cursor = seedCursor;
+      if (seed.length && !cursor) return collected;
       for (let page = 0; page < TAIL_PAGE_LIMIT; page += 1) {
         const query = cursor
           ? queryString({ stream, limit: TAIL_PAGE_SIZE, cursor })
@@ -154,6 +174,27 @@ export function LogTailPanel({
         if (!cursor) break;
       }
       return collected;
+    }
+    async function tailOf(stream: "stdout" | "stderr") {
+      if (!tailUnsupportedRef.current) {
+        // Preferred path: a single tail=N request per stream.
+        const payload = await api.get(
+          `/api/runs/${run.id}/logs${queryString({ stream, tail: TAIL_LINES })}`,
+          { signal: controller.signal },
+        );
+        const chunk: TailLine[] = Array.isArray(payload?.lines) ? payload.lines : [];
+        if (chunk.length <= TAIL_LINES) {
+          // Either the server honored tail=N, or the whole log fits in the
+          // response — both are the correct tail.
+          return chunk.slice(-TAIL_LINES);
+        }
+        // The server ignored `tail` and returned a full first page: remember
+        // that and finish via the pagination walk, reusing this page as the
+        // first hop.
+        tailUnsupportedRef.current = true;
+        return walkTail(stream, chunk, payload?.next_cursor ?? "");
+      }
+      return walkTail(stream, [], "");
     }
     (async () => {
       try {

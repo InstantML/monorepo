@@ -329,6 +329,26 @@ impl MetricStore {
         &self.database
     }
 
+    /// Build an insert for a high-volume point table with server-side async
+    /// inserts enabled. Ingest requests carry tiny row batches, so without
+    /// this every request creates its own ClickHouse part and merge pressure
+    /// grows with request rate. `wait_for_async_insert=1` keeps the response
+    /// durable (the server acks only after the buffered batch is flushed), so
+    /// idempotency responses still mean "written", while ClickHouse batches
+    /// concurrent inserts into shared parts.
+    fn async_point_insert<T: Row>(
+        &self,
+        table: &str,
+        context: &'static str,
+    ) -> AppResult<clickhouse::insert::Insert<T>> {
+        Ok(self
+            .client
+            .insert(table)
+            .map_err(|err| clickhouse_storage_error(context, err))?
+            .with_option("async_insert", "1")
+            .with_option("wait_for_async_insert", "1"))
+    }
+
     /// Insert a batch of metric points. The `metric_series_mv` materialized
     /// view updates `metric_series` aggregates automatically during the same
     /// insert — callers do not need to maintain summary state separately.
@@ -338,10 +358,8 @@ impl MetricStore {
         if points.is_empty() {
             return Ok(());
         }
-        let mut inserter = self
-            .client
-            .insert("metric_points")
-            .map_err(|err| clickhouse_storage_error("clickhouse insert init failed", err))?;
+        let mut inserter =
+            self.async_point_insert("metric_points", "clickhouse insert init failed")?;
         for point in points {
             inserter
                 .write(point)
@@ -359,10 +377,8 @@ impl MetricStore {
         if points.is_empty() {
             return Ok(());
         }
-        let mut inserter = self
-            .client
-            .insert("rank_metric_points")
-            .map_err(|err| clickhouse_storage_error("clickhouse rank insert init failed", err))?;
+        let mut inserter =
+            self.async_point_insert("rank_metric_points", "clickhouse rank insert init failed")?;
         for point in points {
             inserter.write(point).await.map_err(|err| {
                 clickhouse_storage_error("clickhouse rank insert write failed", err)
@@ -379,10 +395,8 @@ impl MetricStore {
         if rows.is_empty() {
             return Ok(());
         }
-        let mut inserter = self
-            .client
-            .insert("console_log_lines")
-            .map_err(|err| clickhouse_storage_error("clickhouse log insert init failed", err))?;
+        let mut inserter =
+            self.async_point_insert("console_log_lines", "clickhouse log insert init failed")?;
         for row in rows {
             inserter.write(row).await.map_err(|err| {
                 clickhouse_storage_error("clickhouse log insert write failed", err)
@@ -840,6 +854,35 @@ impl MetricStore {
             .fetch_all::<ConsoleLogReadRow>()
             .await
             .map_err(clickhouse_read_error)
+    }
+
+    /// Fetch the last `tail` console log lines for a stream, returned in
+    /// ascending `(line_number, ingest_id)` order.
+    pub async fn query_console_log_tail(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+        stream: &str,
+        tail: i64,
+    ) -> AppResult<Vec<ConsoleLogReadRow>> {
+        let mut rows = self
+            .client
+            .query(
+                "SELECT run_id, stream, ingest_id, line_number, message, logged_at, created_at \
+                 FROM console_log_lines \
+                 WHERE org_id = ? AND run_id = ? AND stream = ? \
+                 ORDER BY line_number DESC, ingest_id DESC \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .bind(stream)
+            .bind(tail)
+            .fetch_all::<ConsoleLogReadRow>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        rows.reverse();
+        Ok(rows)
     }
 
     /// Fetch aggregated series rows for a set of runs. Caller computes

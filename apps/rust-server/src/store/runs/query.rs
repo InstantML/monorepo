@@ -216,19 +216,29 @@ pub async fn runs_summary(
     let (total, page_runs) = if let Some(page) = indexed_page {
         page
     } else {
-        let mut all_runs = collect_filtered_runs_with_search(store, ctx, query, &search).await?;
-        let total = all_runs.len();
-        let page_runs = if matches!(sort_by.as_str(), "metric-latest" | "metric-best")
-            && all_runs.len() > MAX_CLICKHOUSE_RUN_ID_CHUNK
+        // Non-indexed fallback: filter and sort over lightweight sort items
+        // so only the requested page of full rows (config/metadata JSON
+        // included) is cloned out of the store.
+        let mut items = collect_filtered_run_sort_items(store, ctx, query, &search).await?;
+        let total = items.len();
+        let page_ids = if matches!(sort_by.as_str(), "metric-latest" | "metric-best")
+            && items.len() > MAX_CLICKHOUSE_RUN_ID_CHUNK
         {
-            metric_sorted_page(store, ctx, &all_runs, &sort_by, metric_key, offset, limit).await?
+            metric_sorted_page_ids(store, ctx, &items, &sort_by, metric_key, offset, limit).await?
         } else {
-            sort_runs(store, ctx, query, &mut all_runs).await?;
-            all_runs
+            sort_run_items(store, ctx, query, &mut items).await?;
+            items
                 .iter()
                 .skip(offset)
                 .take(limit)
-                .cloned()
+                .map(|item| item.id)
+                .collect::<Vec<_>>()
+        };
+        let page_runs = {
+            let data = store.data.lock().await;
+            page_ids
+                .iter()
+                .filter_map(|run_id| data.runs.get(run_id).cloned())
                 .collect::<Vec<_>>()
         };
         (total, page_runs)
@@ -294,6 +304,43 @@ async fn collect_filtered_runs_with_search(
     query: &HashMap<String, String>,
     search: &CompiledRunSearch,
 ) -> AppResult<Vec<RunRow>> {
+    collect_filtered_runs_map(store, ctx, query, search, |_, run| run.clone()).await
+}
+
+/// Lightweight projection of a run holding only the fields the listing
+/// fallback needs to sort and page, so full rows (config/metadata JSON
+/// included) are cloned for the requested page only.
+struct RunSortItem {
+    id: Uuid,
+    name: String,
+    created_at: DateTime<Utc>,
+    duration: Option<f64>,
+    display_status: &'static str,
+}
+
+async fn collect_filtered_run_sort_items(
+    store: &Store,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    search: &CompiledRunSearch,
+) -> AppResult<Vec<RunSortItem>> {
+    collect_filtered_runs_map(store, ctx, query, search, |data, run| RunSortItem {
+        id: run.id,
+        name: run.name.clone(),
+        created_at: run.created_at,
+        duration: duration_seconds(run),
+        display_status: run_control_display_status(run, run_control_for(data, run)),
+    })
+    .await
+}
+
+async fn collect_filtered_runs_map<T>(
+    store: &Store,
+    ctx: &RequestContext,
+    query: &HashMap<String, String>,
+    search: &CompiledRunSearch,
+    project_row: impl Fn(&StoreData, &RunRow) -> T,
+) -> AppResult<Vec<T>> {
     let project = query
         .get("project")
         .filter(|value| !value.is_empty() && value.as_str() != "all");
@@ -306,7 +353,8 @@ async fn collect_filtered_runs_with_search(
         if let Some(ids) = data.cached_run_filter_ids(cache_key) {
             return Ok(ids
                 .into_iter()
-                .filter_map(|run_id| data.runs.get(&run_id).cloned())
+                .filter_map(|run_id| data.runs.get(&run_id))
+                .map(|run| project_row(&data, run))
                 .collect());
         }
     }
@@ -326,7 +374,7 @@ async fn collect_filtered_runs_with_search(
             .filter(|run| project.map(|name| run.project == *name).unwrap_or(true))
             .filter(|run| status.map(|value| run.status == *value).unwrap_or(true))
             .filter(|run| run_matches_display_status(&data, query, run))
-            .cloned()
+            .map(|run| project_row(&data, run))
             .collect());
     }
 
@@ -353,9 +401,11 @@ async fn collect_filtered_runs_with_search(
     if let Some(cache_key) = cache_key {
         data.insert_run_filter_cache(cache_key, matching_ids.clone());
     }
+    let data = &*data;
     Ok(matching_ids
         .into_iter()
-        .filter_map(|run_id| data.runs.get(&run_id).cloned())
+        .filter_map(|run_id| data.runs.get(&run_id))
+        .map(|run| project_row(data, run))
         .collect())
 }
 
@@ -463,48 +513,104 @@ async fn metric_sorted_index_page(
     )))
 }
 
-async fn metric_sorted_page(
+async fn sort_run_items(
     store: &Store,
     ctx: &RequestContext,
-    runs: &[RunRow],
+    query: &HashMap<String, String>,
+    items: &mut [RunSortItem],
+) -> AppResult<()> {
+    let sort_by = validate_run_sort(
+        query
+            .get("sort_by")
+            .map(String::as_str)
+            .unwrap_or("created"),
+    )?;
+    let metric_key = query
+        .get("metric_key")
+        .map(String::as_str)
+        .unwrap_or("eval/return_mean");
+    match sort_by.as_str() {
+        "metric-latest" | "metric-best" => {
+            let run_ids = items.iter().map(|item| item.id).collect::<Vec<_>>();
+            let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+            let series =
+                metric_series_for_runs_key_chunked(&metric_store, ctx.org_id, &run_ids, metric_key)
+                    .await?
+                    .into_iter()
+                    .map(|row| (row.run_id, row))
+                    .collect::<HashMap<_, _>>();
+            sort_by_metric_series(
+                items,
+                |item| item.id,
+                |item| item.created_at,
+                &sort_by,
+                metric_key,
+                &series,
+            );
+        }
+        "duration" => items.sort_by(|a, b| {
+            numeric_desc(a.duration, b.duration).then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        "name" => items.sort_by(|a, b| {
+            a.name
+                .cmp(&b.name)
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        "status" => items.sort_by(|a, b| {
+            a.display_status
+                .cmp(b.display_status)
+                .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| b.created_at.cmp(&a.created_at))
+        }),
+        "created" => items.sort_by_key(|item| std::cmp::Reverse(item.created_at)),
+        _ => items.sort_by_key(|item| std::cmp::Reverse(item.created_at)),
+    }
+    Ok(())
+}
+
+async fn metric_sorted_page_ids(
+    store: &Store,
+    ctx: &RequestContext,
+    items: &[RunSortItem],
     sort_by: &str,
     metric_key: &str,
     offset: usize,
     limit: usize,
-) -> AppResult<Vec<RunRow>> {
-    let run_by_id = runs
+) -> AppResult<Vec<Uuid>> {
+    let item_by_id = items
         .iter()
-        .map(|run| (run.id, run))
+        .map(|item| (item.id, item))
         .collect::<HashMap<_, _>>();
     let mode = metric_sort_mode(sort_by, metric_key);
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
     let target = offset.saturating_add(limit);
-    let mut fetch_limit = target.max(1_000).min(runs.len()).max(limit);
+    let mut fetch_limit = target.max(1_000).min(items.len()).max(limit);
     let ordered = loop {
         let rows = metric_store
             .query_top_series_for_org_key(ctx.org_id, metric_key, mode, fetch_limit as i64)
             .await?;
         let page = rows
             .into_iter()
-            .filter_map(|row| run_by_id.get(&row.run_id).copied().cloned())
+            .filter(|row| item_by_id.contains_key(&row.run_id))
+            .map(|row| row.run_id)
             .collect::<Vec<_>>();
-        if page.len() >= target || fetch_limit == runs.len() {
+        if page.len() >= target || fetch_limit == items.len() {
             break page;
         }
-        fetch_limit = (fetch_limit * 2).min(runs.len());
+        fetch_limit = (fetch_limit * 2).min(items.len());
     };
-    let mut seen = ordered.iter().map(|run| run.id).collect::<BTreeSet<_>>();
+    let mut seen = ordered.iter().copied().collect::<BTreeSet<_>>();
     let mut page = ordered;
     if page.len() < target {
-        let mut without_metric = runs
+        let mut without_metric = items
             .iter()
-            .filter(|run| !seen.contains(&run.id))
-            .cloned()
+            .filter(|item| !seen.contains(&item.id))
+            .map(|item| (item.created_at, item.id))
             .collect::<Vec<_>>();
-        without_metric.sort_by_key(|run| std::cmp::Reverse(run.created_at));
-        for run in without_metric {
-            seen.insert(run.id);
-            page.push(run);
+        without_metric.sort_by_key(|(created_at, _)| std::cmp::Reverse(*created_at));
+        for (_, run_id) in without_metric {
+            seen.insert(run_id);
+            page.push(run_id);
             if page.len() >= target {
                 break;
             }

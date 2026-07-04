@@ -70,15 +70,35 @@ pub(super) fn sort_runs_by_metric(
     metric_key: &str,
     series: &HashMap<Uuid, MetricSeriesRow>,
 ) {
-    runs.sort_by(|a, b| {
-        let left = metric_sort_value(series.get(&a.id), sort_by, metric_key);
-        let right = metric_sort_value(series.get(&b.id), sort_by, metric_key);
+    sort_by_metric_series(
+        runs,
+        |run| run.id,
+        |run| run.created_at,
+        sort_by,
+        metric_key,
+        series,
+    );
+}
+
+/// Metric sort shared between full `RunRow` slices and the lightweight
+/// sort-item projection used by the non-indexed listing fallback.
+pub(super) fn sort_by_metric_series<T>(
+    entries: &mut [T],
+    id: impl Fn(&T) -> Uuid,
+    created_at: impl Fn(&T) -> DateTime<Utc>,
+    sort_by: &str,
+    metric_key: &str,
+    series: &HashMap<Uuid, MetricSeriesRow>,
+) {
+    entries.sort_by(|a, b| {
+        let left = metric_sort_value(series.get(&id(a)), sort_by, metric_key);
+        let right = metric_sort_value(series.get(&id(b)), sort_by, metric_key);
         let order = if sort_by == "metric-best" && is_minimize_metric(metric_key) {
             numeric_asc(left, right)
         } else {
             numeric_desc(left, right)
         };
-        order.then_with(|| b.created_at.cmp(&a.created_at))
+        order.then_with(|| created_at(b).cmp(&created_at(a)))
     });
 }
 

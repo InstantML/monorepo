@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ChartControls } from "./chart-controls";
+import { DebouncedTextInput } from "../components/debounced-text-input";
 import { MetricCatalog } from "./metric-catalog";
 import { MetricChart } from "./metric-chart";
 import { SeriesTable, siStep } from "./series-table";
@@ -137,13 +138,15 @@ export function MetricsTabPane({
       <div className="mx-grid">
         <section className="mx-panel mx-browser" aria-label="Metric browser">
           <div className="mx-search">
-            <input
+            {/* Draft state stays inside DebouncedTextInput so typing doesn't
+                re-render the shell (and every mounted chart) per keystroke. */}
+            <DebouncedTextInput
               aria-label="Search metrics"
               className="mx-input"
               id="metric-filter"
-              onChange={(event) => onMetricFilter(event.target.value)}
+              inputRef={searchRef}
+              onCommit={onMetricFilter}
               placeholder="Search  /  to focus"
-              ref={searchRef}
               type="search"
               value={metricFilter}
             />

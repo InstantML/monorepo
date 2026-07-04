@@ -189,12 +189,43 @@ pub async fn billing_overage_usage_for_org(
     })
 }
 
+/// How long cached write-gate counts stay authoritative for the fast path.
+const WRITE_GATE_CACHE_TTL: StdDuration = StdDuration::from_secs(20);
+/// Fraction of a plan limit treated as "near the limit". Inside this margin
+/// cached counts are not trusted: the gate recomputes fresh usage before
+/// allowing or rejecting, so a stale cache can never produce a wrong decision
+/// close to a limit.
+const WRITE_GATE_NEAR_LIMIT_MARGIN: f64 = 0.02;
+
+/// Cached write-gate usage for one org. Accepted deltas accumulate into
+/// `counts` so repeated writes inside the TTL keep trending toward the limit
+/// instead of resetting to the last recomputed baseline.
+#[derive(Clone)]
+pub(super) struct CachedWriteGateCounts {
+    refreshed_at: Instant,
+    counts: UsageCounts,
+}
+
 pub async fn enforce_plan_capacity(
     store: &Store,
     org_id: Uuid,
     delta: UsageDelta,
     action: &str,
 ) -> AppResult<()> {
+    // Fast path: fresh cached counts outside the near-limit margin always
+    // allow (a violation implies usage inside the margin), so record the
+    // delta and skip the per-request ClickHouse aggregate queries.
+    {
+        let mut cache = store.write_gate_usage.lock().await;
+        if let Some(entry) = cache.get_mut(&org_id) {
+            if entry.refreshed_at.elapsed() < WRITE_GATE_CACHE_TTL
+                && !near_any_write_gate_limit(&entry.counts, delta)
+            {
+                apply_write_gate_delta(&mut entry.counts, delta);
+                return Ok(());
+            }
+        }
+    }
     let counts = usage_counts_for_org(store, org_id, UsageCountMode::WriteGate).await?;
     if let Some(violation) = first_blocking_violation(&counts, delta) {
         return Err(AppError::with_code(
@@ -208,7 +239,53 @@ pub async fn enforce_plan_capacity(
             ),
         ));
     }
+    let mut counts = counts;
+    apply_write_gate_delta(&mut counts, delta);
+    store.write_gate_usage.lock().await.insert(
+        org_id,
+        CachedWriteGateCounts {
+            refreshed_at: Instant::now(),
+            counts,
+        },
+    );
     Ok(())
+}
+
+fn near_any_write_gate_limit(counts: &UsageCounts, delta: UsageDelta) -> bool {
+    near_write_gate_limit(counts.projects, delta.projects, counts.plan.projects)
+        || near_write_gate_limit(counts.runs, delta.runs, counts.plan.runs)
+        || near_write_gate_limit(
+            counts.metric_points,
+            delta.metric_points,
+            counts.plan.metric_points,
+        )
+        || near_write_gate_limit(
+            counts
+                .storage_bytes_for_write_gate
+                .max(counts.storage_bytes_for_warnings),
+            delta.storage_bytes,
+            counts.plan.included_storage_bytes,
+        )
+}
+
+fn near_write_gate_limit(current: i64, delta: i64, limit: i64) -> bool {
+    if limit <= 0 {
+        return false;
+    }
+    let projected = current.saturating_add(delta.max(0)) as f64;
+    projected >= limit as f64 * (1.0 - WRITE_GATE_NEAR_LIMIT_MARGIN)
+}
+
+fn apply_write_gate_delta(counts: &mut UsageCounts, delta: UsageDelta) {
+    counts.projects = counts.projects.saturating_add(delta.projects);
+    counts.runs = counts.runs.saturating_add(delta.runs);
+    counts.metric_points = counts.metric_points.saturating_add(delta.metric_points);
+    counts.storage_bytes_for_write_gate = counts
+        .storage_bytes_for_write_gate
+        .saturating_add(delta.storage_bytes);
+    counts.storage_bytes_for_warnings = counts
+        .storage_bytes_for_warnings
+        .saturating_add(delta.storage_bytes);
 }
 
 async fn usage_summary_for_org(store: &Store, org_id: Uuid) -> AppResult<Value> {
@@ -912,7 +989,8 @@ pub async fn write_usage_daily_snapshots(store: &Store) -> AppResult<usize> {
             session: None,
         };
         let snapshot = usage_summary(store, &ctx).await?;
-        let mut data = store.data.lock().await;
+        // Persist over the network first; take the global data lock only for
+        // the in-memory push so requests never stall behind the persist.
         store
             .persist_locked(
                 "usage_daily",
@@ -921,7 +999,7 @@ pub async fn write_usage_daily_snapshots(store: &Store) -> AppResult<usize> {
                 &snapshot,
             )
             .await?;
-        data.usage_daily.push(snapshot);
+        store.data.lock().await.usage_daily.push(snapshot);
         written += 1;
     }
     Ok(written)
@@ -957,6 +1035,126 @@ pub async fn delete_expired_or_revoked_sessions(store: &Store) -> AppResult<u64>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cache_test_store() -> Store {
+        Store {
+            metric_store: crate::metric_store::connect_url(
+                "http://default:@127.0.0.1:8123/instantml_write_gate_cache_test",
+                "TEST_CLICKHOUSE_URL",
+            )
+            .unwrap(),
+            control_db: None,
+            hosted_clickhouse: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "test".to_string(),
+                allow_private_endpoints: true,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            cell_routing: crate::config::CellRoutingConfig {
+                environment: "test".to_string(),
+                placement_data_cell_id: None,
+                heartbeat_data_cell_id: None,
+            },
+            data_cell_writer_runtime: DataCellWriterLeaseRuntime::for_tests(),
+            data_cell_writer_lease: Arc::new(Mutex::new(Default::default())),
+            data_cell_writer_refresh_lock: Arc::new(Mutex::new(())),
+            tenant_metric_stores: Arc::new(Mutex::new(HashMap::new())),
+            customer_tenant_endpoints: Arc::new(Mutex::new(HashMap::new())),
+            tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
+            shared_cell_metric_store: None,
+            inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
+            write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
+            data: Arc::new(Mutex::new(Default::default())),
+            record_clock_micros: Arc::new(Mutex::new(0)),
+            control_projection_loaded: Arc::new(Mutex::new(false)),
+            last_control_refresh_error: Arc::new(Mutex::new(None)),
+            last_control_refresh: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[test]
+    fn near_write_gate_limit_uses_margin_and_ignores_unlimited_targets() {
+        // Unlimited (limit <= 0) targets never force a recompute.
+        assert!(!near_write_gate_limit(1_000_000, 1_000, 0));
+        assert!(!near_write_gate_limit(1_000_000, 1_000, -1));
+        // 2% margin: 98/100 is near, 97/100 is not.
+        assert!(near_write_gate_limit(97, 1, 100));
+        assert!(!near_write_gate_limit(96, 1, 100));
+        // Negative deltas (deletes) do not mask nearness of current usage.
+        assert!(near_write_gate_limit(99, -50, 100));
+    }
+
+    #[test]
+    fn write_gate_violations_always_fall_inside_recheck_margin() {
+        // The cached fast path only allows when outside the margin, so every
+        // combination that blocks must also be flagged as near-limit —
+        // otherwise a stale cache could reject without a fresh recompute.
+        for (current, delta, limit) in [(101, 0, 100), (100, 1, 100), (98, 5, 100), (1, 100, 100)] {
+            if blocking_violation("metric_points", current, delta, limit).is_some() {
+                assert!(
+                    near_write_gate_limit(current, delta, limit),
+                    "violation at current={current} delta={delta} limit={limit} escaped the margin"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn write_gate_delta_accumulates_into_counts() {
+        let mut counts = test_counts("free");
+        counts.storage_bytes_for_write_gate = 10;
+        counts.storage_bytes_for_warnings = 5;
+        apply_write_gate_delta(
+            &mut counts,
+            UsageDelta {
+                projects: 1,
+                runs: 2,
+                metric_points: 3,
+                storage_bytes: 4,
+            },
+        );
+        assert_eq!(counts.projects, 2);
+        assert_eq!(counts.runs, 3);
+        assert_eq!(counts.metric_points, 4);
+        assert_eq!(counts.storage_bytes_for_write_gate, 14);
+        assert_eq!(counts.storage_bytes_for_warnings, 9);
+    }
+
+    #[tokio::test]
+    async fn enforce_plan_capacity_serves_fresh_cache_and_accumulates_deltas() {
+        let store = cache_test_store();
+        let org_id = Uuid::new_v4();
+        let counts = test_counts("free");
+        store.write_gate_usage.lock().await.insert(
+            org_id,
+            CachedWriteGateCounts {
+                refreshed_at: Instant::now(),
+                counts,
+            },
+        );
+
+        // Far from every limit: both checks are served by the cache (no
+        // ClickHouse recompute) and the deltas accumulate.
+        for _ in 0..2 {
+            enforce_plan_capacity(
+                &store,
+                org_id,
+                UsageDelta {
+                    metric_points: 5,
+                    ..UsageDelta::default()
+                },
+                "log metrics",
+            )
+            .await
+            .unwrap();
+        }
+
+        let cache = store.write_gate_usage.lock().await;
+        let entry = cache.get(&org_id).expect("cached write-gate entry");
+        assert_eq!(entry.counts.metric_points, 1 + 10);
+    }
 
     #[test]
     fn usage_warnings_mark_blocking_plan_targets() {

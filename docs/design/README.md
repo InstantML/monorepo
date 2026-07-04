@@ -129,6 +129,10 @@ Current draft designs:
 - `2026-06-29-agent-compare-runs-api.md`: draft read-only API for agent
   top-k/filter-based run comparison that reuses run search, summaries,
   side-by-side rows, and optional bounded series previews.
+- `2026-07-04-ingest-write-path-throughput.md`: implemented metric ingest
+  write-path throughput slice — batch ingest endpoint, per-org write-gate usage
+  cache, ClickHouse async inserts, SDK batched delivery with connection reuse,
+  and the `benchmark:ingest` measurement harness.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

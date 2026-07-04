@@ -107,6 +107,138 @@ pub async fn log_metrics(
     Ok(points.len())
 }
 
+pub async fn log_metrics_batch(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
+    raw: Value,
+    input: LogMetricsBatchRequest,
+    idempotency_key: Option<String>,
+) -> AppResult<usize> {
+    let now = Utc::now();
+    let points = validate_metrics_batch_points(ctx.org_id, run_id, input.points, now)?;
+    let request_hash = hash_idempotency(run_id, &raw)?;
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    if let Some(key) = idempotency_key {
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            {
+                let data = store.data.lock().await;
+                if let Some(existing) = data
+                    .idempotency
+                    .get(&(ctx.org_id, key.clone()))
+                    .filter(|record| record.expires_at > Utc::now())
+                {
+                    if existing.request_hash == request_hash {
+                        return existing
+                            .response_json
+                            .get("inserted")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize)
+                            .ok_or_else(|| {
+                                AppError::internal("stored idempotency response is invalid")
+                            });
+                    }
+                    return Err(AppError::conflict(
+                        "idempotency key was already used with a different request body",
+                    ));
+                }
+                let run = fetch_run_in_data(&data, ctx, run_id)?;
+                ensure_run_access_in_data(ctx, &run)?;
+            }
+            ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
+            enforce_plan_capacity(
+                store,
+                ctx.org_id,
+                UsageDelta {
+                    metric_points: points.len() as i64,
+                    ..UsageDelta::default()
+                },
+                "log metrics",
+            )
+            .await?;
+            metric_store.insert_points(&points).await?;
+            let record = IdempotencyRecord {
+                org_id: ctx.org_id,
+                key: key.clone(),
+                request_hash,
+                response_json: json!({ "inserted": points.len() }),
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            };
+            store
+                .persist_locked("idempotency", ctx.org_id, &key, &record)
+                .await?;
+            store
+                .data
+                .lock()
+                .await
+                .idempotency
+                .insert((ctx.org_id, key.clone()), record);
+            Ok(points.len())
+        }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
+    {
+        let data = store.data.lock().await;
+        let run = fetch_run_in_data(&data, ctx, run_id)?;
+        ensure_run_access_in_data(ctx, &run)?;
+    }
+    ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            metric_points: points.len() as i64,
+            ..UsageDelta::default()
+        },
+        "log metrics",
+    )
+    .await?;
+    metric_store.insert_points(&points).await?;
+    Ok(points.len())
+}
+
+/// Validate a batch payload and flatten it into ClickHouse point rows.
+/// Per-entry validation matches the single-point `log_metrics` path.
+fn validate_metrics_batch_points(
+    org_id: Uuid,
+    run_id: Uuid,
+    points: Option<Vec<LogMetricsBatchPoint>>,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<ChMetricPointRow>> {
+    let points = points.ok_or_else(|| AppError::validation("points are required"))?;
+    if points.is_empty() {
+        return Err(AppError::validation(
+            "points must include at least one entry",
+        ));
+    }
+    if points.len() > MAX_METRIC_BATCH_POINTS {
+        return Err(AppError::validation(format!(
+            "points must include at most {MAX_METRIC_BATCH_POINTS} entries"
+        )));
+    }
+    let mut rows = Vec::with_capacity(points.len());
+    for point in points {
+        let metrics = validate_metrics(point.metrics)?;
+        let step = validate_step(&point.step, "step")?;
+        let timestamp = validate_timestamp(point.timestamp.as_deref())?;
+        for (key, value) in metrics {
+            rows.push(ChMetricPointRow {
+                org_id,
+                run_id,
+                key,
+                step,
+                value,
+                logged_at: timestamp,
+                created_at: now,
+            });
+        }
+    }
+    Ok(rows)
+}
+
 pub async fn get_metrics(
     store: &Store,
     ctx: &RequestContext,
@@ -417,6 +549,93 @@ pub(super) async fn count_points_for_runs_chunked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn batch_point(metrics: Value, step: Value, timestamp: Option<&str>) -> LogMetricsBatchPoint {
+        LogMetricsBatchPoint {
+            metrics,
+            step,
+            timestamp: timestamp.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn metrics_batch_points_flatten_entries_into_rows() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let now = Utc::now();
+        let rows = validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![
+                batch_point(
+                    json!({"loss": 0.5, "acc": 0.9}),
+                    json!(1),
+                    Some("2026-07-03T00:00:00Z"),
+                ),
+                batch_point(json!({"loss": 0.4}), json!(2), None),
+            ]),
+            now,
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 3);
+        assert!(rows
+            .iter()
+            .all(|row| row.org_id == org_id && row.run_id == run_id && row.created_at == now));
+        assert_eq!(rows[0].step, 1.0);
+        assert_eq!(
+            rows[0].logged_at,
+            "2026-07-03T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+        assert_eq!(rows[2].key, "loss");
+        assert_eq!(rows[2].step, 2.0);
+    }
+
+    #[test]
+    fn metrics_batch_points_require_bounded_non_empty_batches() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let now = Utc::now();
+        assert!(validate_metrics_batch_points(org_id, run_id, None, now).is_err());
+        assert!(validate_metrics_batch_points(org_id, run_id, Some(vec![]), now).is_err());
+        let too_many = (0..=MAX_METRIC_BATCH_POINTS)
+            .map(|step| batch_point(json!({"loss": 0.1}), json!(step), None))
+            .collect::<Vec<_>>();
+        assert!(validate_metrics_batch_points(org_id, run_id, Some(too_many), now).is_err());
+    }
+
+    #[test]
+    fn metrics_batch_points_validate_each_entry_like_single_point_path() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let now = Utc::now();
+        // Missing/null step is rejected exactly like the single-point path.
+        assert!(validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![batch_point(json!({"loss": 0.1}), Value::Null, None)]),
+            now,
+        )
+        .is_err());
+        assert!(validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![batch_point(json!({}), json!(1), None)]),
+            now,
+        )
+        .is_err());
+        assert!(validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![batch_point(
+                json!({"loss": 0.1}),
+                json!(1),
+                Some("nope")
+            )]),
+            now,
+        )
+        .is_err());
+    }
 
     #[test]
     fn effective_metric_series_limit_respects_total_point_budget() {

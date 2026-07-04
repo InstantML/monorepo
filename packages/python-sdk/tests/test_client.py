@@ -15,6 +15,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 import instantml as im
+import instantml._http_pool as http_pool
 import instantml.async_queue as async_queue
 import instantml.client as client_module
 import instantml.serialization as serialization_module
@@ -46,6 +47,18 @@ from instantml.client import (
     _write_video_data,
 )
 from instantml_api.server import create_server
+
+
+def _spool_events(run_dir: Path) -> list[dict]:
+    """Read spooled events from both legacy ``.json`` files and new ``.jsonl``
+    segments, in filename order. Callers should ``run.flush()`` or
+    ``run.finish()`` first so the active segment is finalized."""
+    events: list[dict] = []
+    for path in sorted(list(run_dir.glob("*.json")) + list(run_dir.glob("*.jsonl"))):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(json.loads(line))
+    return events
 
 
 @pytest.fixture()
@@ -158,7 +171,7 @@ def test_api_runs_reuses_client_request_auth_timeout_and_returns_payload(monkeyp
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(http_pool, "urlopen", fake_urlopen)
 
     page = im.Api(base_url="http://example.test", timeout=4, api_key="secret").runs(limit=1)
 
@@ -192,7 +205,7 @@ def test_api_download_artifact_writes_bytes_with_auth(monkeypatch, tmp_path):
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     target = tmp_path / "downloads" / "checkpoint.json"
 
     written = im.Api(base_url="http://example.test/", timeout=7, api_key="secret").download_artifact("artifact/1", target)
@@ -219,7 +232,7 @@ def test_api_download_artifact_accepts_directory_destinations(monkeypatch, tmp_p
         def read(self):
             return b"bytes"
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: FakeResponse())
     api = im.Api(base_url="http://example.test")
     existing_dir = tmp_path / "existing"
     existing_dir.mkdir()
@@ -249,14 +262,14 @@ def test_api_download_artifact_reports_bad_paths_and_network_errors(monkeypatch,
             BytesIO(b'{"error":"download denied"}'),
         )
 
-    monkeypatch.setattr("urllib.request.urlopen", raise_http)
+    monkeypatch.setattr(urllib.request, "urlopen", raise_http)
     with pytest.raises(InstantMLError, match="download denied"):
         api.download_artifact("artifact-1", tmp_path / "denied.bin")
 
     def raise_url(*_args, **_kwargs):
         raise urllib.error.URLError("offline")
 
-    monkeypatch.setattr("urllib.request.urlopen", raise_url)
+    monkeypatch.setattr(urllib.request, "urlopen", raise_url)
     with pytest.raises(InstantMLError, match="offline"):
         api.download_artifact("artifact-1", tmp_path / "offline.bin")
 
@@ -272,7 +285,7 @@ def test_api_runs_raises_instantml_error_for_invalid_json(monkeypatch):
         def read(self):
             return b"not-json"
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(http_pool, "urlopen", lambda *args, **kwargs: FakeResponse())
     with pytest.raises(InstantMLError, match="invalid JSON"):
         im.Api(base_url="http://example.test").runs(limit=1)
 
@@ -1389,7 +1402,8 @@ def test_rich_object_spool_and_validation(tmp_path):
     run = im.Run(client=FailingClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path / "spool"))
     table = run.log_objects({"eval/samples": im.Table(["prompt"], [{"prompt": "a"}])}, step=1)[0]
     assert table["id"] == "spooled"
-    event = json.loads(next((tmp_path / "spool" / "run-1").glob("*.json")).read_text(encoding="utf-8"))
+    run.flush()
+    event = _spool_events(tmp_path / "spool" / "run-1")[0]
     assert event["requests"][0]["path"] == "/api/runs/run-1/objects"
     assert event["requests"][0]["body"]["kind"] == "table"
     with pytest.raises(InstantMLError, match="rich media"):
@@ -1840,16 +1854,17 @@ def test_process_spool_mode_writes_events_without_network(tmp_path):
     run.set_tags(["spooled", "tag"])
     run.finish("failed")
 
-    event_files = sorted((tmp_path / "run_1").glob("*.json"))
-    assert len(event_files) == 7
-    first_event = json.loads(event_files[0].read_text(encoding="utf-8"))
+    events = _spool_events(tmp_path / "run_1")
+    assert len(events) == 7
+    first_event = events[0]
     assert first_event["version"] == 1
     assert first_event["event_id"]
     assert first_event["sequence"] == 1
     assert first_event["data"] == {"metrics": {"reward": 1.5}}
     assert first_event["requests"][0]["path"] == "/runs/run/1/metrics"
     assert first_event["requests"][0]["body"]["timestamp"]
-    assert not list((tmp_path / "run_1").glob("*.tmp"))
+    # The active segment is finalized on finish(); no dotfile temp remains.
+    assert not list((tmp_path / "run_1").glob(".*.tmp"))
 
 
 def test_async_upload_mode_queues_metric_hot_path_without_network(monkeypatch, tmp_path):
@@ -2525,8 +2540,10 @@ def test_async_queue_marks_oversized_first_event_failed(monkeypatch, tmp_path):
 def test_async_queue_retry_and_failed_statuses(monkeypatch, tmp_path):
     repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
     repository.init_db()
+    # Different runs so the two events are not grouped into a batch; this keeps
+    # per-event terminal/retry semantics under test.
     repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"reward": 1.0}, "step": 1}, idempotency_key="event-1")
-    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"loss": 2.0}, "step": 1}, idempotency_key="event-2")
+    repository.enqueue("POST", "/runs/run-2/metrics", {"metrics": {"loss": 2.0}, "step": 1}, idempotency_key="event-2")
     results = [
         DeliveryResult(ok=False, retryable=False, message="quota", status=429, code="api_request_monthly_limit_exceeded"),
         DeliveryResult(ok=False, retryable=True, message="try later", status=503, code="unavailable"),
@@ -2546,10 +2563,12 @@ def test_async_queue_retry_and_failed_statuses(monkeypatch, tmp_path):
 def test_async_queue_retry_blocks_later_delivery_until_backoff(monkeypatch, tmp_path):
     repository = AsyncQueueRepository(tmp_path / "queue.sqlite3")
     repository.init_db()
+    # Distinct runs keep each event on the per-event path so the retry-blocks-
+    # later ordering guarantee is exercised without batching.
     for index in range(3):
         repository.enqueue(
             "POST",
-            "/runs/run-1/metrics",
+            f"/runs/run-{index}/metrics",
             {"metrics": {f"m{index}": index}, "step": index},
             idempotency_key=f"event-{index}",
         )
@@ -2577,8 +2596,11 @@ def test_async_queue_directory_drain_continues_after_terminal_failure(monkeypatc
     path = tmp_path / "run" / "queue.sqlite3"
     repository = AsyncQueueRepository(path)
     repository.init_db()
-    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"bad": 1}}, idempotency_key="event-1")
-    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"ok": 2}}, idempotency_key="event-2")
+    # Distinct runs keep both on the per-event path (one terminal-fails, the
+    # next succeeds) so the directory drain's continue-after-failure path is
+    # exercised without batch grouping.
+    repository.enqueue("POST", "/runs/run-1/metrics", {"metrics": {"bad": 1}, "step": 1}, idempotency_key="event-1")
+    repository.enqueue("POST", "/runs/run-2/metrics", {"metrics": {"ok": 2}, "step": 1}, idempotency_key="event-2")
     repository.close()
     results = [
         DeliveryResult(ok=False, retryable=False, message="bad payload", status=400),
@@ -3138,7 +3160,9 @@ def test_async_uploader_emits_final_health_when_queue_becomes_idle(monkeypatch, 
         health_interval_seconds=5,
     )
 
-    assert loop_calls == {"parent": 3, "drain": 2, "health": 1, "status": 2, "time": 2}
+    # The trailing repository.close() checkpoints the WAL, which stamps
+    # _last_checkpoint_at via one extra time.time() read.
+    assert loop_calls == {"parent": 3, "drain": 2, "health": 1, "status": 2, "time": 3}
 
 
 def test_async_queue_http_helpers(monkeypatch):
@@ -3153,7 +3177,7 @@ def test_async_queue_http_helpers(monkeypatch):
             return b"ok"
 
     opened = []
-    monkeypatch.setattr(async_queue.urllib.request, "urlopen", lambda request, timeout: opened.append((request, timeout)) or FakeResponse())
+    monkeypatch.setattr(http_pool, "urlopen", lambda request, timeout: opened.append((request, timeout)) or FakeResponse())
     assert async_queue._send_request(
         base_url="http://example.test/",
         api_key="secret",
@@ -3172,7 +3196,7 @@ def test_async_queue_http_helpers(monkeypatch):
         {"Retry-After": "2"},
         BytesIO(b'{"error":"slow down","code":"rate_limit_exceeded"}'),
     )
-    monkeypatch.setattr(async_queue.urllib.request, "urlopen", lambda request, timeout: (_ for _ in ()).throw(error))
+    monkeypatch.setattr(http_pool, "urlopen", lambda request, timeout: (_ for _ in ()).throw(error))
     result = async_queue._send_request("http://example.test", None, 1, "POST", "/x", {})
     assert result.retryable
     assert result.retry_after == 2
@@ -3184,7 +3208,7 @@ def test_async_queue_http_helpers(monkeypatch):
     assert async_queue._decode_http_error(non_object) == ("HTTP Error 400: bad", None)
 
     monkeypatch.setattr(
-        async_queue.urllib.request,
+        http_pool,
         "urlopen",
         lambda request, timeout: (_ for _ in ()).throw(urllib.error.URLError("offline")),
     )
@@ -3378,8 +3402,15 @@ def test_run_id_setter_marks_pending_spool_run_ready(tmp_path):
 
 
 def test_process_spool_writer_requires_ready_directory():
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            return {}
+
+    run = Run(client=FakeClient(), run_id=client_module._PENDING_RUN_ID, upload_mode="spool")
     with pytest.raises(InstantMLError, match="process spool directory is not ready"):
-        client_module._write_process_event(None, {"sequence": 1, "event_id": "event"}, "{}")
+        run._require_spool_writer()
 
 
 def test_console_logging_posts_streams_and_line_numbers():
@@ -3454,8 +3485,9 @@ def test_console_logging_spool_writes_replayable_log_events(tmp_path):
 
     run = Run(client=FailingClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
     run.log_stdout(["spooled"])
+    run.flush()
 
-    event = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))
+    event = _spool_events(tmp_path / "run-1")[0]
     assert event["data"] == {"logs": {"stdout": ["spooled"]}}
     assert event["requests"][0]["path"] == "/api/runs/run-1/logs"
     assert event["requests"][0]["body"]["lines"][0]["line_number"] == 1
@@ -3476,8 +3508,9 @@ def test_log_snapshot_accepts_defined_dictionary_and_rejects_unknown_shapes(tmp_
         step=2,
         timestamp="2026-05-07T00:00:00Z",
     )
+    run.flush()
 
-    event = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))
+    event = _spool_events(tmp_path / "run-1")[0]
     assert event["step"] == 2
     assert event["timestamp"] == "2026-05-07T00:00:00Z"
     assert event["data"]["metadata"] == {"phase": "train"}
@@ -3503,7 +3536,8 @@ def test_log_snapshot_defaults_to_step_zero_for_strict_servers(tmp_path):
 
     run = Run(client=FailingClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
     run.log_snapshot({"metrics": {"reward": 2.0}})
-    event = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))
+    run.flush()
+    event = _spool_events(tmp_path / "run-1")[0]
     assert event["step"] == 0
     assert event["requests"][0]["body"]["step"] == 0
 
@@ -3520,12 +3554,13 @@ def test_spool_mode_artifacts_and_upload_file_use_placeholder_events(tmp_path):
     run = Run(client=FailingClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path / "spool"))
     artifact = run.log_artifact("notes.json", "demo://notes.json", metadata={"kind": "note"})
     upload = run.upload_file(str(source), artifact_type="checkpoint", step=3)
+    run.flush()
 
     assert artifact["id"] == "spooled"
     assert artifact["metadata"] == {"kind": "note"}
     assert upload["id"] == "spooled"
     assert upload["source_path"] == str(source.resolve())
-    events = [json.loads(path.read_text(encoding="utf-8")) for path in sorted((tmp_path / "spool" / "run-1").glob("*.json"))]
+    events = _spool_events(tmp_path / "spool" / "run-1")
     assert events[0]["data"]["artifacts"][0]["name"] == "notes.json"
     assert events[1]["data"]["upload_file"]["source_path"] == str(source.resolve())
 
@@ -3638,6 +3673,7 @@ def test_process_uploader_drains_spool_and_cli(monkeypatch, tmp_path):
 
     run = Run(client=FakeClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
     run.log_metrics({"reward": 3}, step=3, timestamp="2026-05-07T00:00:03Z")
+    run.flush()
     assert uploader.drain_spool(str(tmp_path), client=FakeClient()) == 1
     assert calls[0][:3] == (
         "POST",
@@ -3650,9 +3686,10 @@ def test_process_uploader_drains_spool_and_cli(monkeypatch, tmp_path):
             "preview_completion": 0.0,
         },
     )
-    assert not list((tmp_path / "run-1").glob("*.json"))
+    assert not list((tmp_path / "run-1").glob("*.jsonl"))
 
     run.log_config({"optimizer": {"lr": 0.001}})
+    run.flush()
     monkeypatch.setattr(uploader, "Client", FakeClient)
     assert uploader.main(["--spool-dir", str(tmp_path), "--base-url", "http://cli.test", "--timeout", "0.5"]) == 0
     assert calls[-1][3:] == ("http://cli.test", 0.5)
@@ -3717,7 +3754,8 @@ def test_process_uploader_sends_event_id_as_metric_idempotency_key(tmp_path):
 
     run = Run(client=IdempotentClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
     run.log_metrics({"reward": 4}, step=4, timestamp="2026-05-09T00:00:04Z")
-    event_id = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))["event_id"]
+    run.flush()
+    event_id = _spool_events(tmp_path / "run-1")[0]["event_id"]
 
     assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
     assert calls[0][3] == event_id
@@ -3738,7 +3776,8 @@ def test_process_uploader_sends_event_id_as_rank_metric_idempotency_key(tmp_path
         rank=1,
         world_size=2,
     )
-    event = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))
+    run.flush()
+    event = _spool_events(tmp_path / "run-1")[0]
     event_id = event["event_id"]
     assert event["requests"][0]["body"]["timestamp"]
 
@@ -3757,7 +3796,8 @@ def test_process_uploader_sends_event_id_as_log_idempotency_key(tmp_path):
 
     run = Run(client=IdempotentClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
     run.log_stdout("hello", timestamp="2026-05-14T00:00:00Z")
-    event_id = json.loads(next((tmp_path / "run-1").glob("*.json")).read_text(encoding="utf-8"))["event_id"]
+    run.flush()
+    event_id = _spool_events(tmp_path / "run-1")[0]["event_id"]
 
     assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
     assert calls[0][1] == "/api/runs/run-1/logs"
@@ -3800,6 +3840,7 @@ def test_process_uploader_prepares_file_uploads(tmp_path):
 
     run = Run(client=FakeClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path / "spool"))
     run.upload_file(str(source), step=5)
+    run.flush()
 
     assert uploader.drain_spool(str(tmp_path / "spool"), client=FakeClient()) == 1
     assert calls[0][1] == "/api/runs/run-1/artifacts/upload"
@@ -3822,10 +3863,14 @@ def test_process_uploader_failure_preserves_order_per_run(tmp_path):
     run_a.log_metrics({"reward": 1}, step=1)
     run_a.log_metrics({"reward": 2}, step=2)
     run_b.log_metrics({"reward": 9}, step=9)
+    run_a.flush()
+    run_b.flush()
 
     assert uploader.drain_spool(str(tmp_path), client=SometimesFailingClient()) == 1
-    assert len(list((tmp_path / "run-a").glob("*.json"))) == 2
-    assert not list((tmp_path / "run-b").glob("*.json"))
+    # run-a fails on its first event; the whole segment (2 events) is preserved
+    # as the not-yet-delivered remainder. run-b drained fully.
+    assert len(_spool_events(tmp_path / "run-a")) == 2
+    assert not _spool_events(tmp_path / "run-b")
     assert calls[0][1] == "/runs/run-b/metrics"
 
 
@@ -3840,8 +3885,10 @@ def test_process_uploader_lock_conflict_and_max_events(tmp_path):
     run = Run(client=FakeClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
     run.log_metrics({"reward": 1}, step=1)
     run.log_metrics({"reward": 2}, step=2)
+    run.flush()
     assert uploader.drain_spool(str(tmp_path), client=FakeClient(), max_events=1) == 1
-    assert len(list((tmp_path / "run-1").glob("*.json"))) == 1
+    # One event delivered; the segment is rewritten with the 1-event remainder.
+    assert len(_spool_events(tmp_path / "run-1")) == 1
 
     lock_path = tmp_path / uploader.LOCK_FILE
     lock_path.write_text("123", encoding="utf-8")
@@ -3997,7 +4044,7 @@ def test_client_sends_api_key_and_idempotency_headers(monkeypatch):
         captured["timeout"] = timeout
         return FakeResponse()
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(http_pool, "urlopen", fake_urlopen)
 
     assert Client(base_url="http://example.test", timeout=3, api_key="secret")._request(
         "POST",
@@ -4205,7 +4252,7 @@ def test_client_retries_429_with_retry_after(monkeypatch):
             )
         return FakeResponse()
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(http_pool, "urlopen", fake_urlopen)
     monkeypatch.setattr(time, "sleep", lambda delay: sleeps.append(delay))
 
     assert Client(base_url="http://example.test")._request("GET", "/api/usage") == {"ok": True}
@@ -4239,7 +4286,7 @@ def test_client_does_not_retry_monthly_429(monkeypatch):
             body,
         )
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(http_pool, "urlopen", fake_urlopen)
     monkeypatch.setattr(time, "sleep", lambda delay: (_ for _ in ()).throw(AssertionError(delay)))
 
     with pytest.raises(InstantMLError, match="monthly limit exceeded"):
@@ -4544,7 +4591,7 @@ def test_sdk_rejects_invalid_json_response(monkeypatch):
         def read(self):
             return b"not-json"
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(http_pool, "urlopen", lambda *args, **kwargs: FakeResponse())
     with pytest.raises(InstantMLError, match="invalid JSON"):
         Client()._request("GET", "/health")
 
@@ -4560,7 +4607,7 @@ def test_sdk_rejects_non_object_json_response(monkeypatch):
         def read(self):
             return b"[]"
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(http_pool, "urlopen", lambda *args, **kwargs: FakeResponse())
     with pytest.raises(InstantMLError, match="non-object"):
         Client()._request("GET", "/health")
 
@@ -4569,7 +4616,7 @@ def test_sdk_http_error_fallback_message(monkeypatch):
     def fail(*args, **kwargs):
         raise urllib.error.HTTPError("url", 500, "boom", {}, BytesIO(b"not-json"))
 
-    monkeypatch.setattr("urllib.request.urlopen", fail)
+    monkeypatch.setattr(http_pool, "urlopen", fail)
     with pytest.raises(InstantMLError, match="HTTP Error 500"):
         Client()._request("GET", "/health")
 
@@ -4579,7 +4626,7 @@ def test_sdk_http_error_non_error_object_message(monkeypatch):
         body = BytesIO(json.dumps({"message": "not the standard shape"}).encode("utf-8"))
         raise urllib.error.HTTPError("url", 500, "boom", {}, body)
 
-    monkeypatch.setattr("urllib.request.urlopen", fail)
+    monkeypatch.setattr(http_pool, "urlopen", fail)
     with pytest.raises(InstantMLError, match="HTTP Error 500"):
         Client()._request("GET", "/health")
 
@@ -4831,7 +4878,7 @@ def test_system_metrics_collection_and_sampler_lifecycle(monkeypatch):
     assert FakeNvml.initialized
     assert FakeNvml.shutdown
 
-    monkeypatch.setattr(client_module, "_collect_system_metrics", lambda: {"system/cpu_percent": 1.0})
+    monkeypatch.setattr(client_module, "_sample_system_metrics", lambda state: {"system/cpu_percent": 1.0})
     run = Run(client=FakeClient(), run_id="run-1")
     run.start_system_metrics(interval=0.01)
     with pytest.raises(InstantMLError, match="already running"):
@@ -4908,10 +4955,10 @@ def test_system_metrics_sampler_crash_is_contained(monkeypatch, recwarn):
         def _request(self, method, path, body):
             return {}
 
-    def boom():
+    def boom(state):
         raise RuntimeError("collector exploded")
 
-    monkeypatch.setattr(client_module, "_collect_system_metrics", boom)
+    monkeypatch.setattr(client_module, "_sample_system_metrics", boom)
     run = Run(client=FakeClient(), run_id="crash")
     run.start_system_metrics(interval=0.01)
     sampler = run._system_sampler
@@ -5592,7 +5639,7 @@ def test_console_stream_and_sampler_error_branches(monkeypatch):
             return {}
 
     run = Run(client=FakeClient(), run_id="run-1")
-    monkeypatch.setattr(client_module, "_collect_system_metrics", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(client_module, "_sample_system_metrics", lambda state: (_ for _ in ()).throw(RuntimeError("boom")))
     run.start_system_metrics(interval=0.01)
     with pytest.warns(RuntimeWarning, match="sampler stopped"):
         time.sleep(0.03)

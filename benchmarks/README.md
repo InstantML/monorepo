@@ -136,6 +136,50 @@ fallback for older deployed APIs; it records observed rows but does not enforce
 `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`, so confirm the dataset shape separately
 before using direct fallback numbers in docs.
 
+## Metric Ingest Write-Path Benchmark
+
+`tools/rust-ingest-benchmark.mjs` (`npm run benchmark:ingest`) measures the
+metric ingest *write* path through the real Rust API: single-point
+`POST /runs/{id}/metrics` versus batched `POST /runs/{id}/metrics/batch`. It is
+the write-side counterpart to the large-run benchmark, which seeds ClickHouse
+directly and only times reads. The batch endpoint, the per-org write-gate usage
+cache, and ClickHouse async inserts all sit on this path, so the batch speedup
+reflects their combined effect. See
+`docs/design/2026-07-04-ingest-write-path-throughput.md`.
+
+It launches a disposable loopback ClickHouse and a local-auth Rust API, creates
+one project and one run per case, then logs the same total point count each way.
+No credentials, hosted warehouse, or network egress are involved.
+
+```bash
+INSTANTML_INGEST_BENCH_RELEASE=1 \
+INSTANTML_INGEST_BENCH_POINTS=20000 \
+INSTANTML_INGEST_BENCH_BATCH_SIZES=50,200,500 \
+INSTANTML_INGEST_BENCH_RESULT_PATH=/tmp/instantml-ingest-benchmark.json \
+npm run benchmark:ingest
+```
+
+Notes and caveats:
+
+- Use `INSTANTML_INGEST_BENCH_RELEASE=1` for committed throughput numbers; debug
+  builds inflate absolute per-request latency. The reported `build_profile`
+  records which was used.
+- The harness sets `INSTANTML_TEST_DISABLE_RATE_LIMIT=1`. That flag is honored
+  only in `local` auth mode (config ignores it otherwise), and without it the
+  per-credential ingest limiter caps every case at the same rps so the
+  comparison would measure the limiter, not the server. Under the production
+  limiter, batched delivery is exactly what turns that fixed request budget into
+  many more points per second.
+- Throughput is wall-clock points/second at the configured request concurrency;
+  latency percentiles are per HTTP request. `speedups` reports each batch case
+  relative to the single-point baseline. The default budget gate requires the
+  largest batch case to reach at least 2x the single-point baseline.
+- This is a disposable local write-path signal. Hosted end-to-end ingest
+  durability throughput still needs a deployed-path measurement.
+
+The latest committed summary is
+`benchmarks/2026-07-04-ingest-write-path-results.md`.
+
 ## W&B Hosted Comparison Benchmark
 
 `wandb_hosted_compare.py` seeds and benchmarks W&B hosted cloud through the
