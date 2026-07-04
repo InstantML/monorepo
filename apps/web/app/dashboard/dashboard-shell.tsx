@@ -1326,20 +1326,28 @@ export function DashboardShell({
   const loadProjects = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     try {
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
+      const shouldLoadPreference = !projectPreferenceLoadedRef.current;
+      const preferenceResultPromise = shouldLoadPreference
+        ? retryTransientRequest(() => api.get("/api/dashboard/preferences", options), retryOptions).then(
+          (value) => ({ status: "fulfilled" as const, value }),
+          (reason) => ({ status: "rejected" as const, reason }),
+        )
+        : Promise.resolve(null);
       const projectPayload = await retryTransientRequest(() => api.get("/projects", options), retryOptions);
       const names = (projectPayload.projects ?? []).map((item: { name: string }) => item.name);
       setProjects(names);
       setProject((current) => current && !names.includes(current) ? "" : current);
-      if (!projectPreferenceLoadedRef.current) {
+      if (shouldLoadPreference) {
         projectPreferenceLoadedRef.current = true;
-        try {
-          const preferencePayload = await retryTransientRequest(() => api.get("/api/dashboard/preferences", options), retryOptions);
+        const preferenceResult = await preferenceResultPromise;
+        if (preferenceResult?.status === "fulfilled") {
+          const preferencePayload = preferenceResult.value;
           const selectedProject = preferencePayload?.preferences?.selected_project;
           if (typeof selectedProject === "string" && names.includes(selectedProject) && !userTouchedDashboardFiltersRef.current) {
             setProject((current) => current || selectedProject);
           }
-        } catch (error) {
-          if (isAbortError(error)) return;
+        } else if (preferenceResult?.status === "rejected") {
+          if (isAbortError(preferenceResult.reason)) return;
           // Preferences are control-plane convenience state. Runs should still load if they fail.
         }
       }
@@ -1394,6 +1402,13 @@ export function DashboardShell({
         ? { project, ...statusParams, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
         : { project, ...statusParams, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
+      const overviewResultPromise = retryTransientRequest(
+        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, metric_key: metricKey })}`, requestOptions),
+        retryOptions,
+      ).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason) => ({ status: "rejected" as const, reason }),
+      );
       let summaryPayload: Summary;
       try {
         summaryPayload = await retryTransientRequest(
@@ -1411,13 +1426,7 @@ export function DashboardShell({
         throw error;
       }
       if (requestId !== dashboardRequestRef.current) return;
-      const overviewResult = await retryTransientRequest(
-        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, metric_key: metricKey })}`, requestOptions),
-        retryOptions,
-      ).then(
-        (value) => ({ status: "fulfilled" as const, value }),
-        (reason) => ({ status: "rejected" as const, reason }),
-      );
+      const overviewResult = await overviewResultPromise;
       if (requestId !== dashboardRequestRef.current) return;
       const nextSummary = summaryPayload as Summary;
       setSearchError(null);

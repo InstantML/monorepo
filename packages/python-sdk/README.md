@@ -415,10 +415,12 @@ when you want a longer wait. See
 
 On the async path, invalid payloads never crash the training loop either:
 `log()`, `log_metrics()`, `log_rank_metrics()`, and `log_console()` warn-and-drop
-a bad value (a `NaN`/`inf` scalar, a raw tensor, an unsupported type) and count
-it under `Run.upload_status()["dropped"]` instead of raising. Use
+a bad value (a `NaN`/`inf` scalar, a non-scalar tensor, an unsupported type) and
+count it under `Run.upload_status()["dropped"]` instead of raising. Use
 `upload_mode="sync"` when you want validation errors to raise in the foreground
-(scripts and CI).
+(scripts and CI). Scalar-like values from optional frameworks are accepted
+without importing those frameworks: the SDK duck-types `.detach()`, `.cpu()`,
+`.numpy()`, and `.item()` and stores the finite Python number.
 
 ## Process lifecycle, signals, and forked workers
 
@@ -566,7 +568,8 @@ run.finish()
 
 `Run.log()` is the ergonomic API. If `step` is omitted it auto-increments from `1`; if `step` is provided it uses that value and advances the implicit counter to at least that step. It classifies values before sending any request:
 
-- finite numeric scalars -> metric batch
+- finite numeric scalars, including scalar-like NumPy/Torch/JAX values with
+  `.item()` conversions -> metric batch
 - strings and `Text(...)` -> string series
 - `Table`, `Histogram`, `ClassificationEval`, `Image`, `Audio`, `Video` -> rich objects
 - `File(...)` and `Artifact(...)` -> artifact upload

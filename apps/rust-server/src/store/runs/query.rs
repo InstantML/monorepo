@@ -246,7 +246,10 @@ pub async fn runs_summary(
         return Ok(json!({
             "runs": page_runs
                 .into_iter()
-                .map(|run| selection_run_value(run.clone(), controls.get(&run.id).and_then(Option::as_ref)))
+                .map(|run| {
+                    let control = controls.get(&run.id).and_then(Option::as_ref);
+                    selection_run_value(run, control)
+                })
                 .collect::<AppResult<Vec<_>>>()?,
             "metric_keys": [],
             "total": total,

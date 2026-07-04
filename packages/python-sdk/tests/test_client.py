@@ -5262,6 +5262,66 @@ def test_log_helpers_error_paths_and_media_roots(tmp_path):
         Run(client=FakeClient(), run_id="run-2").upload_file(str(tmp_path / "missing.txt"))
 
 
+def test_scalar_like_values_are_coerced_for_logs():
+    class ItemScalar:
+        def item(self):
+            return 1.25
+
+    class ZeroDimTensor:
+        def detach(self):
+            return self
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return ItemScalar()
+
+    class MultiValueTensor:
+        def item(self):
+            raise ValueError("only one element tensors can be converted to Python scalars")
+
+    class BoolScalar:
+        def item(self):
+            return True
+
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body):
+            calls.append((method, path, body))
+            return {}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    run.log_metrics({"numpy_like": ItemScalar(), "torch_like": ZeroDimTensor()}, step=1)
+    assert calls[0] == (
+        "POST",
+        "/runs/run-1/metrics",
+        {
+            "metrics": {"numpy_like": 1.25, "torch_like": 1.25},
+            "step": 1,
+            "timestamp": None,
+            "preview": False,
+            "preview_completion": 0.0,
+        },
+    )
+
+    metrics, text, objects, files = _classify_log_payload({"loss": ZeroDimTensor(), "note": "ok"})
+    assert metrics == {"loss": 1.25}
+    assert text == {"note": "ok"}
+    assert objects == {}
+    assert files == {}
+
+    with pytest.raises(TypeError, match="finite numbers"):
+        run.log_metrics({"bad": MultiValueTensor()}, step=2)
+    with pytest.raises(TypeError, match="finite numbers"):
+        run.log_metrics({"bad": True}, step=2)
+    with pytest.raises(TypeError, match="finite numbers"):
+        run.log_metrics({"bad": BoolScalar()}, step=2)
+
+
 def test_conversion_helpers_with_fakes_and_import_failures(monkeypatch, tmp_path):
     class Figure:
         def savefig(self, target):
