@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { shortMetricName } from "../../dashboard-models";
+import { DebouncedTextInput } from "../components/debounced-text-input";
 import { SegmentedToggle } from "../components/segmented-toggle";
 import { CustomSelect } from "../ui/select";
 import type { TableColumns } from "../../dashboard-types";
@@ -229,7 +230,9 @@ export function RunsColumnsMenu({
           <strong>Pinned metrics</strong>
           <label className={`metric-filter-row ${pinnedMetricFilterValid ? "" : "invalid"}`}>
             <Search size={13} />
-            <input aria-label="Pinned metric filter" id="column-metric-filter" type="search" value={pinnedMetricFilter} onChange={(event) => onPinnedMetricFilter(event.target.value)} placeholder="metric regex" />
+            {/* Draft state stays inside DebouncedTextInput so typing doesn't
+                re-render the shell (and the mounted runs table) per keystroke. */}
+            <DebouncedTextInput aria-label="Pinned metric filter" id="column-metric-filter" type="search" value={pinnedMetricFilter} onCommit={onPinnedMetricFilter} placeholder="metric regex" />
           </label>
           {pinnedMetricOptions.slice(0, 8).map((metric) => (
             <label key={metric} title={metric}>

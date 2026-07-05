@@ -479,6 +479,16 @@ def summarize_case(case: str, results: list[dict[str, Any]], noop: dict[str, Any
             for result in results
             if isinstance(result.get("return_latency_us"), dict)
         ]),
+        "producer_rows_per_minute": summarize_values([
+            rate_per_minute(float(result.get("steps", 0)), float(result["hot_loop"].get("wall_s", 0.0)))
+            for result in results
+            if result.get("status") == "ok"
+        ]),
+        "producer_values_per_minute": summarize_values([
+            rate_per_minute(float(result.get("scalar_values", scalar_values_for_sample(result))), float(result["hot_loop"].get("wall_s", 0.0)))
+            for result in results
+            if result.get("status") == "ok"
+        ]),
         "finish_tree_cpu_s": summarize_values([float(result["finish"]["tree_cpu_s"]) for result in results]),
         "durable_flush_tree_cpu_s": summarize_values([
             float(result["durable_flush"]["tree_cpu_s"])
@@ -513,6 +523,16 @@ def summarize_case(case: str, results: list[dict[str, Any]], noop: dict[str, Any
     return summary
 
 
+def scalar_values_for_sample(result: dict[str, Any]) -> int:
+    return int(result.get("steps", 0)) * int(result.get("metrics_per_log", 1))
+
+
+def rate_per_minute(count: float, wall_seconds: float) -> float:
+    if wall_seconds <= 0:
+        return 0.0
+    return count * 60.0 / wall_seconds
+
+
 def summarize_results(payload: dict[str, Any]) -> dict[str, Any]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for result in payload["samples"]:
@@ -521,6 +541,23 @@ def summarize_results(payload: dict[str, Any]) -> dict[str, Any]:
     prelim = {case: summarize_case(case, rows, None) for case, rows in grouped.items()}
     noop = prelim.get("noop")
     return {case: summarize_case(case, rows, noop) for case, rows in grouped.items()}
+
+
+def competitive_ingest_summary(payload: dict[str, Any]) -> dict[str, Any] | None:
+    summaries = payload.get("summaries", {})
+    for case in ("instantml-async-queue", "instantml-sync-null", "instantml-log-null", "instantml-spool-durable"):
+        summary = summaries.get(case)
+        if not summary:
+            continue
+        return {
+            "scope": "sdk_hot_loop_producer",
+            "case": case,
+            "rows_per_minute": round(float(summary["producer_rows_per_minute"]["median"]), 3),
+            "values_per_minute": round(float(summary["producer_values_per_minute"]["median"]), 3),
+            "metrics_per_log": payload.get("protocol", {}).get("metrics_per_log"),
+            "note": "SDK hot-loop producer-return throughput; this is not a hosted remote-persistence throughput measurement.",
+        }
+    return None
 
 
 def sample_plan(cases: list[str], samples: int, seed: int) -> list[tuple[int, str]]:
@@ -734,6 +771,9 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
             "samples": samples,
         }
         payload["summaries"] = summarize_results(payload)
+        ingest = competitive_ingest_summary(payload)
+        if ingest is not None:
+            payload["ingest"] = ingest
         if args.output_json:
             write_json(Path(args.output_json), payload)
         if args.output_markdown:
@@ -775,22 +815,29 @@ def render_markdown(payload: dict[str, Any]) -> str:
         f"- Samples per case: `{protocol['samples']}`",
         f"- Warmup logs per worker: `{protocol['warmup_logs_per_worker']}`",
         f"- Sample order seed: `{protocol.get('seed')}`",
+    ]
+    if payload.get("ingest"):
+        lines.extend([
+            f"- Competitive gate ingest source: `{payload['ingest']['case']}` (`{payload['ingest']['scope']}`)",
+            f"- Median SDK producer throughput: `{payload['ingest']['values_per_minute']:.0f}` scalar values/minute",
+        ])
+    lines.extend([
         "",
         "## Caveats",
         "",
-    ]
+    ])
     lines.extend(f"- {note}" for note in payload["notes"])
     lines.extend([
         "",
         "## Hot Loop Summary",
         "",
-        "| Case | Samples | Median return p50 us/log | Median sample p99 return us/log | Median wall us/log | Median tree CPU us/log | p95 tree CPU us/log | Tree CPU overhead vs noop | Median durable flush CPU s | Median total worker CPU s | Median finish CPU s | Median drain CPU s | Median disk bytes after finish |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Case | Samples | Median return p50 us/log | Median sample p99 return us/log | Median wall us/log | Median tree CPU us/log | p95 tree CPU us/log | Median rows/min | Median values/min | Tree CPU overhead vs noop | Median durable flush CPU s | Median total worker CPU s | Median finish CPU s | Median drain CPU s | Median disk bytes after finish |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ])
     for case in protocol["cases"]:
         summary = payload["summaries"].get(case)
         if not summary:
-            lines.append(f"| `{case}` | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
+            lines.append(f"| `{case}` | 0 | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
             continue
         overhead = summary.get("overhead_vs_noop", {})
         overhead_text = "baseline" if case == "noop" else f"{overhead.get('tree_cpu_us_per_log', 0):.3f} us/log"
@@ -804,6 +851,8 @@ def render_markdown(payload: dict[str, Any]) -> str:
                 f"{summary['wall_us_per_log']['median']:.3f}",
                 f"{summary['tree_cpu_us_per_log']['median']:.3f}",
                 f"{summary['tree_cpu_us_per_log']['p95']:.3f}",
+                f"{summary['producer_rows_per_minute']['median']:.0f}",
+                f"{summary['producer_values_per_minute']['median']:.0f}",
                 overhead_text,
                 f"{summary['durable_flush_tree_cpu_s']['median']:.6f}",
                 f"{summary['worker_tree_cpu_s']['median']:.6f}",

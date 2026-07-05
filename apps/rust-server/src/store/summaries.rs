@@ -2,11 +2,11 @@ use super::*;
 
 pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResult<Vec<Value>> {
     let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
-    let series = if let Some(first) = runs.first() {
+    let series_by_run = if let Some(first) = runs.first() {
         let metric_store = store.metric_store_for_org(first.org_id).await?;
-        metric_series_for_runs(&metric_store, first.org_id, &run_ids).await?
+        metric_series_by_run(metric_series_for_runs(&metric_store, first.org_id, &run_ids).await?)
     } else {
-        Vec::new()
+        HashMap::new()
     };
     let counts = {
         let data = store.data.lock().await;
@@ -21,7 +21,8 @@ pub(super) async fn summarize_runs(store: &Store, runs: Vec<RunRow>) -> AppResul
     runs.into_iter()
         .map(|run| {
             let control = controls.get(&run.id).and_then(Option::as_ref);
-            summarize_run(run, control, RunControlPrivacy::Public, &series, &counts)
+            let series = series_by_run.get(&run.id).map(Vec::as_slice).unwrap_or(&[]);
+            summarize_run(run, control, RunControlPrivacy::Public, series, &counts)
         })
         .collect::<AppResult<Vec<_>>>()
 }
@@ -51,11 +52,13 @@ pub(super) async fn summarize_runs_for_metric_keys(
     metric_keys: &[String],
 ) -> AppResult<Vec<Value>> {
     let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
-    let series = if let Some(first) = runs.first().filter(|_| !metric_keys.is_empty()) {
+    let series_by_run = if let Some(first) = runs.first().filter(|_| !metric_keys.is_empty()) {
         let metric_store = store.metric_store_for_org(first.org_id).await?;
-        metric_series_for_runs_keys(&metric_store, first.org_id, &run_ids, metric_keys).await?
+        metric_series_by_run(
+            metric_series_for_runs_keys(&metric_store, first.org_id, &run_ids, metric_keys).await?,
+        )
     } else {
-        Vec::new()
+        HashMap::new()
     };
     let counts = {
         let data = store.data.lock().await;
@@ -70,7 +73,8 @@ pub(super) async fn summarize_runs_for_metric_keys(
     runs.into_iter()
         .map(|run| {
             let control = controls.get(&run.id).and_then(Option::as_ref);
-            summarize_run(run, control, RunControlPrivacy::Public, &series, &counts)
+            let series = series_by_run.get(&run.id).map(Vec::as_slice).unwrap_or(&[]);
+            summarize_run(run, control, RunControlPrivacy::Public, series, &counts)
         })
         .collect::<AppResult<Vec<_>>>()
 }
@@ -148,6 +152,14 @@ pub(super) fn summarize_run(
         map.insert("artifact_counts".to_string(), json!(counts));
     }
     Ok(value)
+}
+
+fn metric_series_by_run(series: Vec<MetricSeriesRow>) -> HashMap<Uuid, Vec<MetricSeriesRow>> {
+    let mut by_run = HashMap::<Uuid, Vec<MetricSeriesRow>>::new();
+    for item in series {
+        by_run.entry(item.run_id).or_default().push(item);
+    }
+    by_run
 }
 
 pub(super) fn artifact_counts_for_runs(
@@ -350,4 +362,45 @@ pub(super) fn series_row_from_aggregate(aggregate: SeriesReadRow) -> MetricSerie
 
 pub(super) fn metric_point_value(row: crate::metric_store::PointReadRow) -> Value {
     json!({ "key": row.key, "step": row.step, "value": row.value, "created_at": row.created_at })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn series_row(run_id: Uuid, key: &str, latest: f64) -> MetricSeriesRow {
+        MetricSeriesRow {
+            run_id,
+            key: key.to_string(),
+            count: 1,
+            min: Some(latest),
+            max: Some(latest),
+            mean: Some(latest),
+            variance: Some(0.0),
+            latest: Some(latest),
+            latest_step: Some(1.0),
+            best: Some(latest),
+            best_step: Some(1.0),
+        }
+    }
+
+    #[test]
+    fn metric_series_by_run_groups_page_series_once() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        let grouped = metric_series_by_run(vec![
+            series_row(first, "loss", 0.4),
+            series_row(second, "loss", 0.5),
+            series_row(first, "accuracy", 0.9),
+        ]);
+
+        let first_keys = grouped
+            .get(&first)
+            .unwrap()
+            .iter()
+            .map(|row| row.key.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(first_keys, vec!["loss", "accuracy"]);
+        assert_eq!(grouped.get(&second).unwrap()[0].key, "loss");
+    }
 }

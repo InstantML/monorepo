@@ -2,7 +2,7 @@
 
 import { Square } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import { bestMetric, canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, metricGoal, visibleSelectionState } from "../../../src/state.js";
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
@@ -35,8 +35,7 @@ function lossValue(run: RunSummary) {
   return key !== undefined && typeof metrics[key] === "number" ? metrics[key] : null;
 }
 
-function latestStep(run: RunSummary, series: MetricSeries[] | undefined) {
-  const points = series?.find((item) => item.id === run.id)?.points;
+function latestStep(run: RunSummary, points: MetricSeries["points"] | undefined) {
   const seriesStep = points?.length ? points[points.length - 1]?.step : null;
   if (typeof seriesStep === "number" && Number.isFinite(seriesStep)) return seriesStep;
   const aggregateSteps = Object.values(run.metric_aggregates ?? {})
@@ -107,6 +106,118 @@ function navigateToTab(path: "/dashboard/compare" | "/dashboard/metrics") {
   window.history.pushState(null, "", path + window.location.search);
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
+
+// Memoized per-run row (perf audit A2): the runs table re-renders on every
+// shell poll and on every selection change, but each row's inputs are the run
+// summary plus a handful of primitives — so unchanged rows skip entirely.
+// The callback props come from the shell; memo relies on the shell keeping
+// them referentially stable (default shallow comparison — no areEqual that
+// ignores function identity, since these handlers are not provably static).
+const RunsTableRow = memo(function RunsTableRow({
+  canControlRuns,
+  columns,
+  inspected,
+  metricKey,
+  onInspectRun,
+  onOpenRun,
+  onRequestStop,
+  onToggleRun,
+  pinnedMetrics,
+  run,
+  runIndex,
+  runSeries,
+  selected,
+  viewBest,
+}: {
+  canControlRuns: boolean;
+  columns: TableColumns;
+  inspected: boolean;
+  metricKey: string;
+  onInspectRun: (runId: string) => void;
+  onOpenRun: (runId: string) => void;
+  onRequestStop: (runIds: string[]) => void;
+  onToggleRun: (runId: string) => void;
+  pinnedMetrics: string[];
+  run: RunSummary;
+  runIndex: number;
+  runSeries: MetricSeries | undefined;
+  selected: boolean;
+  viewBest: number | null;
+}) {
+  const metricValue = bestMetric(run, metricKey);
+  const isBest = typeof metricValue === "number" && viewBest !== null && metricValue === viewBest;
+  const loss = lossValue(run);
+  const step = latestStep(run, runSeries?.points);
+  const total = totalSteps(run);
+  const owner = runOwner(run);
+  const displayStatus = displayStatusForRun(run);
+  const running = run.status === "running";
+  const canStopRun = canRequestStop(run, canControlRuns);
+  const values = sparkValues(runSeries?.points);
+  const sparkColor = running
+    ? chartColor(stableChartIndex(run.id || run.name, runIndex))
+    : "var(--chart-tick)";
+  return (
+    <tr className={`${selected ? "selected" : ""} ${inspected ? "inspected" : ""}`}>
+      <td className="col-check">
+        <input
+          aria-label={`Include ${run.name} in comparison`}
+          checked={selected}
+          className="cbx"
+          onChange={() => onToggleRun(run.id)}
+          type="checkbox"
+        />
+      </td>
+      {columns.status ? (
+        <td className="col-dot">
+          <span className={`run-dot ${runDotClass(displayStatus)}`} role="img" aria-label={displayStatus} title={displayStatus} />
+        </td>
+      ) : null}
+      <td className="td-name">
+        <button
+          aria-label={`Open ${run.name}`}
+          className="run-name-button"
+          onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
+          type="button"
+        >
+          {run.name}
+        </button>
+        <span className="run-id" title={run.id}>{run.id.slice(0, 8)}</span>
+      </td>
+      <td className="col-trend"><TrendSpark color={sparkColor} live={running} values={values} /></td>
+      {columns.latest ? (
+        <td className={`td-num ${isBest ? "is-best" : ""}`}>{typeof metricValue === "number" ? formatNumber(metricValue, 2) : "—"}</td>
+      ) : null}
+      <td className="td-num">{typeof loss === "number" ? formatMetricValue(loss, 3) : "—"}</td>
+      {columns.duration ? (
+        <td className="td-num">
+          {typeof step === "number"
+            ? <>{step.toLocaleString("en-US")}{total ? <span className="td-dim">/{compactTotal(total)}</span> : null}</>
+            : "—"}
+        </td>
+      ) : null}
+      {columns.notes ? <td className="td-owner">{owner || <span className="td-dim">—</span>}</td> : null}
+      {columns.tags ? <td className="col-tags"><RunTags values={run.tags} /></td> : null}
+      {columns.started ? <td className="td-num td-dim">{formatRunTime(run.started_at ?? run.created_at)}</td> : null}
+      {pinnedMetrics.map((metric) => (
+        <td className="td-num" key={`${run.id}-${metric}`}>{formatNumber(bestMetric(run, metric), 2)}</td>
+      ))}
+      <td className="col-stop">
+        {canStopRun ? (
+          <button
+            aria-label={`Request stop for ${run.name}`}
+            className="run-row-stop-button"
+            onClick={() => onRequestStop([run.id])}
+            title="Request stop"
+            type="button"
+          >
+            <Square size={13} />
+          </button>
+        ) : null}
+      </td>
+    </tr>
+  );
+});
 
 export function RunsTable({
   canControlRuns,
@@ -182,12 +293,22 @@ export function RunsTable({
 
   const metricSeries = workspaceSeries[metricKey];
   const goal = metricGoal(metricKey);
-  const metricValues = filteredRuns
-    .map((run) => bestMetric(run, metricKey))
-    .filter((value): value is number => typeof value === "number");
-  const viewBest = metricValues.length
-    ? goal === "minimize" ? Math.min(...metricValues) : Math.max(...metricValues)
-    : null;
+  const metricSeriesByRunId = useMemo(() => new Map((metricSeries ?? []).map((item) => [item.id, item])), [metricSeries]);
+  const viewBest = useMemo(() => {
+    let best: number | null = null;
+    for (const run of filteredRuns) {
+      const value = bestMetric(run, metricKey);
+      if (typeof value !== "number") continue;
+      if (best === null) {
+        best = value;
+      } else if (goal === "minimize") {
+        best = Math.min(best, value);
+      } else {
+        best = Math.max(best, value);
+      }
+    }
+    return best;
+  }, [filteredRuns, goal, metricKey]);
 
   const groups = useMemo(() => {
     if (groupMode === "flat") return [{ key: "", runs: filteredRuns }];
@@ -208,7 +329,8 @@ export function RunsTable({
     ...(query ? [{ key: "query", value: query }] : []),
   ];
 
-  const visibleRunIds = filteredRuns.map((run) => run.id);
+  const visibleRunIds = useMemo(() => filteredRuns.map((run) => run.id), [filteredRuns]);
+  const selectedRunIdSet = useMemo(() => new Set(selectedRunIds), [selectedRunIds]);
   const selectionState = visibleSelectionState(selectedRunIds, visibleRunIds);
   const totalPages = Math.max(1, Math.ceil(Math.max(summaryTotal, runs.length) / Math.max(1, pageSize)));
   const currentPage = summaryTotal ? Math.floor((pageStart - 1) / Math.max(1, pageSize)) + 1 : 1;
@@ -220,83 +342,27 @@ export function RunsTable({
     + (columns.tags ? 1 : 0)
     + (columns.started ? 1 : 0)
     + pinnedMetrics.length;
-  const runIndexById = new Map(runs.map((run, index) => [run.id, index]));
+  const runIndexById = useMemo(() => new Map(runs.map((run, index) => [run.id, index])), [runs]);
 
   function renderRunRow(run: RunSummary) {
-    const selected = selectedRunIds.includes(run.id);
-    const inspected = run.id === primaryRunId;
-    const metricValue = bestMetric(run, metricKey);
-    const isBest = typeof metricValue === "number" && viewBest !== null && metricValue === viewBest;
-    const loss = lossValue(run);
-    const step = latestStep(run, metricSeries);
-    const total = totalSteps(run);
-    const owner = runOwner(run);
-    const displayStatus = displayStatusForRun(run);
-    const running = run.status === "running";
-    const canStopRun = canRequestStop(run, canControlRuns);
-    const values = sparkValues(metricSeries?.find((item) => item.id === run.id)?.points);
-    const sparkColor = running
-      ? chartColor(stableChartIndex(run.id || run.name, runIndexById.get(run.id) ?? 0))
-      : "var(--chart-tick)";
     return (
-      <tr key={run.id} className={`${selected ? "selected" : ""} ${inspected ? "inspected" : ""}`}>
-        <td className="col-check">
-          <input
-            aria-label={`Include ${run.name} in comparison`}
-            checked={selected}
-            className="cbx"
-            onChange={() => onToggleRun(run.id)}
-            type="checkbox"
-          />
-        </td>
-        {columns.status ? (
-          <td className="col-dot">
-            <span className={`run-dot ${runDotClass(displayStatus)}`} role="img" aria-label={displayStatus} title={displayStatus} />
-          </td>
-        ) : null}
-        <td className="td-name">
-          <button
-            aria-label={`Open ${run.name}`}
-            className="run-name-button"
-            onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
-            type="button"
-          >
-            {run.name}
-          </button>
-          <span className="run-id" title={run.id}>{run.id.slice(0, 8)}</span>
-        </td>
-        <td className="col-trend"><TrendSpark color={sparkColor} live={running} values={values} /></td>
-        {columns.latest ? (
-          <td className={`td-num ${isBest ? "is-best" : ""}`}>{typeof metricValue === "number" ? formatNumber(metricValue, 2) : "—"}</td>
-        ) : null}
-        <td className="td-num">{typeof loss === "number" ? formatMetricValue(loss, 3) : "—"}</td>
-        {columns.duration ? (
-          <td className="td-num">
-            {typeof step === "number"
-              ? <>{step.toLocaleString("en-US")}{total ? <span className="td-dim">/{compactTotal(total)}</span> : null}</>
-              : "—"}
-          </td>
-        ) : null}
-        {columns.notes ? <td className="td-owner">{owner || <span className="td-dim">—</span>}</td> : null}
-        {columns.tags ? <td className="col-tags"><RunTags values={run.tags} /></td> : null}
-        {columns.started ? <td className="td-num td-dim">{formatRunTime(run.started_at ?? run.created_at)}</td> : null}
-        {pinnedMetrics.map((metric) => (
-          <td className="td-num" key={`${run.id}-${metric}`}>{formatNumber(bestMetric(run, metric), 2)}</td>
-        ))}
-        <td className="col-stop">
-          {canStopRun ? (
-            <button
-              aria-label={`Request stop for ${run.name}`}
-              className="run-row-stop-button"
-              onClick={() => onRequestStop([run.id])}
-              title="Request stop"
-              type="button"
-            >
-              <Square size={13} />
-            </button>
-          ) : null}
-        </td>
-      </tr>
+      <RunsTableRow
+        key={run.id}
+        canControlRuns={canControlRuns}
+        columns={columns}
+        inspected={run.id === primaryRunId}
+        metricKey={metricKey}
+        onInspectRun={onInspectRun}
+        onOpenRun={onOpenRun}
+        onRequestStop={onRequestStop}
+        onToggleRun={onToggleRun}
+        pinnedMetrics={pinnedMetrics}
+        run={run}
+        runIndex={runIndexById.get(run.id) ?? 0}
+        runSeries={metricSeriesByRunId.get(run.id)}
+        selected={selectedRunIdSet.has(run.id)}
+        viewBest={viewBest}
+      />
     );
   }
 

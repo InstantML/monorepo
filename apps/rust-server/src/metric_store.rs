@@ -125,6 +125,22 @@ pub struct M4BucketRow {
     pub max_val: f64,
 }
 
+/// M4 bucket row for batched multi-run downsampling.
+#[derive(Row, Deserialize)]
+pub struct M4BucketRowWithRun {
+    #[serde(with = "clickhouse::serde::uuid")]
+    pub run_id: Uuid,
+    pub bucket: u32,
+    pub first_step: f64,
+    pub first_val: f64,
+    pub last_step: f64,
+    pub last_val: f64,
+    pub min_step: f64,
+    pub min_val: f64,
+    pub max_step: f64,
+    pub max_val: f64,
+}
+
 /// Compact per-run count for a single metric key, used by the M4 threshold check.
 #[derive(Row, Deserialize)]
 pub struct RunPointCountRow {
@@ -313,6 +329,26 @@ impl MetricStore {
         &self.database
     }
 
+    /// Build an insert for a high-volume point table with server-side async
+    /// inserts enabled. Ingest requests carry tiny row batches, so without
+    /// this every request creates its own ClickHouse part and merge pressure
+    /// grows with request rate. `wait_for_async_insert=1` keeps the response
+    /// durable (the server acks only after the buffered batch is flushed), so
+    /// idempotency responses still mean "written", while ClickHouse batches
+    /// concurrent inserts into shared parts.
+    fn async_point_insert<T: Row>(
+        &self,
+        table: &str,
+        context: &'static str,
+    ) -> AppResult<clickhouse::insert::Insert<T>> {
+        Ok(self
+            .client
+            .insert(table)
+            .map_err(|err| clickhouse_storage_error(context, err))?
+            .with_option("async_insert", "1")
+            .with_option("wait_for_async_insert", "1"))
+    }
+
     /// Insert a batch of metric points. The `metric_series_mv` materialized
     /// view updates `metric_series` aggregates automatically during the same
     /// insert — callers do not need to maintain summary state separately.
@@ -322,10 +358,8 @@ impl MetricStore {
         if points.is_empty() {
             return Ok(());
         }
-        let mut inserter = self
-            .client
-            .insert("metric_points")
-            .map_err(|err| clickhouse_storage_error("clickhouse insert init failed", err))?;
+        let mut inserter =
+            self.async_point_insert("metric_points", "clickhouse insert init failed")?;
         for point in points {
             inserter
                 .write(point)
@@ -343,10 +377,8 @@ impl MetricStore {
         if points.is_empty() {
             return Ok(());
         }
-        let mut inserter = self
-            .client
-            .insert("rank_metric_points")
-            .map_err(|err| clickhouse_storage_error("clickhouse rank insert init failed", err))?;
+        let mut inserter =
+            self.async_point_insert("rank_metric_points", "clickhouse rank insert init failed")?;
         for point in points {
             inserter.write(point).await.map_err(|err| {
                 clickhouse_storage_error("clickhouse rank insert write failed", err)
@@ -363,10 +395,8 @@ impl MetricStore {
         if rows.is_empty() {
             return Ok(());
         }
-        let mut inserter = self
-            .client
-            .insert("console_log_lines")
-            .map_err(|err| clickhouse_storage_error("clickhouse log insert init failed", err))?;
+        let mut inserter =
+            self.async_point_insert("console_log_lines", "clickhouse log insert init failed")?;
         for row in rows {
             inserter.write(row).await.map_err(|err| {
                 clickhouse_storage_error("clickhouse log insert write failed", err)
@@ -632,6 +662,52 @@ impl MetricStore {
             .map_err(clickhouse_read_error)
     }
 
+    /// Run M4 downsampling for a single metric key across multiple runs in one
+    /// ClickHouse query. The result is ordered by `(run_id, bucket)` so callers
+    /// can rebuild per-run chart payloads without issuing N long-series scans.
+    pub async fn query_points_m4_for_runs(
+        &self,
+        org_id: Uuid,
+        run_ids: &[Uuid],
+        key: &str,
+        buckets: u32,
+    ) -> AppResult<Vec<M4BucketRowWithRun>> {
+        if run_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let sql = "WITH bounds AS ( \
+                     SELECT run_id, min(step) AS lo, max(step) AS hi \
+                     FROM metric_points \
+                     WHERE org_id = ? AND run_id IN ? AND key = ? \
+                     GROUP BY run_id \
+                   ) \
+                   SELECT \
+                     p.run_id AS run_id, \
+                     toUInt32(if(b.hi = b.lo, 0, \
+                       floor((p.step - b.lo) * ? / (b.hi - b.lo + 1)))) AS bucket, \
+                     argMin(p.step, p.step)  AS first_step, argMin(p.value, p.step)  AS first_val, \
+                     argMax(p.step, p.step)  AS last_step,  argMax(p.value, p.step)  AS last_val, \
+                     argMin(p.step, p.value) AS min_step,   min(p.value)             AS min_val, \
+                     argMax(p.step, p.value) AS max_step,   max(p.value)             AS max_val \
+                   FROM metric_points AS p \
+                   INNER JOIN bounds AS b ON p.run_id = b.run_id \
+                   WHERE p.org_id = ? AND p.run_id IN ? AND p.key = ? \
+                   GROUP BY p.run_id, bucket \
+                   ORDER BY p.run_id, bucket";
+        self.client
+            .query(sql)
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(key)
+            .bind(buckets)
+            .bind(org_id)
+            .bind(run_ids)
+            .bind(key)
+            .fetch_all::<M4BucketRowWithRun>()
+            .await
+            .map_err(clickhouse_read_error)
+    }
+
     pub async fn query_rank_metric_keys(
         &self,
         org_id: Uuid,
@@ -778,6 +854,35 @@ impl MetricStore {
             .fetch_all::<ConsoleLogReadRow>()
             .await
             .map_err(clickhouse_read_error)
+    }
+
+    /// Fetch the last `tail` console log lines for a stream, returned in
+    /// ascending `(line_number, ingest_id)` order.
+    pub async fn query_console_log_tail(
+        &self,
+        org_id: Uuid,
+        run_id: Uuid,
+        stream: &str,
+        tail: i64,
+    ) -> AppResult<Vec<ConsoleLogReadRow>> {
+        let mut rows = self
+            .client
+            .query(
+                "SELECT run_id, stream, ingest_id, line_number, message, logged_at, created_at \
+                 FROM console_log_lines \
+                 WHERE org_id = ? AND run_id = ? AND stream = ? \
+                 ORDER BY line_number DESC, ingest_id DESC \
+                 LIMIT ?",
+            )
+            .bind(org_id)
+            .bind(run_id)
+            .bind(stream)
+            .bind(tail)
+            .fetch_all::<ConsoleLogReadRow>()
+            .await
+            .map_err(clickhouse_read_error)?;
+        rows.reverse();
+        Ok(rows)
     }
 
     /// Fetch aggregated series rows for a set of runs. Caller computes

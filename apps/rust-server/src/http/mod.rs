@@ -52,15 +52,16 @@ use handlers::{
     list_artifacts, list_attributes, list_console_logs, list_imports, list_invitations,
     list_object_rows, list_objects, list_org_memberships, list_org_panels, list_orgs,
     list_projects, list_reports, list_runs, list_seats, list_traces, list_users,
-    list_workspace_views, log_console_logs, log_metrics, log_rank_metrics, log_trace_events,
-    metrics_handler, metrics_series, not_found, openapi_json, org_name_availability, overview,
-    preview_invitation, rank_metrics_summary, readyz, renew_artifact_upload, resend_invitation,
-    reserve_seat, reset_demo, resolve_artifact_version, revoke_api_key, revoke_invitation,
-    rotate_customer_clickhouse_credentials, rotate_report_share_token, run_artifact_edges,
-    runs_summary, set_artifact_alias, side_by_side, stop_ack, stop_run, stop_runs, stop_signal,
-    system_usage_insights, update_artifact_retention, update_dashboard_preferences, update_report,
-    update_run, update_workspace_view, upload_artifact, usage_export, usage_summary,
-    validate_customer_clickhouse_connection, workspace_view_data,
+    list_workspace_views, log_console_logs, log_metrics, log_metrics_batch, log_rank_metrics,
+    log_trace_events, metrics_handler, metrics_series, not_found, openapi_json,
+    org_name_availability, overview, preview_invitation, rank_metrics_summary, readyz,
+    renew_artifact_upload, resend_invitation, reserve_seat, reset_demo, resolve_artifact_version,
+    revoke_api_key, revoke_invitation, rotate_customer_clickhouse_credentials,
+    rotate_report_share_token, run_artifact_edges, runs_summary, set_artifact_alias, side_by_side,
+    stop_ack, stop_run, stop_runs, stop_signal, system_usage_insights, update_artifact_retention,
+    update_dashboard_preferences, update_report, update_run, update_workspace_view,
+    upload_artifact, usage_export, usage_summary, validate_customer_clickhouse_connection,
+    workspace_view_data,
 };
 
 const SESSION_COOKIE: &str = "instantml_session";
@@ -269,6 +270,7 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/api/runs/:run_id/forks", post(fork_run))
         .route("/api/runs/:run_id/lineage", get(get_run_lineage))
         .route("/runs/:run_id/metrics", post(log_metrics).get(get_metrics))
+        .route("/runs/:run_id/metrics/batch", post(log_metrics_batch))
         .route("/runs/:run_id/rank-metrics", post(log_rank_metrics))
         .route("/api/runs/:run_id/traces/events", post(log_trace_events))
         .route("/api/traces", get(list_traces))

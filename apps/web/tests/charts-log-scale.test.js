@@ -159,8 +159,9 @@ test("MetricChart wires the y-axis controls, log empty state, and plot clipping"
   assert.match(source, /context\.clip\(\)/);
   // The all-non-positive log state keeps the actions row mounted.
   assert.match(source, /Log scale plots positive values only/);
-  // The mini range overview shares the same y scale as the main plot.
-  assert.match(source, /const miniY = yMapper\(domain, miniHeight, padY\)/);
+  // The mini range overview shares the same y scale as the main plot
+  // (memoized so hover re-renders reuse the mapper and polyline geometry).
+  assert.match(source, /const miniY = useMemo\(\(\) => yMapper\(domain, miniHeight, padY\), \[domain, miniHeight, padY\]\)/);
   // Number inputs must shrink inside the compact popover instead of keeping
   // their intrinsic browser width and spilling past the panel edge.
   assert.match(chartsCss, /\.chart-y-range-field input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);

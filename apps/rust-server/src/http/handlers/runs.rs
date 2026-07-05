@@ -491,6 +491,64 @@ pub async fn log_metrics(
 
 #[utoipa::path(
     post,
+    path = "/runs/{run_id}/metrics/batch",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key covering the whole batch"),
+    ),
+    request_body = crate::domain::LogMetricsBatchRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Inserted point count for the whole batch", body = crate::http::openapi::InsertedEnvelope),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Idempotency conflict", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn log_metrics_batch(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "sdk:ingest", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) = read_json_with_raw::<crate::domain::LogMetricsBatchRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    let metric_count = input
+        .points
+        .as_ref()
+        .map(|points| {
+            points
+                .iter()
+                .map(|point| point.metrics.as_object().map(|m| m.len()).unwrap_or(0))
+                .sum()
+        })
+        .unwrap_or(0);
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    let idempotency_key_present = idempotency_key.is_some();
+    let result =
+        store::log_metrics_batch(&state.store, &ctx, run_id, raw, input, idempotency_key).await;
+    observability::metric_ingest(
+        ctx.org_id,
+        run_id,
+        metric_count,
+        result.as_ref().ok().copied(),
+        idempotency_key_present,
+        result.as_ref().err(),
+    );
+    let inserted = result?;
+    Ok(Json(json!({ "inserted": inserted })))
+}
+
+#[utoipa::path(
+    post,
     path = "/runs/{run_id}/rank-metrics",
     tag = "runs",
     params(
@@ -678,6 +736,7 @@ pub async fn log_console_logs(
         ("limit" = Option<i64>, Query, description = "Page size"),
         ("cursor" = Option<String>, Query, description = "Pagination cursor"),
         ("q" = Option<String>, Query, description = "Substring filter"),
+        ("tail" = Option<i64>, Query, description = "Return only the last N lines (1..=500) in ascending order; cannot be combined with cursor or q"),
     ),
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(

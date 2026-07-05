@@ -5,6 +5,7 @@ use super::*;
 const CONSOLE_LOG_STREAMS: &[&str] = &["stdout", "stderr"];
 const MAX_CONSOLE_CURSOR_BYTES: usize = 256;
 const MAX_CONSOLE_LOG_SEARCH_SCAN: i64 = 5_000;
+const MAX_CONSOLE_LOG_TAIL: i64 = 500;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 struct ConsoleLogCursor {
@@ -96,6 +97,31 @@ pub async fn list_console_logs(
         ensure_run_access_in_data(ctx, &run)?;
     }
     let stream = validate_console_stream(query.get("stream").map(String::as_str))?;
+    if let Some(tail) = query
+        .get("tail")
+        .filter(|value| !value.is_empty())
+        .map(|raw| validate_console_tail(raw))
+        .transpose()?
+    {
+        if query.get("cursor").is_some_and(|value| !value.is_empty())
+            || query.get("q").is_some_and(|value| !value.trim().is_empty())
+        {
+            return Err(AppError::validation(
+                "tail cannot be combined with cursor or q",
+            ));
+        }
+        let rows = store
+            .metric_store_for_org(ctx.org_id)
+            .await?
+            .query_console_log_tail(ctx.org_id, run_id, &stream, tail)
+            .await?;
+        return Ok(json!({
+            "lines": rows.iter().map(console_log_line_value).collect::<Vec<_>>(),
+            "next_cursor": Value::Null,
+            "limit": tail,
+            "truncated": false
+        }));
+    }
     let limit = validate_limit(
         query.get("limit").map(String::as_str),
         DEFAULT_CONSOLE_LOG_LIMIT,
@@ -201,6 +227,16 @@ fn validate_console_stream(raw: Option<&str>) -> AppResult<String> {
     }
 }
 
+fn validate_console_tail(raw: &str) -> AppResult<i64> {
+    raw.trim()
+        .parse::<i64>()
+        .ok()
+        .filter(|tail| (1..=MAX_CONSOLE_LOG_TAIL).contains(tail))
+        .ok_or_else(|| {
+            AppError::validation(format!("tail must be between 1 and {MAX_CONSOLE_LOG_TAIL}"))
+        })
+}
+
 fn validate_console_search(raw: &str) -> AppResult<String> {
     if raw.len() > MAX_TEXT_BYTES {
         return Err(AppError::validation("q is too large"));
@@ -283,6 +319,15 @@ mod tests {
             logged_at: epoch(),
             created_at: epoch(),
         }
+    }
+
+    #[test]
+    fn validate_console_tail_bounds_requested_lines() {
+        assert_eq!(validate_console_tail("1").unwrap(), 1);
+        assert_eq!(validate_console_tail("500").unwrap(), 500);
+        assert!(validate_console_tail("0").is_err());
+        assert!(validate_console_tail("501").is_err());
+        assert!(validate_console_tail("five").is_err());
     }
 
     #[test]

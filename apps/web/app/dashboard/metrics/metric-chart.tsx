@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, FileText, ImageDown, LineChart, MoreVertical, RefreshCw, Table2 } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
@@ -134,7 +134,7 @@ function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: nu
   return rows.slice(0, TOOLTIP_ROW_LIMIT);
 }
 
-function MiniRange({
+const MiniRange = memo(function MiniRange({
   domain,
   normalizedSeries,
   onZoomRangeChange,
@@ -156,14 +156,32 @@ function MiniRange({
   const padX = 12;
   const padY = 8;
   const xSpan = (domain.maxX - domain.minX) || 1;
-  const miniX = (value: number) => padX + ((value - domain.minX) / xSpan) * (miniWidth - padX * 2);
+  const miniX = useCallback(
+    (value: number) => padX + ((value - domain.minX) / xSpan) * (miniWidth - padX * 2),
+    [domain.minX, miniWidth, padX, xSpan],
+  );
   // Same y scale (incl. log10) as the main plot so the overview matches it.
-  const miniY = yMapper(domain, miniHeight, padY);
+  const miniY = useMemo(() => yMapper(domain, miniHeight, padY), [domain, miniHeight, padY]);
   const activeRange = sanitizeRange(draftRange ?? zoomRange, domain);
   const activeMinX = activeRange ? miniX(activeRange.min) : 0;
   const activeMaxX = activeRange ? miniX(activeRange.max) : 0;
   const rangeStyleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
   const useLineStyles = normalizedSeries.length > CHART_PALETTE.length;
+  // Per-series SVG point strings are O(points) to build — memoize them so
+  // drag-to-zoom re-renders (and any parent-driven re-render) reuse the
+  // geometry instead of restringifying every polyline (perf audit A3).
+  const rangePolylines = useMemo(
+    () => normalizedSeries.slice(0, 5).map((item, index) => {
+      const colorIndex = rangeStyleIndexes[index] ?? chartSeriesColorIndex(item, index);
+      return {
+        className: `range-series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`,
+        id: item.id,
+        points: (item.normalizedPoints ?? []).map((point: any) => `${miniX(point.xValue).toFixed(2)},${miniY(point.value).toFixed(2)}`).join(" "),
+        stroke: chartColor(colorIndex),
+      };
+    }),
+    [miniX, miniY, normalizedSeries, rangeStyleIndexes, useLineStyles],
+  );
 
   function valueFromClient(target: SVGSVGElement, clientX: number, clientY: number) {
     const rect = target.getBoundingClientRect();
@@ -251,17 +269,14 @@ function MiniRange({
         onPointerUp={finishPointerRange}
         role="img"
       >
-        {normalizedSeries.slice(0, 5).map((item, index) => {
-          const colorIndex = rangeStyleIndexes[index] ?? chartSeriesColorIndex(item, index);
-          return (
-            <polyline
-              className={`range-series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`}
-              key={item.id}
-              points={(item.normalizedPoints ?? []).map((point: any) => `${miniX(point.xValue).toFixed(2)},${miniY(point.value).toFixed(2)}`).join(" ")}
-              style={{ stroke: chartColor(colorIndex) }}
-            />
-          );
-        })}
+        {rangePolylines.map((line) => (
+          <polyline
+            className={line.className}
+            key={line.id}
+            points={line.points}
+            style={{ stroke: line.stroke }}
+          />
+        ))}
         {activeRange ? (
           <>
             <rect className="range-window" x={activeMinX} y={3} width={Math.max(2, activeMaxX - activeMinX)} height={miniHeight - 6} />
@@ -272,7 +287,7 @@ function MiniRange({
       </svg>
     </div>
   );
-}
+});
 
 /**
  * Responsive line chart. The component measures its frame and renders the SVG
@@ -281,8 +296,13 @@ function MiniRange({
  * "squished chart / giant tick label" failure mode of scaling a fixed
  * 560×360 logical space. Series are normalized internally at the measured
  * size; hover hit-testing is internal and surfaced via `onPointHover`.
+ *
+ * Memoized (perf audit A2): dashboards mount dozens of charts, and shell
+ * polls / sibling-panel state changes must not re-render every chart. The
+ * memo only holds when owners pass stable props (memoized `series`,
+ * useCallback'd handlers) — the workspace panel card and tab panes do.
  */
-export function MetricChart({
+export const MetricChart = memo(function MetricChart({
   actionsSlot,
   emptyMessage = "Select one or more runs and a metric to draw the chart.",
   exportApiRef,
@@ -564,7 +584,12 @@ export function MetricChart({
   const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
   const summaryRows = useMemo(() => chartSummaryRows(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
   const summaryTakeaway = useMemo(() => chartSummaryTakeaway(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
-  const hoverRows = hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, xMode, useLineStyles, hover.runId) : [];
+  // Memoized so non-hover state changes (tooltip placement, legend hover,
+  // menu toggles) don't re-rank every series against the hovered x (A3).
+  const hoverRows = useMemo(
+    () => (hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, xMode, useLineStyles, hover.runId) : []),
+    [hover, normalizedSeries, styleIndexes, useLineStyles, xMode],
+  );
   const hiddenHoverRows = hover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
   useLayoutEffect(() => {
@@ -1090,4 +1115,4 @@ export function MetricChart({
       )}
     </div>
   );
-}
+});

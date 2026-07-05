@@ -120,7 +120,14 @@ def run_sample(tmp_root: Path, sample_index: int, batch_size: int, events: int, 
 
     original_send_request = async_queue._send_request
 
+    # Count HTTP requests, not just drain cycles. Batched delivery groups
+    # consecutive same-run metric events into one /metrics/batch call, which
+    # routes through _send_request, so invocations here equal real round trips.
+    http_requests = 0
+
     def fake_send_request(**kwargs: Any) -> DeliveryResult:
+        nonlocal http_requests
+        http_requests += 1
         json.dumps(kwargs["body"], separators=(",", ":"), sort_keys=False)
         return DeliveryResult(ok=True, retryable=False)
 
@@ -155,6 +162,8 @@ def run_sample(tmp_root: Path, sample_index: int, batch_size: int, events: int, 
         "inserted": write_result["inserted"],
         "dropped": write_result["dropped"],
         "drained": drain_result["drained"],
+        "http_requests": http_requests,
+        "events_per_http_request": round(drain_result["drained"] / http_requests, 3) if http_requests else 0.0,
         "write_batches": write_result["write_batches"],
         "drain_batches": drain_result["drain_batches"],
         "disk_after_write": disk_after_write,
@@ -203,6 +212,8 @@ def summarize_results(samples: list[dict[str, Any]]) -> dict[str, Any]:
             "drain_events_per_second": summarize_values([float(row["drain"]["events_per_second_wall"]) for row in rows]),
             "write_batches": summarize_values([float(row["write_batches"]) for row in rows]),
             "drain_batches": summarize_values([float(row["drain_batches"]) for row in rows]),
+            "http_requests": summarize_values([float(row["http_requests"]) for row in rows]),
+            "events_per_http_request": summarize_values([float(row["events_per_http_request"]) for row in rows]),
             "disk_bytes_after_write": summarize_values([float(row["disk_after_write"]["bytes"]) for row in rows]),
         }
     return summaries
@@ -270,6 +281,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                 "Write timing measures AsyncQueueRepository.enqueue_many_prepared() over pre-serialized PreparedQueuedEvent objects.",
                 "Prepare timing separately measures JSON serialization, idempotency assignment, byte counting, and event object creation.",
                 "Drain/read timing uses drain_queue_once() with a fake successful transport, so it includes SQLite claim reads, JSON decode, fake request serialization, mark_processed updates, and pruning, but no network.",
+                "http_requests counts actual _send_request invocations. Batched delivery groups consecutive same-run metric events into one /metrics/batch request, so events_per_http_request shows the round-trip reduction versus one request per event.",
                 "SQLite runs with the SDK queue defaults: WAL journal mode, synchronous=NORMAL, producer timeout, and the default 1 MiB uploader drain byte budget.",
             ],
             "samples_raw": samples,
@@ -316,8 +328,8 @@ def render_markdown(payload: dict[str, Any]) -> str:
         "",
         "## Summary",
         "",
-        "| Batch size | Samples | Prepare wall us/event | Write wall us/event | p95 write us/event | Write events/sec | Drain/read wall us/event | p95 drain/read us/event | Drain/read events/sec | Median write batches | Median drain batches | Disk bytes after write |",
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Batch size | Samples | Prepare wall us/event | Write wall us/event | p95 write us/event | Write events/sec | Drain/read wall us/event | p95 drain/read us/event | Drain/read events/sec | Median write batches | Median drain batches | Median HTTP requests | Median events/HTTP request | Disk bytes after write |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ])
     for batch_size in protocol["batch_sizes"]:
         summary = payload["summaries"].get(str(batch_size))
@@ -337,6 +349,8 @@ def render_markdown(payload: dict[str, Any]) -> str:
                 f"{summary['drain_events_per_second']['median']:.0f}",
                 f"{summary['write_batches']['median']:.0f}",
                 f"{summary['drain_batches']['median']:.0f}",
+                f"{summary['http_requests']['median']:.0f}",
+                f"{summary['events_per_http_request']['median']:.1f}",
                 f"{summary['disk_bytes_after_write']['median']:.0f}",
             ])
             + " |"

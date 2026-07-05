@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import random
+import re
 import shutil
 import sqlite3
 import threading
@@ -17,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import _http_pool
 from .errors import InstantMLError
 
 
@@ -39,7 +42,15 @@ DEFAULT_PRODUCER_FLUSH_SECONDS = 0.020
 DEFAULT_PRODUCER_MAX_BUFFER_EVENTS = 4_096
 DEFAULT_PRODUCER_MAX_BUFFER_BYTES = 4 * 1024 * 1024
 DEFAULT_PRODUCER_RETRY_SECONDS = 0.020
+DEFAULT_WAL_CHECKPOINT_INTERVAL_SECONDS = 30.0
 ASYNC_HEALTH_PREFIX = "system/instantml/"
+DEFAULT_MAX_BATCH_POINTS = 500
+QUEUED_BYTES_COUNTER = "queued_bytes"
+# Matches the plain metric ingest path (POST /runs/{run_id}/metrics) so its
+# events can be grouped into a single POST /runs/{run_id}/metrics/batch request.
+# Excludes /rank-metrics and any sub-paths.
+_METRICS_PATH_RE = re.compile(r"^/runs/(?P<run_id>[^/]+)/metrics$")
+_BATCH_UNSUPPORTED_STATUSES = {404, 405}
 _RETRYABLE_HTTP_STATUSES = {408, 409, 500, 502, 503, 504}
 _TERMINAL_CODES = {
     "api_request_monthly_limit_exceeded",
@@ -87,6 +98,7 @@ class QueuedEvent:
     body: dict[str, Any]
     body_size_bytes: int
     idempotency_key: str
+    attempts: int = 0
 
 
 @dataclass(frozen=True)
@@ -192,6 +204,21 @@ def run_async_uploader(
     repository.close()
 
 
+# Process-lifetime flag: once the server rejects the batch route with 404/405
+# (an older server without it), permanently fall back to per-event delivery so
+# nothing is lost. Mirrors ``_http_pool``'s gzip-fallback posture.
+_batch_unsupported = False
+
+
+def _batch_route_supported() -> bool:
+    return not _batch_unsupported
+
+
+def _mark_batch_unsupported() -> None:
+    global _batch_unsupported
+    _batch_unsupported = True
+
+
 def drain_queue_once(
     repository: "AsyncQueueRepository",
     base_url: str,
@@ -199,6 +226,7 @@ def drain_queue_once(
     timeout: float = 10.0,
     max_batch_bytes: int = DEFAULT_MAX_BATCH_BYTES,
     max_event_bytes: int = DEFAULT_MAX_EVENT_BYTES,
+    max_batch_points: int = DEFAULT_MAX_BATCH_POINTS,
 ) -> int:
     repository.recover_stale_leases()
     lease_token = uuid.uuid4().hex
@@ -209,10 +237,26 @@ def drain_queue_once(
         lease_seconds=DEFAULT_LEASE_SECONDS,
     )
     processed = 0
-    release_after_retry: list[int] = []
-    for index, event in enumerate(events):
+    index = 0
+    retry_pending = False
+    while index < len(events):
+        event = events[index]
         if event.body_size_bytes > max_event_bytes:
             repository.mark_failed(event.sequence_id, "event exceeds async queue max_event_bytes", code="event_too_large")
+            index += 1
+            continue
+        group = _consecutive_metric_group(events, index, max_batch_points) if _batch_route_supported() else []
+        if len(group) >= 2:
+            outcome = _deliver_metric_batch(repository, base_url, api_key, timeout, group)
+            if outcome is None:
+                # Batch route is unsupported on this server; retry the same
+                # members individually on the next loop iteration.
+                continue
+            delivered, retry_pending = outcome
+            processed += delivered
+            if retry_pending:
+                break
+            index += len(group)
             continue
         result = _send_request(
             base_url=base_url,
@@ -233,16 +277,87 @@ def drain_queue_once(
                 code=result.code,
                 http_status=result.status,
                 retry_after=result.retry_after,
+                known_attempts=event.attempts,
             )
-            release_after_retry = [remaining.sequence_id for remaining in events[index + 1 :]]
+            retry_pending = True
+            index += 1
             break
         else:
             repository.mark_failed(event.sequence_id, result.message, code=result.code, http_status=result.status)
-    if release_after_retry:
-        repository.release_events(release_after_retry)
+        index += 1
+    if retry_pending and index < len(events):
+        repository.release_events([remaining.sequence_id for remaining in events[index:]])
     if processed:
         repository.prune_processed()
     return processed
+
+
+def _consecutive_metric_group(events: list["QueuedEvent"], start: int, max_points: int) -> list["QueuedEvent"]:
+    """Return the maximal run of consecutive same-run metric POSTs from ``start``.
+
+    Capped at ``max_points`` events so a single batch request never exceeds the
+    server's per-batch limit.
+    """
+    head = events[start]
+    run_id = _metric_run_id(head)
+    if run_id is None:
+        return []
+    group = [head]
+    for event in events[start + 1 :]:
+        if len(group) >= max_points:
+            break
+        if _metric_run_id(event) != run_id:
+            break
+        group.append(event)
+    return group
+
+
+def _metric_run_id(event: "QueuedEvent") -> str | None:
+    if event.method.upper() != "POST":
+        return None
+    match = _METRICS_PATH_RE.match(event.path)
+    return match.group("run_id") if match else None
+
+
+def _deliver_metric_batch(
+    repository: "AsyncQueueRepository",
+    base_url: str,
+    api_key: str | None,
+    timeout: float,
+    group: list["QueuedEvent"],
+) -> tuple[int, bool] | None:
+    """Deliver a group of same-run metric events as one batch request.
+
+    Returns ``(delivered, retry_pending)`` on a real response, or ``None`` when
+    the server does not support the batch route (caller falls back per-event).
+    """
+    run_id = _metric_run_id(group[0])
+    result = _send_batch_request(
+        base_url=base_url,
+        api_key=api_key,
+        timeout=timeout,
+        run_id=str(run_id),
+        events=group,
+    )
+    if result.ok:
+        repository.mark_processed_many([event.sequence_id for event in group])
+        return len(group), False
+    if result.status in _BATCH_UNSUPPORTED_STATUSES:
+        _mark_batch_unsupported()
+        return None
+    sequence_ids = [event.sequence_id for event in group]
+    if result.retryable:
+        repository.mark_retry_many(
+            sequence_ids,
+            message=result.message,
+            code=result.code,
+            http_status=result.status,
+            retry_after=result.retry_after,
+            known_attempts=max(event.attempts for event in group),
+        )
+        return 0, True
+    repository.mark_failed_many(sequence_ids, result.message, code=result.code, http_status=result.status)
+    return 0, False
 
 
 class AsyncQueueRepository:
@@ -266,6 +381,7 @@ class AsyncQueueRepository:
         self._connection: sqlite3.Connection | None = None
         self._timeout = 0.1 if producer else 1.0
         self._lock = threading.RLock()
+        self._last_checkpoint_at = 0.0
 
     def init_db(self) -> None:
         with self._lock:
@@ -313,6 +429,7 @@ class AsyncQueueRepository:
                 """
             )
             conn.execute("insert or ignore into queue_meta (key, value) values (?, ?)", ("version", "1"))
+            self._reseed_queued_bytes(conn)
             conn.commit()
             self._harden_file_permissions()
 
@@ -324,8 +441,12 @@ class AsyncQueueRepository:
         idempotency_key: str | None = None,
         created_at: float | None = None,
     ) -> PreparedQueuedEvent:
-        payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
-        size_bytes = len(payload.encode("utf-8"))
+        # The server hashes the raw per-event body and idempotency keys are
+        # per-event, so canonical producer ordering is not needed for dedup;
+        # drop sort_keys and encode once, reusing the bytes for length (D7c).
+        encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        payload = encoded.decode("utf-8")
+        size_bytes = len(encoded)
         return PreparedQueuedEvent(
             created_at=time.time() if created_at is None else created_at,
             method=method,
@@ -397,6 +518,8 @@ class AsyncQueueRepository:
                 )
                 if dropped:
                     self._increment_counter_uncommitted(conn, "dropped", dropped)
+                inserted_bytes = sum(event.body_size_bytes for event in eligible)
+                self._increment_counter_uncommitted(conn, QUEUED_BYTES_COUNTER, inserted_bytes)
                 last_row = conn.execute("select last_insert_rowid()").fetchone()
                 conn.commit()
                 last_sequence_id = int(last_row[0]) if last_row and last_row[0] is not None else None
@@ -426,7 +549,7 @@ class AsyncQueueRepository:
             conn = self._connect()
             rows = conn.execute(
                 """
-                select sequence_id, method, path, body_json, body_size_bytes, idempotency_key, status, next_attempt_at
+                select sequence_id, method, path, body_json, body_size_bytes, idempotency_key, status, next_attempt_at, attempts
                 from events
                 where status in ('pending', 'in_flight')
                 order by sequence_id asc
@@ -472,6 +595,7 @@ class AsyncQueueRepository:
                     body=json.loads(str(row["body_json"])),
                     body_size_bytes=int(row["body_size_bytes"]),
                     idempotency_key=str(row["idempotency_key"] or ""),
+                    attempts=int(row["attempts"] or 0),
                 )
                 for row in selected
             ]
@@ -495,11 +619,19 @@ class AsyncQueueRepository:
             return int(cursor.rowcount or 0)
 
     def mark_processed(self, sequence_id: int) -> None:
+        self.mark_processed_many([sequence_id])
+
+    def mark_processed_many(self, sequence_ids: list[int]) -> None:
+        """Mark many events processed in a single UPDATE + commit (D1/D4)."""
+        if not sequence_ids:
+            return
         with self._lock:
             now = time.time()
             conn = self._connect()
+            placeholders = ",".join("?" for _ in sequence_ids)
+            freed = self._non_processed_bytes(conn, sequence_ids)
             conn.execute(
-                """
+                f"""
                 update events
                 set status = 'processed',
                     updated_at = ?,
@@ -508,10 +640,12 @@ class AsyncQueueRepository:
                     last_error = null,
                     last_error_code = null,
                     last_http_status = null
-                where sequence_id = ?
+                where sequence_id in ({placeholders})
                 """,
-                (now, sequence_id),
+                (now, *sequence_ids),
             )
+            if freed:
+                self._increment_counter_uncommitted(conn, QUEUED_BYTES_COUNTER, -freed)
             conn.commit()
 
     def release_events(self, sequence_ids: list[int]) -> None:
@@ -541,15 +675,46 @@ class AsyncQueueRepository:
         code: str | None = None,
         http_status: int | None = None,
         retry_after: float | None = None,
+        known_attempts: int | None = None,
+    ) -> None:
+        # Reuse the ``attempts`` value already fetched by ``claim_batch`` when
+        # the caller has it (D4); only SELECT as a fallback.
+        if known_attempts is None:
+            row = self._connect().execute("select attempts from events where sequence_id = ?", (sequence_id,)).fetchone()
+            known_attempts = int(row["attempts"] if row else 0)
+        self._apply_retry([sequence_id], message, code, http_status, retry_after, known_attempts)
+
+    def mark_retry_many(
+        self,
+        sequence_ids: list[int],
+        message: str,
+        code: str | None = None,
+        http_status: int | None = None,
+        retry_after: float | None = None,
+        known_attempts: int = 0,
+    ) -> None:
+        """Retry a whole batch of events with one UPDATE + commit (D1)."""
+        if not sequence_ids:
+            return
+        self._apply_retry(sequence_ids, message, code, http_status, retry_after, known_attempts)
+
+    def _apply_retry(
+        self,
+        sequence_ids: list[int],
+        message: str,
+        code: str | None,
+        http_status: int | None,
+        retry_after: float | None,
+        known_attempts: int,
     ) -> None:
         with self._lock:
-            row = self._connect().execute("select attempts from events where sequence_id = ?", (sequence_id,)).fetchone()
-            attempts = int(row["attempts"] if row else 0) + 1
+            attempts = known_attempts + 1
             delay = _retry_delay(attempts, retry_after=retry_after)
             now = time.time()
             conn = self._connect()
+            placeholders = ",".join("?" for _ in sequence_ids)
             conn.execute(
-                """
+                f"""
                 update events
                 set status = 'pending',
                     attempts = ?,
@@ -561,19 +726,27 @@ class AsyncQueueRepository:
                     last_error = ?,
                     last_error_code = ?,
                     last_http_status = ?
-                where sequence_id = ?
+                where sequence_id in ({placeholders})
                 """,
-                (attempts, now, now + delay, now, message, code, http_status, sequence_id),
+                (attempts, now, now + delay, now, message, code, http_status, *sequence_ids),
             )
-            self._save_error(conn, sequence_id, "retryable", message)
+            self._save_error(conn, sequence_ids[0], "retryable", message)
             conn.commit()
 
     def mark_failed(self, sequence_id: int, message: str, code: str | None = None, http_status: int | None = None) -> None:
+        self.mark_failed_many([sequence_id], message, code=code, http_status=http_status)
+
+    def mark_failed_many(
+        self, sequence_ids: list[int], message: str, code: str | None = None, http_status: int | None = None
+    ) -> None:
+        if not sequence_ids:
+            return
         with self._lock:
             now = time.time()
             conn = self._connect()
+            placeholders = ",".join("?" for _ in sequence_ids)
             conn.execute(
-                """
+                f"""
                 update events
                 set status = 'failed',
                     last_attempt_at = ?,
@@ -583,11 +756,11 @@ class AsyncQueueRepository:
                     last_error = ?,
                     last_error_code = ?,
                     last_http_status = ?
-                where sequence_id = ?
+                where sequence_id in ({placeholders})
                 """,
-                (now, now, message, code, http_status, sequence_id),
+                (now, now, message, code, http_status, *sequence_ids),
             )
-            self._save_error(conn, sequence_id, "failed", message)
+            self._save_error(conn, sequence_ids[0], "failed", message)
             conn.commit()
 
     def status(self) -> dict[str, Any]:
@@ -671,7 +844,7 @@ class AsyncQueueRepository:
             )
             self._prune_errors(conn)
             conn.commit()
-            self._checkpoint_wal()
+            self._checkpoint_wal_throttled()
 
     def close(self) -> None:
         with self._lock:
@@ -714,13 +887,55 @@ class AsyncQueueRepository:
                 return False
 
     def _available_queue_bytes(self) -> int:
-        row = self._connect().execute(
-            "select coalesce(sum(body_size_bytes), 0) as bytes from events where status != 'processed'"
-        ).fetchone()
-        queued = int(row["bytes"] if row else 0)
+        # Read the maintained running counter instead of a full-table SUM on
+        # every producer flush. The counter tracks bytes over non-processed
+        # events and is reseeded from a real SUM at queue open (crash recovery).
+        queued = self._queued_bytes()
         logical_available = self.max_queue_bytes - queued
         physical_available = self.max_queue_bytes - self._queue_file_size_bytes()
         return max(0, min(logical_available, physical_available))
+
+    def _queued_bytes(self) -> int:
+        conn = self._connect()
+        row = conn.execute("select value from counters where key = ?", (QUEUED_BYTES_COUNTER,)).fetchone()
+        return max(0, int(row["value"])) if row else 0
+
+    def _reseed_queued_bytes(self, conn: sqlite3.Connection) -> None:
+        """Recompute ``queued_bytes`` from a real SUM (once, at queue open).
+
+        A crash between an insert/ack and its counter update would drift the
+        running counter; reseeding on open re-establishes truth.
+        """
+        row = conn.execute(
+            "select coalesce(sum(body_size_bytes), 0) as bytes from events where status != 'processed'"
+        ).fetchone()
+        actual = int(row["bytes"] if row else 0)
+        conn.execute(
+            """
+            insert into counters (key, value) values (?, ?)
+            on conflict(key) do update set value = excluded.value
+            """,
+            (QUEUED_BYTES_COUNTER, actual),
+        )
+
+    def _non_processed_bytes(self, conn: sqlite3.Connection, sequence_ids: list[int]) -> int:
+        """Sum of body bytes for the given ids that still count toward queued_bytes.
+
+        Used to compute the exact decrement when events transition into
+        ``processed`` (already-processed rows contribute nothing, keeping the
+        counter aligned with ``SUM(... where status != 'processed')``).
+        Callers pass a non-empty id list.
+        """
+        placeholders = ",".join("?" for _ in sequence_ids)
+        row = conn.execute(
+            f"""
+            select coalesce(sum(body_size_bytes), 0) as bytes
+            from events
+            where status != 'processed' and sequence_id in ({placeholders})
+            """,
+            tuple(sequence_ids),
+        ).fetchone()
+        return int(row["bytes"] if row else 0)
 
     def _increment_counter_uncommitted(self, conn: sqlite3.Connection, key: str, amount: int = 1) -> None:
         conn.execute(
@@ -789,6 +1004,14 @@ class AsyncQueueRepository:
             self._connection.execute("pragma wal_checkpoint(truncate)")
         except (AttributeError, sqlite3.Error):
             pass
+        self._last_checkpoint_at = time.time()
+
+    def _checkpoint_wal_throttled(self) -> None:
+        # Truncating the WAL on every productive drain cycle bounds throughput
+        # to the checkpoint rate; run it at most once per interval (D4).
+        if time.time() - self._last_checkpoint_at < DEFAULT_WAL_CHECKPOINT_INTERVAL_SECONDS:
+            return
+        self._checkpoint_wal()
 
     def _rollback_quietly(self) -> None:
         with self._lock:
@@ -897,7 +1120,7 @@ def _send_request(
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _http_pool.urlopen(request, timeout=timeout) as response:
             response.read()
         return DeliveryResult(ok=True, retryable=False)
     except urllib.error.HTTPError as exc:
@@ -908,6 +1131,52 @@ def _send_request(
         return DeliveryResult(ok=False, retryable=retryable, message=message, status=status, code=code, retry_after=retry_after)
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return DeliveryResult(ok=False, retryable=True, message=str(exc), code="network_error")
+
+
+def _send_batch_request(
+    base_url: str,
+    api_key: str | None,
+    timeout: float,
+    run_id: str,
+    events: list["QueuedEvent"],
+) -> DeliveryResult:
+    """POST a group of metric events to ``/runs/{run_id}/metrics/batch``.
+
+    Wire format: ``{"points": [{"metrics": {...}, "step": <number>,
+    "timestamp": "<ISO8601, optional>"}, ...]}`` with one deterministic
+    ``Idempotency-Key`` derived from the member event keys so retried batches
+    reuse the key.
+    """
+    points = [_batch_point(event.body) for event in events]
+    idempotency_key = _batch_idempotency_key(events)
+    return _send_request(
+        base_url=base_url,
+        api_key=api_key,
+        timeout=timeout,
+        method="POST",
+        path=f"/runs/{run_id}/metrics/batch",
+        body={"points": points},
+        idempotency_key=idempotency_key,
+    )
+
+
+def _batch_point(body: dict[str, Any]) -> dict[str, Any]:
+    point: dict[str, Any] = {"metrics": body.get("metrics", {}), "step": body.get("step")}
+    timestamp = body.get("timestamp")
+    if timestamp is not None:
+        point["timestamp"] = timestamp
+    return point
+
+
+def _batch_idempotency_key(events: list["QueuedEvent"]) -> str:
+    """Deterministic per-batch key: sha256 over the sorted member keys.
+
+    Retried batches with the same members produce the same key so the server
+    dedups them.
+    """
+    member_keys = sorted(event.idempotency_key for event in events)
+    digest = hashlib.sha256("\n".join(member_keys).encode("utf-8")).hexdigest()
+    return f"instantml-batch-{digest}"
 
 
 def _decode_http_error(exc: urllib.error.HTTPError) -> tuple[str, str | None]:

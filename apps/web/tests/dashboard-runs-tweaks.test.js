@@ -155,6 +155,22 @@ test("runs workspace lets you jump to a specific page", () => {
   assert.match(shellSrc, /onGoToPage=\{goToRunPage\}/);
 });
 
+test("runs table and rail index repeated row lookups", () => {
+  const tableSrc = read("app/dashboard/runs/runs-table.tsx");
+  assert.match(tableSrc, /const metricSeriesByRunId = useMemo/);
+  assert.match(tableSrc, /const selectedRunIdSet = useMemo/);
+  assert.match(tableSrc, /const runIndexById = useMemo/);
+  assert.match(tableSrc, /metricSeriesByRunId\.get\(run\.id\)/);
+  assert.match(tableSrc, /selectedRunIdSet\.has\(run\.id\)/);
+  assert.doesNotMatch(tableSrc, /metricSeries\?\.find\(\(item\) => item\.id === run\.id\)/);
+  assert.doesNotMatch(tableSrc, /selectedRunIds\.includes\(run\.id\)/);
+
+  const workspaceSrc = read("app/dashboard/runs/runs-workspace.tsx");
+  assert.match(workspaceSrc, /const selectedRunIdSet = useMemo/);
+  assert.match(workspaceSrc, /selectedRunIdSet\.has\(run\.id\)/);
+  assert.doesNotMatch(workspaceSrc, /selectedRunIds\.includes\(run\.id\)/);
+});
+
 test("copy-id buttons spell out what they copy", () => {
   for (const relPath of [
     "app/dashboard/detail/artifact-panel.tsx",

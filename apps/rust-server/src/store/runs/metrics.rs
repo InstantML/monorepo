@@ -13,6 +13,7 @@ pub async fn log_metrics(
     let timestamp = validate_timestamp(input.timestamp.as_deref())?;
     let request_hash = hash_idempotency(run_id, &raw)?;
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let now = Utc::now();
     let points = metrics
         .iter()
         .map(|(key, value)| ChMetricPointRow {
@@ -22,7 +23,7 @@ pub async fn log_metrics(
             step,
             value: *value,
             logged_at: timestamp,
-            created_at: Utc::now(),
+            created_at: now,
         })
         .collect::<Vec<_>>();
     if let Some(key) = idempotency_key {
@@ -104,6 +105,138 @@ pub async fn log_metrics(
     .await?;
     metric_store.insert_points(&points).await?;
     Ok(points.len())
+}
+
+pub async fn log_metrics_batch(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
+    raw: Value,
+    input: LogMetricsBatchRequest,
+    idempotency_key: Option<String>,
+) -> AppResult<usize> {
+    let now = Utc::now();
+    let points = validate_metrics_batch_points(ctx.org_id, run_id, input.points, now)?;
+    let request_hash = hash_idempotency(run_id, &raw)?;
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    if let Some(key) = idempotency_key {
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            {
+                let data = store.data.lock().await;
+                if let Some(existing) = data
+                    .idempotency
+                    .get(&(ctx.org_id, key.clone()))
+                    .filter(|record| record.expires_at > Utc::now())
+                {
+                    if existing.request_hash == request_hash {
+                        return existing
+                            .response_json
+                            .get("inserted")
+                            .and_then(Value::as_u64)
+                            .map(|value| value as usize)
+                            .ok_or_else(|| {
+                                AppError::internal("stored idempotency response is invalid")
+                            });
+                    }
+                    return Err(AppError::conflict(
+                        "idempotency key was already used with a different request body",
+                    ));
+                }
+                let run = fetch_run_in_data(&data, ctx, run_id)?;
+                ensure_run_access_in_data(ctx, &run)?;
+            }
+            ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
+            enforce_plan_capacity(
+                store,
+                ctx.org_id,
+                UsageDelta {
+                    metric_points: points.len() as i64,
+                    ..UsageDelta::default()
+                },
+                "log metrics",
+            )
+            .await?;
+            metric_store.insert_points(&points).await?;
+            let record = IdempotencyRecord {
+                org_id: ctx.org_id,
+                key: key.clone(),
+                request_hash,
+                response_json: json!({ "inserted": points.len() }),
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            };
+            store
+                .persist_locked("idempotency", ctx.org_id, &key, &record)
+                .await?;
+            store
+                .data
+                .lock()
+                .await
+                .idempotency
+                .insert((ctx.org_id, key.clone()), record);
+            Ok(points.len())
+        }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
+    {
+        let data = store.data.lock().await;
+        let run = fetch_run_in_data(&data, ctx, run_id)?;
+        ensure_run_access_in_data(ctx, &run)?;
+    }
+    ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
+    enforce_plan_capacity(
+        store,
+        ctx.org_id,
+        UsageDelta {
+            metric_points: points.len() as i64,
+            ..UsageDelta::default()
+        },
+        "log metrics",
+    )
+    .await?;
+    metric_store.insert_points(&points).await?;
+    Ok(points.len())
+}
+
+/// Validate a batch payload and flatten it into ClickHouse point rows.
+/// Per-entry validation matches the single-point `log_metrics` path.
+fn validate_metrics_batch_points(
+    org_id: Uuid,
+    run_id: Uuid,
+    points: Option<Vec<LogMetricsBatchPoint>>,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<ChMetricPointRow>> {
+    let points = points.ok_or_else(|| AppError::validation("points are required"))?;
+    if points.is_empty() {
+        return Err(AppError::validation(
+            "points must include at least one entry",
+        ));
+    }
+    if points.len() > MAX_METRIC_BATCH_POINTS {
+        return Err(AppError::validation(format!(
+            "points must include at most {MAX_METRIC_BATCH_POINTS} entries"
+        )));
+    }
+    let mut rows = Vec::with_capacity(points.len());
+    for point in points {
+        let metrics = validate_metrics(point.metrics)?;
+        let step = validate_step(&point.step, "step")?;
+        let timestamp = validate_timestamp(point.timestamp.as_deref())?;
+        for (key, value) in metrics {
+            rows.push(ChMetricPointRow {
+                org_id,
+                run_id,
+                key,
+                step,
+                value,
+                logged_at: timestamp,
+                created_at: now,
+            });
+        }
+    }
+    Ok(rows)
 }
 
 pub async fn get_metrics(
@@ -195,6 +328,7 @@ pub async fn metrics_series_batched(
                 })
         })
         .transpose()?;
+    let effective_buckets = buckets.map(|value| effective_metric_series_buckets(value, run_count));
 
     let metric_store = store.metric_store_for_org(ctx.org_id).await?;
 
@@ -202,7 +336,7 @@ pub async fn metrics_series_batched(
     // full series (no start/end step). Zoomed queries fall through to the raw
     // path so partial-window fidelity isn't traded for a global aggregation.
     let m4_counts: HashMap<Uuid, u64> =
-        if let (Some(b), None, None) = (buckets, start_step, end_step) {
+        if let (Some(b), None, None) = (effective_buckets, start_step, end_step) {
             let threshold = (b as u64).saturating_mul(4);
             metric_store
                 .count_points_for_runs_key(ctx.org_id, &run_ids, &key)
@@ -244,16 +378,17 @@ pub async fn metrics_series_batched(
         }
     }
 
-    if let Some(b) = buckets {
-        for run_id in run_ids
+    if let Some(b) = effective_buckets {
+        let m4_run_ids: Vec<Uuid> = run_ids
             .iter()
             .copied()
             .filter(|id| m4_counts.contains_key(id))
-        {
+            .collect();
+        if !m4_run_ids.is_empty() {
             let bucket_rows = metric_store
-                .query_points_m4(ctx.org_id, run_id, &key, b)
+                .query_points_m4_for_runs(ctx.org_id, &m4_run_ids, &key, b)
                 .await?;
-            grouped.insert(run_id, m4_bucket_rows_to_points(&key, bucket_rows));
+            grouped.extend(m4_bucket_rows_by_run_to_points(&key, bucket_rows));
         }
     }
 
@@ -264,6 +399,8 @@ pub async fn metrics_series_batched(
         })).collect::<Vec<_>>(),
         "requested_limit": limit,
         "effective_limit": effective_limit,
+        "requested_buckets": buckets,
+        "effective_buckets": effective_buckets,
         "run_count": run_count,
         "total_point_cap": MAX_METRIC_SERIES_TOTAL_POINTS
     }))
@@ -308,12 +445,47 @@ pub(super) fn m4_bucket_rows_to_points(key: &str, bucket_rows: Vec<M4BucketRow>)
     out
 }
 
+pub(super) fn m4_bucket_rows_by_run_to_points(
+    key: &str,
+    bucket_rows: Vec<M4BucketRowWithRun>,
+) -> BTreeMap<Uuid, Vec<Value>> {
+    let mut rows_by_run: BTreeMap<Uuid, Vec<M4BucketRow>> = BTreeMap::new();
+    for row in bucket_rows {
+        rows_by_run
+            .entry(row.run_id)
+            .or_default()
+            .push(M4BucketRow {
+                bucket: row.bucket,
+                first_step: row.first_step,
+                first_val: row.first_val,
+                last_step: row.last_step,
+                last_val: row.last_val,
+                min_step: row.min_step,
+                min_val: row.min_val,
+                max_step: row.max_step,
+                max_val: row.max_val,
+            });
+    }
+    rows_by_run
+        .into_iter()
+        .map(|(run_id, rows)| (run_id, m4_bucket_rows_to_points(key, rows)))
+        .collect()
+}
+
 pub(super) fn effective_metric_series_limit(requested_limit: i64, run_count: usize) -> i64 {
     if run_count == 0 {
         return requested_limit;
     }
     let max_per_run = (MAX_METRIC_SERIES_TOTAL_POINTS / run_count as i64).max(1);
     requested_limit.min(max_per_run)
+}
+
+pub(super) fn effective_metric_series_buckets(requested_buckets: u32, run_count: usize) -> u32 {
+    if run_count == 0 {
+        return requested_buckets;
+    }
+    let max_buckets_per_run = (MAX_METRIC_SERIES_TOTAL_POINTS / run_count as i64 / 4).max(1);
+    requested_buckets.min(max_buckets_per_run as u32)
 }
 
 pub(super) async fn metric_series_for_runs_key_chunked(
@@ -378,12 +550,108 @@ pub(super) async fn count_points_for_runs_chunked(
 mod tests {
     use super::*;
 
+    fn batch_point(metrics: Value, step: Value, timestamp: Option<&str>) -> LogMetricsBatchPoint {
+        LogMetricsBatchPoint {
+            metrics,
+            step,
+            timestamp: timestamp.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn metrics_batch_points_flatten_entries_into_rows() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let now = Utc::now();
+        let rows = validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![
+                batch_point(
+                    json!({"loss": 0.5, "acc": 0.9}),
+                    json!(1),
+                    Some("2026-07-03T00:00:00Z"),
+                ),
+                batch_point(json!({"loss": 0.4}), json!(2), None),
+            ]),
+            now,
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 3);
+        assert!(rows
+            .iter()
+            .all(|row| row.org_id == org_id && row.run_id == run_id && row.created_at == now));
+        assert_eq!(rows[0].step, 1.0);
+        assert_eq!(
+            rows[0].logged_at,
+            "2026-07-03T00:00:00Z".parse::<DateTime<Utc>>().unwrap()
+        );
+        assert_eq!(rows[2].key, "loss");
+        assert_eq!(rows[2].step, 2.0);
+    }
+
+    #[test]
+    fn metrics_batch_points_require_bounded_non_empty_batches() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let now = Utc::now();
+        assert!(validate_metrics_batch_points(org_id, run_id, None, now).is_err());
+        assert!(validate_metrics_batch_points(org_id, run_id, Some(vec![]), now).is_err());
+        let too_many = (0..=MAX_METRIC_BATCH_POINTS)
+            .map(|step| batch_point(json!({"loss": 0.1}), json!(step), None))
+            .collect::<Vec<_>>();
+        assert!(validate_metrics_batch_points(org_id, run_id, Some(too_many), now).is_err());
+    }
+
+    #[test]
+    fn metrics_batch_points_validate_each_entry_like_single_point_path() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let now = Utc::now();
+        // Missing/null step is rejected exactly like the single-point path.
+        assert!(validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![batch_point(json!({"loss": 0.1}), Value::Null, None)]),
+            now,
+        )
+        .is_err());
+        assert!(validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![batch_point(json!({}), json!(1), None)]),
+            now,
+        )
+        .is_err());
+        assert!(validate_metrics_batch_points(
+            org_id,
+            run_id,
+            Some(vec![batch_point(
+                json!({"loss": 0.1}),
+                json!(1),
+                Some("nope")
+            )]),
+            now,
+        )
+        .is_err());
+    }
+
     #[test]
     fn effective_metric_series_limit_respects_total_point_budget() {
         assert_eq!(effective_metric_series_limit(5_000, 1), 5_000);
         assert_eq!(effective_metric_series_limit(5_000, 1_000), 120);
         assert_eq!(effective_metric_series_limit(5_000, 2_000), 60);
         assert_eq!(effective_metric_series_limit(50, 2_000), 50);
+    }
+
+    #[test]
+    fn effective_metric_series_buckets_respects_total_point_budget() {
+        assert_eq!(effective_metric_series_buckets(1_200, 1), 1_200);
+        assert_eq!(effective_metric_series_buckets(1_200, 100), 300);
+        assert_eq!(effective_metric_series_buckets(1_200, 1_000), 30);
+        assert_eq!(effective_metric_series_buckets(1_200, 2_000), 15);
+        assert_eq!(effective_metric_series_buckets(12, 2_000), 12);
     }
 
     fn m4_row(
@@ -394,6 +662,28 @@ mod tests {
         max: (f64, f64),
     ) -> M4BucketRow {
         M4BucketRow {
+            bucket,
+            first_step: first.0,
+            first_val: first.1,
+            last_step: last.0,
+            last_val: last.1,
+            min_step: min.0,
+            min_val: min.1,
+            max_step: max.0,
+            max_val: max.1,
+        }
+    }
+
+    fn m4_row_with_run(
+        run_id: Uuid,
+        bucket: u32,
+        first: (f64, f64),
+        last: (f64, f64),
+        min: (f64, f64),
+        max: (f64, f64),
+    ) -> M4BucketRowWithRun {
+        M4BucketRowWithRun {
+            run_id,
             bucket,
             first_step: first.0,
             first_val: first.1,
@@ -461,5 +751,36 @@ mod tests {
     fn m4_bucket_points_empty_input() {
         let pts = m4_bucket_rows_to_points("loss", vec![]);
         assert!(pts.is_empty());
+    }
+
+    #[test]
+    fn m4_bucket_points_group_by_run_for_batched_query() {
+        let first_run = Uuid::from_u128(1);
+        let second_run = Uuid::from_u128(2);
+        let grouped = m4_bucket_rows_by_run_to_points(
+            "loss",
+            vec![
+                m4_row_with_run(first_run, 0, (1.0, 0.4), (8.0, 0.5), (2.0, 0.1), (6.0, 0.9)),
+                m4_row_with_run(
+                    second_run,
+                    0,
+                    (10.0, 0.3),
+                    (10.0, 0.3),
+                    (10.0, 0.3),
+                    (10.0, 0.3),
+                ),
+            ],
+        );
+
+        let first_steps: Vec<f64> = grouped[&first_run]
+            .iter()
+            .map(|point| point["step"].as_f64().unwrap())
+            .collect();
+        let second_steps: Vec<f64> = grouped[&second_run]
+            .iter()
+            .map(|point| point["step"].as_f64().unwrap())
+            .collect();
+        assert_eq!(first_steps, vec![1.0, 2.0, 6.0, 8.0]);
+        assert_eq!(second_steps, vec![10.0]);
     }
 }

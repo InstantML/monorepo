@@ -32,7 +32,7 @@ Current implemented design sequence:
 - `2026-05-16-cloud-run-multi-instance-launch.md`: split Cloud Run launch wiring, deploy helper target model, managed HTTPS public router, Docker Compose split profile, static egress reuse, scaling defaults, unsafe multi-writer guardrails, and frontend env behavior.
 - `2026-05-16-pricing-signup-org-admin.md`: Free/Pro/Premium signup, plan-aware tenant-route warehouse profile intent, seat invites, invite activation, usage/admin settings, API-key management, and first pricing/admin boundaries.
 - `2026-05-17-plan-limit-enforcement.md`: blocked-at-limit guardrails for new project, run, current-month metric-ingest, artifact-storage, import, and demo-reset writes plus Premium local/shared demo defaults.
-- `2026-05-18-wandb-hosted-comparison-benchmarks.md`: guarded W&B-hosted comparison benchmark tooling, W&B public API mapping, seeded-mode caveats, and sanitized result reporting against the existing InstantML hosted Cloud Run benchmark.
+- `2026-05-18-wandb-hosted-comparison-benchmarks.md`: guarded W&B-hosted comparison benchmark tooling, W&B public API mapping, seeded-mode caveats, competitive public-target gates, and sanitized result reporting against the existing InstantML hosted Cloud Run benchmark.
 - `2026-05-21-cloudflare-r2-artifact-storage.md`: Cloudflare R2-backed hosted artifact bytes, per-org private buckets, opaque public artifact responses, R2 usage accounting, and media upload/download smoke coverage.
 - `2026-05-21-stripe-billing-platform.md`: Stripe Checkout/Billing/Portal integration, payment-verified paid signup, billing access gates, subscription projection records, and webhook/reconciliation flows.
 - `2026-05-21-sdk-logging-overhead-benchmarks.md`: SDK logging overhead benchmark protocol for no-op deltas, InstantML process spool/uploader CPU, W&B offline comparison, and safe hot-path optimization review.
@@ -129,6 +129,10 @@ Current draft designs:
 - `2026-06-29-agent-compare-runs-api.md`: draft read-only API for agent
   top-k/filter-based run comparison that reuses run search, summaries,
   side-by-side rows, and optional bounded series previews.
+- `2026-07-04-ingest-write-path-throughput.md`: implemented metric ingest
+  write-path throughput slice — batch ingest endpoint, per-org write-gate usage
+  cache, ClickHouse async inserts, SDK batched delivery with connection reuse,
+  and the `benchmark:ingest` measurement harness.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

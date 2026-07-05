@@ -14,6 +14,7 @@ export const publicOpenApiPaths = [
   "/runs",
   "/runs/{run_id}",
   "/runs/{run_id}/metrics",
+  "/runs/{run_id}/metrics/batch",
   "/runs/{run_id}/rank-metrics",
   "/api/overview",
   "/api/runs/summary",

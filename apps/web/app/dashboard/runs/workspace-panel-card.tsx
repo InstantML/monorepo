@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, CopyPlus, GripVertical, MoreVertical, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, DragEvent, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import { averageGroupedSeries, axisTicks, formatAxisTick, smoothSeries } from "../../../src/charts.js";
@@ -280,7 +280,12 @@ function PanelHeadMenu({ items, label }: { items: ReactNode; label: string }) {
   );
 }
 
-export function WorkspacePanelCard({
+// Memoized (perf audit A2): panel cards render in a grid and must not
+// re-render when a sibling panel's hover/zoom state or an unrelated shell
+// poll ticks. Default shallow comparison — callback props are stabilized by
+// SectionPanelCard below (and ultimately rely on the shell handing down
+// referentially stable handlers).
+export const WorkspacePanelCard = memo(function WorkspacePanelCard({
   className = "",
   highlightRunId = null,
   onDragEnd,
@@ -327,14 +332,13 @@ export function WorkspacePanelCard({
   workspacePanelRuns: RunSummary[];
   workspaceSeries: Record<string, MetricSeries[]>;
 }) {
-  const [panelHover, setPanelHover] = useState<HoverPoint>(null);
   const [panelZoomRange, setPanelZoomRange] = useState<{ min: number; max: number } | null>(null);
   // Line panels portal the chart's options menu into this head slot so its
   // trigger sits at the card's top-right corner instead of over the plot.
   const [chartActionsSlot, setChartActionsSlot] = useState<HTMLDivElement | null>(null);
   const [resizePreview, setResizePreview] = useState<WorkspacePanelLayout | null>(null);
   const hoverFrameRef = useRef<number | null>(null);
-  const pendingHoverRef = useRef<{ x: number; y: number } | null>(null);
+  const pendingHoverRef = useRef<HoverPoint>(null);
   const resizeCleanupRef = useRef<() => void>(() => {});
   const settings = useMemo(() => resolveWorkspaceSettings(view, section, panel), [panel, section, view]);
   const layoutMinRows = panel.type === "line" ? MIN_LINE_WORKSPACE_PANEL_ROWS : MIN_WORKSPACE_PANEL_ROWS;
@@ -434,21 +438,32 @@ export function WorkspacePanelCard({
     smoothSeries(settings.groupAverage ? averageGroupedSeries(groupedSeries) : groupedSeries, settings.smoothing)
   ), [groupedSeries, linePanel, settings.groupAverage, settings.smoothing]);
   useEffect(() => {
-    setPanelHover(null);
     setPanelZoomRange(null);
   }, [distributionValueField, histogramObjectKey, panel.metricKey, panel.type, scatterXField, scatterYField, settings.xMode, settings.groupBy, settings.groupAverage, settings.smoothing, settings.maxRuns, selectedRunKey]);
   useEffect(() => () => {
     if (hoverFrameRef.current !== null) window.cancelAnimationFrame(hoverFrameRef.current);
     resizeCleanupRef.current();
   }, []);
-  function clearPanelHover() {
+  // Chart hover is not panel state (A2/A3): the card only forwards the hovered
+  // run id to the rail, coalesced to one lift per animation frame so dense
+  // selections never re-render the card tree per mousemove.
+  const handleChartPointHover = useCallback((hoverPoint: HoverPoint) => {
+    pendingHoverRef.current = hoverPoint;
+    if (hoverFrameRef.current !== null) return;
+    hoverFrameRef.current = window.requestAnimationFrame(() => {
+      hoverFrameRef.current = null;
+      const point = pendingHoverRef.current;
+      onHighlightRun?.(point?.runId ?? null);
+    });
+  }, [onHighlightRun]);
+  const clearPanelHover = useCallback(() => {
     pendingHoverRef.current = null;
     if (hoverFrameRef.current !== null) {
       window.cancelAnimationFrame(hoverFrameRef.current);
       hoverFrameRef.current = null;
     }
-    setPanelHover(null);
-  }
+    onHighlightRun?.(null);
+  }, [onHighlightRun]);
   function handleResizeStart(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!onResize) return;
     const commitResize = onResize;
@@ -506,7 +521,12 @@ export function WorkspacePanelCard({
     window.addEventListener("pointerup", handlePointerUp, { once: true });
     window.addEventListener("pointercancel", handlePointerCancel, { once: true });
   }
-  const panelActionItems = panelActionMenuItems({ onDuplicate, onEdit, onRemove, title: panel.title });
+  // Memoized so the MetricChart memo boundary sees a stable panelMenuItems
+  // node across re-renders (A2).
+  const panelActionItems = useMemo(
+    () => panelActionMenuItems({ onDuplicate, onEdit, onRemove, title: panel.title }),
+    [onDuplicate, onEdit, onRemove, panel.title],
+  );
   // Clicking the card chrome (header, meta, padding) opens the panel
   // fullscreen, but interactive regions keep their own behavior: the chart and
   // its legend (the runs), the three-dot menu, and the drag/resize handles.
@@ -633,14 +653,8 @@ export function WorkspacePanelCard({
             height={panelChartHeight}
             highlightRunId={highlightRunId}
             metricKey={panel.metricKey}
-            onPointHover={(point) => {
-              setPanelHover(point);
-              onHighlightRun?.(point?.runId ?? null);
-            }}
-            onLeave={() => {
-              clearPanelHover();
-              onHighlightRun?.(null);
-            }}
+            onPointHover={handleChartPointHover}
+            onLeave={clearPanelHover}
             onZoomRangeChange={setPanelZoomRange}
             padding={panelChartPadding}
             panelMenuItems={panelActionItems}
@@ -715,7 +729,110 @@ export function WorkspacePanelCard({
       ) : null}
     </article>
   );
-}
+});
+
+// Per-panel bridge between the section view's (sectionId, panelId)-flavored
+// handlers and WorkspacePanelCard's plain callbacks. Memoized with the
+// closures useCallback'd so panel cards receive referentially stable handler
+// props — without this, every section re-render would mint fresh lambdas and
+// defeat WorkspacePanelCard's memo (perf audit A2). The stability of the
+// incoming onPanel* handlers is owned by the shell.
+const SectionPanelCard = memo(function SectionPanelCard({
+  highlightRunId,
+  onDuplicatePanel,
+  onEditPanel,
+  onFullscreenPanel,
+  onHighlightRun,
+  onPanelDragEnd,
+  onPanelDragStart,
+  onPanelDrop,
+  onPanelPointerMoveStart,
+  onPanelSmoothing,
+  onRemovePanel,
+  onResizePanel,
+  panel,
+  panelIndex,
+  panelSearchActive,
+  section,
+  selectedRunIds,
+  view,
+  workspaceHistogramTimelines,
+  workspacePanelRuns,
+  workspaceSeries,
+}: {
+  highlightRunId: string | null;
+  onDuplicatePanel: (sectionId: string, panelId: string) => void;
+  onEditPanel: (sectionId: string, panelId: string) => void;
+  onFullscreenPanel: (sectionId: string, panelId: string) => void;
+  onHighlightRun?: (runId: string | null) => void;
+  onPanelDragEnd: () => void;
+  onPanelDragStart: (event: DragEvent<HTMLElement>, sectionId: string, panelId: string) => void;
+  onPanelDrop: (event: DragEvent<HTMLElement>, targetSectionId: string, targetIndex: number) => void;
+  onPanelPointerMoveStart: (event: ReactPointerEvent<HTMLElement>, sectionId: string, panelId: string) => void;
+  onPanelSmoothing: (sectionId: string, panelId: string, smoothing: number) => void;
+  onRemovePanel: (sectionId: string, panelId: string) => void;
+  onResizePanel: (sectionId: string, panelId: string, layout: WorkspacePanelLayout) => void;
+  panel: WorkspacePanel;
+  panelIndex: number;
+  panelSearchActive: boolean;
+  section: WorkspaceSection;
+  selectedRunIds: string[];
+  view: WorkspaceView;
+  workspaceHistogramTimelines: Record<string, HistogramTimelineState>;
+  workspacePanelRuns: RunSummary[];
+  workspaceSeries: Record<string, MetricSeries[]>;
+}) {
+  const sectionId = section.id;
+  const panelId = panel.id;
+  const handleDragStart = useCallback(
+    (event: DragEvent<HTMLElement>) => onPanelDragStart(event, sectionId, panelId),
+    [onPanelDragStart, panelId, sectionId],
+  );
+  const handleDropBefore = useCallback(
+    (event: DragEvent<HTMLElement>) => onPanelDrop(event, sectionId, panelIndex),
+    [onPanelDrop, panelIndex, sectionId],
+  );
+  const handleDuplicate = useCallback(() => onDuplicatePanel(sectionId, panelId), [onDuplicatePanel, panelId, sectionId]);
+  const handleEdit = useCallback(() => onEditPanel(sectionId, panelId), [onEditPanel, panelId, sectionId]);
+  const handleFullscreen = useCallback(() => onFullscreenPanel(sectionId, panelId), [onFullscreenPanel, panelId, sectionId]);
+  const handlePointerMoveStart = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => onPanelPointerMoveStart(event, sectionId, panelId),
+    [onPanelPointerMoveStart, panelId, sectionId],
+  );
+  const handleRemove = useCallback(() => onRemovePanel(sectionId, panelId), [onRemovePanel, panelId, sectionId]);
+  const handleResize = useCallback(
+    (layout: WorkspacePanelLayout) => onResizePanel(sectionId, panelId, layout),
+    [onResizePanel, panelId, sectionId],
+  );
+  const handleSmoothing = useCallback(
+    (smoothing: number) => onPanelSmoothing(sectionId, panelId, smoothing),
+    [onPanelSmoothing, panelId, sectionId],
+  );
+  return (
+    <WorkspacePanelCard
+      highlightRunId={highlightRunId}
+      onHighlightRun={onHighlightRun}
+      onDragEnd={onPanelDragEnd}
+      onDragStart={handleDragStart}
+      onDropBefore={handleDropBefore}
+      onDuplicate={handleDuplicate}
+      onEdit={handleEdit}
+      onFullscreen={handleFullscreen}
+      onPointerMoveStart={handlePointerMoveStart}
+      onRemove={handleRemove}
+      onResize={handleResize}
+      onSmoothingChange={handleSmoothing}
+      panel={panel}
+      panelSearchActive={panelSearchActive}
+      section={section}
+      selectedRunIds={selectedRunIds}
+      view={view}
+      workspaceHistogramTimelines={workspaceHistogramTimelines}
+      workspacePanelRuns={workspacePanelRuns}
+      workspaceSeries={workspaceSeries}
+    />
+  );
+});
 
 export function WorkspaceSectionView({
   highlightRunId = null,
@@ -809,21 +926,22 @@ export function WorkspaceSectionView({
           {shownPanels.length ? shownPanels.map((panel) => {
             const panelIndex = Math.max(0, section.panels.findIndex((item) => item.id === panel.id));
             return (
-              <WorkspacePanelCard
+              <SectionPanelCard
                 key={panel.id}
                 highlightRunId={highlightRunId}
                 onHighlightRun={onHighlightRun}
-                onDragEnd={onPanelDragEnd}
-                onDragStart={(event) => onPanelDragStart(event, section.id, panel.id)}
-                onDropBefore={(event) => onPanelDrop(event, section.id, panelIndex)}
-                onDuplicate={() => onDuplicatePanel(section.id, panel.id)}
-                onEdit={() => onEditPanel(section.id, panel.id)}
-                onFullscreen={() => onFullscreenPanel(section.id, panel.id)}
-                onPointerMoveStart={(event) => onPanelPointerMoveStart(event, section.id, panel.id)}
-                onRemove={() => onRemovePanel(section.id, panel.id)}
-                onResize={(layout) => onResizePanel(section.id, panel.id, layout)}
-                onSmoothingChange={(smoothing) => onPanelSmoothing(section.id, panel.id, smoothing)}
+                onDuplicatePanel={onDuplicatePanel}
+                onEditPanel={onEditPanel}
+                onFullscreenPanel={onFullscreenPanel}
+                onPanelDragEnd={onPanelDragEnd}
+                onPanelDragStart={onPanelDragStart}
+                onPanelDrop={onPanelDrop}
+                onPanelPointerMoveStart={onPanelPointerMoveStart}
+                onPanelSmoothing={onPanelSmoothing}
+                onRemovePanel={onRemovePanel}
+                onResizePanel={onResizePanel}
                 panel={panel}
+                panelIndex={panelIndex}
                 panelSearchActive={panelSearchActive}
                 section={section}
                 selectedRunIds={selectedRunIds}

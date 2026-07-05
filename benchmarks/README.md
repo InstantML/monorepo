@@ -50,11 +50,55 @@ assumes `INSTANTML_DATA_API_BASE` or `INSTANTML_API_BASE` points at the hosted
 API and validates `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS` across the configured
 benchmark projects before timing requests. The default minimum is 100,000 runs;
 set it lower only for a named showcase dataset and record that in the result
-summary.
+summary. The selected-run series workload includes dashboard-style M4
+downsampling (`INSTANTML_CLOUD_RUN_BENCH_M4_BUCKETS`, default 1,200) and
+validates the actual rows returned against the 120,000-point batched-series
+response cap.
+
+For disposable local coverage of public high-cardinality guidance, run the Rust
+large-run benchmark with `INSTANTML_BENCH_WIDE_METRIC_KEYS=100000`. That path
+seeds 100,000 one-point metric keys on a stable catalog run and measures the
+existing `GET /runs/{run_id}` summary/catalog response. The competitive gate
+accepts that object-shaped local result for W&B metric-cardinality and Neptune
+thousand-metric evidence, but hosted latency claims still need a sanitized Cloud
+Run benchmark result from the deployed request path.
+
+The latest local public-scale result is
+`benchmarks/2026-07-03-local-public-scale-results.md`: 10,000 runs, 500,000
+steps on the newest long run, 100,004 metric keys/project, and a 3,834 ms p95
+for the 100,000-key run-detail metric catalog response. The same summary records
+the focused SDK producer-throughput result used for W&B's scalar-throughput
+gate.
 
 Committed summaries for this benchmark should include the same sanitized fields
 as the hosted ClickHouse benchmark plus the API host only, never full URLs or API
 keys.
+
+After writing a sanitized Cloud Run JSON result, run the competitive gates:
+
+```bash
+npm run benchmark:competitive-gates -- \
+  --input /tmp/instantml-cloud-run-benchmark.json \
+  --format markdown
+```
+
+The gate report compares the result against three public/reference targets:
+
+- W&B's published at-scale guidance for Multi-tenant Cloud projects:
+  10,000 runs/project, 500,000 steps/run, 100,000 metric keys/project,
+  1,000 log rows/minute, and 100,000 scalar values/minute
+  (`https://docs.wandb.ai/models/track/limits`).
+- The committed historical W&B public-API comparison in `benchmarks/RESULTS.md`,
+  using the matching InstantML route names and a 10% tolerance because that W&B
+  seed only exposed 4,321 visible runs and some closest-public-equivalent cases.
+- Neptune's public claim that its app can visualize and compare thousands of
+  metrics in seconds (`https://docs.neptune.ai/about`), represented as a
+  conservative >=1,000 metric-key gate with p95 <= 5 seconds.
+
+Default reports may contain `not_measured` gates when a payload does not include
+matching dataset cardinality, ingest throughput, or metric-catalog measurements.
+Use `--strict` only when a release or marketing claim requires every public
+target to be measured in that run.
 
 The latest current-path result is
 `benchmarks/2026-05-23-gcp-clickhouse-cloud-run-results.md`: Cloud Run direct to
@@ -91,6 +135,50 @@ append a revoked `api_key` control record immediately after the benchmark.
 fallback for older deployed APIs; it records observed rows but does not enforce
 `INSTANTML_CLOUD_RUN_BENCH_MIN_RUNS`, so confirm the dataset shape separately
 before using direct fallback numbers in docs.
+
+## Metric Ingest Write-Path Benchmark
+
+`tools/rust-ingest-benchmark.mjs` (`npm run benchmark:ingest`) measures the
+metric ingest *write* path through the real Rust API: single-point
+`POST /runs/{id}/metrics` versus batched `POST /runs/{id}/metrics/batch`. It is
+the write-side counterpart to the large-run benchmark, which seeds ClickHouse
+directly and only times reads. The batch endpoint, the per-org write-gate usage
+cache, and ClickHouse async inserts all sit on this path, so the batch speedup
+reflects their combined effect. See
+`docs/design/2026-07-04-ingest-write-path-throughput.md`.
+
+It launches a disposable loopback ClickHouse and a local-auth Rust API, creates
+one project and one run per case, then logs the same total point count each way.
+No credentials, hosted warehouse, or network egress are involved.
+
+```bash
+INSTANTML_INGEST_BENCH_RELEASE=1 \
+INSTANTML_INGEST_BENCH_POINTS=20000 \
+INSTANTML_INGEST_BENCH_BATCH_SIZES=50,200,500 \
+INSTANTML_INGEST_BENCH_RESULT_PATH=/tmp/instantml-ingest-benchmark.json \
+npm run benchmark:ingest
+```
+
+Notes and caveats:
+
+- Use `INSTANTML_INGEST_BENCH_RELEASE=1` for committed throughput numbers; debug
+  builds inflate absolute per-request latency. The reported `build_profile`
+  records which was used.
+- The harness sets `INSTANTML_TEST_DISABLE_RATE_LIMIT=1`. That flag is honored
+  only in `local` auth mode (config ignores it otherwise), and without it the
+  per-credential ingest limiter caps every case at the same rps so the
+  comparison would measure the limiter, not the server. Under the production
+  limiter, batched delivery is exactly what turns that fixed request budget into
+  many more points per second.
+- Throughput is wall-clock points/second at the configured request concurrency;
+  latency percentiles are per HTTP request. `speedups` reports each batch case
+  relative to the single-point baseline. The default budget gate requires the
+  largest batch case to reach at least 2x the single-point baseline.
+- This is a disposable local write-path signal. Hosted end-to-end ingest
+  durability throughput still needs a deployed-path measurement.
+
+The latest committed summary is
+`benchmarks/2026-07-04-ingest-write-path-results.md`.
 
 ## W&B Hosted Comparison Benchmark
 
@@ -225,6 +313,14 @@ The 2026-05-25 async producer benchmark was used to accept
 idle upload-health emission before enabling async by default, so the benchmark
 remains a hot-path producer-cost signal rather than a full quota model for
 background health traffic.
+
+The JSON and Markdown summaries also report hot-loop producer rows/minute and
+scalar values/minute. The top-level JSON `ingest.values_per_minute` field is
+intended for the competitive gate and maps to W&B's public scalar-throughput
+unit. Treat it as SDK producer-return throughput, not hosted remote persistence:
+it proves the training loop can hand off values at that rate under the measured
+local mode, while separate hosted ingest benchmarks are still needed for
+end-to-end durability throughput claims.
 
 The default matrix is:
 

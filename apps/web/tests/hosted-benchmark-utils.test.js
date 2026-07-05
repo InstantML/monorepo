@@ -160,8 +160,13 @@ test("validateBenchmarkPayload validates overview and chart shapes", () => {
 test("validateBenchmarkPayload validates batched selected-run series", () => {
   assert.deepEqual(
     validateBenchmarkPayload(
-      { name: "batched", kind: "batched_series", limit: 3, expected_series: 2 },
-      { series: [{ run_id: "run-1", metrics: [{ step: 1 }, { step: 2 }] }, { run_id: "run-2", metrics: [{ step: 1 }] }] },
+      { name: "batched", kind: "batched_series", limit: 3, expected_series: 2, total_point_cap: 10 },
+      {
+        requested_buckets: 1200,
+        effective_buckets: 300,
+        total_point_cap: 10,
+        series: [{ run_id: "run-1", metrics: [{ step: 1 }, { step: 2 }] }, { run_id: "run-2", metrics: [{ step: 1 }] }],
+      },
     ),
     {
       kind: "batched_series",
@@ -169,6 +174,9 @@ test("validateBenchmarkPayload validates batched selected-run series", () => {
       non_empty_series: 2,
       rows: 3,
       max_rows_per_series: 2,
+      requested_buckets: 1200,
+      effective_buckets: 300,
+      total_point_cap: 10,
     },
   );
   assert.throws(
@@ -191,6 +199,13 @@ test("validateBenchmarkPayload validates batched selected-run series", () => {
     () => validateBenchmarkPayload({ name: "empty_batch", kind: "batched_series" }, { series: [{ metrics: [] }] }),
     /empty batched series/,
   );
+  assert.throws(
+    () => validateBenchmarkPayload(
+      { name: "over_cap", kind: "batched_series", limit: 3, total_point_cap: 2 },
+      { effective_limit: 1, series: [{ metrics: [{}, {}] }, { metrics: [{}] }] },
+    ),
+    /beyond total point cap 2/,
+  );
 });
 
 test("sanitizeHostedBenchmarkResult keeps benchmark metadata but strips sensitive identifiers", () => {
@@ -212,6 +227,7 @@ test("sanitizeHostedBenchmarkResult keeps benchmark metadata but strips sensitiv
       long_run_steps: 20000,
       expected_steps_per_run: 1000,
       chart_limit: 1000,
+      m4_buckets: 1200,
       selected_run_count: 2000,
       default_selected_run_count: 100,
       search_selected_run_count: 1000,
@@ -251,6 +267,7 @@ test("sanitizeHostedBenchmarkResult keeps benchmark metadata but strips sensitiv
   assert.equal(sanitized.route.endpoint_host, "clickhouse.example.com");
   assert.equal(sanitized.environment.api_host, "service.run.app");
   assert.deepEqual(sanitized.dataset.projects, ["hosted-scale-control", "hosted-scale-data"]);
+  assert.equal(sanitized.dataset.m4_buckets, 1200);
   assert.equal(sanitized.dataset.default_selected_run_count, 100);
   assert.equal(sanitized.dataset.search_selected_run_count, 1000);
   assert.equal(sanitized.dataset.max_selected_run_count, 2000);

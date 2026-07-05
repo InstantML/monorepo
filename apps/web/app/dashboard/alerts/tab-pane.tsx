@@ -1,17 +1,17 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { PageHead } from "../ui/page-head";
-import { ApiClient, queryString } from "../../../src/api.js";
 import { formatMetricValue } from "../../../src/charts.js";
 import { formatNumber, metricGoalLabel } from "../../../src/state.js";
-import { buildDatasetRows, metricTitle, shortMetricName } from "../../dashboard-models";
-import type { AlertRow, DatasetRow, Overview, RunSummary } from "../../dashboard-types";
+import { metricTitle, shortMetricName } from "../../dashboard-models";
+import type { AlertRow, DatasetRow, Overview } from "../../dashboard-types";
 
 type Props = {
   alertRows: AlertRow[];
+  datasetRows: DatasetRow[];
   metricKey: string;
   overview: Overview;
   onRefresh: () => void;
@@ -88,37 +88,13 @@ function ruleWeight(row: AlertRow) {
   return match ? Number(match[1]) : 1;
 }
 
-export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Props) {
+export function AlertsTabPane({ alertRows, datasetRows, metricKey, overview, onRefresh }: Props) {
   const [sevFilter, setSevFilter] = useState<SevFilter>("all");
-  const [datasetRows, setDatasetRows] = useState<DatasetRow[] | null>(null);
-  const [datasetsVersion, setDatasetsVersion] = useState(0);
   const now = Date.now();
 
-  // Datasets reuse the run directory the dashboard already exposes — same
-  // client API, same project filter as the page URL, no new endpoints.
-  useEffect(() => {
-    const controller = new AbortController();
-    const api = new ApiClient();
-    const project = new URLSearchParams(window.location.search).get("project") ?? "";
-    let cancelled = false;
-    (async () => {
-      try {
-        const payload = (await api.get(
-          `/api/runs/summary${queryString({ project, limit: 100 })}`,
-          { signal: controller.signal },
-        )) as { runs?: RunSummary[] };
-        if (!cancelled) setDatasetRows(buildDatasetRows(payload.runs ?? [], metricKey));
-      } catch {
-        // Transient API failures keep the last good rows; only an initial
-        // failure falls through to the explicit empty state.
-        if (!cancelled) setDatasetRows((current) => current ?? []);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [metricKey, datasetsVersion]);
+  // Dataset rows arrive precomputed from the shell's run summary (the shell's
+  // memo re-derives them on metricKey changes), so this pane issues no
+  // /api/runs/summary request of its own — the shell already polls it.
 
   const critCount = alertRows.filter((row) => alertSeverity(row) === "crit").length;
   const warnCount = alertRows.filter((row) => alertSeverity(row) === "warn").length;
@@ -148,7 +124,6 @@ export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Pro
 
   const refresh = () => {
     onRefresh();
-    setDatasetsVersion((version) => version + 1);
   };
 
   return (
@@ -271,10 +246,10 @@ export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Pro
         <section className="hp-panel hp-col-12">
           <div className="hp-panel-head">
             <span className="hp-mlabel">Datasets</span>
-            <span className="hp-unit">{datasetRows === null ? "loading" : `${datasetRows.length} tracked`}</span>
+            <span className="hp-unit">{`${datasetRows.length} tracked`}</span>
           </div>
           <div className="hp-panel-body hp-flush">
-            {datasetRows?.length ? (
+            {datasetRows.length ? (
               <table className="hp-dtable">
                 <thead>
                   <tr>
@@ -297,7 +272,7 @@ export function AlertsTabPane({ alertRows, metricKey, overview, onRefresh }: Pro
               </table>
             ) : (
               <div className="empty">
-                {datasetRows === null ? "Loading dataset metadata..." : "No dataset or environment metadata found in the current run configs."}
+                No dataset or environment metadata found in the current run configs.
               </div>
             )}
           </div>

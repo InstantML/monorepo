@@ -1000,6 +1000,7 @@ async fn activate_paid_plan(
         data.insert_org(org.clone());
         org
     };
+    invalidate_write_gate_usage(store, org_id).await;
     let account = BillingAccountProjection {
         schema_version: 1,
         org_id,
@@ -1168,6 +1169,7 @@ async fn apply_subscription_object(
             data.insert_org(org.clone());
             org
         };
+        invalidate_write_gate_usage(store, org_id).await;
         if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
             store.ensure_tenant_route(&org).await?;
         }
@@ -1234,6 +1236,7 @@ async fn downgrade_org_after_subscription_end(
             .persist_locked("organization", org.id, &org.id.to_string(), &org)
             .await?;
         store.data.lock().await.insert_org(org);
+        invalidate_write_gate_usage(store, org_id).await;
     }
     persist_billing_account(store, account.clone()).await?;
     Ok(account)
@@ -1327,13 +1330,13 @@ pub async fn operator_set_org_plan(
         .unwrap_or(0);
     org.plan_tier = target.clone();
     org.seat_limit = billing_seat_limit_for_org(&org, plan, paid_extra_seats);
-    {
-        let mut data = store.data.lock().await;
-        store
-            .persist_locked("organization", org.id, &org.id.to_string(), &org)
-            .await?;
-        data.insert_org(org.clone());
-    }
+    // Persist over the network first; take the global data lock only for the
+    // in-memory update so requests never stall behind the persist.
+    store
+        .persist_locked("organization", org.id, &org.id.to_string(), &org)
+        .await?;
+    store.data.lock().await.insert_org(org.clone());
+    invalidate_write_gate_usage(store, org_id).await;
     let mut account = existing.unwrap_or_else(|| default_billing_account(&org));
     account.access_state = if target == PLAN_FREE.id {
         BILLING_FREE_ACTIVE.to_string()
@@ -1356,13 +1359,13 @@ async fn apply_local_free_plan(
 ) -> AppResult<BillingAccountProjection> {
     org.plan_tier = "free".to_string();
     org.seat_limit = billing_seat_limit_for_org(&org, PLAN_FREE, 0);
-    {
-        let mut data = store.data.lock().await;
-        store
-            .persist_locked("organization", org.id, &org.id.to_string(), &org)
-            .await?;
-        data.insert_org(org.clone());
-    }
+    // Persist first, then lock briefly for the in-memory update (see
+    // `write_usage_daily_snapshots` for the pattern).
+    store
+        .persist_locked("organization", org.id, &org.id.to_string(), &org)
+        .await?;
+    store.data.lock().await.insert_org(org.clone());
+    invalidate_write_gate_usage(store, org.id).await;
     let account = default_billing_account(&org);
     persist_billing_account(store, account.clone()).await?;
     Ok(account)
@@ -1626,6 +1629,7 @@ mod tests {
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
+            write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(data)),
             record_clock_micros: Arc::new(Mutex::new(0)),
             control_projection_loaded: Arc::new(Mutex::new(false)),

@@ -42,6 +42,7 @@ from .async_queue import (
     PreparedQueuedEvent,
     queue_path_for_run,
 )
+from . import _http_pool
 from .errors import InstantMLError
 from .log_payload import (
     _classify_log_payload,
@@ -119,12 +120,16 @@ from .validation import (
 
 
 DEFAULT_PROCESS_SPOOL_DIR = ".instantml/spool"
+_SPOOL_SEGMENT_FSYNC_EVENTS = 50
+_SPOOL_SEGMENT_FSYNC_SECONDS = 0.200
+_SPOOL_SEGMENT_ROTATE_EVENTS = 1000
 SNAPSHOT_KEYS = {"metrics", "metadata"}
 _PENDING_RUN_ID = "__instantml_pending__"
 _RATE_LIMIT_RETRY_ATTEMPTS = 3
 _RATE_LIMIT_RETRY_BASE_SECONDS = 0.25
 _RATE_LIMIT_RETRY_MAX_SECONDS = 5.0
 _STOP_POLL_JITTER_FRACTION = 0.10
+_UNSET = object()
 
 
 def _sdk_version() -> str:
@@ -388,7 +393,19 @@ class Client:
         return run
 
     def _resolve_api_key(self) -> str | None:
-        return _resolve_api_key_from_env(self.api_key)
+        # Resolving the key can touch the filesystem (credentials file) + TOML
+        # parse on every request; cache the first successful resolution and only
+        # re-resolve after an explicit invalidation (e.g. a 401). The cache is
+        # stored via object.__setattr__ because Client is a frozen dataclass.
+        cache = getattr(self, "_api_key_cache", _UNSET)
+        if cache is not _UNSET:
+            return cache
+        resolved = _resolve_api_key_from_env(self.api_key)
+        object.__setattr__(self, "_api_key_cache", resolved)
+        return resolved
+
+    def _invalidate_credentials(self) -> None:
+        object.__setattr__(self, "_api_key_cache", _UNSET)
 
     def _request(
         self,
@@ -415,7 +432,7 @@ class Client:
                 headers=headers,
             )
             try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                with _http_pool.urlopen(request, timeout=self.timeout) as response:
                     payload = response.read().decode("utf-8")
                 break
             except urllib.error.HTTPError as exc:
@@ -427,6 +444,10 @@ class Client:
                 ):
                     time.sleep(_rate_limit_retry_delay(exc, attempt))
                     continue
+                if exc.code == 401:
+                    # The cached key may be stale (rotated/revoked); drop it so
+                    # the next request re-resolves from env/credentials file.
+                    self._invalidate_credentials()
                 message = _error_message(exc)
                 raise InstantMLError(f"{method} {path} failed: {message}") from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -1710,6 +1731,7 @@ class Run:
         self._process_spool_run_dir = _process_spool_run_dir(spool_dir, run_id) if upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID else None
         if self._process_spool_run_dir is not None:
             self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
+        self._spool_writer: "_SpoolSegmentWriter | None" = None
         self._async_queue: AsyncQueueRepository | None = None
         self._async_process: subprocess.Popen[Any] | None = None
         self._async_process_lock = threading.RLock()
@@ -1727,6 +1749,10 @@ class Run:
         self._last_steps: dict[str, float] = {}
         self._console_line_numbers: dict[str, int] = {}
         self._process_sequence: int = 0
+        # Per-run random prefix + monotonic counter for async idempotency keys —
+        # cheaper than a uuid4 per event while staying globally unique (D7d).
+        self._idempotency_prefix = uuid.uuid4().hex
+        self._idempotency_counter = 0
         self._auto_step: int | float = 0
         self._finished = False
         self._next_stop_check_at = 0.0
@@ -1875,6 +1901,13 @@ class Run:
             self._open_async_queue(self.run_id)
         assert self._async_queue is not None
         return self._async_queue
+
+    def _require_spool_writer(self) -> "_SpoolSegmentWriter":
+        if self._spool_writer is None:
+            if self._process_spool_run_dir is None:
+                raise InstantMLError("process spool directory is not ready")
+            self._spool_writer = _SpoolSegmentWriter(self._process_spool_run_dir)
+        return self._spool_writer
 
     def _async_buffer_status(self) -> dict[str, Any]:
         if self._async_buffer is None:
@@ -2200,7 +2233,8 @@ class Run:
                     warnings.warn(f"metric {key!r} logged at non-increasing step {step}", RuntimeWarning, stacklevel=2)
                 if not preview:
                     self._last_steps[key] = float(step)
-        self._record_metrics(metrics, step, metric_timestamp or _utc_timestamp())
+        if self._local_store is not None:
+            self._record_metrics(metrics, step, metric_timestamp or _utc_timestamp())
         self._submit(
             "POST",
             f"/runs/{self.run_id}/metrics",
@@ -3021,6 +3055,10 @@ class Run:
         self._flush_trace_events()
         if self.upload_mode == "async":
             self._force_async_buffer_flush(timeout=getattr(self.client, "timeout", 10.0))
+        elif self.upload_mode == "spool" and self._spool_writer is not None:
+            # Finalize (rotate) the active JSONL segment so its events become
+            # visible to the spool consumer.
+            self._spool_writer.finalize()
 
     def replay_offline(self) -> int:
         if not self.client.offline_dir:
@@ -3059,6 +3097,8 @@ class Run:
             self._flush_trace_events()
             if self.upload_mode == "spool":
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
+                if self._spool_writer is not None:
+                    self._spool_writer.finalize()
                 return
             if self.upload_mode == "async":
                 self._force_async_buffer_flush(timeout=async_finish_timeout)
@@ -3179,7 +3219,7 @@ class Run:
                     timestamp=event_timestamp,
                     sequence=self._process_sequence,
                 )
-                _write_process_event(self._process_spool_run_dir, event, _serialize_process_event(event))
+                self._require_spool_writer().append(event, _serialize_process_event(event))
                 return
             event = {"method": method, "path": path, "body": body}
             if self.buffer_size > 0:
@@ -3241,7 +3281,7 @@ class Run:
                     data={"trace_events": len(events)},
                     sequence=self._process_sequence,
                 )
-                _write_process_event(self._process_spool_run_dir, event, _serialize_process_event(event))
+                self._require_spool_writer().append(event, _serialize_process_event(event))
                 return
         self._request_or_spool(method, path, body, idempotency_key)
 
@@ -3264,7 +3304,7 @@ class Run:
                 method,
                 path,
                 body,
-                idempotency_key=idempotency_key or f"instantml-{self.run_id}-{uuid.uuid4().hex}",
+                idempotency_key=idempotency_key or self._next_idempotency_key(),
                 created_at=time.time(),
             )
             if self._async_buffer is None:
@@ -3277,6 +3317,12 @@ class Run:
             self._async_buffer.append(event)
         except Exception as exc:  # noqa: BLE001 - async delivery must not stop training
             self._warn_async_drop(f"async queue could not record event: {exc}", count_local=True)
+
+    def _next_idempotency_key(self) -> str:
+        with self._lock:
+            self._idempotency_counter += 1
+            counter = self._idempotency_counter
+        return f"instantml-{self._idempotency_prefix}-{counter}"
 
     def _warn_async_drop(self, message: str, *, count_local: bool = False, count: int = 1) -> None:
         if count_local:
@@ -3562,6 +3608,10 @@ class _SystemMetricsSampler:
         self._run = run
         self._interval = interval
         self._stop = threading.Event()
+        # Hoist the expensive per-sample setup (NVML init + device handles,
+        # psutil.Process, module import) into a reusable state that lives for
+        # the sampler's lifetime; it is torn down once in ``stop``.
+        self._state = _SystemMetricsState()
         self._thread = threading.Thread(target=self._loop, name=f"instantml-system-{run._run_id}", daemon=True)
 
     def start(self) -> None:
@@ -3570,14 +3620,121 @@ class _SystemMetricsSampler:
     def stop(self) -> None:
         self._stop.set()
         self._thread.join(timeout=max(0.1, min(self._interval, 2.0)))
+        self._state.close()
 
     def _loop(self) -> None:
         while not self._stop.wait(self._interval):
             try:
-                self._run._log_system_metrics(_collect_system_metrics())
+                self._run._log_system_metrics(_sample_system_metrics(self._state))
             except Exception as exc:
                 warnings.warn(f"system metrics sampler stopped after error: {exc}", RuntimeWarning, stacklevel=2)
                 return
+
+
+class _SystemMetricsState:
+    """Reusable, per-sampler system-metrics context.
+
+    Holds the psutil module + ``Process`` handle and the NVML handles so the
+    sampler does not re-import, re-create the process object, or run
+    ``nvmlInit``/``nvmlShutdown`` on every tick. ``close`` runs
+    ``nvmlShutdown`` exactly once.
+    """
+
+    def __init__(self) -> None:
+        self._psutil: Any | None = None
+        self._psutil_loaded = False
+        self._process: Any | None = None
+        self._nvml: Any | None = None
+        self._nvml_ready = False
+        self._nvml_handles: list[Any] = []
+
+    def psutil(self) -> Any | None:
+        if not self._psutil_loaded:
+            self._psutil = _load_psutil()
+            self._psutil_loaded = True
+        return self._psutil
+
+    def process(self) -> Any | None:
+        psutil = self.psutil()
+        if psutil is None:
+            return None
+        if self._process is None:
+            self._process = psutil.Process(os.getpid())
+        return self._process
+
+    def nvml_handles(self) -> tuple[Any | None, list[Any]]:
+        if self._nvml_ready:
+            return self._nvml, self._nvml_handles
+        self._nvml_ready = True
+        try:
+            import pynvml as nvml
+        except ImportError:
+            return None, []
+        try:
+            nvml.nvmlInit()
+            self._nvml_handles = [nvml.nvmlDeviceGetHandleByIndex(index) for index in range(nvml.nvmlDeviceGetCount())]
+            self._nvml = nvml
+        except Exception as exc:  # noqa: BLE001 - GPU telemetry is best-effort
+            warnings.warn(f"NVML metrics collection failed: {exc}", RuntimeWarning, stacklevel=2)
+            self._nvml = None
+            self._nvml_handles = []
+        return self._nvml, self._nvml_handles
+
+    def close(self) -> None:
+        nvml = self._nvml
+        self._nvml = None
+        self._nvml_handles = []
+        if nvml is None:
+            return
+        shutdown = getattr(nvml, "nvmlShutdown", None)
+        if callable(shutdown):
+            try:
+                shutdown()
+            except Exception:  # noqa: BLE001 - shutdown is best-effort
+                pass
+
+
+def _sample_system_metrics(state: _SystemMetricsState) -> dict[str, float]:
+    """Collect one sample reusing the sampler's hoisted handles."""
+    metrics: dict[str, float] = {}
+    psutil = state.psutil()
+    if psutil is None:
+        metrics.update(_collect_system_metrics_fallback())
+    else:
+        try:
+            metrics["system/cpu_percent"] = float(psutil.cpu_percent(interval=None))
+            virtual_memory = psutil.virtual_memory()
+            metrics["system/memory_percent"] = float(virtual_memory.percent)
+            metrics["system/memory_used_bytes"] = float(virtual_memory.used)
+            process = state.process()
+            if process is not None:
+                metrics["system/process_rss_bytes"] = float(process.memory_info().rss)
+            disk = psutil.disk_usage(os.getcwd())
+            metrics["system/disk_percent"] = float(disk.percent)
+            network = psutil.net_io_counters()
+            metrics["system/network_bytes_sent"] = float(network.bytes_sent)
+            metrics["system/network_bytes_recv"] = float(network.bytes_recv)
+        except Exception as exc:  # noqa: BLE001 - telemetry must never stop the sampler here
+            warnings.warn(f"system metrics collection failed: {exc}", RuntimeWarning, stacklevel=2)
+    nvml, handles = state.nvml_handles()
+    if nvml is not None:
+        _collect_nvml_metrics(metrics, nvml, handles)
+    return metrics
+
+
+def _collect_nvml_metrics(metrics: dict[str, float], nvml: Any, handles: list[Any]) -> None:
+    try:
+        for index, handle in enumerate(handles):
+            utilization = nvml.nvmlDeviceGetUtilizationRates(handle)
+            memory = nvml.nvmlDeviceGetMemoryInfo(handle)
+            metrics[f"system/gpu/{index}/utilization_percent"] = float(utilization.gpu)
+            metrics[f"system/gpu/{index}/memory_percent"] = float(memory.used / memory.total * 100) if memory.total else 0.0
+            metrics[f"system/gpu/{index}/memory_used_bytes"] = float(memory.used)
+            power_usage = getattr(nvml, "nvmlDeviceGetPowerUsage", lambda _handle: None)(handle)
+            if power_usage is not None:
+                metrics[f"system/gpu/{index}/power_watts"] = float(power_usage) / 1000.0
+    except Exception as exc:  # noqa: BLE001 - GPU telemetry is best-effort
+        warnings.warn(f"NVML metrics collection failed: {exc}", RuntimeWarning, stacklevel=2)
 
 
 class _ConsoleCapture:
@@ -4102,20 +4259,75 @@ def _estimated_json_string_bytes(value: str) -> int:
     return total
 
 
-def _write_process_event(run_dir: Path | None, event: dict[str, Any], serialized: str) -> Path:
-    if run_dir is None:
-        raise InstantMLError("process spool directory is not ready")
-    filename = f"{event['sequence']:020d}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-{event['event_id']}.json"
-    final_path = run_dir / filename
-    tmp_path = run_dir / f".{filename}.tmp"
-    with tmp_path.open("w", encoding="utf-8") as handle:
-        handle.write(serialized)
-        handle.write("\n")
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp_path, final_path)
-    _fsync_dir(run_dir)
-    return final_path
+class _SpoolSegmentWriter:
+    """Append-only JSONL spool segment writer (D6).
+
+    Replaces the per-event temp-write + fsync + rename with an append-only
+    segment file (one JSON event per line). The active segment is written to a
+    dotfile the consumer ignores; it is fsynced every
+    ``_SPOOL_SEGMENT_FSYNC_EVENTS`` events or ``_SPOOL_SEGMENT_FSYNC_SECONDS``
+    (whichever comes first) and on ``finalize``, and atomic-renamed into a
+    reader-visible ``.jsonl`` file only on rotation / finalize.
+    """
+
+    def __init__(self, run_dir: Path) -> None:
+        self._run_dir = run_dir
+        self._handle: Any | None = None
+        self._active_path: Path | None = None
+        self._final_path: Path | None = None
+        self._segment_index = 0
+        self._events_since_fsync = 0
+        self._events_in_segment = 0
+        self._last_fsync = 0.0
+
+    def append(self, event: dict[str, Any], serialized: str) -> None:
+        if self._handle is None:
+            self._open_segment()
+        assert self._handle is not None
+        self._handle.write(serialized)
+        self._handle.write("\n")
+        self._events_since_fsync += 1
+        self._events_in_segment += 1
+        now = time.monotonic()
+        if self._events_since_fsync >= _SPOOL_SEGMENT_FSYNC_EVENTS or now - self._last_fsync >= _SPOOL_SEGMENT_FSYNC_SECONDS:
+            self._fsync()
+        if self._events_in_segment >= _SPOOL_SEGMENT_ROTATE_EVENTS:
+            self._rotate()
+
+    def finalize(self) -> None:
+        self._rotate()
+
+    def _open_segment(self) -> None:
+        self._run_dir.mkdir(parents=True, exist_ok=True)
+        self._segment_index += 1
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        name = f"segment-{self._segment_index:010d}-{stamp}-{uuid.uuid4().hex}.jsonl"
+        self._final_path = self._run_dir / name
+        self._active_path = self._run_dir / f".{name}.pid-{os.getpid()}.tmp"
+        self._handle = self._active_path.open("a", encoding="utf-8")
+        self._events_since_fsync = 0
+        self._events_in_segment = 0
+        self._last_fsync = time.monotonic()
+
+    def _fsync(self) -> None:
+        if self._handle is None:
+            return
+        self._handle.flush()
+        os.fsync(self._handle.fileno())
+        self._events_since_fsync = 0
+        self._last_fsync = time.monotonic()
+
+    def _rotate(self) -> None:
+        if self._handle is None:
+            return
+        self._fsync()
+        self._handle.close()
+        self._handle = None
+        if self._active_path is not None and self._final_path is not None:
+            os.replace(self._active_path, self._final_path)
+            _fsync_dir(self._run_dir)
+        self._active_path = None
+        self._final_path = None
 
 
 def _safe_path_segment(value: str) -> str:
