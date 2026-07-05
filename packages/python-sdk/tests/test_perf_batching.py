@@ -730,6 +730,89 @@ def test_uploader_recovers_legacy_stale_tmp_segment(tmp_path):
     assert not tmp_segment.exists()
 
 
+def test_uploader_recovery_helpers_ignore_malformed_or_fresh_segments(tmp_path, monkeypatch):
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / ".jsonl.pid-123.tmp").write_text("ignored\n", encoding="utf-8")
+    (run_dir / ".jsonl.tmp").write_text("ignored\n", encoding="utf-8")
+    fresh_legacy = run_dir / ".segment-0000000001-x.jsonl.tmp"
+    fresh_legacy.write_text("ignored\n", encoding="utf-8")
+
+    uploader._promote_recoverable_segments(run_dir)
+
+    assert (run_dir / ".jsonl.pid-123.tmp").exists()
+    assert (run_dir / ".jsonl.tmp").exists()
+    assert fresh_legacy.exists()
+    assert uploader._pid_segment_final_path(tmp_path / "segment.jsonl.pid-1.tmp") is None
+    assert uploader._pid_segment_final_path(tmp_path / ".segment.jsonl.pid-x.tmp") is None
+    assert uploader._pid_segment_final_path(tmp_path / ".jsonl.pid-123.tmp") is None
+    assert uploader._legacy_segment_final_path(tmp_path / "segment.jsonl.tmp") is None
+    assert uploader._legacy_segment_final_path(tmp_path / ".jsonl.tmp") is None
+
+    pid_skip_dir = tmp_path / "pid-skip"
+    pid_skip_dir.mkdir()
+    (pid_skip_dir / ".segment-0000000001-x.jsonl.pid-1.tmp").write_text("ignored\n", encoding="utf-8")
+    with monkeypatch.context() as patch:
+        patch.setattr(uploader, "_pid_segment_final_path", lambda path: None)
+        uploader._promote_recoverable_segments(pid_skip_dir)
+
+    legacy_skip_dir = tmp_path / "legacy-skip"
+    legacy_skip_dir.mkdir()
+    (legacy_skip_dir / ".segment-0000000001-x.jsonl.tmp").write_text("ignored\n", encoding="utf-8")
+    with monkeypatch.context() as patch:
+        patch.setattr(uploader, "_legacy_segment_final_path", lambda path: None)
+        uploader._promote_recoverable_segments(legacy_skip_dir)
+
+    stat_error_segment = run_dir / ".segment-0000000002-x.jsonl.tmp"
+    stat_error_segment.write_text("ignored\n", encoding="utf-8")
+    real_stat = uploader.Path.stat
+
+    def fake_stat(self):
+        if self == stat_error_segment:
+            raise OSError("stat failed")
+        return real_stat(self)
+
+    monkeypatch.setattr(uploader.Path, "stat", fake_stat)
+    uploader._promote_recoverable_segments(run_dir)
+    assert real_stat(stat_error_segment)
+
+
+def test_uploader_promote_segment_handles_existing_final_and_missing_tmp(tmp_path):
+    tmp_segment = tmp_path / ".segment-0000000001-x.jsonl.pid-1.tmp"
+    final_segment = tmp_path / "segment-0000000001-x.jsonl"
+    tmp_segment.write_text("spooled\n", encoding="utf-8")
+    final_segment.write_text("already finalized\n", encoding="utf-8")
+
+    uploader._promote_segment(tmp_segment, final_segment)
+
+    assert tmp_segment.exists()
+    assert final_segment.read_text(encoding="utf-8") == "already finalized\n"
+    uploader._promote_segment(tmp_path / ".missing.jsonl.pid-1.tmp", tmp_path / "missing.jsonl")
+    assert not (tmp_path / "missing.jsonl").exists()
+
+
+def test_uploader_pid_probe_outcomes(monkeypatch):
+    assert uploader._pid_is_running(0)
+    monkeypatch.setattr(uploader.os, "kill", lambda pid, signal: None)
+    assert uploader._pid_is_running(123)
+
+    def missing_process(pid, signal):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(uploader.os, "kill", missing_process)
+    assert not uploader._pid_is_running(123)
+
+    def inaccessible_process(pid, signal):
+        raise PermissionError()
+
+    monkeypatch.setattr(uploader.os, "kill", inaccessible_process)
+    assert uploader._pid_is_running(123)
+
+
+def test_uploader_fsync_dir_ignores_open_errors(tmp_path):
+    uploader._fsync_dir(tmp_path / "missing")
+
+
 def test_uploader_max_events_returns_between_segments(tmp_path):
     class FakeClient:
         def _request(self, method, path, body):
