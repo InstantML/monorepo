@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
 import { ApiClient } from "../../../../src/api.js";
+import { resolveRunsetRuns } from "../runset-cache";
 import type { PanelGridBlockData, RunsetData, RunsetRunSettings } from "./types";
 import { RUN_COLOR_PALETTE } from "./types";
 
@@ -699,21 +700,22 @@ async function fetchRunsForRunset(
   runset: RunsetFetchSpec,
   signal: AbortSignal,
 ): Promise<RunRow[]> {
+  // Shared, short-TTL promise cache with parallel per-project fetches (B7) —
+  // the table joins any panel already resolving the identical spec.
+  const rawRuns = await resolveRunsetRuns(
+    api,
+    runset,
+    {
+      perProjectLimit: clampLimit(runset.limit ?? null),
+      maxRuns: Number.POSITIVE_INFINITY,
+      pinnedLookupLimit: MAX_RUNS,
+      includePinned: true,
+    },
+    signal,
+  );
   const collected = new Map<string, RunRow>();
-  const limit = clampLimit(runset.limit ?? null);
-  for (const project of runset.projects) {
-    if (signal.aborted) break;
-    const params = new URLSearchParams({ project, limit: String(limit) });
-    const payload = await api.get(`/runs?${params.toString()}`, { signal });
-    const runs = Array.isArray(payload?.runs) ? payload.runs : [];
-    for (const raw of runs) {
-      const row = normalizeRunRow(raw, project);
-      if (row && !collected.has(row.id)) collected.set(row.id, row);
-    }
-  }
-  for (const pinned of runset.pinned_run_ids ?? []) {
-    if (signal.aborted) break;
-    const row = await resolvePinnedRunRow(api, pinned, signal);
+  for (const { raw, project } of rawRuns) {
+    const row = normalizeRunRow(raw, project);
     if (row && !collected.has(row.id)) collected.set(row.id, row);
   }
   return Array.from(collected.values());
@@ -724,36 +726,6 @@ const MAX_RUNS = 200;
 function clampLimit(value: number | null): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return MAX_RUNS;
   return Math.min(Math.floor(value), MAX_RUNS);
-}
-
-async function resolvePinnedRunRow(
-  api: ApiClient,
-  ref: string,
-  signal: AbortSignal,
-): Promise<RunRow | null> {
-  const trimmed = ref.trim();
-  if (!trimmed) return null;
-  if (trimmed.includes("/")) {
-    const [project, ...rest] = trimmed.split("/");
-    const name = rest.join("/");
-    try {
-      const params = new URLSearchParams({ project, limit: String(MAX_RUNS) });
-      const payload = await api.get(`/runs?${params.toString()}`, { signal });
-      const match = (Array.isArray(payload?.runs) ? payload.runs : []).find(
-        (run: { name?: string }) => run?.name === name,
-      );
-      return normalizeRunRow(match, project);
-    } catch {
-      return null;
-    }
-  }
-  try {
-    const payload = await api.get(`/runs/${encodeURIComponent(trimmed)}`, { signal });
-    const run = payload?.run ?? payload;
-    return normalizeRunRow(run, String(run?.project ?? ""));
-  } catch {
-    return null;
-  }
 }
 
 function normalizeRunRow(raw: unknown, fallbackProject: string): RunRow | null {

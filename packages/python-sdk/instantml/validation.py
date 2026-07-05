@@ -57,10 +57,35 @@ def _validate_step(step: int | float | None) -> int | float | None:
     return step
 
 
+def _coerce_scalar_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if math.isfinite(number) else None
+
+    current = value
+    for method_name in ("detach", "cpu", "numpy", "item"):
+        method = getattr(current, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            next_value = method()
+        except (TypeError, ValueError, RuntimeError):
+            continue
+        if next_value is current:
+            continue
+        current = next_value
+        if isinstance(current, bool):
+            return None
+        if isinstance(current, (int, float)):
+            number = float(current)
+            return number if math.isfinite(number) else None
+    return None
+
+
 def _is_scalar_number(value: Any) -> bool:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return False
-    return math.isfinite(float(value))
+    return _coerce_scalar_number(value) is not None
 
 
 def _validate_metrics(data: dict[str, Any]) -> dict[str, float]:
@@ -71,9 +96,10 @@ def _validate_metrics(data: dict[str, Any]) -> dict[str, float]:
     metrics: dict[str, float] = {}
     for key, value in data.items():
         metric_key = _validate_text(key, "metric key")
-        if not _is_scalar_number(value):
+        number = _coerce_scalar_number(value)
+        if number is None:
             raise TypeError("metrics values must be finite numbers")
-        metrics[metric_key] = float(value)
+        metrics[metric_key] = number
     return metrics
 
 

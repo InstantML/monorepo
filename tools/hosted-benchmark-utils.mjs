@@ -93,6 +93,7 @@ export function sanitizeHostedBenchmarkResult(raw) {
       long_run_steps: raw.dataset?.long_run_steps,
       expected_steps_per_run: raw.dataset?.expected_steps_per_run,
       chart_limit: raw.dataset?.chart_limit,
+      m4_buckets: raw.dataset?.m4_buckets,
       selected_run_count: raw.dataset?.selected_run_count,
       default_selected_run_count: raw.dataset?.default_selected_run_count,
       search_selected_run_count: raw.dataset?.search_selected_run_count,
@@ -219,6 +220,9 @@ function validateBatchedSeries(caseDefinition, payload) {
     if (!Number.isFinite(effectiveLimit) || effectiveLimit * payload.series.length > cap) {
       throw new Error(`${caseDefinition.name} did not enforce total point cap ${cap}`);
     }
+    if (rows > cap) {
+      throw new Error(`${caseDefinition.name} returned ${rows} rows beyond total point cap ${cap}`);
+    }
   }
   return compactObject({
     kind: "batched_series",
@@ -228,6 +232,8 @@ function validateBatchedSeries(caseDefinition, payload) {
     max_rows_per_series: payload.series.reduce((max, series) => Math.max(max, series.metrics.length), 0),
     requested_limit: payload.requested_limit,
     effective_limit: payload.effective_limit,
+    requested_buckets: payload.requested_buckets,
+    effective_buckets: payload.effective_buckets,
     total_point_cap: payload.total_point_cap,
   });
 }

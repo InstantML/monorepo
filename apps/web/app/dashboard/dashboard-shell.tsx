@@ -2,6 +2,7 @@
 
 import { useClerk } from "@clerk/nextjs";
 import { Activity, Square, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
@@ -16,25 +17,18 @@ import { isEditableElement, matchesShortcut, platformModifierLabel } from "../..
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
 import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
-import { AlertsTabPane } from "./alerts/tab-pane";
-import { AgentTabPane } from "./agent/tab-pane";
-import { ArtifactsTabPane } from "./artifacts/tab-pane";
-import { CompareView } from "./compare/tab-pane";
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
 import { AccountWorkspaceMenu, DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
-import { DatasetsTabPane } from "./datasets/tab-pane";
 import { DetailTabPane } from "./detail/tab-pane";
-import { DistributedTabPane } from "./distributed/tab-pane";
-import { InsightsTabPane } from "./insights/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
-import { ReportsTabPane } from "./reports/reports-tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { RunFilterBar } from "./runs/run-filter-bar";
-import { SettingsTabPane } from "./settings/tab-pane";
+import { AnalysisSkeleton } from "./ui/skeleton";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
+import { clearRunsetCaches } from "./reports/runset-cache";
 import { useFocusTrap } from "./ui/use-focus-trap";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
@@ -66,6 +60,23 @@ import { LEGACY_SAVED_VIEW_PREFIX, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, T
 import { useIsMobile } from "./state/use-mobile";
 import { workspaceViewFromPayload, workspaceViewSummariesFromPayload } from "./state/workspace-view-api";
 import type { components } from "../../src/types/api.generated";
+
+// Code splitting for panes off the Runs/Metrics/Detail hot path (perf audit
+// B3): each rarely-hit pane loads on demand instead of shipping in the
+// dashboard's first-load chunk. All panes are named exports, hence the
+// `.then((mod) => mod.X)` mapping. ssr is off — the shell is a client-only
+// tree — and the shared skeleton keeps the swap-in visually consistent with
+// the panes' own loading states. The options must stay inline object
+// literals; Next's compiler rejects a shared helper here.
+const AgentTabPane = dynamic(() => import("./agent/tab-pane").then((mod) => mod.AgentTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading agent" /> });
+const AlertsTabPane = dynamic(() => import("./alerts/tab-pane").then((mod) => mod.AlertsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading run health" /> });
+const ArtifactsTabPane = dynamic(() => import("./artifacts/tab-pane").then((mod) => mod.ArtifactsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading artifacts" /> });
+const CompareView = dynamic(() => import("./compare/tab-pane").then((mod) => mod.CompareView), { ssr: false, loading: () => <AnalysisSkeleton label="Loading comparison" /> });
+const DatasetsTabPane = dynamic(() => import("./datasets/tab-pane").then((mod) => mod.DatasetsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading datasets" /> });
+const DistributedTabPane = dynamic(() => import("./distributed/tab-pane").then((mod) => mod.DistributedTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading rank reducers" /> });
+const InsightsTabPane = dynamic(() => import("./insights/tab-pane").then((mod) => mod.InsightsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading insights" /> });
+const ReportsTabPane = dynamic(() => import("./reports/reports-tab-pane").then((mod) => mod.ReportsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading reports" /> });
+const SettingsTabPane = dynamic(() => import("./settings/tab-pane").then((mod) => mod.SettingsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading settings" /> });
 
 // Bridge types from the utoipa-generated OpenAPI spec. All API request /
 // response shapes that have a matching Rust ToSchema struct flow through
@@ -202,6 +213,19 @@ const WAREHOUSE_RETRY_MS = 5_000;
 // Cadence for refreshing metric series of in-flight (running) runs so charts
 // extend live during training. Matches the dashboard metadata poll cadence.
 const LIVE_SERIES_REFRESH_MS = 5_000;
+// Metadata poll cadence while nothing is running (B5): run metadata then only
+// changes at human speed, so the 5s poll stretches to this. A run starting
+// flips the summary's running flag on the next poll and restores 5s.
+const IDLE_DASHBOARD_POLL_MS = 30_000;
+// Tabs that render no run data — the metadata poll pauses on them (B5).
+const POLL_FREE_TABS = new Set<ShellTabId>(["settings", "reports"]);
+// Histogram frames refetch a full window (100 objects per key) per refresh,
+// so their live cadence runs at a multiple of the series tick (B10).
+const HISTOGRAM_LIVE_REFRESH_TICKS = 3;
+// Caps for the long-lived client caches (A4) so a monitoring tab that pages
+// through a huge org can't retain every run/artifact summary ever seen.
+const RUN_DIRECTORY_CACHE_LIMIT = 2_000;
+const COMPARE_ARTIFACT_CACHE_LIMIT = 200;
 const DASHBOARD_REQUEST_RETRY_DELAYS_MS = [250, 700, 1_500];
 const METRIC_SERIES_RETRY_DELAYS_MS = [350, 900, 1_800];
 // M4 bucket count passed with every /api/metrics/series request.
@@ -619,6 +643,12 @@ export function DashboardShell({
   const seriesSignatureRef = useRef("");
   const panelSeriesSignatureRef = useRef("");
   const workspaceSeriesSignatureRef = useRef("");
+  // Run ids fetched as "running" by the previous live refresh, per chart
+  // group (B1). A run that just stopped stays in the set for one more tick so
+  // its curve captures the tail, then drops out of the live fetch subset.
+  const liveSeriesRunIdsRef = useRef<Set<string>>(new Set());
+  const livePanelRunIdsRef = useRef<Set<string>>(new Set());
+  const liveWorkspaceRunIdsRef = useRef<Set<string>>(new Set());
   // Org/project scope of the last workspace-view rebuild. Fetched series only
   // become invalid when this scope moves; a rebuild triggered by metric keys
   // growing (e.g. a live run logging a new metric) must keep painted charts.
@@ -637,7 +667,19 @@ export function DashboardShell({
   const compareArtifactCacheRef = useRef<Map<string, Artifact[]>>(new Map());
   const compareArtifactInflightRef = useRef<Map<string, CompareArtifactInflightRequest>>(new Map());
   const compareArtifactCacheVersionRef = useRef(0);
+  // Which run's artifacts / logged objects the state currently holds (B10),
+  // so hopping between two tabs that show the same run's data early-returns
+  // instead of clearing and refetching it.
+  const artifactsLoadedRunIdRef = useRef("");
+  const loggedObjectsLoadedRunIdRef = useRef("");
   const messageRef = useRef("Loading runs...");
+  // Poll hygiene (B5/A2): raw payloads of the last successful dashboard load
+  // — an unchanged background poll skips setState entirely — plus the running
+  // flag and last-fired stamp that drive the idle poll backoff.
+  const lastSummaryRawRef = useRef("");
+  const lastOverviewRawRef = useRef("");
+  const summaryHasRunningRef = useRef(false);
+  const lastPollAtRef = useRef(0);
   const [activeTab, setActiveTab] = useState<ShellTabId>(() => initialActiveTab(initialTab));
   const activeTabRef = useRef(activeTab);
   // The last non-settings tab, so closing the settings modal returns there
@@ -787,6 +829,11 @@ export function DashboardShell({
   const hasSeriesRef = useRef(false);
   const hasPanelSeriesRef = useRef(false);
   const hasWorkspaceSeriesRef = useRef(false);
+  // Mirrors of the series state for the live-refresh effects (B1), which need
+  // to know what is already painted without keying themselves on the state.
+  const seriesStateRef = useRef<MetricSeries[]>([]);
+  const panelSeriesStateRef = useRef<Record<string, MetricSeries[]>>({});
+  const workspaceSeriesStateRef = useRef<Record<string, MetricSeries[]>>({});
   const summaryMatchesProject = !project || summary.runs.every((run) => run.project === project);
   // Key the metric option list on its content, not on `summary` identity.
   // Otherwise every pagination produces a new array reference even when the
@@ -803,24 +850,31 @@ export function DashboardShell({
   const allMetricOptions = useMemo(() => (
     actualMetricOptions.length ? actualMetricOptions : [DEFAULT_METRIC_KEY, "train/reward", "train/loss"]
   ), [actualMetricOptions]);
-  const metricOptions = useMemo(() => filterMetricKeys(allMetricOptions, metricFilter), [allMetricOptions, metricFilter]);
+  const metricOptions = useMemo(
+    () => (metricFilter.trim() ? filterMetricKeys(allMetricOptions, metricFilter) : allMetricOptions),
+    [allMetricOptions, metricFilter],
+  );
   const metricFilterValid = useMemo(() => metricFilterIsRegex(metricFilter), [metricFilter]);
-  const columnMetricOptions = useMemo(() => filterMetricKeys(allMetricOptions, columnMetricFilter), [allMetricOptions, columnMetricFilter]);
+  const columnMetricOptions = useMemo(
+    () => (columnMetricFilter.trim() ? filterMetricKeys(allMetricOptions, columnMetricFilter) : allMetricOptions),
+    [allMetricOptions, columnMetricFilter],
+  );
   const columnMetricFilterValid = useMemo(() => metricFilterIsRegex(columnMetricFilter), [columnMetricFilter]);
   const metricOptionsForControls = useMemo(() => boundedOptions(metricOptions, metricKey), [metricKey, metricOptions]);
   const columnMetricOptionsForControls = useMemo(() => boundedOptions(columnMetricOptions, "", 80), [columnMetricOptions]);
 
   const sortedRuns = summary.runs;
+  const pageRunById = useMemo(() => new Map(sortedRuns.map((run) => [run.id, run])), [sortedRuns]);
+  const resolveRunSummary = useCallback((runId: string) => {
+    const pageRun = pageRunById.get(runId);
+    const cachedRun = runDirectoryRef.current.get(runId);
+    return richerRunSummary(selectedRunDetails[runId] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
+  }, [pageRunById, selectedRunDetails]);
   const selectedRuns = useMemo(() => {
-    const directory = runDirectoryRef.current;
     return selectedRunIds
-      .map((id) => {
-        const pageRun = sortedRuns.find((run) => run.id === id);
-        const cachedRun = directory.get(id);
-        return richerRunSummary(selectedRunDetails[id] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
-      })
+      .map((id) => resolveRunSummary(id))
       .filter(Boolean) as RunSummary[];
-  }, [selectedRunDetails, selectedRunIds, sortedRuns]);
+  }, [resolveRunSummary, selectedRunIds]);
   const metricSeriesRuns = useMemo(
     () => (selectedRunIds.length ? selectedRuns : sortedRuns).slice(0, MAX_SELECTED_RUNS),
     [selectedRunIds.length, selectedRuns, sortedRuns],
@@ -829,21 +883,25 @@ export function DashboardShell({
   // the set of run ids changes, not on every metadata poll (which replaces the
   // run objects). Lets the series effects gate on selection, not poll churn.
   const metricSeriesRunKey = useMemo(() => metricSeriesRuns.map((run) => run.id).join(","), [metricSeriesRuns]);
+  const metricSeriesRunIdSet = useMemo(() => new Set(metricSeriesRuns.map((run) => run.id)), [metricSeriesRunKey]);
   const hasLiveMetricSeriesRun = useMemo(() => metricSeriesRuns.some((run) => run.status === "running"), [metricSeriesRuns]);
-  const primaryRun = selectedRunDetails[primaryRunId] ?? sortedRuns.find((run) => run.id === primaryRunId) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
+  const primaryRun = (primaryRunId ? resolveRunSummary(primaryRunId) : null) ?? selectedRuns[0] ?? sortedRuns[0] ?? null;
   // The run detail chart plots the primary (opened) run, which may not belong to
   // the current chart selection — e.g. opening a run beyond the auto-selected
   // set. Always fetch its series on the detail tab so the curve renders instead
   // of the empty "select runs" state.
   const seriesFetchRuns = useMemo(() => {
-    if (activeTab === "detail" && primaryRun && !metricSeriesRuns.some((run) => run.id === primaryRun.id)) {
+    if (activeTab === "detail" && primaryRun && !metricSeriesRunIdSet.has(primaryRun.id)) {
       return [primaryRun, ...metricSeriesRuns].slice(0, MAX_SELECTED_RUNS);
     }
     return metricSeriesRuns;
-  }, [activeTab, metricSeriesRuns, primaryRun?.id]);
+  }, [activeTab, metricSeriesRunIdSet, metricSeriesRuns, primaryRun]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
   const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
+    seriesStateRef.current = series;
+    panelSeriesStateRef.current = panelSeries;
+    workspaceSeriesStateRef.current = workspaceSeries;
     hasSeriesRef.current = series.length > 0;
     hasPanelSeriesRef.current = Object.keys(panelSeries).length > 0;
     hasWorkspaceSeriesRef.current = Object.keys(workspaceSeries).length > 0;
@@ -851,11 +909,28 @@ export function DashboardShell({
   useEffect(() => {
     // Remember runs after commit so interrupted renders do not mutate the
     // directory. This keeps off-page selected runs resolvable without making
-    // render phase impure.
+    // render phase impure. Delete-before-set refreshes the Map's insertion
+    // order, so eviction below always drops the least-recently-seen runs.
     const directory = runDirectoryRef.current;
-    for (const run of sortedRuns) directory.set(run.id, richerRunSummary(run, directory.get(run.id)) ?? run);
-    for (const run of Object.values(selectedRunDetails)) directory.set(run.id, richerRunSummary(run, directory.get(run.id)) ?? run);
-  }, [selectedRunDetails, sortedRuns]);
+    const remember = (run: RunSummary) => {
+      const richer = richerRunSummary(run, directory.get(run.id)) ?? run;
+      directory.delete(run.id);
+      directory.set(run.id, richer);
+    };
+    for (const run of sortedRuns) remember(run);
+    for (const run of Object.values(selectedRunDetails)) remember(run);
+    // A4: bound the directory so paging through a huge org can't retain every
+    // enriched summary for the whole session. Runs pinned by the current
+    // selection stay resolvable no matter how old their entry is.
+    if (directory.size > RUN_DIRECTORY_CACHE_LIMIT) {
+      const pinnedIds = new Set([...selectedRunIds, primaryRunId, referenceRunId].filter(Boolean));
+      for (const id of directory.keys()) {
+        if (directory.size <= RUN_DIRECTORY_CACHE_LIMIT) break;
+        if (pinnedIds.has(id)) continue;
+        directory.delete(id);
+      }
+    }
+  }, [primaryRunId, referenceRunId, selectedRunDetails, selectedRunIds, sortedRuns]);
   useEffect(() => {
     selectedRunsRef.current = selectedRuns;
   }, [selectedRuns]);
@@ -879,17 +954,9 @@ export function DashboardShell({
     : selectedRunIds.length > MAX_EXPORT_SELECTED_RUNS
       ? `Synchronous CSV export supports up to ${MAX_EXPORT_SELECTED_RUNS} selected runs.`
       : `Export ${selectedRunIds.length} selected runs, metrics, attributes, and artifacts as CSV.`;
-  const compareRunIds = useMemo(() => selectedRuns.map((run) => run.id).slice(0, COMPARE_RUN_LIMIT), [selectedRuns]);
+  const compareRuns = useMemo(() => selectedRuns.slice(0, COMPARE_RUN_LIMIT), [selectedRuns]);
+  const compareRunIds = useMemo(() => compareRuns.map((run) => run.id), [compareRuns]);
   const compareRunKey = compareRunIds.join(",");
-  const compareRuns = useMemo(() => (
-    compareRunIds
-      .map((id) => {
-        const pageRun = sortedRuns.find((run) => run.id === id);
-        const cachedRun = runDirectoryRef.current.get(id);
-        return richerRunSummary(selectedRunDetails[id] ?? pageRun ?? cachedRun, cachedRun ?? pageRun);
-      })
-      .filter(Boolean) as RunSummary[]
-  ), [compareRunIds, selectedRunDetails, sortedRuns]);
   const compareOverflowCount = Math.max(0, selectedRuns.length - compareRunIds.length);
   const referenceRun = compareRuns.find((run) => run.id === referenceRunId) ?? compareRuns[0] ?? null;
   const compareConfigKeys = useMemo(() => {
@@ -918,13 +985,13 @@ export function DashboardShell({
   ), [artifacts, artifactsRunId, primaryRun?.id]);
   const currentMessageTone = messageTone(message);
   const seriesWithGroups = useMemo(() => series.map((item) => {
-    const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
+    const run = resolveRunSummary(item.id);
     return {
       ...item,
       group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
       identifier: (run ? identifierForRun(run, identifierMode) : undefined) ?? item.name,
     };
-  }), [groupBy, identifierMode, selectedRunDetails, series, sortedRuns]);
+  }), [groupBy, identifierMode, resolveRunSummary, series]);
 
   const displaySeries = useMemo(() => {
     const grouped = groupAverage ? averageGroupedSeries(seriesWithGroups) : seriesWithGroups;
@@ -949,7 +1016,7 @@ export function DashboardShell({
       .map((metric) => {
         const rawSeries = panelSeries[metric] ?? [];
         const groupedSeries = rawSeries.map((item) => {
-          const run = selectedRunDetails[item.id] ?? sortedRuns.find((candidate) => candidate.id === item.id);
+          const run = resolveRunSummary(item.id);
           return {
             ...item,
             group: run ? groupKeyForRun(run, groupBy) : item.group ?? "all",
@@ -965,13 +1032,17 @@ export function DashboardShell({
           zoomRange,
         };
       })
-  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, selectedRunDetails, smoothing, sortedRuns]);
+  ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, resolveRunSummary, smoothing]);
   const inspectedPoint = hover;
   const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
+  const reportRunsetCacheScope = useMemo(
+    () => [api.baseUrl ?? "", activeOrgId, sessionPayload?.user?.primary_email ?? ""].join("\u0000"),
+    [activeOrgId, api.baseUrl, sessionPayload?.user?.primary_email],
+  );
   const localSavedViewScope = useMemo(
     () => storageScopeId([activeOrgId, sessionPayload?.user?.primary_email ?? ""].filter(Boolean).join(":")),
     [activeOrgId, sessionPayload?.user?.primary_email],
@@ -1103,6 +1174,9 @@ export function DashboardShell({
     setMetricKey(value);
   }, [resetRunPagination]);
   useEffect(() => {
+    clearRunsetCaches();
+  }, [reportRunsetCacheScope]);
+  useEffect(() => {
     if (previousOrgIdRef.current === activeOrgId) return;
     // First session load is not an org switch: keep the ?project= deep link
     // seeded into state instead of wiping it (the wipe let a stale persisted
@@ -1203,7 +1277,13 @@ export function DashboardShell({
     [fullscreenPanelContext?.panel, panelSearch, workspaceView],
   );
   const workspaceHistogramKey = useMemo(() => workspaceHistogramKeys.join("\u0000"), [workspaceHistogramKeys]);
-  const workspaceHistogramLiveTick = primaryRun?.status === "running" ? liveSeriesTick : 0;
+  // Histogram frames refetch a full 100-object window per key, so their live
+  // cadence runs at HISTOGRAM_LIVE_REFRESH_TICKS × the series tick (B10). The
+  // +1 keeps the live value nonzero, so a run stopping (tick collapses to 0)
+  // always forces one final refresh that captures the last frames.
+  const workspaceHistogramLiveTick = primaryRun?.status === "running"
+    ? Math.floor(liveSeriesTick / HISTOGRAM_LIVE_REFRESH_TICKS) + 1
+    : 0;
   const fullscreenPanelOrder = useMemo(() => (
     workspaceView.sections.flatMap((section) => section.panels.map((panel) => ({ sectionId: section.id, panelId: panel.id, title: panel.title })))
   ), [workspaceView]);
@@ -1326,20 +1406,28 @@ export function DashboardShell({
   const loadProjects = useCallback(async (options: { signal?: AbortSignal } = {}) => {
     try {
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
+      const shouldLoadPreference = !projectPreferenceLoadedRef.current;
+      const preferenceResultPromise = shouldLoadPreference
+        ? retryTransientRequest(() => api.get("/api/dashboard/preferences", options), retryOptions).then(
+          (value) => ({ status: "fulfilled" as const, value }),
+          (reason) => ({ status: "rejected" as const, reason }),
+        )
+        : Promise.resolve(null);
       const projectPayload = await retryTransientRequest(() => api.get("/projects", options), retryOptions);
       const names = (projectPayload.projects ?? []).map((item: { name: string }) => item.name);
       setProjects(names);
       setProject((current) => current && !names.includes(current) ? "" : current);
-      if (!projectPreferenceLoadedRef.current) {
+      if (shouldLoadPreference) {
         projectPreferenceLoadedRef.current = true;
-        try {
-          const preferencePayload = await retryTransientRequest(() => api.get("/api/dashboard/preferences", options), retryOptions);
+        const preferenceResult = await preferenceResultPromise;
+        if (preferenceResult?.status === "fulfilled") {
+          const preferencePayload = preferenceResult.value;
           const selectedProject = preferencePayload?.preferences?.selected_project;
           if (typeof selectedProject === "string" && names.includes(selectedProject) && !userTouchedDashboardFiltersRef.current) {
             setProject((current) => current || selectedProject);
           }
-        } catch (error) {
-          if (isAbortError(error)) return;
+        } else if (preferenceResult?.status === "rejected") {
+          if (isAbortError(preferenceResult.reason)) return;
           // Preferences are control-plane convenience state. Runs should still load if they fail.
         }
       }
@@ -1394,6 +1482,13 @@ export function DashboardShell({
         ? { project, ...statusParams, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
         : { project, ...statusParams, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
+      const overviewResultPromise = retryTransientRequest(
+        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, metric_key: metricKey })}`, requestOptions),
+        retryOptions,
+      ).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason) => ({ status: "rejected" as const, reason }),
+      );
       let summaryPayload: Summary;
       try {
         summaryPayload = await retryTransientRequest(
@@ -1411,30 +1506,36 @@ export function DashboardShell({
         throw error;
       }
       if (requestId !== dashboardRequestRef.current) return;
-      const overviewResult = await retryTransientRequest(
-        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, metric_key: metricKey })}`, requestOptions),
-        retryOptions,
-      ).then(
-        (value) => ({ status: "fulfilled" as const, value }),
-        (reason) => ({ status: "rejected" as const, reason }),
-      );
+      const overviewResult = await overviewResultPromise;
       if (requestId !== dashboardRequestRef.current) return;
       const nextSummary = summaryPayload as Summary;
       setSearchError(null);
       if (overviewResult.status === "fulfilled") {
-        setOverview(overviewResult.value.overview as Overview);
+        // Background polls skip the setState entirely when the payload is
+        // byte-identical to the last applied one, so a no-change poll causes
+        // zero re-renders (B5/A2). Non-silent loads always apply.
+        const overviewRaw = JSON.stringify(overviewResult.value.overview ?? null);
+        const overviewChanged = overviewRaw !== lastOverviewRawRef.current;
+        lastOverviewRawRef.current = overviewRaw;
+        if (!silent || overviewChanged) setOverview(overviewResult.value.overview as Overview);
       }
-      setSummary(nextSummary);
-      if (nextSummary.total > 0 && pageOffset >= nextSummary.total) {
-        setPageCursorStack([]);
-        setPageOffset(Math.floor((nextSummary.total - 1) / pageSize) * pageSize);
+      const summaryRaw = JSON.stringify(summaryPayload);
+      const summaryChanged = summaryRaw !== lastSummaryRawRef.current;
+      lastSummaryRawRef.current = summaryRaw;
+      summaryHasRunningRef.current = nextSummary.runs.some((run) => run.status === "running");
+      if (!silent || summaryChanged) {
+        setSummary(nextSummary);
+        if (nextSummary.total > 0 && pageOffset >= nextSummary.total) {
+          setPageCursorStack([]);
+          setPageOffset(Math.floor((nextSummary.total - 1) / pageSize) * pageSize);
+        }
+        setSelectedRunIds((current) => {
+          const next = defaultRunSelection(current, nextSummary.runs, defaultSelectionInitializedRef.current);
+          defaultSelectionInitializedRef.current = next.initialized;
+          return next.ids;
+        });
+        setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
       }
-      setSelectedRunIds((current) => {
-        const next = defaultRunSelection(current, nextSummary.runs, defaultSelectionInitializedRef.current);
-        defaultSelectionInitializedRef.current = next.initialized;
-        return next.ids;
-      });
-      setPrimaryRunId((current) => current || nextSummary.runs[0]?.id || "");
       if (silent) {
         // Keep the user's current status message stable during background polls.
       } else if (!shouldSurfaceRunLoadMessage(activeTabRef.current)) {
@@ -1637,8 +1738,21 @@ export function DashboardShell({
   useEffect(() => {
     if (!dashboardAuthorized || !initialLoadDone) return undefined;
     let controller: AbortController | null = null;
+    // Reinstalls (filter/page/sort changes recreate loadDashboard) reset the
+    // cadence clock so the tick after a change is prompt even while idle.
+    lastPollAtRef.current = 0;
     const poll = () => {
       if (document.visibilityState !== "visible") return;
+      // Poll hygiene (B5): tabs that render no run data don't consume the
+      // summary, so their ticks skip outright. With nothing running, metadata
+      // only changes at human cadence — stretch to the idle interval; a run
+      // starting flips the flag on the next fetch and restores 5s. Skipped
+      // ticks leave lastPollAt alone, so returning from a poll-free tab or a
+      // hidden window refreshes within one tick instead of waiting out 30s.
+      if (POLL_FREE_TABS.has(activeTabRef.current)) return;
+      const idle = !summaryHasRunningRef.current;
+      if (idle && Date.now() - lastPollAtRef.current < IDLE_DASHBOARD_POLL_MS) return;
+      lastPollAtRef.current = Date.now();
       controller?.abort();
       controller = new AbortController();
       void loadDashboard({ signal: controller.signal, silent: true });
@@ -2015,20 +2129,38 @@ export function DashboardShell({
       const shouldLoad = activeTab === "metrics" || (activeTab === "detail" && runWorkspaceTab === "data");
       const runsForFetch = seriesFetchRuns;
       if (!shouldLoad || !metricKey || !runsForFetch.length) {
+        liveSeriesRunIdsRef.current = new Set();
         if (hasSeriesRef.current) setSeries([]);
         setSeriesLoading(false);
         return;
       }
-      // Live refreshes (only the tick changed) keep the current curve on screen
-      // and swap in the new points atomically; selection/metric changes clear
-      // first and stream chunks for responsiveness. Flag the clear-and-refetch
-      // so the chart shows a loading skeleton instead of flashing its empty
-      // state in the gap before the first chunk lands.
-      if (!isLiveRefresh) {
-        if (hasSeriesRef.current) setSeries([]);
-        setSeriesLoading(true);
+      // Live refreshes (only the tick changed) keep the current curve on
+      // screen, refetch only the live subset (B1), and merge the new points
+      // into the painted series atomically. Selection/metric changes clear
+      // first and stream chunks for responsiveness.
+      if (isLiveRefresh) {
+        const paintedRunIds = new Set(seriesStateRef.current.filter((item) => item.points?.length).map((item) => item.id));
+        const liveRuns = liveRefreshRunSubset(runsForFetch, paintedRunIds, liveSeriesRunIdsRef.current);
+        liveSeriesRunIdsRef.current = runningRunIds(liveRuns);
+        if (!liveRuns.length) {
+          setSeriesLoading(false);
+          return;
+        }
+        const patch = await fetchBatchedMetricSeries(api, metricKey, liveRuns, controller.signal);
+        if (!cancelled) {
+          setSeries((current) => mergeMetricSeriesPatches(runsForFetch, current, patch));
+          // A live tick that interrupted an in-flight full fetch inherits its
+          // loading flag; clear it now that fresh points are painted.
+          setSeriesLoading(false);
+        }
+        return;
       }
-      const metricPayloads = await fetchBatchedMetricSeries(api, metricKey, runsForFetch, controller.signal, isLiveRefresh ? undefined : (patch) => {
+      liveSeriesRunIdsRef.current = runningRunIds(runsForFetch);
+      // Flag the clear-and-refetch so the chart shows a loading skeleton
+      // instead of flashing its empty state before the first chunk lands.
+      if (hasSeriesRef.current) setSeries([]);
+      setSeriesLoading(true);
+      const metricPayloads = await fetchBatchedMetricSeries(api, metricKey, runsForFetch, controller.signal, (patch) => {
         if (!cancelled) setSeries(patch);
       });
       if (!cancelled) {
@@ -2059,12 +2191,32 @@ export function DashboardShell({
       const metricsToLoad = pinnedMetrics.filter((metric) => metric && metric !== metricKey);
       const runsForFetch = metricSeriesRuns;
       if (activeTab !== "metrics" || !metricsToLoad.length || !runsForFetch.length) {
+        livePanelRunIdsRef.current = new Set();
         if (hasPanelSeriesRef.current) setPanelSeries({});
         return;
       }
-      if (!isLiveRefresh && hasPanelSeriesRef.current) setPanelSeries({});
+      // Live ticks refetch only the live subset (B1) and merge per metric
+      // into the painted panels; the pinned-metric set can't have changed
+      // here because it is part of the effect signature.
+      if (isLiveRefresh) {
+        const current = panelSeriesStateRef.current;
+        const paintedByMetric = metricsToLoad.map((metric) => new Set((current[metric] ?? []).filter((item) => item.points?.length).map((item) => item.id)));
+        const paintedRunIds = new Set(runsForFetch.filter((run) => paintedByMetric.every((ids) => ids.has(run.id))).map((run) => run.id));
+        const liveRuns = liveRefreshRunSubset(runsForFetch, paintedRunIds, livePanelRunIdsRef.current);
+        livePanelRunIdsRef.current = runningRunIds(liveRuns);
+        if (!liveRuns.length) return;
+        const patches = await fetchMetricSeriesForMetrics(api, metricsToLoad, liveRuns, controller.signal, () => {});
+        if (!cancelled) {
+          setPanelSeries((currentState) => Object.fromEntries(
+            metricsToLoad.map((metric) => [metric, mergeMetricSeriesPatches(runsForFetch, currentState[metric] ?? [], patches[metric] ?? [])]),
+          ));
+        }
+        return;
+      }
+      livePanelRunIdsRef.current = runningRunIds(runsForFetch);
+      if (hasPanelSeriesRef.current) setPanelSeries({});
       const next = await fetchMetricSeriesForMetrics(api, metricsToLoad, runsForFetch, controller.signal, (metric, patch) => {
-        if (!cancelled && !isLiveRefresh) setPanelSeries((current) => ({ ...current, [metric]: patch }));
+        if (!cancelled) setPanelSeries((current) => ({ ...current, [metric]: patch }));
       });
       if (!cancelled) setPanelSeries(next);
     }
@@ -2091,10 +2243,29 @@ export function DashboardShell({
     workspaceSeriesSignatureRef.current = signature;
     async function loadWorkspaceSeries() {
       if (activeTab !== "runs" || !workspacePanelMetrics.length || !workspaceFetchRuns.length) {
+        liveWorkspaceRunIdsRef.current = new Set();
         if (hasWorkspaceSeriesRef.current) setWorkspaceSeries({});
         return;
       }
-      if (!isLiveRefresh && hasWorkspaceSeriesRef.current) {
+      // Live ticks refetch only the live subset (B1) and merge per metric so
+      // finished runs' painted panels stay untouched.
+      if (isLiveRefresh) {
+        const current = workspaceSeriesStateRef.current;
+        const paintedByMetric = workspacePanelMetrics.map((metric) => new Set((current[metric] ?? []).filter((item) => item.points?.length).map((item) => item.id)));
+        const paintedRunIds = new Set(workspaceFetchRuns.filter((run) => paintedByMetric.every((ids) => ids.has(run.id))).map((run) => run.id));
+        const liveRuns = liveRefreshRunSubset(workspaceFetchRuns, paintedRunIds, liveWorkspaceRunIdsRef.current);
+        liveWorkspaceRunIdsRef.current = runningRunIds(liveRuns);
+        if (!liveRuns.length) return;
+        const patches = await fetchMetricSeriesForMetrics(api, workspacePanelMetrics, liveRuns, controller.signal, () => {});
+        if (!cancelled) {
+          setWorkspaceSeries((currentState) => Object.fromEntries(
+            workspacePanelMetrics.map((metric) => [metric, mergeMetricSeriesPatches(workspaceFetchRuns, currentState[metric] ?? [], patches[metric] ?? [])]),
+          ));
+        }
+        return;
+      }
+      liveWorkspaceRunIdsRef.current = runningRunIds(workspaceFetchRuns);
+      if (hasWorkspaceSeriesRef.current) {
         // The fetch set changed (page turn, selection change, new run in the
         // rail). Series for runs still being fetched stay painted while the
         // refetch replaces them in place; metrics left with no series drop
@@ -2111,7 +2282,7 @@ export function DashboardShell({
         });
       }
       const next = await fetchMetricSeriesForMetrics(api, workspacePanelMetrics, workspaceFetchRuns, controller.signal, (metric, patch) => {
-        if (cancelled || isLiveRefresh) return;
+        if (cancelled) return;
         setWorkspaceSeries((current) => {
           // Patches cover every fetched run, with empty placeholders for runs
           // whose chunk has not arrived; let surviving series stand in for
@@ -2207,11 +2378,18 @@ export function DashboardShell({
     async function loadArtifacts() {
       const shouldLoad = activeTab === "detail" || activeTab === "artifacts";
       if (!shouldLoad || !primaryRun?.id) {
-        setArtifacts([]);
-        setArtifactsRunId("");
+        if (artifactsLoadedRunIdRef.current) {
+          artifactsLoadedRunIdRef.current = "";
+          setArtifacts([]);
+          setArtifactsRunId("");
+        }
         return;
       }
       const runId = primaryRun.id;
+      // B10: switching between the tabs that both show this run's artifacts
+      // must not clear + refetch — the held rows are still valid. Only a run
+      // change (or leaving both tabs) invalidates them.
+      if (artifactsLoadedRunIdRef.current === runId) return;
       setArtifacts([]);
       setArtifactsRunId(runId);
       try {
@@ -2221,14 +2399,18 @@ export function DashboardShell({
         );
         const rows = (artifactPayload.artifacts ?? []).slice(0, ARTIFACT_PAGE_LIMIT);
         if (!cancelled) {
+          artifactsLoadedRunIdRef.current = runId;
           setArtifacts(rows);
           setArtifactsRunId(runId);
-          compareArtifactCacheRef.current.set(runId, rows.slice(0, COMPARE_ARTIFACT_LIMIT));
+          rememberCompareArtifacts(compareArtifactCacheRef.current, runId, rows.slice(0, COMPARE_ARTIFACT_LIMIT));
         }
       } catch (error) {
         if (isAbortError(error)) return;
         if (isNotFoundError(error)) {
           if (!cancelled) {
+            // Loaded-as-empty: remember the run id so tab hops don't hammer a
+            // 404ing endpoint for the same run.
+            artifactsLoadedRunIdRef.current = runId;
             setArtifacts([]);
             setArtifactsRunId(runId);
           }
@@ -2252,22 +2434,33 @@ export function DashboardShell({
     async function loadLoggedObjects() {
       const shouldLoad = activeTab === "artifacts" || (activeTab === "detail" && runWorkspaceTab === "files");
       if (!shouldLoad || !primaryRun?.id) {
-        setLoggedObjects([]);
-        setObjectRowsById({});
+        if (loggedObjectsLoadedRunIdRef.current) {
+          loggedObjectsLoadedRunIdRef.current = "";
+          setLoggedObjects([]);
+          setObjectRowsById({});
+        }
         return;
       }
+      const runId = primaryRun.id;
+      // B10: tab hops between surfaces showing the same run's objects keep
+      // the held rows; only a run change (or leaving both) refetches.
+      if (loggedObjectsLoadedRunIdRef.current === runId) return;
       setLoggedObjects([]);
       setObjectRowsById({});
       try {
         const payload = await retryTransientRequest(
-          () => api.get(`/api/runs/${primaryRun.id}/objects${queryString({ limit: 100 })}`, { signal: controller.signal }),
+          () => api.get(`/api/runs/${runId}/objects${queryString({ limit: 100 })}`, { signal: controller.signal }),
           { signal: controller.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS },
         );
-        if (!cancelled) setLoggedObjects((payload.objects ?? []).slice(0, 100));
+        if (!cancelled) {
+          loggedObjectsLoadedRunIdRef.current = runId;
+          setLoggedObjects((payload.objects ?? []).slice(0, 100));
+        }
       } catch (error) {
         if (isAbortError(error)) return;
         if (isNotFoundError(error)) {
           if (!cancelled) {
+            loggedObjectsLoadedRunIdRef.current = runId;
             setLoggedObjects([]);
             setObjectRowsById({});
           }
@@ -2358,7 +2551,7 @@ export function DashboardShell({
         try {
           const rows = await request;
           if (cancelled || controller.signal.aborted || cacheVersion !== compareArtifactCacheVersionRef.current) return;
-          compareArtifactCacheRef.current.set(runId, rows);
+          rememberCompareArtifacts(compareArtifactCacheRef.current, runId, rows);
           next[runId] = rows;
         } catch (error) {
           if (isAbortError(error)) throw error;
@@ -3380,7 +3573,7 @@ export function DashboardShell({
         const next = { ...current };
         for (const run of matchingRuns) {
           if (!run?.id) continue;
-          const cached = runDirectoryRef.current.get(run.id) ?? sortedRuns.find((candidate) => candidate.id === run.id);
+          const cached = runDirectoryRef.current.get(run.id) ?? pageRunById.get(run.id);
           next[run.id] = richerRunSummary(run, current[run.id] ?? cached) ?? run;
         }
         return next;
@@ -3509,10 +3702,7 @@ export function DashboardShell({
   }
 
   function runSummaryForId(runId: string) {
-    return selectedRunDetails[runId]
-      ?? sortedRuns.find((run) => run.id === runId)
-      ?? runDirectoryRef.current.get(runId)
-      ?? null;
+    return resolveRunSummary(runId);
   }
 
   function stopCandidatesForIds(runIds: string[]) {
@@ -3667,7 +3857,7 @@ export function DashboardShell({
         let changed = false;
         const next = { ...current };
         for (const [runId, control] of controls.entries()) {
-          const existing = next[runId] ?? sortedRuns.find((run) => run.id === runId) ?? runDirectoryRef.current.get(runId);
+          const existing = next[runId] ?? pageRunById.get(runId) ?? runDirectoryRef.current.get(runId);
           if (!existing) continue;
           next[runId] = mergeRunControl(existing, control);
           runDirectoryRef.current.set(runId, next[runId]);
@@ -4651,7 +4841,7 @@ function dismissTopOverlay() {
 
         <section className={`tab-pane ${visibleTab === "alerts" ? "active" : ""}`} aria-label="Alerts">
           {visibleTab === "alerts" ? (
-            <AlertsTabPane alertRows={alertRows} metricKey={metricKey} overview={overview} onRefresh={loadDashboard} />
+            <AlertsTabPane alertRows={alertRows} datasetRows={datasetRows} metricKey={metricKey} overview={overview} onRefresh={loadDashboard} />
           ) : null}
         </section>
 
@@ -5002,6 +5192,33 @@ function runsPageMessage(total: number, offset: number, visibleCount: number) {
   const count = visibleCount > 0 ? visibleCount : Math.min(25, Math.max(1, total - offset));
   const end = Math.min(total, offset + count);
   return `${formatNumber(start, 0)}-${formatNumber(end, 0)} of ${formatNumber(total, 0)} matching runs`;
+}
+
+// B1: a live tick (signature unchanged, only the refresh counter moved) only
+// refetches runs that can have new points — running runs, runs that were
+// running on the previous tick (one final fetch so a just-stopped curve
+// captures its tail), and runs whose series never painted. Finished runs keep
+// their existing series untouched, so with 1 live + 99 finished runs charted
+// the tick fetches series for 1 run instead of 100.
+function liveRefreshRunSubset(runs: RunSummary[], paintedRunIds: Set<string>, previousLiveRunIds: Set<string>) {
+  return runs.filter((run) => run.status === "running" || previousLiveRunIds.has(run.id) || !paintedRunIds.has(run.id));
+}
+
+function runningRunIds(runs: RunSummary[]) {
+  return new Set(runs.filter((run) => run.status === "running").map((run) => run.id));
+}
+
+// A4: the compare artifact cache lives for the whole session; cap it with
+// insertion-order eviction. Delete-before-set refreshes recency, so the runs
+// in the current compare selection are always the newest entries and evicting
+// from the front only drops runs no longer on screen.
+function rememberCompareArtifacts(cache: Map<string, Artifact[]>, runId: string, rows: Artifact[]) {
+  cache.delete(runId);
+  cache.set(runId, rows);
+  for (const key of cache.keys()) {
+    if (cache.size <= COMPARE_ARTIFACT_CACHE_LIMIT) break;
+    cache.delete(key);
+  }
 }
 
 async function fetchBatchedMetricSeries(

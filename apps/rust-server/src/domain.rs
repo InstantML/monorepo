@@ -49,6 +49,7 @@ fn json_object_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schem
 
 pub const MAX_TEXT_BYTES: usize = 512;
 pub const MAX_METRICS_PER_BATCH: usize = 1_000;
+pub const MAX_METRIC_BATCH_POINTS: usize = 500;
 pub const DEFAULT_METRIC_LIMIT: i64 = 1_000;
 pub const MAX_METRIC_LIMIT: i64 = 5_000;
 pub const MAX_RANK_WORLD_SIZE: u32 = 512;
@@ -1528,6 +1529,21 @@ pub struct LogMetricsRequest {
     pub preview: Option<bool>,
     #[schema(schema_with = json_object_schema)]
     pub preview_completion: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct LogMetricsBatchRequest {
+    pub points: Option<Vec<LogMetricsBatchPoint>>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct LogMetricsBatchPoint {
+    #[schema(value_type = Object)]
+    pub metrics: Value,
+    #[serde(default)]
+    #[schema(value_type = Object)]
+    pub step: Value,
+    pub timestamp: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

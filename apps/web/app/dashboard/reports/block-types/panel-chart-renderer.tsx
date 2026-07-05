@@ -21,6 +21,7 @@ import {
 } from "../../../dashboard-models";
 import { MetricChart } from "../../metrics/metric-chart";
 import { ApiClient } from "../../../../src/api.js";
+import { resolveRunsetRuns } from "../runset-cache";
 import type { HoverPoint, MetricSeries } from "../../../dashboard-types";
 import type {
   BarPanelData,
@@ -236,26 +237,23 @@ async function resolveRunsForRunset(
   runset: RunsetFetchSpec,
   signal: AbortSignal,
 ): Promise<ResolvedRun[]> {
+  // Shared, short-TTL promise cache: sibling panels on the same runset reuse
+  // one resolution, and the per-project GETs inside run in parallel (B7).
+  const rawRuns = await resolveRunsetRuns(
+    api,
+    runset,
+    {
+      perProjectLimit: clampLimit(runset.limit ?? null),
+      maxRuns: MAX_RUNS_PER_PANEL,
+      pinnedLookupLimit: MAX_RUNS_PER_PANEL,
+      includePinned: true,
+    },
+    signal,
+  );
   const collected = new Map<string, ResolvedRun>();
-  const limitPerProject = clampLimit(runset.limit ?? null);
-  for (const project of runset.projects) {
-    if (signal.aborted) break;
+  for (const { raw, project } of rawRuns) {
     if (collected.size >= MAX_RUNS_PER_PANEL) break;
-    const params = new URLSearchParams();
-    params.set("project", project);
-    params.set("limit", String(limitPerProject));
-    const payload = await api.get(`/runs?${params.toString()}`, { signal });
-    const runs = Array.isArray(payload?.runs) ? payload.runs : [];
-    for (const raw of runs) {
-      if (collected.size >= MAX_RUNS_PER_PANEL) break;
-      const resolved = normalizeResolvedRun(raw, project);
-      if (resolved && !collected.has(resolved.id)) collected.set(resolved.id, resolved);
-    }
-  }
-  for (const pinned of runset.pinned_run_ids ?? []) {
-    if (signal.aborted) break;
-    if (collected.size >= MAX_RUNS_PER_PANEL) break;
-    const resolved = await resolvePinnedRun(api, pinned, signal);
+    const resolved = normalizeResolvedRun(raw, project);
     if (resolved && !collected.has(resolved.id)) collected.set(resolved.id, resolved);
   }
   return Array.from(collected.values());
@@ -277,38 +275,6 @@ function filterSeriesByRunIds(
     filtered[metricKey] = entries.filter((entry) => visibleRunIds.has(entry.id));
   }
   return filtered;
-}
-
-async function resolvePinnedRun(
-  api: ApiClient,
-  ref: string,
-  signal: AbortSignal,
-): Promise<ResolvedRun | null> {
-  const trimmed = ref.trim();
-  if (!trimmed) return null;
-  // Accept "project/name" shorthand by listing the project and looking up
-  // the matching run name.
-  if (trimmed.includes("/")) {
-    const [project, ...rest] = trimmed.split("/");
-    const name = rest.join("/");
-    try {
-      const params = new URLSearchParams({ project, limit: String(MAX_RUNS_PER_PANEL) });
-      const payload = await api.get(`/runs?${params.toString()}`, { signal });
-      const match = (Array.isArray(payload?.runs) ? payload.runs : []).find(
-        (run: { name?: string }) => run?.name === name,
-      );
-      return normalizeResolvedRun(match, project);
-    } catch {
-      return null;
-    }
-  }
-  try {
-    const payload = await api.get(`/runs/${encodeURIComponent(trimmed)}`, { signal });
-    const run = payload?.run ?? payload;
-    return normalizeResolvedRun(run, String(run?.project ?? ""));
-  } catch {
-    return null;
-  }
 }
 
 function normalizeResolvedRun(raw: unknown, fallbackProject: string): ResolvedRun | null {
@@ -337,36 +303,39 @@ async function fetchSeriesForMetrics(
   runs: ResolvedRun[],
   signal: AbortSignal,
 ): Promise<Record<string, MetricSeries[]>> {
-  const result: Record<string, MetricSeries[]> = {};
   const runIds = runs.map((run) => run.id);
-  for (const metricKey of metricKeys) {
-    if (signal.aborted) break;
-    if (!metricKey) continue;
-    const payload = await api.post(
-      `/api/metrics/series`,
-      {
-        key: metricKey,
-        run_ids: runIds,
-        limit: 1000,
-        buckets: METRIC_SERIES_BUCKETS,
-      },
-      { signal },
-    );
-    const seriesArray = Array.isArray(payload?.series) ? payload.series : [];
-    const byRun = new Map<string, MetricSeries["points"]>();
-    for (const entry of seriesArray) {
-      if (entry && typeof entry === "object" && typeof entry.run_id === "string") {
-        byRun.set(entry.run_id, Array.isArray(entry.metrics) ? entry.metrics : []);
+  // One POST per metric, all in flight together (B7): a scatter panel's x/y
+  // pair no longer loads back-to-back. A failed fetch still rejects the whole
+  // batch so the panel surfaces its error exactly like the serial loop did.
+  const entries = await Promise.all(
+    metricKeys.filter(Boolean).map(async (metricKey) => {
+      const payload = await api.post(
+        `/api/metrics/series`,
+        {
+          key: metricKey,
+          run_ids: runIds,
+          limit: 1000,
+          buckets: METRIC_SERIES_BUCKETS,
+        },
+        { signal },
+      );
+      const seriesArray = Array.isArray(payload?.series) ? payload.series : [];
+      const byRun = new Map<string, MetricSeries["points"]>();
+      for (const entry of seriesArray) {
+        if (entry && typeof entry === "object" && typeof entry.run_id === "string") {
+          byRun.set(entry.run_id, Array.isArray(entry.metrics) ? entry.metrics : []);
+        }
       }
-    }
-    result[metricKey] = runs.map((run) => ({
-      id: run.id,
-      name: run.name,
-      group: "all",
-      points: byRun.get(run.id) ?? [],
-    }));
-  }
-  return result;
+      const series = runs.map((run) => ({
+        id: run.id,
+        name: run.name,
+        group: "all",
+        points: byRun.get(run.id) ?? [],
+      }));
+      return [metricKey, series] as const;
+    }),
+  );
+  return Object.fromEntries(entries);
 }
 
 function LineChart({ panel, series }: { panel: LinePanelData; series: MetricSeries[] }) {

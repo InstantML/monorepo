@@ -129,6 +129,39 @@ equivalents rather than exact route equivalents.
 - Update `benchmarks/README.md`.
 - Commit `benchmarks/RESULTS.md` with sanitized comparison and caveats.
 
+## 2026-07-03 Competitive Gate Follow-Up
+
+The hosted comparison tooling now includes a read-only competitive gate helper
+that consumes sanitized Cloud Run benchmark JSON and reports `pass`, `fail`, or
+`not_measured` against:
+
+- W&B's published Multi-tenant Cloud scale guidance for runs/project,
+  steps/run, metric cardinality, log frequency, scalar-value throughput, and
+  video throughput.
+- The committed historical W&B public-API comparison in `benchmarks/RESULTS.md`,
+  using matching route names and a 10% tolerance because that W&B run was a
+  partial public-API seed with closest-equivalent labels.
+- Neptune's public "thousands of metrics in seconds" app claim, represented as
+  a conservative >=1,000 metric-key/p95 <= 5 second gate.
+
+This follow-up does not replace fresh W&B or Neptune benchmarks. It makes the
+claim boundary explicit: benchmark reports can pass measured historical read
+latency gates while still marking wider ingest, step-count, or metric-cardinality
+claims as unmeasured until a payload contains those measurements.
+
+The hosted Cloud Run benchmark also records the dashboard-style M4 selected-run
+series path. M4 bucket requests are sanitized as benchmark metadata and validated
+against the same 120,000-point batched-series response cap, so long-run chart
+benchmarks cover both query latency and response-size discipline.
+
+The disposable Rust large-run benchmark can also seed
+`INSTANTML_BENCH_WIDE_METRIC_KEYS=100000` onto a stable catalog run and measure
+the existing `GET /runs/{run_id}` summary/catalog response. Competitive gates
+accept that object-shaped local benchmark payload for metric-cardinality
+evidence. This keeps high-cardinality validation on real Rust/ClickHouse query
+behavior without adding a product API; hosted marketing claims still need a
+sanitized Cloud Run result from the deployed request path.
+
 ## Review Notes
 
 Fresh reviewer 1:

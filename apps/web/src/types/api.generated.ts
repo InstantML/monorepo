@@ -1791,6 +1791,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/metrics/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["log_metrics_batch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/rank-metrics": {
         parameters: {
             query?: never;
@@ -3162,6 +3178,14 @@ export interface components {
          *     duplicating the dynamic structure here. */
         JsonObjectResponse: {
             data: Record<string, never>;
+        };
+        LogMetricsBatchPoint: {
+            metrics: Record<string, never>;
+            step?: Record<string, never>;
+            timestamp?: string | null;
+        };
+        LogMetricsBatchRequest: {
+            points?: components["schemas"]["LogMetricsBatchPoint"][] | null;
         };
         LogMetricsRequest: {
             metrics: Record<string, never>;
@@ -8418,6 +8442,8 @@ export interface operations {
                 cursor?: string;
                 /** @description Substring filter */
                 q?: string;
+                /** @description Return only the last N lines (1..=500) in ascending order; cannot be combined with cursor or q */
+                tail?: number;
             };
             header?: never;
             path: {
@@ -9992,6 +10018,63 @@ export interface operations {
             };
             /** @description Run not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    log_metrics_batch: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable client key covering the whole batch */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogMetricsBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Inserted point count for the whole batch */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InsertedEnvelope"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

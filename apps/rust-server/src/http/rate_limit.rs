@@ -210,6 +210,11 @@ pub async fn data_plane_rate_limit(
     request: Request,
     next: Next,
 ) -> Response {
+    // Local-only benchmark escape hatch; gated on Local auth mode in config.
+    if state.config.disable_rate_limit {
+        return next.run(request).await;
+    }
+
     let Some(policy) = classify_route(request.method(), request.uri().path()) else {
         return next.run(request).await;
     };
@@ -358,6 +363,7 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
         || (*method == Method::POST && path.starts_with("/api/runs/") && path.ends_with("/forks"))
         || (*method == Method::POST
             && (path.ends_with("/metrics")
+                || path.ends_with("/metrics/batch")
                 || path.ends_with("/rank-metrics")
                 || path.ends_with("/logs")
                 || path.ends_with("/attributes")
@@ -616,6 +622,13 @@ mod tests {
                 .expect("policy")
                 .class,
             RequestClass::Ingest
+        );
+        assert_eq!(
+            classify_route(&Method::POST, "/runs/run-1/metrics/batch")
+                .expect("policy")
+                .class,
+            RequestClass::Ingest,
+            "batched metric ingest must share the ingest limiter class"
         );
         assert_eq!(
             classify_route(&Method::POST, "/api/imports/wandb")

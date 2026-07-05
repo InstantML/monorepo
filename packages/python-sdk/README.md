@@ -415,10 +415,12 @@ when you want a longer wait. See
 
 On the async path, invalid payloads never crash the training loop either:
 `log()`, `log_metrics()`, `log_rank_metrics()`, and `log_console()` warn-and-drop
-a bad value (a `NaN`/`inf` scalar, a raw tensor, an unsupported type) and count
-it under `Run.upload_status()["dropped"]` instead of raising. Use
+a bad value (a `NaN`/`inf` scalar, a non-scalar tensor, an unsupported type) and
+count it under `Run.upload_status()["dropped"]` instead of raising. Use
 `upload_mode="sync"` when you want validation errors to raise in the foreground
-(scripts and CI).
+(scripts and CI). Scalar-like values from optional frameworks are accepted
+without importing those frameworks: the SDK duck-types `.detach()`, `.cpu()`,
+`.numpy()`, and `.item()` and stores the finite Python number.
 
 ## Process lifecycle, signals, and forked workers
 
@@ -566,7 +568,8 @@ run.finish()
 
 `Run.log()` is the ergonomic API. If `step` is omitted it auto-increments from `1`; if `step` is provided it uses that value and advances the implicit counter to at least that step. It classifies values before sending any request:
 
-- finite numeric scalars -> metric batch
+- finite numeric scalars, including scalar-like NumPy/Torch/JAX values with
+  `.item()` conversions -> metric batch
 - strings and `Text(...)` -> string series
 - `Table`, `Histogram`, `ClassificationEval`, `Image`, `Audio`, `Video` -> rich objects
 - `File(...)` and `Artifact(...)` -> artifact upload
@@ -695,7 +698,7 @@ PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
   --base-url http://127.0.0.1:8000
 ```
 
-Use `upload_mode="spool"` when the training process should avoid post-init HTTP calls. The SDK writes one fsynced JSON event file per logging call, and the uploader drains those files through the existing API. Metric and console-log event files send their `event_id` as an `Idempotency-Key`, so a compatible server can safely accept retried metric/log events. This first implementation is intended for roughly 100 SDK calls per second per run on a local SSD; batch many scalar values into one metrics dictionary for higher-frequency loops.
+Use `upload_mode="spool"` when the training process should avoid post-init HTTP calls. The SDK writes fsynced JSONL event segments, keeping the active segment hidden with the writer PID in the filename; the uploader drains finalized segments and promotes crash-left active segments once the writer process is gone. Ownerless legacy `.jsonl.tmp` segments are recovered after a short stale-file window. Metric and console-log event files send their `event_id` as an `Idempotency-Key`, so a compatible server can safely accept retried metric/log events. This first implementation is intended for roughly 100 SDK calls per second per run on a local SSD; batch many scalar values into one metrics dictionary for higher-frequency loops.
 
 Console logging uses the same one-request event format. `Run.log_console(...)`,
 `Run.log_stdout(...)`, and `Run.log_stderr(...)` assign deterministic
@@ -741,6 +744,11 @@ python3 -m pytest
 ```
 
 The SDK defaults to buffered async metric/log uploads with a 10 second client timeout for foreground setup and bounded `finish()` waits. Short-window HTTP `429` rate-limit responses are retried by the uploader, honoring `Retry-After` when the server sends it; monthly quota `429` responses become failed queued rows. Use `upload_status()` or the wait helpers to detect async delivery failures, or pass `upload_mode="sync"` when foreground metric/log HTTP errors should raise `InstantMLError`. Set `buffer_size` to batch sync post-init events in memory, `offline_dir` to spool failed existing-run requests as JSONL for later replay, or `upload_mode="spool"` to move post-init HTTP work into a separate uploader process. Artifact/checkpoint/rollout metadata works through the Rust server endpoints; `upload_file()` and `log_checkpoint_file()` additionally hash and send bytes to local/R2 raw artifact storage in sync mode and record a source path for the uploader in process spool mode. Versioned artifacts require sync mode in this slice because presigned upload URLs are short-lived bearer secrets and the process spool contract does not yet persist multipart state.
+
+`benchmarks/sdk_logging_overhead.py` is the local hot-path benchmark for this
+component. Its JSON output includes `ingest.values_per_minute`, a producer-return
+throughput signal used by the competitive benchmark gates; it is not a hosted
+remote-persistence measurement.
 
 The SDK is tested against the primary Rust server, the deprecated Node compatibility server, and the Python bootstrap API for overlapping endpoints. Metric `step` values are finite nonnegative numbers across the SDK, Rust server, Node server, Python bootstrap API, and importer-shaped metric payloads. Metric timestamps are ISO-compatible datetimes when supplied.
 

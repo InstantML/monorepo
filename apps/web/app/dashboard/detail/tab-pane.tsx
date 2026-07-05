@@ -541,11 +541,22 @@ export function DetailTabPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, chartKeySignature, keys.ret, liveTick, parentRunId, runId]);
 
-  // Keep the overview fresh while the run is live.
+  // Keep the overview fresh while the run is live. Ticks are gated on tab
+  // visibility (B6, mirrors the dashboard shell poll): a hidden tab stops
+  // refetching KPI series, and returning to the tab refreshes once
+  // immediately via the visibilitychange listener.
   useEffect(() => {
     if (!liveRun) return;
-    const timer = window.setInterval(() => setLiveTick((current) => current + 1), LIVE_SERIES_POLL_MS);
-    return () => window.clearInterval(timer);
+    const poll = () => {
+      if (document.visibilityState !== "visible") return;
+      setLiveTick((current) => current + 1);
+    };
+    const timer = window.setInterval(poll, LIVE_SERIES_POLL_MS);
+    document.addEventListener("visibilitychange", poll);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", poll);
+    };
   }, [liveRun]);
 
   const kpiCells = useMemo(() => (

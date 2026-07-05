@@ -412,48 +412,85 @@ function isPlainObject(value: unknown): value is Record<string, any> {
 
 export function buildMetricCatalogRows(runs: RunSummary[], metricKeys: string[], selectedRunIds: string[]): MetricCatalogRow[] {
   const selected = new Set(selectedRunIds);
-  return metricKeys.map((key) => {
-    const goal = metricGoal(key);
-    const carriers = runs
-      .map((run) => ({ run, aggregate: run.metric_aggregates?.[key] }))
-      .filter((item) => item.aggregate);
-    const pointCount = carriers.reduce((sum, item) => sum + (numberValue(item.aggregate?.count, 0) ?? 0), 0);
-    const latestValues = carriers.map((item) => numberValue(item.aggregate?.latest, null)).filter(isFiniteNumber);
-    const bestCandidate = carriers.reduce<{ run: RunSummary | null; value: number | null; step: number | null }>((best, item) => {
-      const value = numberValue(goal === "minimize" ? item.aggregate?.min : item.aggregate?.max, null);
-      const step = numberValue(goal === "minimize" ? item.aggregate?.min_step : item.aggregate?.best_step, null);
-      if (value === null) return best;
-      if (
-        best.value === null ||
-        (goal === "minimize" ? value < best.value : value > best.value) ||
-        (value === best.value && (step ?? -Infinity) > (best.step ?? -Infinity))
-      ) {
-        return { run: item.run, value, step };
+  const rows = metricKeys.map((key) => ({
+    key,
+    label: metricTitle(key),
+    namespace: metricNamespace(key),
+    goal: metricGoal(key),
+    runCount: 0,
+    selectedCount: 0,
+    pointCount: 0,
+    latest: null as number | null,
+    best: null as number | null,
+    min: null as number | null,
+    mean: null as number | null,
+    meanNumerator: 0,
+    bestStep: null as number | null,
+    bestRunName: "-",
+  }));
+  type WorkingMetricCatalogRow = (typeof rows)[number];
+  const rowsByKey = new Map<string, WorkingMetricCatalogRow[]>();
+  for (const row of rows) {
+    const matching = rowsByKey.get(row.key);
+    if (matching) {
+      matching.push(row);
+    } else {
+      rowsByKey.set(row.key, [row]);
+    }
+  }
+  for (const run of runs) {
+    const isSelected = selected.has(run.id);
+    const aggregates = run.metric_aggregates ?? {};
+    for (const [key, aggregate] of Object.entries(aggregates)) {
+      const matchingRows = rowsByKey.get(key);
+      if (!matchingRows) continue;
+      for (const row of matchingRows) {
+        const count = numberValue(aggregate?.count, 0) ?? 0;
+        const latest = numberValue(aggregate?.latest, null);
+        const min = numberValue(aggregate?.min, null);
+        const best = numberValue(row.goal === "minimize" ? aggregate?.min : aggregate?.max, null);
+        const step = numberValue(row.goal === "minimize" ? aggregate?.min_step : aggregate?.best_step, null);
+        row.runCount += 1;
+        if (isSelected) row.selectedCount += 1;
+        row.pointCount += count;
+        if (latest !== null) row.latest = latest;
+        if (min !== null && (row.min === null || min < row.min)) row.min = min;
+        if (
+          best !== null &&
+          (
+            row.best === null ||
+            (row.goal === "minimize" ? best < row.best : best > row.best) ||
+            (best === row.best && (step ?? -Infinity) > (row.bestStep ?? -Infinity))
+          )
+        ) {
+          row.best = best;
+          row.bestStep = step;
+          row.bestRunName = run.name;
+        }
+        const mean = numberValue(aggregate?.mean, null);
+        if (mean !== null) row.meanNumerator += mean * count;
       }
-      return best;
-    }, { run: null, value: null, step: null });
-    const meanNumerator = carriers.reduce((sum, item) => {
-      const mean = numberValue(item.aggregate?.mean, null);
-      const count = numberValue(item.aggregate?.count, 0) ?? 0;
-      return mean === null ? sum : sum + mean * count;
-    }, 0);
-    const mean = pointCount ? meanNumerator / pointCount : null;
-    const mins = carriers.map((item) => numberValue(item.aggregate?.min, null)).filter(isFiniteNumber);
-    return {
-      key,
-      label: metricTitle(key),
-      namespace: metricNamespace(key),
-      runCount: carriers.length,
-      selectedCount: carriers.filter((item) => selected.has(item.run.id)).length,
-      pointCount,
-      latest: latestValues.length ? latestValues[latestValues.length - 1] : null,
-      best: bestCandidate.value,
-      min: mins.length ? Math.min(...mins) : null,
-      mean,
-      bestStep: bestCandidate.step,
-      bestRunName: bestCandidate.run?.name ?? "-",
-    };
-  }).sort((left, right) => right.selectedCount - left.selectedCount || right.runCount - left.runCount || left.key.localeCompare(right.key));
+    }
+  }
+  for (const row of rows) {
+    row.mean = row.pointCount ? row.meanNumerator / row.pointCount : null;
+  }
+  return rows
+    .sort((left, right) => right.selectedCount - left.selectedCount || right.runCount - left.runCount || left.key.localeCompare(right.key))
+    .map((row) => ({
+      key: row.key,
+      label: row.label,
+      namespace: row.namespace,
+      runCount: row.runCount,
+      selectedCount: row.selectedCount,
+      pointCount: row.pointCount,
+      latest: row.latest,
+      best: row.best,
+      min: row.min,
+      mean: row.mean,
+      bestStep: row.bestStep,
+      bestRunName: row.bestRunName,
+    }));
 }
 
 export function buildRunMetricRows(run: RunSummary | null): RunMetricRow[] {
@@ -533,10 +570,6 @@ function metricPriority(metricKey: string) {
 
 function numberValue(value: unknown, fallback: number | null) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function isFiniteNumber(value: number | null): value is number {
-  return typeof value === "number" && Number.isFinite(value);
 }
 
 export function compareRowRank(path: string) {

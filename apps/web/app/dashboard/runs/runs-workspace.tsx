@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, ChevronDown, CircleStop, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, DragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
@@ -387,7 +387,8 @@ export function RunsWorkspace({
     onMovePanel(payload.sectionId, payload.panelId, targetSectionId, targetIndex);
     clearDraggedPanel();
   }
-  const visibleRunIds = workspaceRuns.map((run) => run.id);
+  const visibleRunIds = useMemo(() => workspaceRuns.map((run) => run.id), [workspaceRuns]);
+  const selectedRunIdSet = useMemo(() => new Set(selectedRunIds), [selectedRunIds]);
   const railSelectionState = visibleSelectionState(selectedRunIds, visibleRunIds);
   const hasCrossPageSelection = railSelectionState === "all" && selectedRunIds.length > visibleRunIds.length;
   const railSelectionLabel = railSelectionState === "all"
@@ -498,7 +499,7 @@ export function RunsWorkspace({
           {initialRunsLoading ? (
             <RunsRailSkeleton />
           ) : workspaceRuns.length ? workspaceRuns.map((run, index) => {
-            const selected = selectedRunIds.includes(run.id);
+            const selected = selectedRunIdSet.has(run.id);
             const compareLabel = selected ? `Deselect ${run.name}` : `Select ${run.name}`;
             const railTooltip = runRailTooltip(run);
             const uploadHealth = uploadHealthForRun(run);

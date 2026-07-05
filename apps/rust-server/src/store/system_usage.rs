@@ -253,7 +253,6 @@ fn usage_by_run(
 ) -> Vec<RunUsage> {
     let run_map = runs
         .iter()
-        .cloned()
         .map(|run| (run.id, run))
         .collect::<HashMap<_, _>>();
     let mut usages = runs
@@ -279,7 +278,7 @@ fn usage_by_run(
         .collect::<HashMap<_, _>>();
 
     for row in aggregate_rows {
-        let Some(run) = run_map.get(&row.run_id) else {
+        let Some(run) = run_map.get(&row.run_id).copied() else {
             continue;
         };
         let Some(usage) = usages.get_mut(&row.run_id) else {

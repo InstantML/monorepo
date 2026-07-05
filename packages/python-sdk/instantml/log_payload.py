@@ -6,7 +6,7 @@ import math
 from typing import Any
 
 from .objects import Audio, ClassificationEval, File, Histogram, Image, Table, Text, Video
-from .validation import _is_scalar_number, _validate_plain_string, _validate_text
+from .validation import _coerce_scalar_number, _is_scalar_number, _validate_plain_string, _validate_text
 
 
 def _classify_log_payload(
@@ -20,8 +20,9 @@ def _classify_log_payload(
     files: dict[str, File] = {}
     for raw_key, value in data.items():
         key = _validate_text(raw_key, "log key")
-        if _is_scalar_number(value):
-            metrics[key] = float(value)
+        number = _coerce_scalar_number(value)
+        if number is not None:
+            metrics[key] = number
         elif isinstance(value, str):
             text[key] = value
         elif isinstance(value, Text):

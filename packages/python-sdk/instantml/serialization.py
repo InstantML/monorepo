@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from .validation import (
-    _is_scalar_number,
+    _coerce_scalar_number,
     _validate_numeric_list,
     _validate_text,
 )
@@ -62,8 +62,9 @@ def _tensor_to_python(value: Any) -> Any:
 
 
 def _flatten_numeric_value(value: Any) -> list[int | float]:
-    if _is_scalar_number(value):
-        return [value]
+    number = _coerce_scalar_number(value)
+    if number is not None:
+        return [number]
     if isinstance(value, dict):
         flattened: list[int | float] = []
         for item in value.values():
@@ -299,9 +300,9 @@ def _negative_label(class_names: list[str], positive_label: str) -> str:
 
 
 def _validate_unit_number(value: Any, field: str) -> float:
-    if not _is_scalar_number(value):
+    number = _coerce_scalar_number(value)
+    if number is None:
         raise TypeError(f"{field} must be a finite number")
-    number = float(value)
     if number < 0.0 or number > 1.0:
         raise ValueError(f"{field} must be in 0..1")
     return number

@@ -27,6 +27,8 @@ This slice uses dependency-free JSON persistence at `.instantml/instantml.json` 
 
 The JSON store now maintains per-run metric summaries at write time in `metricSeries`. Run-table summaries and side-by-side metric aggregate values read those summaries instead of recomputing from full metric history. Raw metric history remains available through bounded metric-series endpoints.
 
+Metric sorts on `/api/runs/summary` should precompute the requested metric summary by run once per request. Do not call per-run aggregate builders inside sort comparators; this server is deprecated, but it still needs to remain a fast compatibility oracle for route-shape regression tests.
+
 Artifact bytes go through `src/artifact-store.js`. The current implementation is local filesystem storage, but the server no longer writes upload bytes directly in route code.
 
 `better-sqlite3` was attempted earlier but could not build under the available Node 21.7.1 runtime. The accepted large-team deployment path is now the Rust/ClickHouse design; Node JSON remains the local compatibility store rather than a hidden production database.

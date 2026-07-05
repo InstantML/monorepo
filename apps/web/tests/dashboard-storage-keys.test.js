@@ -394,6 +394,9 @@ test("dashboard shell protects control-plane state from stale UI interactions", 
   assert.match(shell, /setOrgSwitchError\(detail\);[\s\S]*?setMessage\(detail\);/, "failed workspace switches should remain visible after the menu closes");
   assert.match(shell, /metricCatalogSelectionIds/, "metric catalog counts should use the effective chart run scope");
   assert.match(shell, /selectedRunIds\.length \? selectedRunIds : sortedRuns\.map/, "no explicit run selection should count visible runs as selected for metrics");
+  assert.match(shell, /const pageRunById = useMemo\(\(\) => new Map\(sortedRuns\.map/, "run summary lookups should build one page-level id map");
+  assert.match(shell, /function runSummaryForId\(runId: string\) \{[\s\S]*?return resolveRunSummary\(runId\);[\s\S]*?\}/, "event handlers should share the same O(1) run resolver");
+  assert.doesNotMatch(shell, /sortedRuns\.find/, "dashboard render and event paths should not scan the visible page for run-id lookups");
   assert.match(shell, /migrateLegacySavedViewsToScope\(activeOrgId, localSavedViewProjectScope\)/, "legacy local saved views should migrate into the active org/user/project scope");
   assert.match(shell, /safeCheckoutRedirectUrl\(payload\?\.billing_checkout\?\.url\)/, "workspace creation checkout URLs should use the shared redirect allowlist");
   assert.match(shell, /if \(payload\?\.billing_checkout\?\.url\) throw new Error\("Billing checkout URL was not trusted\."\);/, "untrusted workspace creation checkout URLs should not be opened");
@@ -521,6 +524,88 @@ test("workspace view API normalizes generated and legacy envelopes", () => {
   assert.deepEqual(workspaceViewFromPayload({ workspace_view: row }), row);
   assert.deepEqual(workspaceViewFromPayload({ view: row }), row);
   assert.equal(workspaceViewFromPayload({ view: { id: "bad", name: "Bad", payload: [] } }), null);
+});
+
+test("metric catalog rows aggregate without repeated per-metric scans", async () => {
+  const { buildMetricCatalogRows } = await importDashboardModelsForTest();
+  const runs = [
+    {
+      id: "run-a",
+      name: "run A",
+      metric_aggregates: {
+        "train/loss": { latest: 10, min: 4, max: 20, mean: 8, count: 2, min_step: 5, best_step: 7 },
+        "eval/accuracy": { latest: 0.8, min: 0.5, max: 0.9, mean: 0.7, count: 4, best_step: 9 },
+      },
+    },
+    {
+      id: "run-b",
+      name: "run B",
+      metric_aggregates: {
+        "train/loss": { latest: 9, min: 3, max: 21, mean: 6, count: 3, min_step: 6, best_step: 8 },
+      },
+    },
+  ];
+
+  const rows = buildMetricCatalogRows(runs, ["train/loss", "eval/accuracy", "missing/key"], ["run-a"]);
+  const loss = rows.find((row) => row.key === "train/loss");
+  const accuracy = rows.find((row) => row.key === "eval/accuracy");
+  const missing = rows.find((row) => row.key === "missing/key");
+
+  assert.deepEqual(rows.map((row) => row.key), ["train/loss", "eval/accuracy", "missing/key"]);
+  assert.ok(loss);
+  assert.deepEqual(
+    {
+      best: loss.best,
+      bestRunName: loss.bestRunName,
+      bestStep: loss.bestStep,
+      latest: loss.latest,
+      mean: loss.mean,
+      min: loss.min,
+      pointCount: loss.pointCount,
+      runCount: loss.runCount,
+      selectedCount: loss.selectedCount,
+    },
+    {
+      best: 3,
+      bestRunName: "run B",
+      bestStep: 6,
+      latest: 9,
+      mean: 6.8,
+      min: 3,
+      pointCount: 5,
+      runCount: 2,
+      selectedCount: 1,
+    },
+  );
+  assert.ok(accuracy);
+  assert.equal(accuracy.best, 0.9);
+  assert.equal(accuracy.bestRunName, "run A");
+  assert.equal(accuracy.selectedCount, 1);
+  assert.ok(missing);
+  assert.equal(missing.runCount, 0);
+  assert.equal(missing.mean, null);
+});
+
+test("metric catalog rows iterate sparse aggregate entries instead of probing every key", async () => {
+  const { buildMetricCatalogRows } = await importDashboardModelsForTest();
+  const metricKeys = Array.from({ length: 1000 }, (_, index) => `metric/${String(index).padStart(4, "0")}`);
+  let aggregateReads = 0;
+  const metric_aggregates = new Proxy({
+    "metric/0420": { latest: 1, min: 1, max: 2, mean: 1.5, count: 2, best_step: 7 },
+  }, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && property.startsWith("metric/")) aggregateReads += 1;
+      return Reflect.get(target, property, receiver);
+    },
+  });
+
+  const rows = buildMetricCatalogRows([
+    { id: "run-a", name: "run A", metric_aggregates },
+  ], metricKeys, ["run-a"]);
+
+  assert.equal(rows.find((row) => row.key === "metric/0420")?.selectedCount, 1);
+  assert.equal(rows.find((row) => row.key === "metric/0000")?.runCount, 0);
+  assert.ok(aggregateReads <= 2, `expected sparse aggregate reads, saw ${aggregateReads}`);
 });
 
 test("saved-view import requires a current dry-run preview and bounded JSON", () => {

@@ -16,6 +16,7 @@ from .credentials import _resolve_api_key
 
 
 LOCK_FILE = ".uploader.lock"
+LEGACY_ACTIVE_SEGMENT_STALE_SECONDS = 30.0
 
 
 def drain_spool(
@@ -30,16 +31,134 @@ def drain_spool(
     uploaded = 0
     with _UploaderLock(root):
         for run_dir in _run_dirs(root):
-            for event_path in sorted(run_dir.glob("*.json")):
-                if max_events is not None and uploaded >= max_events:
-                    return uploaded
-                try:
-                    _send_event(active_client, _load_event(event_path))
-                except InstantMLError:
-                    break
-                event_path.unlink()
-                uploaded += 1
+            uploaded = _drain_run_dir(active_client, run_dir, max_events, uploaded)
+            if max_events is not None and uploaded >= max_events:
+                return uploaded
     return uploaded
+
+
+def _drain_run_dir(client: Client, run_dir: Path, max_events: int | None, uploaded: int) -> int:
+    # Old single-event ``.json`` files and new append-only ``.jsonl`` segments
+    # are drained together in filename order (both carry sequence-ordered
+    # prefixes) so cross-format ordering within a run is preserved.
+    _promote_recoverable_segments(run_dir)
+    for event_path in sorted(list(run_dir.glob("*.json")) + list(run_dir.glob("*.jsonl"))):
+        if max_events is not None and uploaded >= max_events:
+            return uploaded
+        try:
+            events = _load_events(event_path)
+        except InstantMLError:
+            break
+        sent = 0
+        failed = False
+        for event in events:
+            if max_events is not None and uploaded + sent >= max_events:
+                break
+            try:
+                _send_event(client, event)
+            except InstantMLError:
+                failed = True
+                break
+            sent += 1
+        uploaded += sent
+        remainder = events[sent:]
+        if remainder:
+            # Persist the not-yet-delivered remainder so a mid-segment stop
+            # (failure or max_events) never re-sends already-delivered events.
+            _rewrite_remainder(event_path, remainder)
+        else:
+            event_path.unlink()
+        if failed:
+            break
+    return uploaded
+
+
+def _promote_recoverable_segments(run_dir: Path) -> None:
+    """Make crash-left active segment dotfiles visible to the normal drain loop."""
+    for tmp_path in sorted(run_dir.glob(".*.jsonl.pid-*.tmp")):
+        parsed = _pid_segment_final_path(tmp_path)
+        if parsed is None:
+            continue
+        final_path, writer_pid = parsed
+        if _pid_is_running(writer_pid):
+            continue
+        _promote_segment(tmp_path, final_path)
+
+    # Older SDKs wrote active append-only segments as ``.name.jsonl.tmp``
+    # without an owner PID. Recover only stale files so a follow-mode uploader
+    # does not race a still-running legacy writer.
+    now = time.time()
+    for tmp_path in sorted(run_dir.glob(".*.jsonl.tmp")):
+        final_path = _legacy_segment_final_path(tmp_path)
+        if final_path is None:
+            continue
+        try:
+            age_seconds = now - tmp_path.stat().st_mtime
+        except OSError:
+            continue
+        if age_seconds < LEGACY_ACTIVE_SEGMENT_STALE_SECONDS:
+            continue
+        _promote_segment(tmp_path, final_path)
+
+
+def _pid_segment_final_path(tmp_path: Path) -> tuple[Path, int] | None:
+    name = tmp_path.name
+    marker = ".pid-"
+    suffix = ".tmp"
+    marker_index = name.rfind(marker)
+    if not name.startswith(".") or not name.endswith(suffix) or marker_index <= 1:
+        return None
+    pid_text = name[marker_index + len(marker) : -len(suffix)]
+    if not pid_text.isdecimal():
+        return None
+    final_name = name[1:marker_index]
+    if not final_name.endswith(".jsonl"):
+        return None
+    return tmp_path.with_name(final_name), int(pid_text)
+
+
+def _legacy_segment_final_path(tmp_path: Path) -> Path | None:
+    name = tmp_path.name
+    suffix = ".tmp"
+    if not name.startswith(".") or not name.endswith(".jsonl.tmp"):
+        return None
+    final_name = name[1:-len(suffix)]
+    if not final_name.endswith(".jsonl"):
+        return None
+    return tmp_path.with_name(final_name)
+
+
+def _promote_segment(tmp_path: Path, final_path: Path) -> None:
+    if final_path.exists():
+        return
+    try:
+        os.replace(tmp_path, final_path)
+    except FileNotFoundError:
+        return
+    _fsync_dir(final_path.parent)
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _fsync_dir(path: Path) -> None:
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -106,14 +225,51 @@ def _run_dirs(root: Path) -> list[Path]:
     return sorted(path for path in root.iterdir() if path.is_dir())
 
 
-def _load_event(path: Path) -> dict[str, Any]:
+def _load_events(path: Path) -> list[dict[str, Any]]:
+    """Load spooled events from a file.
+
+    ``.jsonl`` segments hold one JSON event per line; legacy ``.json`` files
+    hold a single JSON object. Both formats are supported for back-compat.
+    """
     try:
-        decoded = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise InstantMLError(f"cannot read spool event {path}: {exc}") from exc
+    events: list[dict[str, Any]] = []
+    if path.suffix == ".jsonl":
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            events.append(_parse_event(path, line))
+    else:
+        events.append(_parse_event(path, text))
+    return events
+
+
+def _parse_event(path: Path, raw: str) -> dict[str, Any]:
+    try:
+        decoded = json.loads(raw)
+    except json.JSONDecodeError as exc:
         raise InstantMLError(f"cannot read spool event {path}: {exc}") from exc
     if not isinstance(decoded, dict):
         raise InstantMLError(f"spool event {path} must be a JSON object")
     return decoded
+
+
+def _rewrite_remainder(path: Path, remainder: list[dict[str, Any]]) -> None:
+    """Rewrite ``path`` with only the not-yet-delivered events (atomic replace).
+
+    Used when a segment is partially drained (transient failure or a
+    ``max_events`` cutoff) so already-delivered events are never re-sent.
+    """
+    tmp_path = path.with_name(f".{path.name}.rewrite.tmp")
+    with tmp_path.open("w", encoding="utf-8") as handle:
+        for event in remainder:
+            handle.write(json.dumps(event, separators=(",", ":")))
+            handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, path)
 
 
 def _send_event(client: Client, event: dict[str, Any]) -> None:

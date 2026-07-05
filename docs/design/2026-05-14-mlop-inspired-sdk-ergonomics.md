@@ -127,6 +127,11 @@ Optional conversion rules:
 - `Video` accepts paths and NumPy arrays; arrays require `moviepy` or `imageio` support.
 - Missing optional dependencies raise `InstantMLError` with the exact package name to install.
 
+2026-07-04 follow-up: scalar metric validation and `Run.log()` classification
+also accept dependency-free scalar-like values by duck-typing `.detach()`,
+`.cpu()`, `.numpy()`, and `.item()`, then storing only finite Python numbers.
+Non-scalar tensors still fail validation or warn-and-drop on the async path.
+
 ### Local SQLite Store
 
 Add `local_store` and `local_store_dir` to `init()`.

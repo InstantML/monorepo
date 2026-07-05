@@ -281,6 +281,13 @@ test("run summaries sort globally before pagination and return filtered metric k
   assert.throws(() => store.runsSummary({ project: "paging", sort_by: "weird" }), /sort_by/);
 });
 
+test("run metric sorts precompute metric aggregate lookup once", () => {
+  const dbSource = fs.readFileSync(new URL("../src/db.js", import.meta.url), "utf8");
+  assert.match(dbSource, /function metricAggregateByRunForSort/);
+  assert.match(dbSource, /const aggregates = metricAggregateByRunForSort\(state, copy, metricKey\)/);
+  assert.doesNotMatch(dbSource, /metricAggregatesForRun\(state, a\.id\)\[metricKey\]/);
+});
+
 test("typed attributes, float steps, aggregates, artifacts, and comparison rows work", () => {
   const store = createStore(emptyState());
   const first = store.createRun({

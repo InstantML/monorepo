@@ -509,7 +509,16 @@ selection should use `GET /api/runs/summary?projection=selection`, which skips
 ClickHouse metric aggregate hydration and returns only run display metadata plus
 frontend-compatible empty summary fields. Batched metric-series reads accept up
 to 2,000 run IDs, but the server clamps `effective_limit` so a single response
-cannot exceed 120,000 metric points.
+cannot exceed 120,000 metric points. Full-range M4 downsampling uses one
+multi-run ClickHouse query for the long selected runs and reports
+`effective_buckets`; the bucket count is also clamped to the same 120,000-point
+response budget.
+
+Plan-limit write gates use a short per-process usage cache for the ingest fast
+path. Billing and operator plan mutations clear that org's local entry
+immediately; multi-instance hosted scale-out must keep the documented
+single-writer data-plane shape, or add a shared usage-counter design before
+raising write-serving instances.
 
 Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a mutation-origin-validated non-demo browser session for an owner/admin in a billing- and storage-ready workspace, then mints a scoped API key (`sdk:ingest` + `export:read` + `artifacts:write`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
@@ -601,7 +610,7 @@ Large-run benchmark:
 INSTANTML_BENCH_RUNS=100000 INSTANTML_BENCH_LONG_RUN_STEPS=20000 INSTANTML_BENCH_SAMPLES=10 INSTANTML_BENCH_WARMUPS=2 INSTANTML_BENCH_WEB=1 npm run benchmark:large-runs
 ```
 
-The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints. The large-run benchmark uses 100,000 run records by default and gives the newest run 20,000 steps across several metric keys so chart reads exercise the same bounded dashboard path without forcing a multi-billion-row write in normal verification.
+The large-run and rich-object benchmarks seed disposable ClickHouse operational records and metric rows directly, then start the Rust API and measure bounded summary/search/sort/chart/object endpoints. The large-run benchmark uses 100,000 run records by default and gives the newest run 20,000 steps across several metric keys so single-run chart reads and batched selected-run M4 reads exercise the same bounded dashboard path without forcing a multi-billion-row write in normal verification.
 
 Hosted demo seed/benchmark:
 
@@ -611,7 +620,7 @@ INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1 npm run benchmark:hosted-demo
 
 This command reads the local `.env`, signs in as `hello@instantml.ai`, creates or reuses the `InstantML Demo` hosted tenant route, seeds the hosted 100,000-run benchmark only when that project is absent, restarts its temporary Rust API for tenant replay, and prints hosted ClickHouse latency timings. Prefer the self-hosted GCP/database-mode path for current hosted tests. The explicit `INSTANTML_HOSTED_DEMO_ALLOW_PROVISION=1` guard is required because legacy cloud-service mode can create/use paid provider services; do not run it from CI or against an account where that would be surprising.
 
-The hosted benchmark now validates and times the dashboard's critical 100,000-run query shapes: newest run pages, larger pages, name/tag/config/notes search, failed/running/finished filters, combined search+filter, selected-metric sort, project overview, and a bounded chart series. Set `INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-benchmark.json` to save the sanitized JSON result, and `INSTANTML_HOSTED_DEMO_ENFORCE=1` to fail if hosted p95 budgets are missed.
+The hosted benchmark now validates and times the dashboard's critical 100,000-run query shapes: newest run pages, larger pages, name/tag/config/notes search, failed/running/finished filters, combined search+filter, selected-metric sort, project overview, bounded chart series, and selected-run M4 series. Set `INSTANTML_HOSTED_DEMO_RESULT_PATH=/tmp/instantml-hosted-benchmark.json` to save the sanitized JSON result, and `INSTANTML_HOSTED_DEMO_ENFORCE=1` to fail if hosted p95 budgets are missed.
 
 Cloud Run API benchmark:
 
@@ -783,6 +792,7 @@ list of handlers still on the legacy hand-rolled spec path.
 - Rust is the default backend; preserve documented route shapes and run `npm run test:contract` after behavior changes.
 - Keep `npm run test:contract:node` available when a change might break legacy Node compatibility or future JSON migration assumptions.
 - Keep scalar metric summaries maintained by ClickHouse materialized views; summary/list endpoints must not scan raw metric history.
+- Keep run-summary hydration page-scoped after ClickHouse reads return: group metric-series rows by run once and avoid per-run scans of the full page series list.
 - Keep run list endpoints cursor/page bounded.
 - Keep compatibility org context explicit: API-key mode uses the key org, local mode uses the fixed local org.
 - Keep project-scoped API keys flowing through project-aware helpers before returning run-derived data.
