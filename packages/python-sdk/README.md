@@ -698,7 +698,7 @@ PYTHONPATH=packages/python-sdk python3 -m instantml.uploader \
   --base-url http://127.0.0.1:8000
 ```
 
-Use `upload_mode="spool"` when the training process should avoid post-init HTTP calls. The SDK writes one fsynced JSON event file per logging call, and the uploader drains those files through the existing API. Metric and console-log event files send their `event_id` as an `Idempotency-Key`, so a compatible server can safely accept retried metric/log events. This first implementation is intended for roughly 100 SDK calls per second per run on a local SSD; batch many scalar values into one metrics dictionary for higher-frequency loops.
+Use `upload_mode="spool"` when the training process should avoid post-init HTTP calls. The SDK writes fsynced JSONL event segments, keeping the active segment hidden with the writer PID in the filename; the uploader drains finalized segments and promotes crash-left active segments once the writer process is gone. Ownerless legacy `.jsonl.tmp` segments are recovered after a short stale-file window. Metric and console-log event files send their `event_id` as an `Idempotency-Key`, so a compatible server can safely accept retried metric/log events. This first implementation is intended for roughly 100 SDK calls per second per run on a local SSD; batch many scalar values into one metrics dictionary for higher-frequency loops.
 
 Console logging uses the same one-request event format. `Run.log_console(...)`,
 `Run.log_stdout(...)`, and `Run.log_stderr(...)` assign deterministic

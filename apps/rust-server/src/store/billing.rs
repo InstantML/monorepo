@@ -1000,6 +1000,7 @@ async fn activate_paid_plan(
         data.insert_org(org.clone());
         org
     };
+    invalidate_write_gate_usage(store, org_id).await;
     let account = BillingAccountProjection {
         schema_version: 1,
         org_id,
@@ -1168,6 +1169,7 @@ async fn apply_subscription_object(
             data.insert_org(org.clone());
             org
         };
+        invalidate_write_gate_usage(store, org_id).await;
         if org.storage_choice != STORAGE_CHOICE_CUSTOMER_CLICKHOUSE {
             store.ensure_tenant_route(&org).await?;
         }
@@ -1234,6 +1236,7 @@ async fn downgrade_org_after_subscription_end(
             .persist_locked("organization", org.id, &org.id.to_string(), &org)
             .await?;
         store.data.lock().await.insert_org(org);
+        invalidate_write_gate_usage(store, org_id).await;
     }
     persist_billing_account(store, account.clone()).await?;
     Ok(account)
@@ -1333,6 +1336,7 @@ pub async fn operator_set_org_plan(
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
         .await?;
     store.data.lock().await.insert_org(org.clone());
+    invalidate_write_gate_usage(store, org_id).await;
     let mut account = existing.unwrap_or_else(|| default_billing_account(&org));
     account.access_state = if target == PLAN_FREE.id {
         BILLING_FREE_ACTIVE.to_string()
@@ -1361,6 +1365,7 @@ async fn apply_local_free_plan(
         .persist_locked("organization", org.id, &org.id.to_string(), &org)
         .await?;
     store.data.lock().await.insert_org(org.clone());
+    invalidate_write_gate_usage(store, org.id).await;
     let account = default_billing_account(&org);
     persist_billing_account(store, account.clone()).await?;
     Ok(account)

@@ -28,6 +28,7 @@ import { RunFilterBar } from "./runs/run-filter-bar";
 import { AnalysisSkeleton } from "./ui/skeleton";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
+import { clearRunsetCaches } from "./reports/runset-cache";
 import { useFocusTrap } from "./ui/use-focus-trap";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
@@ -1038,6 +1039,10 @@ export function DashboardShell({
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
+  const reportRunsetCacheScope = useMemo(
+    () => [api.baseUrl ?? "", activeOrgId, sessionPayload?.user?.primary_email ?? ""].join("\u0000"),
+    [activeOrgId, api.baseUrl, sessionPayload?.user?.primary_email],
+  );
   const localSavedViewScope = useMemo(
     () => storageScopeId([activeOrgId, sessionPayload?.user?.primary_email ?? ""].filter(Boolean).join(":")),
     [activeOrgId, sessionPayload?.user?.primary_email],
@@ -1168,6 +1173,9 @@ export function DashboardShell({
     resetRunPagination();
     setMetricKey(value);
   }, [resetRunPagination]);
+  useEffect(() => {
+    clearRunsetCaches();
+  }, [reportRunsetCacheScope]);
   useEffect(() => {
     if (previousOrgIdRef.current === activeOrgId) return;
     // First session load is not an org switch: keep the ?project= deep link

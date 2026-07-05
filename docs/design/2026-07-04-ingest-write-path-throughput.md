@@ -31,6 +31,9 @@ they only pay off in combination:
 4. SDK batched delivery: the async uploader groups consecutive same-run metric
    events from its SQLite queue into one batch request, with keep-alive HTTP
    connection reuse and gzip.
+5. Process-spool crash recovery: active append-only JSONL segments carry the
+   writer PID, and the standalone uploader promotes segments left by dead
+   writers before replaying them.
 
 ## Goals
 
@@ -126,6 +129,9 @@ SDK:
 
 - The single-point endpoint is unchanged, so mixed old/new SDKs keep working and
   the SDK downgrades automatically against servers without the batch route.
-- The write-gate cache is a new cache over the operational log; its invalidation
-  is time-bounded (TTL) with a forced recompute near limits, and it is covered
-  by unit tests as required by the Rust server performance practices.
+- The write-gate cache is a process-local cache over the operational log. Plan
+  mutation paths clear the local org entry immediately; otherwise invalidation
+  is time-bounded (TTL) with a forced recompute near limits. Hosted multi-writer
+  deployments still need the documented single-writer data-plane shape, or a
+  shared usage-counter design before this cache can be treated as globally
+  authoritative across instances.

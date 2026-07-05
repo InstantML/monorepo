@@ -251,6 +251,10 @@ pub async fn enforce_plan_capacity(
     Ok(())
 }
 
+pub async fn invalidate_write_gate_usage(store: &Store, org_id: Uuid) {
+    store.write_gate_usage.lock().await.remove(&org_id);
+}
+
 fn near_any_write_gate_limit(counts: &UsageCounts, delta: UsageDelta) -> bool {
     near_write_gate_limit(counts.projects, delta.projects, counts.plan.projects)
         || near_write_gate_limit(counts.runs, delta.runs, counts.plan.runs)
@@ -1154,6 +1158,23 @@ mod tests {
         let cache = store.write_gate_usage.lock().await;
         let entry = cache.get(&org_id).expect("cached write-gate entry");
         assert_eq!(entry.counts.metric_points, 1 + 10);
+    }
+
+    #[tokio::test]
+    async fn invalidate_write_gate_usage_removes_org_cache_entry() {
+        let store = cache_test_store();
+        let org_id = Uuid::new_v4();
+        store.write_gate_usage.lock().await.insert(
+            org_id,
+            CachedWriteGateCounts {
+                refreshed_at: Instant::now(),
+                counts: test_counts("pro"),
+            },
+        );
+
+        invalidate_write_gate_usage(&store, org_id).await;
+
+        assert!(!store.write_gate_usage.lock().await.contains_key(&org_id));
     }
 
     #[test]

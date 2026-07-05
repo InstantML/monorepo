@@ -16,6 +16,7 @@ from .credentials import _resolve_api_key
 
 
 LOCK_FILE = ".uploader.lock"
+LEGACY_ACTIVE_SEGMENT_STALE_SECONDS = 30.0
 
 
 def drain_spool(
@@ -40,6 +41,7 @@ def _drain_run_dir(client: Client, run_dir: Path, max_events: int | None, upload
     # Old single-event ``.json`` files and new append-only ``.jsonl`` segments
     # are drained together in filename order (both carry sequence-ordered
     # prefixes) so cross-format ordering within a run is preserved.
+    _promote_recoverable_segments(run_dir)
     for event_path in sorted(list(run_dir.glob("*.json")) + list(run_dir.glob("*.jsonl"))):
         if max_events is not None and uploaded >= max_events:
             return uploaded
@@ -69,6 +71,94 @@ def _drain_run_dir(client: Client, run_dir: Path, max_events: int | None, upload
         if failed:
             break
     return uploaded
+
+
+def _promote_recoverable_segments(run_dir: Path) -> None:
+    """Make crash-left active segment dotfiles visible to the normal drain loop."""
+    for tmp_path in sorted(run_dir.glob(".*.jsonl.pid-*.tmp")):
+        parsed = _pid_segment_final_path(tmp_path)
+        if parsed is None:
+            continue
+        final_path, writer_pid = parsed
+        if _pid_is_running(writer_pid):
+            continue
+        _promote_segment(tmp_path, final_path)
+
+    # Older SDKs wrote active append-only segments as ``.name.jsonl.tmp``
+    # without an owner PID. Recover only stale files so a follow-mode uploader
+    # does not race a still-running legacy writer.
+    now = time.time()
+    for tmp_path in sorted(run_dir.glob(".*.jsonl.tmp")):
+        final_path = _legacy_segment_final_path(tmp_path)
+        if final_path is None:
+            continue
+        try:
+            age_seconds = now - tmp_path.stat().st_mtime
+        except OSError:
+            continue
+        if age_seconds < LEGACY_ACTIVE_SEGMENT_STALE_SECONDS:
+            continue
+        _promote_segment(tmp_path, final_path)
+
+
+def _pid_segment_final_path(tmp_path: Path) -> tuple[Path, int] | None:
+    name = tmp_path.name
+    marker = ".pid-"
+    suffix = ".tmp"
+    marker_index = name.rfind(marker)
+    if not name.startswith(".") or not name.endswith(suffix) or marker_index <= 1:
+        return None
+    pid_text = name[marker_index + len(marker) : -len(suffix)]
+    if not pid_text.isdecimal():
+        return None
+    final_name = name[1:marker_index]
+    if not final_name.endswith(".jsonl"):
+        return None
+    return tmp_path.with_name(final_name), int(pid_text)
+
+
+def _legacy_segment_final_path(tmp_path: Path) -> Path | None:
+    name = tmp_path.name
+    suffix = ".tmp"
+    if not name.startswith(".") or not name.endswith(".jsonl.tmp"):
+        return None
+    final_name = name[1:-len(suffix)]
+    if not final_name.endswith(".jsonl"):
+        return None
+    return tmp_path.with_name(final_name)
+
+
+def _promote_segment(tmp_path: Path, final_path: Path) -> None:
+    if final_path.exists():
+        return
+    try:
+        os.replace(tmp_path, final_path)
+    except FileNotFoundError:
+        return
+    _fsync_dir(final_path.parent)
+
+
+def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _fsync_dir(path: Path) -> None:
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def main(argv: list[str] | None = None) -> int:

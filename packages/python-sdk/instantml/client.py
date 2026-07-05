@@ -4067,7 +4067,7 @@ class _SpoolSegmentWriter:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         name = f"segment-{self._segment_index:010d}-{stamp}-{uuid.uuid4().hex}.jsonl"
         self._final_path = self._run_dir / name
-        self._active_path = self._run_dir / f".{name}.tmp"
+        self._active_path = self._run_dir / f".{name}.pid-{os.getpid()}.tmp"
         self._handle = self._active_path.open("a", encoding="utf-8")
         self._events_since_fsync = 0
         self._events_in_segment = 0

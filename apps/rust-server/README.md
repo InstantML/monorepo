@@ -514,6 +514,12 @@ multi-run ClickHouse query for the long selected runs and reports
 `effective_buckets`; the bucket count is also clamped to the same 120,000-point
 response budget.
 
+Plan-limit write gates use a short per-process usage cache for the ingest fast
+path. Billing and operator plan mutations clear that org's local entry
+immediately; multi-instance hosted scale-out must keep the documented
+single-writer data-plane shape, or add a shared usage-counter design before
+raising write-serving instances.
+
 Device-code grant: `start` returns a `device_code` and `user_code`; `poll` is called every 5 s by the SDK until `authorized`, `denied`, or `expired`; `confirm` requires a mutation-origin-validated non-demo browser session for an owner/admin in a billing- and storage-ready workspace, then mints a scoped API key (`sdk:ingest` + `export:read` + `artifacts:write`) whose plaintext is returned exactly once on the first authorized poll then cleared. Codes are stored in-memory with a 15-minute TTL and evicted lazily.
 
 The durable route reference lives in `docs/architecture/current-api.md`, and

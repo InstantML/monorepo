@@ -24,6 +24,7 @@
  */
 
 type ApiLike = {
+  baseUrl?: string;
   get(path: string, options?: { signal?: AbortSignal }): Promise<unknown>;
 };
 
@@ -97,8 +98,13 @@ function remember<T>(cache: Map<string, CacheEntry<T>>, key: string, create: () 
   return promise;
 }
 
-function runsetCacheKey(spec: RunsetFetchSpec, options: RunsetResolveOptions): string {
+function apiCacheScope(api: ApiLike): string {
+  return typeof api.baseUrl === "string" ? api.baseUrl : "";
+}
+
+function runsetCacheKey(api: ApiLike, spec: RunsetFetchSpec, options: RunsetResolveOptions): string {
   return JSON.stringify({
+    apiBaseUrl: apiCacheScope(api),
     projects: spec.projects ?? [],
     pinned: options.includePinned ? spec.pinned_run_ids ?? [] : [],
     limit: spec.limit ?? null,
@@ -121,7 +127,8 @@ async function listProjectRuns(api: ApiLike, project: string, limit: number): Pr
  */
 export function fetchRunByIdCached(api: ApiLike, id: string, signal?: AbortSignal): Promise<unknown> {
   const trimmed = id.trim();
-  const promise = remember(runByIdCache, trimmed, () => api.get(`/runs/${encodeURIComponent(trimmed)}`));
+  const key = `${apiCacheScope(api)}\u0000${trimmed}`;
+  const promise = remember(runByIdCache, key, () => api.get(`/runs/${encodeURIComponent(trimmed)}`));
   return raceWithSignal(promise, signal);
 }
 
@@ -169,7 +176,7 @@ export function resolveRunsetRuns(
   options: RunsetResolveOptions,
   signal?: AbortSignal,
 ): Promise<RawRunsetRun[]> {
-  const key = runsetCacheKey(spec, options);
+  const key = runsetCacheKey(api, spec, options);
   const promise = remember(runsetCache, key, async () => {
     const collected = new Map<string, RawRunsetRun>();
     const projectLists = await Promise.all(
@@ -205,8 +212,10 @@ export function resolveRunsetRuns(
   return raceWithSignal(promise, signal);
 }
 
-/** Test hook: clear the module caches (not used by production code). */
-export function clearRunsetCachesForTests() {
+export function clearRunsetCaches() {
   runsetCache.clear();
   runByIdCache.clear();
 }
+
+/** Test hook: clear the module caches. */
+export const clearRunsetCachesForTests = clearRunsetCaches;

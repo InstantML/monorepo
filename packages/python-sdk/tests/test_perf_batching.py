@@ -8,6 +8,7 @@ import gzip
 import http.client
 import io
 import json
+import os
 import time
 import urllib.error
 import urllib.request
@@ -594,6 +595,9 @@ def test_spool_segment_writer_appends_and_finalizes(tmp_path):
         writer.append({"sequence": step, "event_id": f"e{step}"}, json.dumps({"sequence": step}))
     # Not visible until finalize (active segment is a dotfile temp).
     assert not list((tmp_path / "run-1").glob("*.jsonl"))
+    active_segments = list((tmp_path / "run-1").glob(".*.jsonl.pid-*.tmp"))
+    assert len(active_segments) == 1
+    assert f".pid-{os.getpid()}." in active_segments[0].name
     writer.finalize()
     segments = list((tmp_path / "run-1").glob("*.jsonl"))
     assert len(segments) == 1
@@ -660,6 +664,70 @@ def test_uploader_reads_jsonl_segment(tmp_path):
     assert uploader.drain_spool(str(tmp_path), client=FakeClient()) == 3
     assert calls == ["/runs/run-1/metrics"] * 3
     assert not list(run_dir.glob("*.jsonl"))
+
+
+def test_uploader_recovers_dead_writer_tmp_segment(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeClient:
+        def _request(self, method, path, body):
+            calls.append(body)
+            return {}
+
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir(parents=True)
+    event = {"event_id": "e0", "requests": [{"method": "POST", "path": "/runs/run-1/metrics", "body": {"step": 1}}]}
+    tmp_segment = run_dir / ".segment-0000000001-x.jsonl.pid-424242.tmp"
+    tmp_segment.write_text(json.dumps(event) + "\n", encoding="utf-8")
+    monkeypatch.setattr(uploader, "_pid_is_running", lambda pid: False)
+
+    assert uploader.drain_spool(str(tmp_path), client=FakeClient()) == 1
+    assert calls == [{"step": 1}]
+    assert not tmp_segment.exists()
+    assert not list(run_dir.glob("*.jsonl"))
+
+
+def test_uploader_skips_live_writer_tmp_segment(tmp_path, monkeypatch):
+    class FakeClient:
+        def _request(self, method, path, body):
+            raise AssertionError("live active segments must not be drained")
+
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir(parents=True)
+    tmp_segment = run_dir / ".segment-0000000001-x.jsonl.pid-123.tmp"
+    event = {
+        "event_id": "e0",
+        "requests": [{"method": "POST", "path": "/runs/run-1/metrics", "body": {}}],
+    }
+    tmp_segment.write_text(
+        json.dumps(event) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(uploader, "_pid_is_running", lambda pid: True)
+
+    assert uploader.drain_spool(str(tmp_path), client=FakeClient()) == 0
+    assert tmp_segment.exists()
+
+
+def test_uploader_recovers_legacy_stale_tmp_segment(tmp_path):
+    calls = []
+
+    class FakeClient:
+        def _request(self, method, path, body):
+            calls.append(path)
+            return {}
+
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir(parents=True)
+    event = {"event_id": "e0", "requests": [{"method": "POST", "path": "/runs/run-1/metrics", "body": {}}]}
+    tmp_segment = run_dir / ".segment-0000000001-x.jsonl.tmp"
+    tmp_segment.write_text(json.dumps(event) + "\n", encoding="utf-8")
+    old = time.time() - uploader.LEGACY_ACTIVE_SEGMENT_STALE_SECONDS - 1
+    os.utime(tmp_segment, (old, old))
+
+    assert uploader.drain_spool(str(tmp_path), client=FakeClient()) == 1
+    assert calls == ["/runs/run-1/metrics"]
+    assert not tmp_segment.exists()
 
 
 def test_uploader_max_events_returns_between_segments(tmp_path):
