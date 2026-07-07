@@ -8,6 +8,7 @@ const configSource = readFileSync(new URL("../app/dashboard-config.tsx", import.
 const shellSource = readFileSync(new URL("../app/dashboard/dashboard-shell.tsx", import.meta.url), "utf8");
 const detailSource = readFileSync(new URL("../app/dashboard/detail/tab-pane.tsx", import.meta.url), "utf8");
 const paneSource = readFileSync(new URL("../app/dashboard/traces/tab-pane.tsx", import.meta.url), "utf8");
+const timelineSource = readFileSync(new URL("../app/dashboard/detail/trace-timeline.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/styles/traces.css", import.meta.url), "utf8");
 const runDetailStyles = readFileSync(new URL("../app/styles/run-detail.css", import.meta.url), "utf8");
 
@@ -65,7 +66,7 @@ test("traces tab exposes tree, inspector, status, and responsive styles", () => 
 test("run detail exposes recent traces lazily with exact deep links", () => {
   assert.match(detailSource, /id: "traces", label: "Traces"/);
   assert.match(detailSource, /runWorkspaceTab !== "traces"/);
-  assert.match(detailSource, /\/api\/traces\$\{queryString\(runTraceListQuery\(run\)\)\}/);
+  assert.match(detailSource, /\/api\/traces\$\{queryString\(runTraceListQuery\(run, selectedTraceStep\)\)\}/);
   assert.match(detailSource, /run_id: run\.id/);
   assert.match(detailSource, /limit: RECENT_TRACE_LIMIT/);
   assert.doesNotMatch(detailSource, /params\.from\s*=/);
@@ -74,4 +75,54 @@ test("run detail exposes recent traces lazily with exact deep links", () => {
   assert.match(detailSource, /span_id: trace\.root_span_id \|\| undefined/);
   assert.match(runDetailStyles, /\.pd-trace-row/);
   assert.match(runDetailStyles, /grid-template-columns: 84px minmax\(0, 1fr\) 82px 78px 132px/);
+});
+
+test("run detail correlates traces with metrics on a shared step timeline", () => {
+  // The timeline component exists and draws the metric line + activity lane.
+  assert.match(timelineSource, /export function TraceMetricTimeline/);
+  assert.match(timelineSource, /normalizeSeries/);
+  assert.match(timelineSource, /yMapper/);
+  assert.match(timelineSource, /chartColor\(0\)/);
+  // Markers encode trace health via tonal classes; the semantic color tokens
+  // live in run-detail.css so both themes resolve automatically.
+  assert.match(timelineSource, /function markerTone\(bucket: StepBucket\)/);
+  assert.match(timelineSource, /return "err";[\s\S]*?return "run";[\s\S]*?return "ok";/);
+  assert.match(runDetailStyles, /\.pd-trace-marker\.err\s*\{[^}]*var\(--danger\)/);
+  assert.match(runDetailStyles, /\.pd-trace-marker\.ok\s*\{[^}]*var\(--accent\)/);
+  assert.match(runDetailStyles, /\.pd-trace-marker\.run\s*\{[^}]*var\(--muted\)/);
+  // Contiguous error steps get a full-height danger wash band.
+  assert.match(timelineSource, /pd-trace-error-band/);
+  assert.match(runDetailStyles, /\.pd-trace-error-band\s*\{[^}]*var\(--danger\)/);
+  // Marker motion respects prefers-reduced-motion.
+  assert.match(runDetailStyles, /prefers-reduced-motion: reduce\)\s*\{\s*\.pd-trace-marker/);
+  // Clickable, keyboard-operable markers with aria state.
+  assert.match(timelineSource, /pd-trace-marker-btn/);
+  assert.match(timelineSource, /aria-pressed=\{selectedStep === bucket\.step\}/);
+  assert.match(timelineSource, /onStepSelect\(selectedStep === step \? null : step\)/);
+
+  // The timeline is imported and rendered only inside the traces tab.
+  assert.match(detailSource, /import \{ TraceMetricTimeline \}/);
+  assert.match(detailSource, /runWorkspaceTab === "traces" \?/);
+  assert.match(detailSource, /<TraceMetricTimeline/);
+
+  // Lazy, abortable, run-scoped steps fetch mirroring the recent-traces effect.
+  assert.match(detailSource, /\/api\/runs\/\$\{runId\}\/traces\/steps/);
+  assert.match(detailSource, /new AbortController\(\)/);
+  assert.match(detailSource, /isAbortError/);
+  assert.match(detailSource, /retryTransientRequest/);
+  assert.match(detailSource, /setTraceSteps\(null\)/);
+
+  // Step selection threads min_step/max_step into the list query and refetches.
+  assert.match(detailSource, /min_step: step, max_step: step/);
+  assert.match(detailSource, /runWorkspaceTab, selectedTraceStep\]/);
+  assert.match(detailSource, /selectedStep=\{selectedTraceStep\}/);
+  assert.match(detailSource, /onStepSelect=\{setSelectedTraceStep\}/);
+
+  // Styles: new timeline classes exist, tokens only (no raw px font sizes).
+  const timelineCss = runDetailStyles.slice(runDetailStyles.indexOf("Trace × metric correlation timeline"));
+  assert.ok(timelineCss.length > 0, "timeline CSS block present");
+  assert.match(timelineCss, /\.pd-trace-timeline-frame/);
+  assert.match(timelineCss, /\.pd-trace-marker-btn/);
+  assert.match(timelineCss, /\.pd-trace-filter-chip/);
+  assert.doesNotMatch(timelineCss, /font-size:\s*\d/);
 });

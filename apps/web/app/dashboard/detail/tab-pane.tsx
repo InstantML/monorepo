@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Copy, Database, GitBranch, GitFork, Square } from "lucide-react";
+import { Activity, Copy, Database, GitBranch, GitFork, Square, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -13,7 +13,9 @@ import { MetricChart } from "../metrics/metric-chart";
 import { RunEvidenceExplorer, RunGraphPanel, RunLogsPanel, RunSystemPanel } from "../components/run-workspace";
 import type { RunWorkspaceTabId } from "../components/run-workspace";
 import { formatDuration } from "../ui/duration";
+import { Skeleton } from "../ui/skeleton";
 import { RunMetricTable } from "./run-detail";
+import { TraceMetricTimeline } from "./trace-timeline";
 import { ConfigPanel, ForkCheckpointDialog, OverviewTab, newestCheckpoint } from "./overview";
 import type { ForkCheckpointOptions, OverviewChartSpec } from "./overview";
 import type { Artifact, HoverPoint, LoggedObject, LoggedObjectRow, MetricPoint, MetricSeries, RunLineage, RunMetricRow, RunSummary, RunTimelineRow } from "../../dashboard-types";
@@ -21,6 +23,7 @@ import type { components } from "../../../src/types/api.generated";
 
 type ChartZoomRange = { min: number; max: number } | null;
 type TraceSummary = components["schemas"]["TraceSummaryItem"];
+type TraceStepSummary = components["schemas"]["TraceStepSummaryResponse"];
 type ApiLike = {
   get(path: string, options?: { signal?: AbortSignal }): Promise<any>;
   post(path: string, body?: any, options?: { headers?: Record<string, string>; signal?: AbortSignal }): Promise<any>;
@@ -458,9 +461,17 @@ export function DetailTabPane({
   const [recentTraces, setRecentTraces] = useState<TraceSummary[]>([]);
   const [recentTracesLoading, setRecentTracesLoading] = useState(false);
   const [recentTracesError, setRecentTracesError] = useState("");
+  const [traceSteps, setTraceSteps] = useState<TraceStepSummary | null>(null);
+  const [traceStepsLoading, setTraceStepsLoading] = useState(false);
+  const [traceStepsError, setTraceStepsError] = useState("");
+  const [traceMetricKey, setTraceMetricKey] = useState("");
+  const [traceSeriesCache, setTraceSeriesCache] = useState<Record<string, MetricSeries[]>>({});
+  const [selectedTraceStep, setSelectedTraceStep] = useState<number | null>(null);
 
   const runId = run?.id ?? "";
   const userRows = useMemo(() => runMetricRows.filter((row) => !isInternalInstantMlMetric(row.key)), [runMetricRows]);
+  const userMetricKeys = useMemo(() => userRows.map((row) => row.key), [userRows]);
+  const userMetricKeySignature = userMetricKeys.join("|");
   const keys = useMemo(() => overviewMetricKeys(userRows), [userRows]);
   const tputKey = useMemo(() => throughputKey(userRows), [userRows]);
   const chartKeys = useMemo(
@@ -477,7 +488,16 @@ export function DetailTabPane({
   // Reset per-run UI state when the inspected run changes.
   useEffect(() => {
     setForkArtifact(null);
+    setSelectedTraceStep(null);
+    setTraceSeriesCache({});
   }, [runId]);
+
+  // Default (and self-heal) the timeline metric key to the run's preferred user
+  // metric. Re-runs when the key set changes (late-loading rows, run switch) so
+  // a stale key from a previous run never sticks.
+  useEffect(() => {
+    setTraceMetricKey((current) => (current && userMetricKeys.includes(current) ? current : preferredMetricKey(userMetricKeys)));
+  }, [userMetricKeySignature]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Lineage feeds the "forked from" header line, config diff, and parent
   // ghost curve. Only forked runs need it.
@@ -580,7 +600,7 @@ export function DetailTabPane({
     setRecentTracesLoading(true);
     setRecentTracesError("");
     retryTransientRequest(
-      () => api.get(`/api/traces${queryString(runTraceListQuery(run))}`, { signal: controller.signal }),
+      () => api.get(`/api/traces${queryString(runTraceListQuery(run, selectedTraceStep))}`, { signal: controller.signal }),
       { signal: controller.signal },
     )
       .then((payload) => {
@@ -599,11 +619,91 @@ export function DetailTabPane({
       cancelled = true;
       controller.abort();
     };
+  }, [api, run?.started_at, runId, runWorkspaceTab, selectedTraceStep]);
+
+  // Per-step trace aggregates for the correlation timeline. Independent of the
+  // list fetch above and the metric-series fetch below: one failing must not
+  // block the others. Tab-gated + abortable, mirroring the recent-traces effect.
+  useEffect(() => {
+    if (runWorkspaceTab !== "traces" || !run) {
+      setTraceSteps(null);
+      setTraceStepsError("");
+      setTraceStepsLoading(false);
+      setSelectedTraceStep(null);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setTraceSteps(null);
+    setTraceStepsLoading(true);
+    setTraceStepsError("");
+    retryTransientRequest(
+      () => api.get(`/api/runs/${runId}/traces/steps`, { signal: controller.signal }),
+      { signal: controller.signal },
+    )
+      .then((payload) => {
+        if (!cancelled) setTraceSteps((payload ?? null) as TraceStepSummary | null);
+      })
+      .catch((caught) => {
+        if (!cancelled && !isAbortError(caught)) {
+          setTraceSteps(null);
+          setTraceStepsError(caught instanceof Error ? caught.message : "Unable to load trace activity.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTraceStepsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [api, run?.started_at, runId, runWorkspaceTab]);
+
+  // Metric line for the timeline's selected key. Reuse the headline seriesMap
+  // cache when the key is already loaded; otherwise fetch it once (same request
+  // shape as the overview effect) into a per-key cache. Tab-gated + abortable.
+  useEffect(() => {
+    if (runWorkspaceTab !== "traces" || !runId || !traceMetricKey) return undefined;
+    if (seriesMap[traceMetricKey] || traceSeriesCache[traceMetricKey]) return undefined;
+    const controller = new AbortController();
+    let cancelled = false;
+    api.post(
+      "/api/metrics/series",
+      { buckets: SERIES_BUCKETS, key: traceMetricKey, limit: SERIES_LIMIT, run_ids: [runId] },
+      { signal: controller.signal },
+    )
+      .then((payload) => {
+        if (cancelled) return;
+        const byRunId = new Map<string, MetricPoint[]>();
+        for (const entry of Array.isArray(payload?.series) ? payload.series : []) {
+          if (entry && typeof entry.run_id === "string") byRunId.set(entry.run_id, Array.isArray(entry.metrics) ? entry.metrics : []);
+        }
+        setTraceSeriesCache((prev) => ({
+          ...prev,
+          [traceMetricKey]: [{ group: "detail", id: runId, name: run?.name ?? runId, points: byRunId.get(runId) ?? [] }],
+        }));
+      })
+      .catch((caught) => {
+        if (!cancelled && !isAbortError(caught)) setTraceSeriesCache((prev) => ({ ...prev, [traceMetricKey]: [] }));
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [api, run?.name, runId, runWorkspaceTab, seriesMap, traceMetricKey, traceSeriesCache]);
 
   const kpiCells = useMemo(() => (
     run ? buildKpiCells({ run, running, seriesMap, userRows }) : []
   ), [run, running, seriesMap, userRows]);
+
+  // Timeline metric line: prefer the headline seriesMap (already fetched for the
+  // overview), falling back to the per-key trace cache. Scope to this run only.
+  const traceMetricSeries = useMemo<MetricSeries[]>(() => {
+    if (!traceMetricKey) return [];
+    const fromMap = seriesMap[traceMetricKey];
+    if (fromMap) return fromMap.filter((item) => item.id === runId);
+    return traceSeriesCache[traceMetricKey] ?? [];
+  }, [runId, seriesMap, traceMetricKey, traceSeriesCache]);
 
   const chartSpecs = useMemo<OverviewChartSpec[]>(() => {
     if (!run) return [];
@@ -831,12 +931,28 @@ export function DetailTabPane({
       {runWorkspaceTab === "logs" ? <RunLogsPanel api={api as any} run={run} /> : null}
 
       {runWorkspaceTab === "traces" ? (
-        <RecentTracesPanel
-          error={recentTracesError}
-          loading={recentTracesLoading}
-          run={run}
-          traces={recentTraces}
-        />
+        <div className="pd-stack pd-traces-panel">
+          <TraceMetricTimeline
+            error={traceStepsError}
+            loading={traceStepsLoading}
+            metricKey={traceMetricKey}
+            metricKeys={userMetricKeys}
+            onMetricKeyChange={setTraceMetricKey}
+            onStepSelect={setSelectedTraceStep}
+            runName={run.name}
+            selectedStep={selectedTraceStep}
+            series={traceMetricSeries}
+            steps={traceSteps}
+          />
+          <RecentTracesPanel
+            error={recentTracesError}
+            loading={recentTracesLoading}
+            onClearStep={() => setSelectedTraceStep(null)}
+            run={run}
+            selectedStep={selectedTraceStep}
+            traces={recentTraces}
+          />
+        </div>
       ) : null}
 
       {runWorkspaceTab === "files" ? (
@@ -868,46 +984,65 @@ export function DetailTabPane({
 function RecentTracesPanel({
   error,
   loading,
+  onClearStep,
   run,
+  selectedStep,
   traces,
 }: {
   error: string;
   loading: boolean;
+  onClearStep: () => void;
   run: RunSummary;
+  selectedStep: number | null;
   traces: TraceSummary[];
 }) {
+  const stepLabel = selectedStep !== null ? formatNumber(selectedStep, 0) : "";
   return (
-    <div className="pd-stack pd-traces-panel">
-      <section className="pd-panel">
-        <div className="pd-panel-head">
-          <span className="pd-mlabel"><Activity size={14} /> Recent traces</span>
-          <span className="pd-unit">last {RECENT_TRACE_LIMIT} for this run</span>
-        </div>
-        <div className="pd-panel-body">
-          {error ? <div className="status-strip">{error}</div> : null}
-          {loading ? <div className="empty compact-empty">Loading traces...</div> : null}
-          {!loading && !error && !traces.length ? (
-            <div className="empty compact-empty">No traces logged for {run.name} yet.</div>
-          ) : null}
-          {traces.length ? (
-            <div className="pd-trace-list" role="list" aria-label={`Recent traces for ${run.name}`}>
-              {traces.map((trace) => (
-                <a className="pd-trace-row" href={traceHref(trace)} key={`${trace.run_id}:${trace.trace_id}`} role="listitem">
-                  <span className={`trace-status ${trace.status}`}>{trace.status}</span>
-                  <span className="pd-trace-main">
-                    <strong>{trace.root_name || trace.trace_id.slice(0, 8)}</strong>
-                    <small>{trace.kinds.slice(0, 3).join(", ") || "custom"} · {trace.thread_id || trace.rollout_id || trace.trace_id.slice(0, 8)}</small>
-                  </span>
-                  <span className="pd-trace-meta">{formatNumber(trace.span_count, 0)} spans</span>
-                  <span className="pd-trace-meta">{formatDuration(trace.duration_ms)}</span>
-                  <span className="pd-trace-meta">{formatRunTime(trace.updated_at)}</span>
-                </a>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </section>
-    </div>
+    <section className="pd-panel">
+      <div className="pd-panel-head">
+        <span className="pd-mlabel"><Activity size={14} /> Recent traces</span>
+        {selectedStep !== null ? (
+          <button
+            aria-label={`Clear step ${stepLabel} filter`}
+            className="pd-trace-filter-chip"
+            onClick={onClearStep}
+            type="button"
+          >
+            step {stepLabel}<X size={12} aria-hidden="true" />
+          </button>
+        ) : null}
+        {selectedStep === null ? <span className="pd-unit">last {RECENT_TRACE_LIMIT} for this run</span> : null}
+      </div>
+      <div className="pd-panel-body">
+        {error ? <div className="status-strip">{error}</div> : null}
+        {loading ? (
+          <div className="pd-trace-list-skeleton" aria-label="Loading traces" role="status">
+            {[0, 1, 2].map((row) => <Skeleton height={20} key={row} width={`${88 - row * 9}%`} />)}
+          </div>
+        ) : null}
+        {!loading && !error && !traces.length ? (
+          <div className="empty compact-empty">
+            {selectedStep !== null ? `No traces at step ${stepLabel} for ${run.name}.` : `No traces logged for ${run.name} yet.`}
+          </div>
+        ) : null}
+        {traces.length ? (
+          <div className="pd-trace-list" role="list" aria-label={`Recent traces for ${run.name}${selectedStep !== null ? ` at step ${stepLabel}` : ""}`}>
+            {traces.map((trace) => (
+              <a className="pd-trace-row" href={traceHref(trace)} key={`${trace.run_id}:${trace.trace_id}`} role="listitem">
+                <span className={`trace-status ${trace.status}`}>{trace.status}</span>
+                <span className="pd-trace-main">
+                  <strong>{trace.root_name || trace.trace_id.slice(0, 8)}</strong>
+                  <small>{trace.kinds.slice(0, 3).join(", ") || "custom"} · {trace.thread_id || trace.rollout_id || trace.trace_id.slice(0, 8)}</small>
+                </span>
+                <span className="pd-trace-meta">{formatNumber(trace.span_count, 0)} spans</span>
+                <span className="pd-trace-meta">{formatDuration(trace.duration_ms)}</span>
+                <span className="pd-trace-meta">{formatRunTime(trace.updated_at)}</span>
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -919,9 +1054,10 @@ function traceHref(trace: TraceSummary) {
   })}`;
 }
 
-function runTraceListQuery(run: RunSummary) {
+function runTraceListQuery(run: RunSummary, step: number | null) {
   return {
     run_id: run.id,
     limit: RECENT_TRACE_LIMIT,
+    ...(step !== null ? { min_step: step, max_step: step } : {}),
   };
 }

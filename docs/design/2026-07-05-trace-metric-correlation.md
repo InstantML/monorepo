@@ -141,3 +141,11 @@ error-isolated: a failing steps query must not take down the list.
   min>max validation, 404 semantics, and route ordering confirmed via curl).
   Review pass: clean except doc drift (round-trip count, run-wide totals),
   fixed.
+- 2026-07-07: frontend slice landed — `TraceMetricTimeline` in the run
+  workspace Traces tab (metric line + trace activity lane on one step axis,
+  full-height danger wash over contiguous error steps, tonal markers,
+  panel-head totals, combined tooltip, step-click → filtered recent-traces
+  list with clear chip). Design pass done in-browser against the live demo:
+  both themes, keyboard/aria (30 focusable markers, aria-pressed round-trip),
+  metric switching with on-demand series fetch, list skeletons. 420 web tests
+  + typecheck green.
