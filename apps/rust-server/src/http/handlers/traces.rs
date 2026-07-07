@@ -175,6 +175,38 @@ pub async fn get_trace_children(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/runs/{run_id}/traces/steps",
+    tag = "traces",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+        ("min_step" = Option<f64>, Query, description = "Minimum step bucket to include"),
+        ("max_step" = Option<f64>, Query, description = "Maximum step bucket to include"),
+    ),
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Per-step trace aggregates (capped at 2000 step buckets)", body = crate::domain::TraceStepSummaryResponse),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient scope or project access", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn get_trace_step_summary(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    Query(query): Query<HashMap<String, String>>,
+) -> AppResult<Json<crate::domain::TraceStepSummaryResponse>> {
+    let ctx = context(&state, &headers, true).await?;
+    require_scope(&ctx, "export:read", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    Ok(Json(
+        store::trace_step_summary(&state.store, &ctx, run_id, &query).await?,
+    ))
+}
+
 #[allow(dead_code)]
 fn _json_object_for_openapi_smoke() -> serde_json::Value {
     json!({})

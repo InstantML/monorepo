@@ -46,12 +46,12 @@ use handlers::{
     embed_runs_data, export_data, export_report_markdown, export_workspace_view, fork_run,
     get_artifact_collection, get_artifact_version, get_dashboard_preferences, get_import_job,
     get_metrics, get_report, get_report_by_share_token, get_run, get_run_lineage,
-    get_trace_children, get_trace_detail, get_workspace_view, health, import_mlflow,
-    import_neptune, import_wandb, import_workspace_view, initiate_artifact_upload, list_api_keys,
-    list_artifact_collection_versions, list_artifact_collections, list_artifact_manifest,
-    list_artifacts, list_attributes, list_console_logs, list_imports, list_invitations,
-    list_object_rows, list_objects, list_org_memberships, list_org_panels, list_orgs,
-    list_projects, list_reports, list_runs, list_seats, list_traces, list_users,
+    get_trace_children, get_trace_detail, get_trace_step_summary, get_workspace_view, health,
+    import_mlflow, import_neptune, import_wandb, import_workspace_view, initiate_artifact_upload,
+    list_api_keys, list_artifact_collection_versions, list_artifact_collections,
+    list_artifact_manifest, list_artifacts, list_attributes, list_console_logs, list_imports,
+    list_invitations, list_object_rows, list_objects, list_org_memberships, list_org_panels,
+    list_orgs, list_projects, list_reports, list_runs, list_seats, list_traces, list_users,
     list_workspace_views, log_console_logs, log_metrics, log_metrics_batch, log_rank_metrics,
     log_trace_events, metrics_handler, metrics_series, not_found, openapi_json,
     org_name_availability, overview, preview_invitation, rank_metrics_summary, readyz,
@@ -274,6 +274,10 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/runs/:run_id/rank-metrics", post(log_rank_metrics))
         .route("/api/runs/:run_id/traces/events", post(log_trace_events))
         .route("/api/traces", get(list_traces))
+        .route(
+            "/api/runs/:run_id/traces/steps",
+            get(get_trace_step_summary),
+        )
         .route("/api/runs/:run_id/traces/:trace_id", get(get_trace_detail))
         .route(
             "/api/runs/:run_id/traces/:trace_id/spans",

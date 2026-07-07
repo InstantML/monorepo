@@ -1519,6 +1519,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/traces/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_trace_step_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}/traces/{trace_id}": {
         parameters: {
             query?: never;
@@ -4314,6 +4330,40 @@ export interface components {
             step?: number | null;
             thread_id?: string | null;
             trace_id: string;
+            truncated: boolean;
+        };
+        TraceStepBucket: {
+            /** Format: double */
+            avg_duration_ms?: number | null;
+            /** Format: int64 */
+            error_span_count: number;
+            /** Format: int64 */
+            error_trace_count: number;
+            /** Format: date-time */
+            first_started_at: string;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: date-time */
+            last_started_at: string;
+            /** Format: double */
+            max_duration_ms?: number | null;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            running_trace_count: number;
+            /** Format: int64 */
+            span_count: number;
+            /** Format: double */
+            step: number;
+            /** Format: int64 */
+            trace_count: number;
+        };
+        TraceStepSummaryResponse: {
+            /** Format: int64 */
+            stepless_trace_count: number;
+            steps: components["schemas"]["TraceStepBucket"][];
+            /** Format: int64 */
+            total_trace_count: number;
             truncated: boolean;
         };
         TraceSummaryItem: {
@@ -9241,6 +9291,70 @@ export interface operations {
             };
             /** @description Idempotency conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_trace_step_summary: {
+        parameters: {
+            query?: {
+                /** @description Minimum step bucket to include */
+                min_step?: number;
+                /** @description Maximum step bucket to include */
+                max_step?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-step trace aggregates (capped at 2000 step buckets) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceStepSummaryResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

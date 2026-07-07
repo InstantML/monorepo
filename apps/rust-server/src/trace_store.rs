@@ -258,6 +258,39 @@ pub struct TraceListCursor {
     pub trace_id: String,
 }
 
+#[derive(Row, Deserialize)]
+pub struct TraceStepBucketReadRow {
+    pub step: f64,
+    pub trace_count: u64,
+    pub error_trace_count: u64,
+    pub running_trace_count: u64,
+    pub span_count: u64,
+    pub error_span_count: u64,
+    pub avg_duration_ms: Option<f64>,
+    pub max_duration_ms: Option<f64>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub first_started_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub last_started_at: DateTime<Utc>,
+}
+
+#[derive(Row, Deserialize, Clone)]
+pub struct TraceStepCountsReadRow {
+    pub total_trace_count: u64,
+    pub stepless_trace_count: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct TraceStepSummaryQuery {
+    pub project_id: Uuid,
+    pub run_id: Uuid,
+    pub min_step: Option<f64>,
+    pub max_step: Option<f64>,
+    pub limit: i64,
+}
+
 pub struct TraceSpanWindowQuery<'a> {
     pub org_id: Uuid,
     pub project_id: Uuid,
@@ -506,6 +539,113 @@ pub async fn list_trace_summaries(
     }
     q.bind(query.limit)
         .fetch_all::<TraceSummaryReadRow>()
+        .await
+        .map_err(clickhouse_read_error)
+}
+
+pub async fn trace_step_summaries(
+    store: &MetricStore,
+    org_id: Uuid,
+    query: TraceStepSummaryQuery,
+) -> AppResult<Vec<TraceStepBucketReadRow>> {
+    let mut sql = String::from(
+        "SELECT \
+           assumeNotNull(min_step) AS step, \
+           toUInt64(count()) AS trace_count, \
+           toUInt64(countIf(status = 'error')) AS error_trace_count, \
+           toUInt64(countIf(status = 'running')) AS running_trace_count, \
+           toUInt64(sum(span_count)) AS span_count, \
+           toUInt64(sum(error_count)) AS error_span_count, \
+           avgOrNull(duration_ms) AS avg_duration_ms, \
+           maxOrNull(duration_ms) AS max_duration_ms, \
+           toUInt64(sum(input_tokens)) AS input_tokens, \
+           toUInt64(sum(output_tokens)) AS output_tokens, \
+           min(started_at) AS first_started_at, \
+           max(started_at) AS last_started_at \
+         FROM ( \
+           SELECT \
+             argMax(status, tuple(updated_at, event_id)) AS status, \
+             argMax(span_count, tuple(updated_at, event_id)) AS span_count, \
+             argMax(error_count, tuple(updated_at, event_id)) AS error_count, \
+             argMax(duration_ms, tuple(updated_at, event_id)) AS duration_ms, \
+             argMax(input_tokens, tuple(updated_at, event_id)) AS input_tokens, \
+             argMax(output_tokens, tuple(updated_at, event_id)) AS output_tokens, \
+             argMax(min_step, tuple(updated_at, event_id)) AS min_step, \
+             argMax(started_at, tuple(updated_at, event_id)) AS started_at \
+           FROM trace_summaries \
+           WHERE org_id = ? \
+             AND project_id = ? \
+             AND run_id = ? \
+             AND (run_id, idempotency_key) IN ( \
+               SELECT run_id, idempotency_key \
+               FROM trace_ingest_batches \
+               WHERE org_id = ? AND project_id = ? AND status = 'accepted' \
+               GROUP BY run_id, idempotency_key \
+             ) \
+           GROUP BY project_id, run_id, trace_id \
+         ) WHERE min_step IS NOT NULL",
+    );
+    if query.min_step.is_some() {
+        sql.push_str(" AND min_step >= ?");
+    }
+    if query.max_step.is_some() {
+        sql.push_str(" AND min_step <= ?");
+    }
+    sql.push_str(" GROUP BY step ORDER BY step ASC LIMIT ?");
+
+    let mut q = store
+        .client()
+        .query(&sql)
+        .bind(org_id)
+        .bind(query.project_id)
+        .bind(query.run_id)
+        .bind(org_id)
+        .bind(query.project_id);
+    if let Some(min_step) = query.min_step {
+        q = q.bind(min_step);
+    }
+    if let Some(max_step) = query.max_step {
+        q = q.bind(max_step);
+    }
+    q.bind(query.limit)
+        .fetch_all::<TraceStepBucketReadRow>()
+        .await
+        .map_err(clickhouse_read_error)
+}
+
+pub async fn trace_step_counts(
+    store: &MetricStore,
+    org_id: Uuid,
+    project_id: Uuid,
+    run_id: Uuid,
+) -> AppResult<TraceStepCountsReadRow> {
+    store
+        .client()
+        .query(
+            "SELECT \
+               toUInt64(count()) AS total_trace_count, \
+               toUInt64(countIf(min_step IS NULL)) AS stepless_trace_count \
+             FROM ( \
+               SELECT argMax(min_step, tuple(updated_at, event_id)) AS min_step \
+               FROM trace_summaries \
+               WHERE org_id = ? \
+                 AND project_id = ? \
+                 AND run_id = ? \
+                 AND (run_id, idempotency_key) IN ( \
+                   SELECT run_id, idempotency_key \
+                   FROM trace_ingest_batches \
+                   WHERE org_id = ? AND project_id = ? AND status = 'accepted' \
+                   GROUP BY run_id, idempotency_key \
+                 ) \
+               GROUP BY project_id, run_id, trace_id \
+             )",
+        )
+        .bind(org_id)
+        .bind(project_id)
+        .bind(run_id)
+        .bind(org_id)
+        .bind(project_id)
+        .fetch_one::<TraceStepCountsReadRow>()
         .await
         .map_err(clickhouse_read_error)
 }

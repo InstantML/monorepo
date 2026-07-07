@@ -1270,6 +1270,33 @@ Output:
 { "traces": [], "next_cursor": null, "limit": 50 }
 ```
 
+### `GET /api/runs/:run_id/traces/steps`
+
+Auth: tenant read access.
+
+Returns bounded per-step trace aggregates for one run, anchored on each trace's
+canonical `min_step`. Traces without a step count into `stepless_trace_count`.
+Missing runs return 404; a run with no traces returns an empty response rather
+than 404.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `min_step`, `max_step` | Optional inclusive step-bucket range, `min_step <= max_step` |
+
+Buckets are ordered by ascending step and capped at 2,000; `truncated` is `true`
+when the run has more distinct steps than the cap, in which case the lowest
+2,000 steps are returned. `total_trace_count` and `stepless_trace_count` are
+always run-wide: they ignore `min_step`/`max_step`, so under a filtered range
+the bucket sum can be smaller than the totals. Only `steps` honors the range.
+
+Output:
+
+```json
+{ "steps": [], "stepless_trace_count": 0, "total_trace_count": 0, "truncated": false }
+```
+
 ### `GET /api/runs/:run_id/traces/:trace_id`
 
 Auth: tenant read access.

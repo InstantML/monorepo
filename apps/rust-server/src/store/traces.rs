@@ -7,12 +7,14 @@ use chrono::TimeZone;
 use crate::trace_store::{
     self as ch_traces, TraceChildCountRow, TraceIngestBatchRow, TraceListCursor, TraceListQuery,
     TraceSpanCanonicalRow, TraceSpanEventRow, TraceSpanIndexReadRow, TraceSpanIndexRow,
-    TraceSummaryReadRow, TraceSummaryRow, MAX_TRACE_SEARCH_TERMS,
+    TraceStepBucketReadRow, TraceStepCountsReadRow, TraceStepSummaryQuery, TraceSummaryReadRow,
+    TraceSummaryRow, MAX_TRACE_SEARCH_TERMS,
 };
 
 const TRACE_SUMMARY_RECOMPUTE_LIMIT: i64 = 100_001;
 const TRACE_SUMMARY_VISIBLE_SPAN_LIMIT: usize = 100_000;
 const DEFAULT_TRACE_LOOKBACK_DAYS: i64 = 7;
+const MAX_TRACE_STEP_BUCKETS: i64 = 2000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TraceListWindow {
@@ -496,6 +498,86 @@ pub async fn trace_children(
         child_count,
         omitted,
     })
+}
+
+pub async fn trace_step_summary(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
+    query: &HashMap<String, String>,
+) -> AppResult<TraceStepSummaryResponse> {
+    let min_step = query
+        .get("min_step")
+        .map(|value| validate_query_step(value, "min_step"))
+        .transpose()?;
+    let max_step = query
+        .get("max_step")
+        .map(|value| validate_query_step(value, "max_step"))
+        .transpose()?;
+    if matches!((min_step, max_step), (Some(min_step), Some(max_step)) if min_step > max_step) {
+        return Err(AppError::validation(
+            "min_step must be less than or equal to max_step",
+        ));
+    }
+    let run = {
+        let data = store.data.lock().await;
+        fetch_run_in_data(&data, ctx, run_id)?
+    };
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let (bucket_rows, counts) = tokio::try_join!(
+        ch_traces::trace_step_summaries(
+            &metric_store,
+            ctx.org_id,
+            TraceStepSummaryQuery {
+                project_id: run.project_id,
+                run_id: run.id,
+                min_step,
+                max_step,
+                limit: MAX_TRACE_STEP_BUCKETS + 1,
+            },
+        ),
+        ch_traces::trace_step_counts(&metric_store, ctx.org_id, run.project_id, run.id),
+    )?;
+    Ok(build_trace_step_summary(
+        bucket_rows,
+        counts,
+        MAX_TRACE_STEP_BUCKETS,
+    ))
+}
+
+fn build_trace_step_summary(
+    mut bucket_rows: Vec<TraceStepBucketReadRow>,
+    counts: TraceStepCountsReadRow,
+    max_buckets: i64,
+) -> TraceStepSummaryResponse {
+    let truncated = bucket_rows.len() as i64 > max_buckets;
+    if truncated {
+        bucket_rows.truncate(max_buckets.max(0) as usize);
+    }
+    let steps = bucket_rows.into_iter().map(trace_step_bucket).collect();
+    TraceStepSummaryResponse {
+        steps,
+        stepless_trace_count: counts.stepless_trace_count,
+        total_trace_count: counts.total_trace_count,
+        truncated,
+    }
+}
+
+fn trace_step_bucket(row: TraceStepBucketReadRow) -> TraceStepBucket {
+    TraceStepBucket {
+        step: row.step,
+        trace_count: row.trace_count,
+        error_trace_count: row.error_trace_count,
+        running_trace_count: row.running_trace_count,
+        span_count: row.span_count,
+        error_span_count: row.error_span_count,
+        avg_duration_ms: row.avg_duration_ms,
+        max_duration_ms: row.max_duration_ms,
+        input_tokens: row.input_tokens,
+        output_tokens: row.output_tokens,
+        first_started_at: row.first_started_at,
+        last_started_at: row.last_started_at,
+    }
 }
 
 fn trace_event_row(
@@ -1745,6 +1827,89 @@ mod tests {
             started_at.timestamp_millis(),
             row.started_at.timestamp_millis()
         );
+    }
+
+    fn step_bucket_row(
+        step: f64,
+        trace_count: u64,
+        error_trace_count: u64,
+        running_trace_count: u64,
+    ) -> TraceStepBucketReadRow {
+        TraceStepBucketReadRow {
+            step,
+            trace_count,
+            error_trace_count,
+            running_trace_count,
+            span_count: trace_count * 3,
+            error_span_count: error_trace_count,
+            avg_duration_ms: Some(120.0),
+            max_duration_ms: Some(200.0),
+            input_tokens: trace_count * 10,
+            output_tokens: trace_count * 5,
+            first_started_at: datetime_from_millis(1_780_000_000_000),
+            last_started_at: datetime_from_millis(1_780_000_050_000),
+        }
+    }
+
+    #[test]
+    fn build_trace_step_summary_maps_bucket_math_and_counts() {
+        let rows = vec![step_bucket_row(1.0, 4, 1, 2), step_bucket_row(2.0, 3, 0, 0)];
+        let counts = TraceStepCountsReadRow {
+            total_trace_count: 9,
+            stepless_trace_count: 2,
+        };
+
+        let summary = build_trace_step_summary(rows, counts, MAX_TRACE_STEP_BUCKETS);
+
+        assert!(!summary.truncated);
+        assert_eq!(summary.total_trace_count, 9);
+        assert_eq!(summary.stepless_trace_count, 2);
+        assert_eq!(summary.steps.len(), 2);
+        let first = &summary.steps[0];
+        assert_eq!(first.step, 1.0);
+        assert_eq!(first.trace_count, 4);
+        assert_eq!(first.error_trace_count, 1);
+        assert_eq!(first.running_trace_count, 2);
+        assert_eq!(first.span_count, 12);
+        assert_eq!(first.error_span_count, 1);
+        assert_eq!(first.avg_duration_ms, Some(120.0));
+        assert_eq!(first.max_duration_ms, Some(200.0));
+        assert_eq!(first.input_tokens, 40);
+        assert_eq!(first.output_tokens, 20);
+        assert_eq!(summary.steps[1].step, 2.0);
+        assert_eq!(summary.steps[1].error_trace_count, 0);
+    }
+
+    #[test]
+    fn build_trace_step_summary_flags_and_truncates_over_cap() {
+        let counts = TraceStepCountsReadRow {
+            total_trace_count: 5,
+            stepless_trace_count: 0,
+        };
+
+        let within = (0..3).map(|i| step_bucket_row(i as f64, 1, 0, 0)).collect();
+        let summary = build_trace_step_summary(within, counts.clone(), 3);
+        assert!(!summary.truncated);
+        assert_eq!(summary.steps.len(), 3);
+
+        let over = (0..4).map(|i| step_bucket_row(i as f64, 1, 0, 0)).collect();
+        let summary = build_trace_step_summary(over, counts, 3);
+        assert!(summary.truncated);
+        assert_eq!(summary.steps.len(), 3);
+        assert_eq!(summary.steps.last().unwrap().step, 2.0);
+    }
+
+    #[test]
+    fn build_trace_step_summary_handles_empty_run() {
+        let counts = TraceStepCountsReadRow {
+            total_trace_count: 0,
+            stepless_trace_count: 0,
+        };
+        let summary = build_trace_step_summary(Vec::new(), counts, MAX_TRACE_STEP_BUCKETS);
+        assert!(summary.steps.is_empty());
+        assert!(!summary.truncated);
+        assert_eq!(summary.total_trace_count, 0);
+        assert_eq!(summary.stepless_trace_count, 0);
     }
 
     #[test]

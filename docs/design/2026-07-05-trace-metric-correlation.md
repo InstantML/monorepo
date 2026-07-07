@@ -54,8 +54,13 @@ TraceStepSummaryResponse {
 ```
 
 Bounds: `ORDER BY step ASC LIMIT 2001` (`MAX_TRACE_STEP_BUCKETS = 2000`,
-truncation detected via limit+1), optional `min_step`/`max_step` params reuse
-the existing validators. One ClickHouse round-trip. No new tables, no schema
+truncation detected via limit+1; when truncated the lowest 2000 steps are
+kept), optional `min_step`/`max_step` params reuse the existing validators.
+Two parallel ClickHouse reads joined with `try_join!`: the bucket query
+(step-filtered, `min_step IS NOT NULL`) and a run-wide counts query — the
+totals must include stepless and out-of-window traces, so they cannot share
+the bucket aggregation. `total_trace_count`/`stepless_trace_count` are always
+run-wide; only `steps` honors `min_step`/`max_step`. No new tables, no schema
 migration.
 
 Why trace grain, not span grain: the product story is "rollouts at step N";
@@ -129,3 +134,10 @@ error-isolated: a failing steps query must not take down the list.
 
 - 2026-07-05: design accepted; branch `codex/trace-metric-correlation` cut
   from the tracing integration branch.
+- 2026-07-07: backend slice landed — `GET /api/runs/:run_id/traces/steps`
+  (DTOs, argMax-dedup SQL, handler, openapi + generated TS, README/API docs,
+  3 store tests). Validated live against a seeded 30-step / 80-trace demo run
+  (error cluster steps 18–22 reproduced exactly in bucket aggregates; filters,
+  min>max validation, 404 semantics, and route ordering confirmed via curl).
+  Review pass: clean except doc drift (round-trip count, run-wide totals),
+  fixed.
