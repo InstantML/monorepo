@@ -149,3 +149,19 @@ error-isolated: a failing steps query must not take down the list.
   both themes, keyboard/aria (30 focusable markers, aria-pressed round-trip),
   metric switching with on-demand series fetch, list skeletons. 420 web tests
   + typecheck green.
+- 2026-07-07 (paused, review findings open): post-commit review of 6dbfebb6
+  surfaced 3 confirmed issues to fix before the final pass —
+  (1) trace-timeline.tsx:354 overlapping hit-buttons mis-select steps once
+  bucket spacing drops under 22px (dense runs; drive click from SVG-level
+  nearest-bucket hit-test instead, matching handleMove);
+  (2) trace-timeline.tsx:360 hover/tooltip sticks when the pointer exits the
+  frame over a marker button (buttons lack onMouseLeave; move handlers to the
+  frame container);
+  (3) tab-pane.tsx:488/637/705 one-frame stale-run flash: traceSeriesCache is
+  keyed by metric key only and traceSteps isn't cleared in the run-reset
+  effect (key cache by run, clear traceSteps on run change).
+  Non-blocking notes: series cache never refetches for running runs
+  (non-headline keys go stale); new tests are source-regex snapshots, not
+  behavior. Remaining plan: fix the 3 findings → re-verify live in Chrome →
+  extend ui-smoke traces path for the timeline → final multi-angle review
+  pass + full E2E walkthrough → (optional) push branch + PR.
