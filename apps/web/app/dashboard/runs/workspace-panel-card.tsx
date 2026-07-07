@@ -600,8 +600,10 @@ export const WorkspacePanelCard = memo(function WorkspacePanelCard({
         </div>
         {/* Line panels portal the chart's three-dot menu into this slot so its
             trigger lands at the card's top-right corner; the other panel types
-            have no chart toolbar, so they get a head kebab. */}
-        {linePanel ? (
+            have no chart toolbar, so they get a head kebab. Fullscreen hides
+            this whole head, so skip the slot there and let the chart render
+            its menu inline at the chart area's top-right instead. */}
+        {linePanel && !isFullscreenPanel ? (
           <div className="panel-card-actions chart-actions-slot" ref={setChartActionsSlot} />
         ) : panelActionItems ? (
           <div className="panel-card-actions">
