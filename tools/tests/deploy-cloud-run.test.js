@@ -89,6 +89,13 @@ test("deploy helper requires a verified sender for Resend invites", () => {
   ]);
 });
 
+test("GitHub Cloud Run deploy uses the verified invitation sender", () => {
+  const workflow = fs.readFileSync(path.join(repo, ".github/workflows/deploy-cloud-run.yml"), "utf8");
+
+  assert.match(workflow, /INSTANTML_EMAIL_FROM:\s+"InstantML <invites@mail\.instantml\.ai>"/);
+  assert.doesNotMatch(workflow, /INSTANTML_EMAIL_FROM:\s+"noreply@instantml\.ai"/);
+});
+
 test("deploy helper requires Resend-backed invites for prod", () => {
   const result = runDeploy(["--topology=split"], {
     RESEND_API_KEY: "",
