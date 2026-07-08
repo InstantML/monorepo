@@ -98,7 +98,20 @@ test("run detail correlates traces with metrics on a shared step timeline", () =
   // Clickable, keyboard-operable markers with aria state.
   assert.match(timelineSource, /pd-trace-marker-btn/);
   assert.match(timelineSource, /aria-pressed=\{selectedStep === bucket\.step\}/);
-  assert.match(timelineSource, /onStepSelect\(selectedStep === step \? null : step\)/);
+  assert.match(timelineSource, /onStepSelect\(selectedStepRef\.current === step \? null : step\)/);
+  // Hover derives from the anchor step at render, so poll refreshes can't
+  // strand a stale tooltip; mousemove hit-testing is rAF-coalesced.
+  assert.match(timelineSource, /const \[hoverStep, setHoverStep\] = useState<number \| null>\(null\)/);
+  assert.match(timelineSource, /requestAnimationFrame/);
+  // Marker/button layers are memoized so hover churn doesn't redraw them.
+  assert.match(timelineSource, /const markersLayer = useMemo/);
+  assert.match(timelineSource, /const buttonsLayer = useMemo/);
+  // Series failures caption honestly and are retried, never cached.
+  assert.match(timelineSource, /Couldn't load/);
+  assert.match(detailSource, /setTraceSeriesError/);
+  // Manual refresh for finished runs.
+  assert.match(timelineSource, /aria-label="Refresh trace activity"/);
+  assert.match(detailSource, /setTraceRefreshKey\(\(key\) => key \+ 1\)/);
 
   // The timeline is imported and rendered only inside the traces tab.
   assert.match(detailSource, /import \{ TraceMetricTimeline \}/);
@@ -115,8 +128,8 @@ test("run detail correlates traces with metrics on a shared step timeline", () =
   // Step selection threads min_step/max_step into the list query and refetches.
   assert.match(detailSource, /min_step: step, max_step: step/);
   // The list and step effects participate in the live-run poll cadence.
-  assert.match(detailSource, /runWorkspaceTab, selectedTraceStep, tracesPollTick\]/);
-  assert.match(detailSource, /runWorkspaceTab, tracesPollTick\]/);
+  assert.match(detailSource, /runWorkspaceTab, selectedTraceStep, traceRefreshKey, tracesPollTick\]/);
+  assert.match(detailSource, /runWorkspaceTab, traceRefreshKey, tracesPollTick\]/);
   assert.match(detailSource, /const tracesPollTick = liveRun \? liveTick : 0;/);
   assert.match(detailSource, /selectedStep=\{selectedTraceStep\}/);
   assert.match(detailSource, /onStepSelect=\{setSelectedTraceStep\}/);

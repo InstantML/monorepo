@@ -100,9 +100,12 @@ existing recent-traces list inside the Traces tab (`detail/tab-pane.tsx`).
   clear-filter chip appears. Markers are real `<button>`s with
   `aria-pressed`, focus-visible ring, and keyboard operability.
 - **Degraded states**: no metric points → activity lane renders alone on the
-  trace step domain with an explanatory caption; no stepped traces → metric
-  chart renders alone plus a "N traces have no step" note; neither → existing
-  empty state. Loading uses the shared skeleton primitives.
+  trace step domain with an explanatory caption; no stepped traces → the
+  panel collapses to a "N traces have no step" note above the recent list
+  (a chart with no lane earns no vertical space); neither → existing empty
+  state. Metric-series fetch failures caption honestly ("Couldn't load
+  <key>") instead of posing as an empty series. Loading uses the shared
+  skeleton primitives.
 
 ### Data flow
 

@@ -1177,7 +1177,13 @@
   text-transform: uppercase;
 }
 
+/* Light theme keeps the wash at 5% so the metric line stays >=3:1 over it;
+   dark theme can afford the fuller 8% tint. */
 .pd-trace-error-band {
+  fill: color-mix(in srgb, var(--danger) 5%, transparent);
+}
+
+:root[data-theme="dark"] .pd-trace-error-band {
   fill: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
@@ -1252,7 +1258,9 @@
 
 .pd-trace-marker-btn:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  /* Two-layer ring: surface gap + solid accent so the indicator holds >=3:1
+     on the plot, inside the danger band, and in both themes. */
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent);
 }
 
 .pd-trace-tip {

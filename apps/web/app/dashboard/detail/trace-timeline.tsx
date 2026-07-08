@@ -1,7 +1,7 @@
 "use client";
 
-import { Activity } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Activity, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 
 import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, normalizeSeries, svgPointFromClient, yMapper } from "../../../src/charts.js";
@@ -38,7 +38,6 @@ const HOVER_NEAR_PX = 40;
 type NormPoint = { step: number; value: number; xValue: number };
 type NormDomain = { minX: number; maxX: number; minY: number; maxY: number; yScale?: string };
 type NormSeries = { normalizedPoints?: NormPoint[]; domain?: NormDomain };
-type HoverInfo = { x: number; step: number; bucket: StepBucket | null; metricValue: number | null };
 
 type Props = {
   error: string;
@@ -46,10 +45,12 @@ type Props = {
   metricKey: string;
   metricKeys: string[];
   onMetricKeyChange: (key: string) => void;
+  onRefresh: () => void;
   onStepSelect: (step: number | null) => void;
   runName: string;
   selectedStep: number | null;
   series: MetricSeries[];
+  seriesError: string;
   steps: TraceStepSummary | null;
 };
 
@@ -84,15 +85,23 @@ export function TraceMetricTimeline({
   metricKey,
   metricKeys,
   onMetricKeyChange,
+  onRefresh,
   onStepSelect,
   runName,
   selectedStep,
   series,
+  seriesError,
   steps,
 }: Props) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const { width } = useMeasuredSize(frameRef, 640, TIMELINE_HEIGHT);
-  const [hover, setHover] = useState<HoverInfo | null>(null);
+  // Hover stores only the anchor step; position, bucket, and metric value are
+  // derived at render so a live-poll refresh can never strand a stale tooltip
+  // over shifted geometry. Mousemove hit-testing is coalesced to one pass per
+  // animation frame.
+  const [hoverStep, setHoverStep] = useState<number | null>(null);
+  const moveFrameRef = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(moveFrameRef.current), []);
 
   const buckets = useMemo<StepBucket[]>(() => steps?.steps ?? [], [steps]);
 
@@ -169,6 +178,10 @@ export function TraceMetricTimeline({
     () => buckets.reduce((total, bucket) => total + bucket.error_trace_count, 0),
     [buckets],
   );
+  const totalTraces = steps?.total_trace_count ?? 0;
+  // Run-wide (includes stepless and truncated-out traces) once the API field
+  // lands; the bucket sum is the fallback for older payload shapes.
+  const runWideErrors = (steps as (TraceStepSummary & { total_error_trace_count?: number }) | null)?.total_error_trace_count ?? errorTraceTotal;
   const radiusFor = (count: number) => {
     if (maxTraceCount <= 0) return MARKER_MIN_R;
     const scaled = Math.sqrt(Math.max(0, count)) / Math.sqrt(maxTraceCount);
@@ -191,18 +204,47 @@ export function TraceMetricTimeline({
     [domain],
   );
 
-  function nearestMetricValue(step: number) {
-    let value: number | null = null;
-    let best = Infinity;
-    for (const point of metricPoints) {
-      const distance = Math.abs(xPos(point.step) - xPos(step));
-      if (distance < best) {
-        best = distance;
-        value = point.value;
-      }
+  // Nearest metric value per bucket step, one sorted two-pointer pass (both
+  // arrays arrive step-ascending). Feeds hover derivation and marker labels
+  // without an O(buckets × points) rescan per render.
+  const metricValueByBucketStep = useMemo(() => {
+    const map = new Map<number, number>();
+    if (!metricPoints.length) return map;
+    const pxPerStep = (plotRight - plotLeft) / ((stepRange.max - stepRange.min) || 1);
+    let cursor = 0;
+    for (const bucket of buckets) {
+      while (
+        cursor + 1 < metricPoints.length
+        && Math.abs(metricPoints[cursor + 1].step - bucket.step) <= Math.abs(metricPoints[cursor].step - bucket.step)
+      ) cursor += 1;
+      const point = metricPoints[cursor];
+      if (Math.abs(point.step - bucket.step) * pxPerStep <= HOVER_NEAR_PX) map.set(bucket.step, point.value);
     }
-    return best <= HOVER_NEAR_PX ? value : null;
-  }
+    return map;
+  }, [buckets, metricPoints, plotLeft, plotRight, stepRange.max, stepRange.min]);
+
+  const metricPointByStep = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const point of metricPoints) map.set(point.step, point.value);
+    return map;
+  }, [metricPoints]);
+
+  const bucketByStep = useMemo(() => {
+    const map = new Map<number, StepBucket>();
+    for (const bucket of buckets) map.set(bucket.step, bucket);
+    return map;
+  }, [buckets]);
+
+  const hover = useMemo(() => {
+    if (hoverStep === null) return null;
+    const bucket = bucketByStep.get(hoverStep) ?? null;
+    const metricValue = metricPointByStep.get(hoverStep)
+      ?? (bucket ? metricValueByBucketStep.get(hoverStep) ?? null : null);
+    if (!bucket && metricValue === null) return null;
+    return { x: xPos(hoverStep), step: hoverStep, bucket, metricValue };
+    // xPos is derived from the same inputs listed below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bucketByStep, hoverStep, metricPointByStep, metricValueByBucketStep, plotLeft, plotRight, stepRange.max, stepRange.min]);
 
   function nearestBucketToClientX(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -230,56 +272,127 @@ export function TraceMetricTimeline({
 
   function handleMove(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const local = svgPointFromClient(rect, event.clientX, event.clientY, width, TIMELINE_HEIGHT);
-    const px = local.x;
-    let bucket: StepBucket | null = null;
-    let bucketDistance = Infinity;
-    for (const candidate of buckets) {
-      const distance = Math.abs(xPos(candidate.step) - px);
-      if (distance < bucketDistance) {
-        bucketDistance = distance;
-        bucket = candidate;
+    const { clientX, clientY } = event;
+    if (moveFrameRef.current) return;
+    moveFrameRef.current = requestAnimationFrame(() => {
+      moveFrameRef.current = 0;
+      const px = svgPointFromClient(rect, clientX, clientY, width, TIMELINE_HEIGHT).x;
+      let bucket: StepBucket | null = null;
+      let bucketDistance = Infinity;
+      for (const candidate of buckets) {
+        const distance = Math.abs(xPos(candidate.step) - px);
+        if (distance < bucketDistance) {
+          bucketDistance = distance;
+          bucket = candidate;
+        }
       }
-    }
-    let metricPoint: NormPoint | null = null;
-    let metricDistance = Infinity;
-    for (const point of metricPoints) {
-      const distance = Math.abs(xPos(point.step) - px);
-      if (distance < metricDistance) {
-        metricDistance = distance;
-        metricPoint = point;
+      let metricPoint: NormPoint | null = null;
+      let metricDistance = Infinity;
+      for (const point of metricPoints) {
+        const distance = Math.abs(xPos(point.step) - px);
+        if (distance < metricDistance) {
+          metricDistance = distance;
+          metricPoint = point;
+        }
       }
-    }
-    const bucketNear = bucket !== null && bucketDistance <= HOVER_NEAR_PX;
-    const metricNear = metricPoint !== null && metricDistance <= HOVER_NEAR_PX;
-    if (!bucketNear && !metricNear) {
-      setHover(null);
-      return;
-    }
-    const anchorStep = bucketNear && (!metricNear || bucketDistance <= metricDistance)
-      ? (bucket as StepBucket).step
-      : (metricPoint as NormPoint).step;
-    setHover({
-      x: xPos(anchorStep),
-      step: anchorStep,
-      bucket: bucketNear ? bucket : null,
-      metricValue: metricNear ? (metricPoint as NormPoint).value : null,
+      const bucketNear = bucket !== null && bucketDistance <= HOVER_NEAR_PX;
+      const metricNear = metricPoint !== null && metricDistance <= HOVER_NEAR_PX;
+      if (!bucketNear && !metricNear) {
+        setHoverStep(null);
+        return;
+      }
+      setHoverStep(
+        bucketNear && (!metricNear || bucketDistance <= metricDistance)
+          ? (bucket as StepBucket).step
+          : (metricPoint as NormPoint).step,
+      );
     });
   }
 
-  function focusBucket(bucket: StepBucket) {
-    setHover({ x: xPos(bucket.step), step: bucket.step, bucket, metricValue: nearestMetricValue(bucket.step) });
+  function clearHover() {
+    cancelAnimationFrame(moveFrameRef.current);
+    moveFrameRef.current = 0;
+    setHoverStep(null);
   }
 
-  function toggleStep(step: number) {
-    onStepSelect(selectedStep === step ? null : step);
-  }
+  const selectedStepRef = useRef(selectedStep);
+  selectedStepRef.current = selectedStep;
+  const toggleStep = useCallback(
+    (step: number) => onStepSelect(selectedStepRef.current === step ? null : step),
+    [onStepSelect],
+  );
+  const focusBucket = useCallback((step: number) => setHoverStep(step), []);
+
+  const hasSelectedBucket = selectedStep !== null && bucketByStep.has(selectedStep);
+
+  // Both lane layers are memoized on data + geometry so hover churn (which can
+  // arrive per animation frame) redraws only the guide, overlay marker, and
+  // tooltip — never the up-to-2,000 circles and buttons.
+  const markersLayer = useMemo(() => buckets.map((bucket) => (
+    <g key={`marker-${bucket.step}`}>
+      {selectedStep === bucket.step ? (
+        <circle className="pd-trace-marker-ring" cx={xPos(bucket.step)} cy={LANE_CENTER} r={radiusFor(bucket.trace_count) + 3} />
+      ) : null}
+      <circle
+        className={`pd-trace-marker ${markerTone(bucket)}`}
+        cx={xPos(bucket.step)}
+        cy={LANE_CENTER}
+        r={radiusFor(bucket.trace_count)}
+      />
+    </g>
+    // xPos/radiusFor derive from the geometry inputs listed below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  )), [buckets, maxTraceCount, plotLeft, plotRight, selectedStep, stepRange.max, stepRange.min]);
+
+  const buttonsLayer = useMemo(() => buckets.map((bucket, index) => {
+    const size = Math.max(22, radiusFor(bucket.trace_count) * 2 + 8);
+    const isTabStop = hasSelectedBucket ? selectedStep === bucket.step : index === 0;
+    const metricValue = metricValueByBucketStep.get(bucket.step);
+    const label = metricValue !== undefined && metricKey
+      ? `${markerLabel(bucket)} · ${metricKey} ${formatMetricValue(metricValue)}`
+      : markerLabel(bucket);
+    return (
+      <button
+        aria-label={label}
+        aria-pressed={selectedStep === bucket.step}
+        className="pd-trace-marker-btn"
+        key={`hit-${bucket.step}`}
+        onBlur={() => setHoverStep((current) => (current === bucket.step ? null : current))}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleStep(bucket.step);
+        }}
+        onFocus={() => focusBucket(bucket.step)}
+        onKeyDown={(event) => {
+          const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+          const target = delta !== 0
+            ? index + delta
+            : event.key === "Home" ? 0 : event.key === "End" ? buckets.length - 1 : -1;
+          if (target < 0 || target >= buckets.length || target === index) return;
+          event.preventDefault();
+          const siblings = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(".pd-trace-marker-btn");
+          siblings?.[target]?.focus();
+        }}
+        style={{ left: `${xPos(bucket.step)}px`, top: `${LANE_CENTER}px`, width: `${size}px`, height: `${size}px` }}
+        tabIndex={isTabStop ? 0 : -1}
+        type="button"
+      />
+    );
+    // xPos/radiusFor derive from the geometry inputs listed below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [buckets, focusBucket, hasSelectedBucket, maxTraceCount, metricKey, metricValueByBucketStep, plotLeft, plotRight, selectedStep, stepRange.max, stepRange.min, toggleStep]);
 
   const captions: string[] = [];
-  if (!hasMetric && buckets.length) captions.push(metricKey ? `No points for ${metricKey} yet` : "No user metrics to plot");
+  if (!hasMetric && buckets.length) {
+    if (seriesError) captions.push(`Couldn't load ${metricKey || "the metric"}; trace activity is still current`);
+    else captions.push(metricKey ? `No points for ${metricKey} yet` : "No metrics logged yet");
+  }
   if (steps?.truncated) captions.push("Showing first 2,000 steps");
 
-  const tooltipLeft = Math.max(64, Math.min(width - 64, hover?.x ?? 0));
+  // Clamp by half the tooltip's real footprint so it stays inside the panel
+  // even at collapsed-sidebar widths.
+  const halfTip = Math.max(24, Math.min(160, width / 2 - 8));
+  const tooltipLeft = Math.max(halfTip, Math.min(width - halfTip, hover?.x ?? 0));
   const frameStyle = { height: `${TIMELINE_HEIGHT}px`, cursor: hover?.bucket ? "pointer" : undefined } as CSSProperties;
 
   let body: ReactNode;
@@ -290,7 +403,7 @@ export function TraceMetricTimeline({
   } else if (!buckets.length && (steps?.stepless_trace_count ?? 0) > 0) {
     body = (
       <div className="pd-trace-timeline-note">
-        {formatNumber(steps?.stepless_trace_count ?? 0, 0)} trace{(steps?.stepless_trace_count ?? 0) === 1 ? "" : "s"} have no step; showing recent traces below.
+        {formatNumber(steps?.stepless_trace_count ?? 0, 0)} trace{(steps?.stepless_trace_count ?? 0) === 1 ? " has" : "s have"} no step; showing recent traces below.
       </div>
     );
   } else if (!buckets.length) {
@@ -303,7 +416,7 @@ export function TraceMetricTimeline({
         <div
           className="pd-trace-timeline-frame"
           onClick={handleClick}
-          onMouseLeave={() => setHover(null)}
+          onMouseLeave={clearHover}
           onMouseMove={handleMove}
           ref={frameRef}
           style={frameStyle}
@@ -364,19 +477,15 @@ export function TraceMetricTimeline({
               <circle className="pd-trace-timeline-dot" cx={hover.x} cy={yPos(hover.metricValue)} r={4} style={{ fill: chartColor(0) }} />
             ) : null}
 
-            {buckets.map((bucket) => (
-              <g key={`marker-${bucket.step}`}>
-                {selectedStep === bucket.step ? (
-                  <circle className="pd-trace-marker-ring" cx={xPos(bucket.step)} cy={LANE_CENTER} r={radiusFor(bucket.trace_count) + 3} />
-                ) : null}
-                <circle
-                  className={`pd-trace-marker ${markerTone(bucket)}${hover?.bucket?.step === bucket.step ? " is-hover" : ""}`}
-                  cx={xPos(bucket.step)}
-                  cy={LANE_CENTER}
-                  r={radiusFor(bucket.trace_count)}
-                />
-              </g>
-            ))}
+            {markersLayer}
+            {hover?.bucket ? (
+              <circle
+                className={`pd-trace-marker ${markerTone(hover.bucket)} is-hover`}
+                cx={hover.x}
+                cy={LANE_CENTER}
+                r={radiusFor(hover.bucket.trace_count)}
+              />
+            ) : null}
           </svg>
 
           {/* Keyboard layer only: pointer hits resolve via the frame's
@@ -384,37 +493,7 @@ export function TraceMetricTimeline({
               A roving tabindex keeps the lane a single tab stop; arrows move
               between steps. */}
           <div aria-label="Trace activity by step" className="pd-trace-lane-hits" role="group">
-            {buckets.map((bucket, index) => {
-              const size = Math.max(22, radiusFor(bucket.trace_count) * 2 + 8);
-              const isTabStop = selectedStep !== null ? selectedStep === bucket.step : index === 0;
-              return (
-                <button
-                  aria-label={markerLabel(bucket)}
-                  aria-pressed={selectedStep === bucket.step}
-                  className="pd-trace-marker-btn"
-                  key={`hit-${bucket.step}`}
-                  onBlur={() => setHover((current) => (current?.step === bucket.step ? null : current))}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    toggleStep(bucket.step);
-                  }}
-                  onFocus={() => focusBucket(bucket)}
-                  onKeyDown={(event) => {
-                    const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-                    const target = delta !== 0
-                      ? index + delta
-                      : event.key === "Home" ? 0 : event.key === "End" ? buckets.length - 1 : -1;
-                    if (target < 0 || target >= buckets.length || target === index) return;
-                    event.preventDefault();
-                    const siblings = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(".pd-trace-marker-btn");
-                    siblings?.[target]?.focus();
-                  }}
-                  style={{ left: `${xPos(bucket.step)}px`, top: `${LANE_CENTER}px`, width: `${size}px`, height: `${size}px` }}
-                  tabIndex={isTabStop ? 0 : -1}
-                  type="button"
-                />
-              );
-            })}
+            {buttonsLayer}
           </div>
 
           {hover ? (
@@ -455,8 +534,10 @@ export function TraceMetricTimeline({
         <span className="pd-mlabel"><Activity size={14} /> Trace activity</span>
         {buckets.length ? (
           <span className="pd-unit pd-trace-timeline-summary">
-            {formatNumber(steps?.total_trace_count ?? 0, 0)} traces
-            {errorTraceTotal > 0 ? <span className="pd-trace-timeline-summary-errors"> · {formatNumber(errorTraceTotal, 0)} errors</span> : null}
+            {formatNumber(totalTraces, 0)} trace{totalTraces === 1 ? "" : "s"}
+            {runWideErrors > 0 ? (
+              <span className="pd-trace-timeline-summary-errors"> · {formatNumber(runWideErrors, 0)} error{runWideErrors === 1 ? "" : "s"}</span>
+            ) : null}
             {` · steps ${formatNumber(stepRange.min, 0)}–${formatNumber(stepRange.max, 0)}`}
           </span>
         ) : null}
@@ -474,6 +555,9 @@ export function TraceMetricTimeline({
         ) : (
           <span className="pd-unit">no metrics logged</span>
         )}
+        <button aria-label="Refresh trace activity" className="icon-button framed" disabled={loading} onClick={onRefresh} type="button">
+          <RefreshCw size={15} />
+        </button>
       </div>
       <div className="pd-panel-body">{body}</div>
     </section>

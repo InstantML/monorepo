@@ -465,6 +465,8 @@ export function DetailTabPane({
   const [traceStepsLoading, setTraceStepsLoading] = useState(false);
   const [traceStepsError, setTraceStepsError] = useState("");
   const [traceMetricKey, setTraceMetricKey] = useState("");
+  const [traceSeriesError, setTraceSeriesError] = useState("");
+  const [traceRefreshKey, setTraceRefreshKey] = useState(0);
   // Entries carry the run and live-poll tick they were fetched for, so a run
   // switch can never paint another run's line (even for the one frame before
   // the reset effect flushes) and live runs refresh on the shared poll cadence.
@@ -611,6 +613,10 @@ export function DetailTabPane({
     if (!isRefresh) {
       setRecentTraces([]);
       setRecentTracesLoading(true);
+      // Invalidate immediately: if this pass is aborted (rapid scope toggling),
+      // returning to the previous scope must re-show the skeleton rather than a
+      // false empty state over the wiped rows.
+      tracesLoadedForRef.current = "";
     }
     setRecentTracesError("");
     retryTransientRequest(
@@ -636,7 +642,7 @@ export function DetailTabPane({
       cancelled = true;
       controller.abort();
     };
-  }, [api, run?.started_at, runId, runWorkspaceTab, selectedTraceStep, tracesPollTick]);
+  }, [api, run?.started_at, runId, runWorkspaceTab, selectedTraceStep, traceRefreshKey, tracesPollTick]);
 
   // Per-step trace aggregates for the correlation timeline. Independent of the
   // list fetch above and the metric-series fetch below: one failing must not
@@ -657,6 +663,7 @@ export function DetailTabPane({
     if (!isRefresh) {
       setTraceSteps(null);
       setTraceStepsLoading(true);
+      stepsLoadedForRef.current = "";
     }
     setTraceStepsError("");
     retryTransientRequest(
@@ -682,7 +689,7 @@ export function DetailTabPane({
       cancelled = true;
       controller.abort();
     };
-  }, [api, run?.started_at, runId, runWorkspaceTab, tracesPollTick]);
+  }, [api, run?.started_at, runId, runWorkspaceTab, traceRefreshKey, tracesPollTick]);
 
   // Metric line for the timeline's selected key. Reuse the headline seriesMap
   // cache when the key is already loaded; otherwise fetch it once (same request
@@ -697,9 +704,13 @@ export function DetailTabPane({
     if (cached && cached.runId === runId && (!liveRun || cached.tick === liveTick)) return undefined;
     const controller = new AbortController();
     let cancelled = false;
-    api.post(
-      "/api/metrics/series",
-      { buckets: SERIES_BUCKETS, key: traceMetricKey, limit: SERIES_LIMIT, run_ids: [runId] },
+    setTraceSeriesError("");
+    retryTransientRequest(
+      () => api.post(
+        "/api/metrics/series",
+        { buckets: SERIES_BUCKETS, key: traceMetricKey, limit: SERIES_LIMIT, run_ids: [runId] },
+        { signal: controller.signal },
+      ),
       { signal: controller.signal },
     )
       .then((payload) => {
@@ -718,15 +729,18 @@ export function DetailTabPane({
         }));
       })
       .catch((caught) => {
+        // Failures are surfaced, never cached: the caption stays honest and
+        // the next effect pass (metric switch, tab re-entry, refresh, poll
+        // tick) retries.
         if (!cancelled && !isAbortError(caught)) {
-          setTraceSeriesCache((prev) => ({ ...prev, [traceMetricKey]: { runId, tick: liveTick, series: [] } }));
+          setTraceSeriesError(caught instanceof Error ? caught.message : "Unable to load the metric series.");
         }
       });
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [api, liveRun, liveTick, run?.name, runId, runWorkspaceTab, seriesMap, traceMetricKey, traceSeriesCache]);
+  }, [api, liveRun, liveTick, run?.name, runId, runWorkspaceTab, seriesMap, traceMetricKey, traceRefreshKey, traceSeriesCache]);
 
   const kpiCells = useMemo(() => (
     run ? buildKpiCells({ run, running, seriesMap, userRows }) : []
@@ -975,10 +989,19 @@ export function DetailTabPane({
             metricKey={traceMetricKey}
             metricKeys={userMetricKeys}
             onMetricKeyChange={setTraceMetricKey}
+            onRefresh={() => {
+              setTraceSeriesCache((prev) => {
+                const next = { ...prev };
+                delete next[traceMetricKey];
+                return next;
+              });
+              setTraceRefreshKey((key) => key + 1);
+            }}
             onStepSelect={setSelectedTraceStep}
             runName={run.name}
             selectedStep={selectedTraceStep}
             series={traceMetricSeries}
+            seriesError={traceSeriesError}
             steps={traceSteps && traceSteps.runId === runId ? traceSteps.payload : null}
           />
           <RecentTracesPanel
@@ -987,6 +1010,11 @@ export function DetailTabPane({
             onClearStep={() => setSelectedTraceStep(null)}
             run={run}
             selectedStep={selectedTraceStep}
+            selectedStepTraceCount={
+              selectedTraceStep !== null && traceSteps && traceSteps.runId === runId
+                ? traceSteps.payload.steps.find((bucket) => bucket.step === selectedTraceStep)?.trace_count ?? null
+                : null
+            }
             traces={recentTraces}
           />
         </div>
@@ -1024,6 +1052,7 @@ function RecentTracesPanel({
   onClearStep,
   run,
   selectedStep,
+  selectedStepTraceCount,
   traces,
 }: {
   error: string;
@@ -1031,9 +1060,15 @@ function RecentTracesPanel({
   onClearStep: () => void;
   run: RunSummary;
   selectedStep: number | null;
+  selectedStepTraceCount: number | null;
   traces: TraceSummary[];
 }) {
   const stepLabel = selectedStep !== null ? formatNumber(selectedStep, 0) : "";
+  // Disclose the cap honestly when a pinned step holds more traces than the
+  // list shows, mirroring the unpinned "last N" unit.
+  const pinnedUnit = selectedStep !== null && selectedStepTraceCount !== null && selectedStepTraceCount > traces.length && !loading
+    ? `first ${traces.length} of ${formatNumber(selectedStepTraceCount, 0)} at this step`
+    : "";
   return (
     <section className="pd-panel">
       <div className="pd-panel-head">
@@ -1048,7 +1083,11 @@ function RecentTracesPanel({
             step {stepLabel}<X size={12} aria-hidden="true" />
           </button>
         ) : null}
-        {selectedStep === null ? <span className="pd-unit">last {RECENT_TRACE_LIMIT} for this run</span> : null}
+        {selectedStep === null ? (
+          <span className="pd-unit">last {RECENT_TRACE_LIMIT} for this run</span>
+        ) : pinnedUnit ? (
+          <span className="pd-unit">{pinnedUnit}</span>
+        ) : null}
       </div>
       <div className="pd-panel-body">
         {error ? <div className="status-strip">{error}</div> : null}
