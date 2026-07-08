@@ -165,3 +165,9 @@ error-isolated: a failing steps query must not take down the list.
   behavior. Remaining plan: fix the 3 findings → re-verify live in Chrome →
   extend ui-smoke traces path for the timeline → final multi-angle review
   pass + full E2E walkthrough → (optional) push branch + PR.
+- 2026-07-07: smoke + docs coverage added — the `INSTANTML_UI_SMOKE_TRACES_ONLY`
+  path now seeds stepped/error/stepless traces plus aligned metric points and
+  asserts the timeline (lazy `/traces/steps` fetch, markers, error band,
+  run-wide panel-head totals, step-click filter chip + list pinning, clear),
+  and the run-detail/traces/tracing docs plus the web README document the
+  correlation timeline.
