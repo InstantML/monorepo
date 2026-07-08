@@ -204,7 +204,31 @@ export function TraceMetricTimeline({
     return best <= HOVER_NEAR_PX ? value : null;
   }
 
-  function handleMove(event: MouseEvent<SVGSVGElement>) {
+  function nearestBucketToClientX(event: MouseEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const px = svgPointFromClient(rect, event.clientX, event.clientY, width, TIMELINE_HEIGHT).x;
+    let bucket: StepBucket | null = null;
+    let distance = Infinity;
+    for (const candidate of buckets) {
+      const d = Math.abs(xPos(candidate.step) - px);
+      if (d < distance) {
+        distance = d;
+        bucket = candidate;
+      }
+    }
+    return bucket !== null && distance <= HOVER_NEAR_PX ? bucket : null;
+  }
+
+  // Pointer selection is resolved by nearest-bucket hit-testing at the frame
+  // level (same math as hover), never by per-marker hit boxes: with dense
+  // steps, overlapping boxes would route clicks to the wrong marker.
+  function handleClick(event: MouseEvent<HTMLDivElement>) {
+    if ((event.target as Element).closest(".chart-tooltip")) return;
+    const bucket = nearestBucketToClientX(event);
+    if (bucket) toggleStep(bucket.step);
+  }
+
+  function handleMove(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
     const local = svgPointFromClient(rect, event.clientX, event.clientY, width, TIMELINE_HEIGHT);
     const px = local.x;
@@ -256,7 +280,7 @@ export function TraceMetricTimeline({
   if (steps?.truncated) captions.push("Showing first 2,000 steps");
 
   const tooltipLeft = Math.max(64, Math.min(width - 64, hover?.x ?? 0));
-  const frameStyle = { height: `${TIMELINE_HEIGHT}px` } as CSSProperties;
+  const frameStyle = { height: `${TIMELINE_HEIGHT}px`, cursor: hover?.bucket ? "pointer" : undefined } as CSSProperties;
 
   let body: ReactNode;
   if (loading) {
@@ -274,12 +298,19 @@ export function TraceMetricTimeline({
   } else {
     body = (
       <>
-        <div className="pd-trace-timeline-frame" ref={frameRef} style={frameStyle}>
+        {/* Hover + click live on the frame so exiting anywhere (including over
+            the keyboard-focus buttons) reliably clears the tooltip. */}
+        <div
+          className="pd-trace-timeline-frame"
+          onClick={handleClick}
+          onMouseLeave={() => setHover(null)}
+          onMouseMove={handleMove}
+          ref={frameRef}
+          style={frameStyle}
+        >
           <svg
             aria-label={`Trace activity and ${metricKey || "metric"} for ${runName}`}
             className="pd-trace-timeline-svg"
-            onMouseLeave={() => setHover(null)}
-            onMouseMove={handleMove}
             role="img"
             viewBox={`0 0 ${width} ${TIMELINE_HEIGHT}`}
           >
@@ -348,12 +379,14 @@ export function TraceMetricTimeline({
             ))}
           </svg>
 
-          {/* Real <button> hit targets over the lane give the markers full
-              keyboard operability and native focus-visible without SVG focus
-              quirks; the circles above are the visual layer. */}
-          <div className="pd-trace-lane-hits">
-            {buckets.map((bucket) => {
+          {/* Keyboard layer only: pointer hits resolve via the frame's
+              nearest-bucket test, so these buttons are pointer-transparent.
+              A roving tabindex keeps the lane a single tab stop; arrows move
+              between steps. */}
+          <div aria-label="Trace activity by step" className="pd-trace-lane-hits" role="group">
+            {buckets.map((bucket, index) => {
               const size = Math.max(22, radiusFor(bucket.trace_count) * 2 + 8);
+              const isTabStop = selectedStep !== null ? selectedStep === bucket.step : index === 0;
               return (
                 <button
                   aria-label={markerLabel(bucket)}
@@ -361,10 +394,23 @@ export function TraceMetricTimeline({
                   className="pd-trace-marker-btn"
                   key={`hit-${bucket.step}`}
                   onBlur={() => setHover((current) => (current?.step === bucket.step ? null : current))}
-                  onClick={() => toggleStep(bucket.step)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggleStep(bucket.step);
+                  }}
                   onFocus={() => focusBucket(bucket)}
-                  onMouseEnter={() => focusBucket(bucket)}
+                  onKeyDown={(event) => {
+                    const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                    const target = delta !== 0
+                      ? index + delta
+                      : event.key === "Home" ? 0 : event.key === "End" ? buckets.length - 1 : -1;
+                    if (target < 0 || target >= buckets.length || target === index) return;
+                    event.preventDefault();
+                    const siblings = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(".pd-trace-marker-btn");
+                    siblings?.[target]?.focus();
+                  }}
                   style={{ left: `${xPos(bucket.step)}px`, top: `${LANE_CENTER}px`, width: `${size}px`, height: `${size}px` }}
+                  tabIndex={isTabStop ? 0 : -1}
                   type="button"
                 />
               );

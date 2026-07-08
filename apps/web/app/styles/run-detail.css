@@ -1245,8 +1245,9 @@
   border: 0;
   border-radius: var(--radius-pill);
   background: transparent;
-  cursor: pointer;
-  pointer-events: auto;
+  /* Keyboard-only layer: pointer interactions resolve through the frame's
+     nearest-bucket hit-test so dense, overlapping steps stay clickable. */
+  pointer-events: none;
 }
 
 .pd-trace-marker-btn:focus-visible {

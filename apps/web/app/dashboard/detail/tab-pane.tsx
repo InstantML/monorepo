@@ -461,11 +461,14 @@ export function DetailTabPane({
   const [recentTraces, setRecentTraces] = useState<TraceSummary[]>([]);
   const [recentTracesLoading, setRecentTracesLoading] = useState(false);
   const [recentTracesError, setRecentTracesError] = useState("");
-  const [traceSteps, setTraceSteps] = useState<TraceStepSummary | null>(null);
+  const [traceSteps, setTraceSteps] = useState<{ runId: string; payload: TraceStepSummary } | null>(null);
   const [traceStepsLoading, setTraceStepsLoading] = useState(false);
   const [traceStepsError, setTraceStepsError] = useState("");
   const [traceMetricKey, setTraceMetricKey] = useState("");
-  const [traceSeriesCache, setTraceSeriesCache] = useState<Record<string, MetricSeries[]>>({});
+  // Entries carry the run and live-poll tick they were fetched for, so a run
+  // switch can never paint another run's line (even for the one frame before
+  // the reset effect flushes) and live runs refresh on the shared poll cadence.
+  const [traceSeriesCache, setTraceSeriesCache] = useState<Record<string, { runId: string; tick: number; series: MetricSeries[] }>>({});
   const [selectedTraceStep, setSelectedTraceStep] = useState<number | null>(null);
 
   const runId = run?.id ?? "";
@@ -490,6 +493,7 @@ export function DetailTabPane({
     setForkArtifact(null);
     setSelectedTraceStep(null);
     setTraceSeriesCache({});
+    setTraceSteps(null);
   }, [runId]);
 
   // Default (and self-heal) the timeline metric key to the run's preferred user
@@ -642,7 +646,7 @@ export function DetailTabPane({
       { signal: controller.signal },
     )
       .then((payload) => {
-        if (!cancelled) setTraceSteps((payload ?? null) as TraceStepSummary | null);
+        if (!cancelled && payload) setTraceSteps({ runId, payload: payload as TraceStepSummary });
       })
       .catch((caught) => {
         if (!cancelled && !isAbortError(caught)) {
@@ -664,7 +668,12 @@ export function DetailTabPane({
   // shape as the overview effect) into a per-key cache. Tab-gated + abortable.
   useEffect(() => {
     if (runWorkspaceTab !== "traces" || !runId || !traceMetricKey) return undefined;
-    if (seriesMap[traceMetricKey] || traceSeriesCache[traceMetricKey]) return undefined;
+    if (seriesMap[traceMetricKey]) return undefined;
+    const cached = traceSeriesCache[traceMetricKey];
+    // A cache hit is only final for finished runs; live runs refetch on the
+    // shared poll tick so the timeline tracks the training loop like the
+    // overview charts do.
+    if (cached && cached.runId === runId && (!liveRun || cached.tick === liveTick)) return undefined;
     const controller = new AbortController();
     let cancelled = false;
     api.post(
@@ -680,17 +689,23 @@ export function DetailTabPane({
         }
         setTraceSeriesCache((prev) => ({
           ...prev,
-          [traceMetricKey]: [{ group: "detail", id: runId, name: run?.name ?? runId, points: byRunId.get(runId) ?? [] }],
+          [traceMetricKey]: {
+            runId,
+            tick: liveTick,
+            series: [{ group: "detail", id: runId, name: run?.name ?? runId, points: byRunId.get(runId) ?? [] }],
+          },
         }));
       })
       .catch((caught) => {
-        if (!cancelled && !isAbortError(caught)) setTraceSeriesCache((prev) => ({ ...prev, [traceMetricKey]: [] }));
+        if (!cancelled && !isAbortError(caught)) {
+          setTraceSeriesCache((prev) => ({ ...prev, [traceMetricKey]: { runId, tick: liveTick, series: [] } }));
+        }
       });
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [api, run?.name, runId, runWorkspaceTab, seriesMap, traceMetricKey, traceSeriesCache]);
+  }, [api, liveRun, liveTick, run?.name, runId, runWorkspaceTab, seriesMap, traceMetricKey, traceSeriesCache]);
 
   const kpiCells = useMemo(() => (
     run ? buildKpiCells({ run, running, seriesMap, userRows }) : []
@@ -702,7 +717,8 @@ export function DetailTabPane({
     if (!traceMetricKey) return [];
     const fromMap = seriesMap[traceMetricKey];
     if (fromMap) return fromMap.filter((item) => item.id === runId);
-    return traceSeriesCache[traceMetricKey] ?? [];
+    const cached = traceSeriesCache[traceMetricKey];
+    return cached && cached.runId === runId ? cached.series : [];
   }, [runId, seriesMap, traceMetricKey, traceSeriesCache]);
 
   const chartSpecs = useMemo<OverviewChartSpec[]>(() => {
@@ -942,7 +958,7 @@ export function DetailTabPane({
             runName={run.name}
             selectedStep={selectedTraceStep}
             series={traceMetricSeries}
-            steps={traceSteps}
+            steps={traceSteps && traceSteps.runId === runId ? traceSteps.payload : null}
           />
           <RecentTracesPanel
             error={recentTracesError}
