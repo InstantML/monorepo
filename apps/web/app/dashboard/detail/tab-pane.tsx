@@ -600,6 +600,10 @@ export function DetailTabPane({
   // instead of flashing the skeleton every tick.
   const tracesPollTick = liveRun ? liveTick : 0;
   const tracesLoadedForRef = useRef("");
+  // Last successful unfiltered page, restored instantly when a step pin is
+  // cleared so the list doesn't collapse to skeletons (and shift scroll)
+  // while the background refetch confirms it.
+  const unfilteredTracesRef = useRef<{ runId: string; traces: TraceSummary[] } | null>(null);
   useEffect(() => {
     if (runWorkspaceTab !== "traces" || !run) {
       setRecentTraces([]);
@@ -610,15 +614,22 @@ export function DetailTabPane({
     }
     const scopeKey = `${runId}:${selectedTraceStep ?? "all"}`;
     const isRefresh = tracesLoadedForRef.current === scopeKey;
+    const cachedUnfiltered = selectedTraceStep === null && unfilteredTracesRef.current?.runId === runId
+      ? unfilteredTracesRef.current.traces
+      : null;
     const controller = new AbortController();
     let cancelled = false;
     if (!isRefresh) {
-      setRecentTraces([]);
-      setRecentTracesLoading(true);
       // Invalidate immediately: if this pass is aborted (rapid scope toggling),
       // returning to the previous scope must re-show the skeleton rather than a
       // false empty state over the wiped rows.
       tracesLoadedForRef.current = "";
+      if (cachedUnfiltered) {
+        setRecentTraces(cachedUnfiltered);
+      } else {
+        setRecentTraces([]);
+        setRecentTracesLoading(true);
+      }
     }
     setRecentTracesError("");
     retryTransientRequest(
@@ -627,8 +638,10 @@ export function DetailTabPane({
     )
       .then((payload) => {
         if (cancelled) return;
-        setRecentTraces(((payload?.traces ?? []) as TraceSummary[]).slice(0, RECENT_TRACE_LIMIT));
+        const rows = ((payload?.traces ?? []) as TraceSummary[]).slice(0, RECENT_TRACE_LIMIT);
+        setRecentTraces(rows);
         tracesLoadedForRef.current = scopeKey;
+        if (selectedTraceStep === null) unfilteredTracesRef.current = { runId, traces: rows };
       })
       .catch((caught) => {
         if (!cancelled && !isAbortError(caught)) {

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 
 import { axisTicks, formatAxisTick, formatAxisValue, formatMetricValue, normalizeSeries, svgPointFromClient, yMapper } from "../../../src/charts.js";
-import { chartColor } from "../../../src/chart-colors.js";
+import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { formatNumber } from "../../../src/state.js";
 import { CustomSelect } from "../ui/select";
 import type { SelectOption } from "../ui/select";
@@ -63,8 +63,8 @@ function markerTone(bucket: StepBucket) {
 function bucketStatsText(bucket: StepBucket) {
   const errors = `${formatNumber(bucket.error_trace_count, 0)} error${bucket.error_trace_count === 1 ? "" : "s"}`;
   const traces = `${formatNumber(bucket.trace_count, 0)} trace${bucket.trace_count === 1 ? "" : "s"}`;
-  const avg = `avg ${formatDuration(bucket.avg_duration_ms)}`;
-  const tokens = `${formatNumber(bucket.input_tokens, 0)}/${formatNumber(bucket.output_tokens, 0)} tok`;
+  const avg = `avg trace ${formatDuration(bucket.avg_duration_ms)}`;
+  const tokens = `${formatNumber(bucket.input_tokens, 0)} in / ${formatNumber(bucket.output_tokens, 0)} out tok`;
   return `${traces} · ${errors} · ${avg} · ${tokens}`;
 }
 
@@ -104,6 +104,9 @@ export function TraceMetricTimeline({
   useEffect(() => () => cancelAnimationFrame(moveFrameRef.current), []);
 
   const buckets = useMemo<StepBucket[]>(() => steps?.steps ?? [], [steps]);
+  // Same run-identity hue the Overview/Metrics charts use, so the line reads
+  // as "this run" across tabs and never borrows the ok-marker green.
+  const lineColor = chartColor(stableChartIndex(series[0]?.id ?? runName));
 
   // Reuse the exact y-domain math the metric charts use (unit domains, nice
   // rounding, log support) via normalizeSeries; x positions are recomputed
@@ -370,6 +373,12 @@ export function TraceMetricTimeline({
         }}
         onFocus={() => focusBucket(bucket.step)}
         onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onStepSelect(null);
+            setHoverStep(null);
+            return;
+          }
           const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
           const target = delta !== 0
             ? index + delta
@@ -386,7 +395,7 @@ export function TraceMetricTimeline({
     );
     // xPos/radiusFor derive from the geometry inputs listed below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [buckets, focusBucket, hasSelectedBucket, maxTraceCount, metricKey, metricPointByBucketStep, plotLeft, plotRight, selectedStep, stepRange.max, stepRange.min, toggleStep]);
+  }), [buckets, focusBucket, hasSelectedBucket, maxTraceCount, metricKey, metricPointByBucketStep, onStepSelect, plotLeft, plotRight, selectedStep, stepRange.max, stepRange.min, toggleStep]);
 
   const captions: string[] = [];
   if (!hasMetric && buckets.length) {
@@ -478,13 +487,13 @@ export function TraceMetricTimeline({
               <polyline
                 className="pd-trace-timeline-line"
                 points={metricPath}
-                style={{ stroke: chartColor(0) }}
+                style={{ stroke: lineColor }}
               />
             ) : null}
 
             {hover ? <line className="hover-guide" x1={hover.x} x2={hover.x} y1={PLOT_TOP} y2={LANE_TOP + LANE_HEIGHT} /> : null}
             {hover?.metricPoint ? (
-              <circle className="pd-trace-timeline-dot" cx={xPos(hover.metricPoint.step)} cy={yPos(hover.metricPoint.value)} r={4} style={{ fill: chartColor(0) }} />
+              <circle className="pd-trace-timeline-dot" cx={xPos(hover.metricPoint.step)} cy={yPos(hover.metricPoint.value)} r={4} style={{ fill: lineColor }} />
             ) : null}
 
             {markersLayer}
@@ -511,7 +520,7 @@ export function TraceMetricTimeline({
               <div className="chart-tooltip-head">Step {formatNumber(hover.step, 0)}</div>
               {hover.metricPoint ? (
                 <div className="pd-trace-tip-row">
-                  <span className="pd-trace-tip-key" style={{ color: chartColor(0) }}>{metricKey}</span>
+                  <span className="pd-trace-tip-key" style={{ color: lineColor }}>{metricKey}</span>
                   <b>{formatMetricValue(hover.metricPoint.value)}</b>
                 </div>
               ) : null}
@@ -522,8 +531,8 @@ export function TraceMetricTimeline({
                   <span className={hover.bucket.error_trace_count > 0 ? "pd-trace-tip-errors" : undefined}>
                     {formatNumber(hover.bucket.error_trace_count, 0)} error{hover.bucket.error_trace_count === 1 ? "" : "s"}
                   </span>
-                  {" · avg "}{formatDuration(hover.bucket.avg_duration_ms)}
-                  {" · "}{formatNumber(hover.bucket.input_tokens, 0)}/{formatNumber(hover.bucket.output_tokens, 0)} tok
+                  {" · avg trace "}{formatDuration(hover.bucket.avg_duration_ms)}
+                  {" · "}{formatNumber(hover.bucket.input_tokens, 0)} in / {formatNumber(hover.bucket.output_tokens, 0)} out tok
                 </div>
               ) : null}
             </div>
@@ -548,7 +557,7 @@ export function TraceMetricTimeline({
             {runWideErrors > 0 ? (
               <span className="pd-trace-timeline-summary-errors"> · {formatNumber(runWideErrors, 0)} error{runWideErrors === 1 ? "" : "s"}</span>
             ) : null}
-            {` · steps ${formatNumber(stepRange.min, 0)}–${formatNumber(stepRange.max, 0)}`}
+            <span className="pd-trace-timeline-summary-range">{` · steps ${formatNumber(stepRange.min, 0)}–${formatNumber(stepRange.max, 0)}`}</span>
           </span>
         ) : null}
         {options.length ? (
@@ -566,7 +575,7 @@ export function TraceMetricTimeline({
           <span className="pd-unit">no metrics logged</span>
         )}
         <button aria-label="Refresh trace activity" className="icon-button framed" disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
+          <RefreshCw className={loading ? "pd-trace-refresh-spinning" : undefined} size={15} />
         </button>
       </div>
       <div className="pd-panel-body">{body}</div>

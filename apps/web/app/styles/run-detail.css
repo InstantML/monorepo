@@ -1311,6 +1311,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The panel title never crushes; below tablet width the summary sheds its
+   lowest-priority segment (the step range) instead. */
+.pd-trace-timeline .pd-mlabel {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .pd-trace-timeline-summary-range {
+    display: none;
+  }
+}
+
+.pd-trace-refresh-spinning {
+  animation: pd-trace-refresh-spin 0.9s linear infinite;
+}
+
+@keyframes pd-trace-refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-trace-refresh-spinning {
+    animation: none;
+  }
+}
+
 .pd-trace-timeline-summary-errors {
   color: var(--danger);
 }
@@ -1338,6 +1365,9 @@
   flex-direction: column;
   gap: var(--sp-2);
   padding: var(--sp-2) 0;
+  /* Match the shortest real list state so filter swaps don't collapse the
+     panel and shift page scroll under the pointer. */
+  min-height: 160px;
 }
 
 .pd-trace-filter-chip {

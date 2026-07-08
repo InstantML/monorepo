@@ -82,7 +82,8 @@ test("run detail correlates traces with metrics on a shared step timeline", () =
   assert.match(timelineSource, /export function TraceMetricTimeline/);
   assert.match(timelineSource, /normalizeSeries/);
   assert.match(timelineSource, /yMapper/);
-  assert.match(timelineSource, /chartColor\(0\)/);
+  // The metric line carries the run's identity color, matching Overview/Metrics.
+  assert.match(timelineSource, /chartColor\(stableChartIndex\(series\[0\]\?\.id \?\? runName\)\)/);
   // Markers encode trace health via tonal classes; the semantic color tokens
   // live in run-detail.css so both themes resolve automatically.
   assert.match(timelineSource, /function markerTone\(bucket: StepBucket\)/);

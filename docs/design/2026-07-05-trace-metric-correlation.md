@@ -173,6 +173,16 @@ smoke assertions (pinned-count equality, keyboard pin path, refresh
 round-trip, distinct-bounds bind-order canary on both endpoints). All gates
 re-run green including the full traces UI smoke.
 
+2026-07-08 (round 2, live UI/UX pass): a browser-driven design review
+(verdict: ship-after-fixes) surfaced 6 polish items, all fixed and
+live-verified: instant restore of the unfiltered list on pin clear (no
+skeleton collapse/scroll shift, with min-height damping), labeled token and
+duration stats ("avg trace … · N in / M out tok"), a crush-proof panel head
+that sheds the step range below 720px, the metric line drawn in the run's
+identity color (no collision with ok-marker green, consistent with
+Overview/Metrics), Escape unpinning from the marker group, and a spinning
+refresh icon while the fetch is in flight (reduced-motion safe).
+
 ## Progress log
 
 - 2026-07-05: design accepted; branch `codex/trace-metric-correlation` cut
