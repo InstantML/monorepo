@@ -824,6 +824,22 @@ export function DashboardShell({
   const [newApiKey, setNewApiKey] = useState("");
   const [apiAdminMessage, setApiAdminMessage] = useState("");
   const [apiAdminTone, setApiAdminTone] = useState<"status" | "error">("status");
+  // Seat/invitation feedback used to go through the run-status line, which the
+  // settings modal covers — results were invisible. Float them as a toast
+  // inside the modal instead.
+  const [settingsToast, setSettingsToast] = useState<{ text: string; tone: "status" | "error" } | null>(null);
+  const settingsToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showSettingsToast = useCallback((text: string, tone: "status" | "error" = "status") => {
+    if (settingsToastTimer.current) clearTimeout(settingsToastTimer.current);
+    setSettingsToast({ text, tone });
+    settingsToastTimer.current = setTimeout(() => setSettingsToast(null), tone === "error" ? 10000 : 5000);
+  }, []);
+  const dismissSettingsToast = useCallback(() => {
+    if (settingsToastTimer.current) clearTimeout(settingsToastTimer.current);
+    settingsToastTimer.current = null;
+    setSettingsToast(null);
+  }, []);
+  useEffect(() => () => { if (settingsToastTimer.current) clearTimeout(settingsToastTimer.current); }, []);
   const [adminBusy, setAdminBusy] = useState(false);
 
   const hasSeriesRef = useRef(false);
@@ -2817,14 +2833,19 @@ export function DashboardShell({
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      showSettingsToast("Seat management is available to workspace admins.", "error");
+      return;
+    }
+    const email = inviteEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showSettingsToast("Enter a valid email address (like name@example.com).", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Sending invitation...");
+    showSettingsToast("Sending invitation...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/invitations`, {
-        email: inviteEmail.trim(),
+        email,
         role: inviteRole,
       });
       setInviteEmail("");
@@ -2834,10 +2855,14 @@ export function DashboardShell({
       if (previewLink && invitationId) {
         setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
       }
-      setMessage(deliveryError ? `Invitation created, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link ready." : "Invitation sent.");
+      if (deliveryError) {
+        showSettingsToast(`Invitation created, but the email could not be delivered: ${deliveryError}. Retry from the list below.`, "error");
+      } else {
+        showSettingsToast(previewLink ? "Invitation link ready." : `Invitation sent to ${email}.`);
+      }
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to send invitation.");
+      showSettingsToast(error instanceof Error ? error.message : "Unable to send invitation.", "error");
     } finally {
       setAdminBusy(false);
     }
@@ -2846,11 +2871,11 @@ export function DashboardShell({
   async function resendInvitation(invitationId: string) {
     if (!activeOrgId) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      showSettingsToast("Seat management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Resending invitation...");
+    showSettingsToast("Resending invitation...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/resend`, {});
       const deliveryError = typeof payload.delivery_error === "string" ? payload.delivery_error : "";
@@ -2858,10 +2883,14 @@ export function DashboardShell({
       if (previewLink) {
         setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
       }
-      setMessage(deliveryError ? `Invitation updated, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link updated." : "Invitation resent.");
+      if (deliveryError) {
+        showSettingsToast(`Invitation updated, but the email could not be delivered: ${deliveryError}.`, "error");
+      } else {
+        showSettingsToast(previewLink ? "Invitation link updated." : "Invitation resent.");
+      }
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to resend invitation.");
+      showSettingsToast(error instanceof Error ? error.message : "Unable to resend invitation.", "error");
     } finally {
       setAdminBusy(false);
     }
@@ -2870,11 +2899,11 @@ export function DashboardShell({
   async function revokeInvitation(invitationId: string) {
     if (!activeOrgId) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      showSettingsToast("Seat management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Revoking invitation...");
+    showSettingsToast("Revoking invitation...");
     try {
       await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/revoke`, {});
       setInvitationLinks((current) => {
@@ -2882,10 +2911,10 @@ export function DashboardShell({
         delete next[invitationId];
         return next;
       });
-      setMessage("Invitation revoked.");
+      showSettingsToast("Invitation revoked.");
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to revoke invitation.");
+      showSettingsToast(error instanceof Error ? error.message : "Unable to revoke invitation.", "error");
     } finally {
       setAdminBusy(false);
     }
@@ -2896,14 +2925,14 @@ export function DashboardShell({
     if (!link) return;
     const safeLink = safeSameOriginInviteUrl(link);
     if (!safeLink) {
-      setMessage("Invitation link was not a valid InstantML invite URL.");
+      showSettingsToast("Invitation link was not a valid InstantML invite URL.", "error");
       return;
     }
     try {
       if (!await copyTextToClipboard(safeLink)) throw new Error("copy failed");
-      setMessage("Invitation link copied.");
+      showSettingsToast("Invitation link copied.");
     } catch {
-      setMessage("Copy failed. Select and copy the invitation link manually.");
+      showSettingsToast("Copy failed. Select and copy the invitation link manually.", "error");
     }
   }
 
@@ -2912,7 +2941,7 @@ export function DashboardShell({
     if (!link) return;
     const safeLink = safeSameOriginInviteUrl(link);
     if (!safeLink) {
-      setMessage("Invitation link was not a valid InstantML invite URL.");
+      showSettingsToast("Invitation link was not a valid InstantML invite URL.", "error");
       return;
     }
     window.open(safeLink, "_blank", "noopener,noreferrer");
@@ -4940,7 +4969,9 @@ function dismissTopOverlay() {
           onCancelBilling={cancelBilling}
           onMetricKey={setMetricKey}
           onXMode={setXMode}
-          onClose={() => selectTab(preSettingsTabRef.current === "settings" ? "runs" : preSettingsTabRef.current)}
+          onClose={() => { dismissSettingsToast(); selectTab(preSettingsTabRef.current === "settings" ? "runs" : preSettingsTabRef.current); }}
+          settingsToast={settingsToast}
+          onDismissSettingsToast={dismissSettingsToast}
           orgName={sessionPayload?.organization?.name ?? ""}
           orgPlanTier={activeUsageOrg?.plan_tier ?? sessionPayload?.organization?.plan_tier ?? "free"}
           reservedSeatCount={Number(activeUsageOrg?.usage?.seats ?? activeMembershipSummary?.member_count ?? seats.length)}

@@ -56,8 +56,8 @@ function formatInviteDate(value: string) {
 }
 
 function inviteStatusLabel(invitation: InvitationRow) {
-  if (invitation.status === "pending") return invitation.delivery_status === "sent" ? "sent" : invitation.delivery_status || "pending";
   if (invitation.delivery_status === "send_failed" && !["accepted", "expired", "revoked"].includes(invitation.status ?? "")) return "send failed";
+  if (invitation.status === "pending") return invitation.delivery_status === "sent" ? "sent" : invitation.delivery_status || "pending";
   return invitation.status;
 }
 
@@ -123,6 +123,8 @@ type Props = {
   onMetricKey: (key: string) => void;
   onXMode: (mode: string) => void;
   onClose: () => void;
+  onDismissSettingsToast: () => void;
+  settingsToast: { text: string; tone: "status" | "error" } | null;
   orgName: string;
   orgPlanTier: string;
   reservedSeatCount: number;
@@ -183,6 +185,8 @@ export function SettingsTabPane({
   onMetricKey,
   onXMode,
   onClose,
+  onDismissSettingsToast,
+  settingsToast,
   orgName,
   orgPlanTier,
   reservedSeatCount,
@@ -305,6 +309,12 @@ export function SettingsTabPane({
     >
       <div className="settings-modal-card">
         <button className="icon-button settings-modal-close" type="button" aria-label="Close workspace settings" onClick={requestClose}><X size={16} /></button>
+        {settingsToast ? (
+          <div className={`settings-toast${settingsToast.tone === "error" ? " error" : ""}`} role={settingsToast.tone === "error" ? "alert" : "status"}>
+            <span>{settingsToast.text}</span>
+            <button aria-label="Dismiss notification" className="icon-button" onClick={onDismissSettingsToast} type="button"><X size={14} /></button>
+          </div>
+        ) : null}
         <nav className="settings-nav" aria-label="Settings sections">
           <span className="settings-nav-title">Settings</span>
           {SECTIONS.map(({ id, label, Icon }) => (
@@ -444,28 +454,31 @@ export function SettingsTabPane({
                   <code>{roleLabel(seat.membership.role)}</code>
                 </div>
               ))}
-              {visibleInvitations.map((invitation) => (
-                <div className="api-row" key={invitation.id}>
-                  <span>{inviteStatusLabel(invitation)}</span>
-                  <strong>
-                    {invitation.email}
-                    <small>Expires {formatInviteDate(invitation.expires_at)}</small>
-                  </strong>
-                  <code>{roleLabel(invitation.role)}</code>
-                  {canManageOrg && invitation.status === "pending" ? (
-                    <>
-                      {invitationLinks[invitation.id] ? (
-                        <>
-                          <button aria-label="Copy invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onCopyInvitationLink(invitation.id)} title="Copy invitation link" type="button"><Copy size={14} /></button>
-                          <button aria-label="Open invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onOpenInvitationLink(invitation.id)} title="Open invitation link" type="button"><ExternalLink size={14} /></button>
-                        </>
-                      ) : null}
-                      <button aria-label="Resend invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onResendInvitation(invitation.id)} title="Resend invitation" type="button"><RefreshCw size={14} /></button>
-                      <button aria-label="Revoke invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onRevokeInvitation(invitation.id)} title="Revoke invitation" type="button"><X size={14} /></button>
-                    </>
-                  ) : null}
-                </div>
-              ))}
+              {visibleInvitations.map((invitation) => {
+                const statusLabel = inviteStatusLabel(invitation);
+                return (
+                  <div className="api-row" key={invitation.id}>
+                    <span className={statusLabel === "send failed" ? "invite-status-failed" : undefined}>{statusLabel}</span>
+                    <strong>
+                      {invitation.email}
+                      <small>Expires {formatInviteDate(invitation.expires_at)}</small>
+                    </strong>
+                    <code>{roleLabel(invitation.role)}</code>
+                    {canManageOrg && invitation.status === "pending" ? (
+                      <div className="invite-actions">
+                        {invitationLinks[invitation.id] ? (
+                          <>
+                            <button aria-label="Copy invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onCopyInvitationLink(invitation.id)} title="Copy invitation link" type="button"><Copy size={14} /></button>
+                            <button aria-label="Open invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onOpenInvitationLink(invitation.id)} title="Open invitation link" type="button"><ExternalLink size={14} /></button>
+                          </>
+                        ) : null}
+                        <button aria-label="Resend invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onResendInvitation(invitation.id)} title="Resend invitation" type="button"><RefreshCw size={14} /></button>
+                        <button aria-label="Revoke invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onRevokeInvitation(invitation.id)} title="Revoke invitation" type="button"><X size={14} /></button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
               {!seats.length && !visibleInvitations.length ? <p className="empty">No seats loaded.</p> : null}
               {!canManageOrg ? <p className="empty">Seat management is available to workspace admins.</p> : null}
             </div>

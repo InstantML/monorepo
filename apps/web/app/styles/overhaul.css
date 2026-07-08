@@ -2586,6 +2586,17 @@ button.secondary.danger-action:hover:not(:disabled),
   gap: 12px;
 }
 .admin-list .api-row span { justify-self: start; }
+/* Invitation rows carry up to four action icons; keep them in one grid cell so
+   they don't wrap onto an implicit second row of the four-column grid. */
+.admin-list .api-row .invite-actions {
+  display: inline-flex;
+  gap: 2px;
+  justify-self: end;
+}
+.admin-list .api-row span.invite-status-failed {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--line));
+  color: var(--danger);
+}
 .admin-list .api-row strong,
 .admin-list .api-row code {
   min-width: 0;
