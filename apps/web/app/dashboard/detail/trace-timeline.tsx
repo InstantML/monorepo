@@ -152,22 +152,25 @@ export function TraceMetricTimeline({
   const maxTraceCount = useMemo(() => buckets.reduce((max, bucket) => Math.max(max, bucket.trace_count), 0), [buckets]);
 
   // Contiguous error-step runs become full-height wash bands so "the metric
-  // moved exactly where traces failed" reads without inspecting markers. Band
-  // edges extend half the local step gap on each side.
+  // moved exactly where traces failed" reads without inspecting markers.
+  // Contiguity is step-based (median bucket cadence), not index-based, so two
+  // errored eval steps 100 apart don't paint the healthy line between them;
+  // band edges extend half the local cadence on each side.
   const errorBands = useMemo(() => {
+    const gaps = buckets.slice(1).map((bucket, index) => bucket.step - buckets[index].step).sort((a, b) => a - b);
+    const cadence = Math.max(gaps[Math.floor(gaps.length / 2)] ?? 1, Number.EPSILON);
     const bands: Array<{ from: number; to: number }> = [];
     for (let index = 0; index < buckets.length; index += 1) {
       if (buckets[index].error_trace_count <= 0) continue;
-      const gapBefore = index > 0 ? buckets[index].step - buckets[index - 1].step : 1;
       let end = index;
       while (
         end + 1 < buckets.length
         && buckets[end + 1].error_trace_count > 0
+        && buckets[end + 1].step - buckets[end].step <= cadence * 1.5
       ) end += 1;
-      const gapAfter = end + 1 < buckets.length ? buckets[end + 1].step - buckets[end].step : gapBefore;
       bands.push({
-        from: buckets[index].step - Math.min(gapBefore, 1) / 2,
-        to: buckets[end].step + Math.min(gapAfter, 1) / 2,
+        from: buckets[index].step - cadence / 2,
+        to: buckets[end].step + cadence / 2,
       });
       index = end;
     }
@@ -204,11 +207,11 @@ export function TraceMetricTimeline({
     [domain],
   );
 
-  // Nearest metric value per bucket step, one sorted two-pointer pass (both
-  // arrays arrive step-ascending). Feeds hover derivation and marker labels
-  // without an O(buckets × points) rescan per render.
-  const metricValueByBucketStep = useMemo(() => {
-    const map = new Map<number, number>();
+  // Nearest metric point per bucket step, one sorted two-pointer pass (both
+  // arrays arrive step-ascending). Stores the point's own step alongside its
+  // value so the hover dot lands on the polyline, not at the bucket's x.
+  const metricPointByBucketStep = useMemo(() => {
+    const map = new Map<number, { step: number; value: number }>();
     if (!metricPoints.length) return map;
     const pxPerStep = (plotRight - plotLeft) / ((stepRange.max - stepRange.min) || 1);
     let cursor = 0;
@@ -218,7 +221,9 @@ export function TraceMetricTimeline({
         && Math.abs(metricPoints[cursor + 1].step - bucket.step) <= Math.abs(metricPoints[cursor].step - bucket.step)
       ) cursor += 1;
       const point = metricPoints[cursor];
-      if (Math.abs(point.step - bucket.step) * pxPerStep <= HOVER_NEAR_PX) map.set(bucket.step, point.value);
+      if (Math.abs(point.step - bucket.step) * pxPerStep <= HOVER_NEAR_PX) {
+        map.set(bucket.step, { step: point.step, value: point.value });
+      }
     }
     return map;
   }, [buckets, metricPoints, plotLeft, plotRight, stepRange.max, stepRange.min]);
@@ -238,13 +243,15 @@ export function TraceMetricTimeline({
   const hover = useMemo(() => {
     if (hoverStep === null) return null;
     const bucket = bucketByStep.get(hoverStep) ?? null;
-    const metricValue = metricPointByStep.get(hoverStep)
-      ?? (bucket ? metricValueByBucketStep.get(hoverStep) ?? null : null);
-    if (!bucket && metricValue === null) return null;
-    return { x: xPos(hoverStep), step: hoverStep, bucket, metricValue };
+    const exactValue = metricPointByStep.get(hoverStep);
+    const nearest = exactValue !== undefined
+      ? { step: hoverStep, value: exactValue }
+      : (bucket ? metricPointByBucketStep.get(hoverStep) ?? null : null);
+    if (!bucket && !nearest) return null;
+    return { x: xPos(hoverStep), step: hoverStep, bucket, metricPoint: nearest };
     // xPos is derived from the same inputs listed below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bucketByStep, hoverStep, metricPointByStep, metricValueByBucketStep, plotLeft, plotRight, stepRange.max, stepRange.min]);
+  }, [bucketByStep, hoverStep, metricPointByStep, metricPointByBucketStep, plotLeft, plotRight, stepRange.max, stepRange.min]);
 
   function nearestBucketToClientX(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -265,7 +272,6 @@ export function TraceMetricTimeline({
   // level (same math as hover), never by per-marker hit boxes: with dense
   // steps, overlapping boxes would route clicks to the wrong marker.
   function handleClick(event: MouseEvent<HTMLDivElement>) {
-    if ((event.target as Element).closest(".chart-tooltip")) return;
     const bucket = nearestBucketToClientX(event);
     if (bucket) toggleStep(bucket.step);
   }
@@ -347,9 +353,9 @@ export function TraceMetricTimeline({
   const buttonsLayer = useMemo(() => buckets.map((bucket, index) => {
     const size = Math.max(22, radiusFor(bucket.trace_count) * 2 + 8);
     const isTabStop = hasSelectedBucket ? selectedStep === bucket.step : index === 0;
-    const metricValue = metricValueByBucketStep.get(bucket.step);
-    const label = metricValue !== undefined && metricKey
-      ? `${markerLabel(bucket)} · ${metricKey} ${formatMetricValue(metricValue)}`
+    const nearestPoint = metricPointByBucketStep.get(bucket.step);
+    const label = nearestPoint && metricKey
+      ? `${markerLabel(bucket)} · ${metricKey} ${formatMetricValue(nearestPoint.value)}`
       : markerLabel(bucket);
     return (
       <button
@@ -380,7 +386,7 @@ export function TraceMetricTimeline({
     );
     // xPos/radiusFor derive from the geometry inputs listed below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [buckets, focusBucket, hasSelectedBucket, maxTraceCount, metricKey, metricValueByBucketStep, plotLeft, plotRight, selectedStep, stepRange.max, stepRange.min, toggleStep]);
+  }), [buckets, focusBucket, hasSelectedBucket, maxTraceCount, metricKey, metricPointByBucketStep, plotLeft, plotRight, selectedStep, stepRange.max, stepRange.min, toggleStep]);
 
   const captions: string[] = [];
   if (!hasMetric && buckets.length) {
@@ -427,16 +433,20 @@ export function TraceMetricTimeline({
             role="img"
             viewBox={`0 0 ${width} ${TIMELINE_HEIGHT}`}
           >
-            {errorBands.map((band) => (
-              <rect
-                className="pd-trace-error-band"
-                height={LANE_TOP + LANE_HEIGHT - PLOT_TOP}
-                key={`band-${band.from}`}
-                width={Math.max(2, xPos(band.to) - xPos(band.from))}
-                x={xPos(band.from)}
-                y={PLOT_TOP}
-              />
-            ))}
+            {errorBands.map((band) => {
+              const left = Math.max(plotLeft, xPos(band.from));
+              const right = Math.min(plotRight, xPos(band.to));
+              return (
+                <rect
+                  className="pd-trace-error-band"
+                  height={LANE_TOP + LANE_HEIGHT - PLOT_TOP}
+                  key={`band-${band.from}`}
+                  width={Math.max(2, right - left)}
+                  x={left}
+                  y={PLOT_TOP}
+                />
+              );
+            })}
             {yTicks.map((tick) => (
               <g key={`y-${tick}`}>
                 <line className="grid-line" x1={plotLeft} x2={plotRight} y1={yPos(tick)} y2={yPos(tick)} />
@@ -473,8 +483,8 @@ export function TraceMetricTimeline({
             ) : null}
 
             {hover ? <line className="hover-guide" x1={hover.x} x2={hover.x} y1={PLOT_TOP} y2={LANE_TOP + LANE_HEIGHT} /> : null}
-            {hover && hover.metricValue !== null ? (
-              <circle className="pd-trace-timeline-dot" cx={hover.x} cy={yPos(hover.metricValue)} r={4} style={{ fill: chartColor(0) }} />
+            {hover?.metricPoint ? (
+              <circle className="pd-trace-timeline-dot" cx={xPos(hover.metricPoint.step)} cy={yPos(hover.metricPoint.value)} r={4} style={{ fill: chartColor(0) }} />
             ) : null}
 
             {markersLayer}
@@ -499,10 +509,10 @@ export function TraceMetricTimeline({
           {hover ? (
             <div className="chart-tooltip pd-trace-tip" role="tooltip" style={{ left: `${tooltipLeft}px` }}>
               <div className="chart-tooltip-head">Step {formatNumber(hover.step, 0)}</div>
-              {hover.metricValue !== null ? (
+              {hover.metricPoint ? (
                 <div className="pd-trace-tip-row">
                   <span className="pd-trace-tip-key" style={{ color: chartColor(0) }}>{metricKey}</span>
-                  <b>{formatMetricValue(hover.metricValue)}</b>
+                  <b>{formatMetricValue(hover.metricPoint.value)}</b>
                 </div>
               ) : null}
               {hover.bucket ? (

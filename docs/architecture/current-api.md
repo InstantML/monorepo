@@ -1286,7 +1286,8 @@ Query:
 | `min_step`, `max_step` | Optional inclusive step-bucket range, `min_step <= max_step`. Steps may be negative. |
 
 Buckets are ordered by ascending step and capped at 2,000; `truncated` is `true`
-when the run has more distinct steps than the cap, in which case the lowest
+when the (range-filtered) result has more distinct steps than the cap, in which
+case the lowest
 2,000 steps are returned. `total_trace_count`, `stepless_trace_count`, and
 `total_error_trace_count` are always run-wide: they ignore `min_step`/`max_step`
 and include stepless and truncated-out traces, so under a filtered range the

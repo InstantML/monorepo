@@ -406,6 +406,23 @@ try {
       1,
       `expected one run-wide errored trace: ${JSON.stringify(seededStepSummary)}`,
     );
+    // Bind-order canary with DISTINCT bounds: a swapped min/max bind would
+    // invert both ranges and fail these loudly. The anchor-filtered list must
+    // return exactly the step-5 trace (stepless and step-8 excluded), and the
+    // bucket window must keep only step 8.
+    const anchoredList = await pageApiGet(page, `/api/traces?run_id=${seedRunId}&min_step=5&max_step=5&limit=20`);
+    assert.equal(
+      (anchoredList.traces ?? []).length,
+      1,
+      `step-anchored list should hold exactly the step-5 trace: ${JSON.stringify(anchoredList.traces?.map((t) => t.root_name))}`,
+    );
+    assert.match(anchoredList.traces[0].root_name, /calc tool timeout/, "step-anchored list should return the step-5 error trace");
+    const windowedSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps?min_step=8`);
+    assert.deepEqual(
+      (windowedSummary.steps ?? []).map((bucket) => bucket.step),
+      [8],
+      `min_step window should keep only the step-8 bucket: ${JSON.stringify(windowedSummary.steps?.map((b) => b.step))}`,
+    );
     // Re-POST the identical batch with the SAME Idempotency-Key and body: ingest
     // is idempotent, so the bucket aggregates must not change or double-count.
     // Space the extra ingest/read bursts so they stay under the 5 req/s limiter.
@@ -2900,6 +2917,10 @@ async function assertTraceMetricTimeline(page, traceUrls, stepsUrlsBeforeOpen) {
     const list = document.querySelector("#run-detail .pd-trace-list")?.textContent ?? "";
     return list.includes("calc tool timeout") && !list.includes("qa rollout trace");
   }, null, { timeout: 10000 });
+  // Anchor semantics: the pinned list row count must equal the bucket's
+  // trace_count (a stepless or spanning-trace leak would add rows).
+  const pinnedRowCount = await page.locator("#run-detail .pd-trace-list .pd-trace-row").count();
+  assert.equal(pinnedRowCount, 1, `pinned list should hold exactly the bucket's traces: got ${pinnedRowCount}`);
 
   // Clearing the chip drops the filter and restores the full recent list.
   await page.locator("#run-detail .pd-trace-filter-chip").click();
@@ -2909,6 +2930,29 @@ async function assertTraceMetricTimeline(page, traceUrls, stepsUrlsBeforeOpen) {
     null,
     { timeout: 10000 },
   );
+
+  // Keyboard path: the marker buttons are pointer-transparent, so drive the
+  // roving tab stop with arrows + Enter and assert selection state.
+  await page.focus("#run-detail .pd-trace-marker-btn[tabindex='0']");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#run-detail .pd-trace-filter-chip", { timeout: 10000 });
+  const pressedCount = await page.locator("#run-detail .pd-trace-marker-btn[aria-pressed='true']").count();
+  assert.equal(pressedCount, 1, "keyboard Enter should pin exactly one step (aria-pressed)");
+  await page.locator("#run-detail .pd-trace-filter-chip").click();
+  await page.waitForFunction(() => !document.querySelector("#run-detail .pd-trace-filter-chip"), null, { timeout: 10000 });
+
+  // Refresh round-trip: a new steps fetch lands and rendered rows persist
+  // (no skeleton flash on refresh by design).
+  const stepsFetchesBeforeRefresh = traceUrls.filter((url) => url.includes("/traces/steps")).length;
+  await page.locator('#run-detail [aria-label="Refresh trace activity"]').click();
+  await page.waitForTimeout(1500);
+  const stepsFetchesAfterRefresh = traceUrls.filter((url) => url.includes("/traces/steps")).length;
+  assert.ok(
+    stepsFetchesAfterRefresh > stepsFetchesBeforeRefresh,
+    `refresh should refetch the step aggregate (${stepsFetchesBeforeRefresh} -> ${stepsFetchesAfterRefresh})`,
+  );
+  assert.ok(await page.locator("#run-detail .pd-trace-marker").count() >= 3, "markers should persist through refresh without a skeleton flash");
 }
 
 function isExpectedForbiddenResource(response) {

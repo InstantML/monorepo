@@ -47,15 +47,17 @@ TraceStepSummaryResponse {
     input_tokens, output_tokens,
     first_started_at, last_started_at,
   }],
-  stepless_trace_count,   // traces with no step anywhere
-  total_trace_count,
-  truncated,              // true when distinct steps exceeded the cap
+  stepless_trace_count,     // traces with no step anywhere
+  total_trace_count,        // run-wide
+  total_error_trace_count,  // run-wide: includes stepless + truncated-out
+  truncated,                // true when the (range-filtered) result exceeded the cap
 }
 ```
 
 Bounds: `ORDER BY step ASC LIMIT 2001` (`MAX_TRACE_STEP_BUCKETS = 2000`,
 truncation detected via limit+1; when truncated the lowest 2000 steps are
-kept), optional `min_step`/`max_step` params reuse the existing validators.
+kept), optional `min_step`/`max_step` params use a trace-specific validator
+that admits finite negatives (ingest accepts them).
 Two parallel ClickHouse reads joined with `try_join!`: the bucket query
 (step-filtered, `min_step IS NOT NULL`) and a run-wide counts query — the
 totals must include stepless and out-of-window traces, so they cannot share
@@ -97,8 +99,9 @@ existing recent-traces list inside the Traces tab (`detail/tab-pane.tsx`).
   nearest step + trace count / errors / avg duration / tokens). Clicking a
   bucket selects the step: the list below refetches `/api/traces` with
   `min_step`/`max_step` pinned to it (filters already exist server-side) and a
-  clear-filter chip appears. Markers are real `<button>`s with
-  `aria-pressed`, focus-visible ring, and keyboard operability.
+  clear-filter chip appears. Pointer selection resolves via frame-level nearest-bucket
+  hit-testing; a pointer-transparent `<button>` layer with `aria-pressed`,
+  a roving tabindex, and arrow-key navigation carries keyboard operability.
 - **Degraded states**: no metric points → activity lane renders alone on the
   trace step domain with an explanatory caption; no stepped traces → the
   panel collapses to a "N traces have no step" note above the recent list
@@ -111,7 +114,7 @@ existing recent-traces list inside the Traces tab (`detail/tab-pane.tsx`).
 
 ```
 DetailTabPane (traces tab active)
- ├─ GET /api/runs/:id/traces/steps      → step buckets (new, 1 query)
+ ├─ GET /api/runs/:id/traces/steps      → step buckets (new, 2 parallel reads)
  ├─ POST /api/metrics/series {key,...}  → metric line (existing shape)
  └─ GET /api/traces?run_id&min_step&max_step&limit=20 → list (existing)
 ```
@@ -156,6 +159,19 @@ Gates on the final tree: 20 rust trace tests + clippy + fmt, codegen clean,
 420 web tests + tsc, full traces UI smoke, and live verification against a
 seeded 30-step/80-trace run plus a genuinely live run observed growing
 across poll ticks in Chrome (both themes, keyboard, degraded states).
+
+2026-07-08 (round 2): a second panel (React state, geometry/rendering,
+Rust/contract, docs/test coherence) swept the fix-wave commits. 9 further
+findings, all fixed: scoped metric-series errors (no misattribution across
+run/metric switches), no "first 0 of N" on errored pinned lists, per-run
+timeline remount (no resurrected hover), hover dot anchored to the polyline,
+cadence-aware error-band contiguity with plot-bounds clamping, dead tooltip
+click-guard removed, hover pop as an insertion animation (reduced-motion
+honored), doc drift (schema block, validator wording, interaction/data-flow
+lines, truncation-under-range wording, README pin wording), and five new
+smoke assertions (pinned-count equality, keyboard pin path, refresh
+round-trip, distinct-bounds bind-order canary on both endpoints). All gates
+re-run green including the full traces UI smoke.
 
 ## Progress log
 

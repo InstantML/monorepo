@@ -465,7 +465,9 @@ export function DetailTabPane({
   const [traceStepsLoading, setTraceStepsLoading] = useState(false);
   const [traceStepsError, setTraceStepsError] = useState("");
   const [traceMetricKey, setTraceMetricKey] = useState("");
-  const [traceSeriesError, setTraceSeriesError] = useState("");
+  // Scoped by run+metric so a failure can never be misattributed to a
+  // different key or run that early-returns out of the fetch effect.
+  const [traceSeriesError, setTraceSeriesError] = useState<{ scope: string; message: string } | null>(null);
   const [traceRefreshKey, setTraceRefreshKey] = useState(0);
   // Entries carry the run and live-poll tick they were fetched for, so a run
   // switch can never paint another run's line (even for the one frame before
@@ -704,7 +706,8 @@ export function DetailTabPane({
     if (cached && cached.runId === runId && (!liveRun || cached.tick === liveTick)) return undefined;
     const controller = new AbortController();
     let cancelled = false;
-    setTraceSeriesError("");
+    const errorScope = `${runId}:${traceMetricKey}`;
+    setTraceSeriesError((current) => (current?.scope === errorScope ? null : current));
     retryTransientRequest(
       () => api.post(
         "/api/metrics/series",
@@ -733,7 +736,7 @@ export function DetailTabPane({
         // the next effect pass (metric switch, tab re-entry, refresh, poll
         // tick) retries.
         if (!cancelled && !isAbortError(caught)) {
-          setTraceSeriesError(caught instanceof Error ? caught.message : "Unable to load the metric series.");
+          setTraceSeriesError({ scope: errorScope, message: caught instanceof Error ? caught.message : "Unable to load the metric series." });
         }
       });
     return () => {
@@ -984,6 +987,7 @@ export function DetailTabPane({
       {runWorkspaceTab === "traces" ? (
         <div className="pd-stack pd-traces-panel">
           <TraceMetricTimeline
+            key={runId}
             error={traceStepsError}
             loading={traceStepsLoading}
             metricKey={traceMetricKey}
@@ -1001,7 +1005,7 @@ export function DetailTabPane({
             runName={run.name}
             selectedStep={selectedTraceStep}
             series={traceMetricSeries}
-            seriesError={traceSeriesError}
+            seriesError={traceSeriesError && traceSeriesError.scope === `${runId}:${traceMetricKey}` ? traceSeriesError.message : ""}
             steps={traceSteps && traceSteps.runId === runId ? traceSteps.payload : null}
           />
           <RecentTracesPanel
@@ -1066,7 +1070,7 @@ function RecentTracesPanel({
   const stepLabel = selectedStep !== null ? formatNumber(selectedStep, 0) : "";
   // Disclose the cap honestly when a pinned step holds more traces than the
   // list shows, mirroring the unpinned "last N" unit.
-  const pinnedUnit = selectedStep !== null && selectedStepTraceCount !== null && selectedStepTraceCount > traces.length && !loading
+  const pinnedUnit = selectedStep !== null && selectedStepTraceCount !== null && selectedStepTraceCount > traces.length && traces.length > 0 && !loading && !error
     ? `first ${traces.length} of ${formatNumber(selectedStepTraceCount, 0)} at this step`
     : "";
   return (

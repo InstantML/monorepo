@@ -1204,7 +1204,6 @@
   stroke-width: 1.25;
   transform-box: fill-box;
   transform-origin: center;
-  transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.15s ease;
 }
 
 .pd-trace-marker.ok {
@@ -1222,8 +1221,15 @@
   stroke: var(--muted);
 }
 
+/* The hover emphasis is a separate overlay circle mounted on hover, so the
+   grow runs as an insertion animation (a transition would never fire). */
 .pd-trace-marker.is-hover {
-  transform: scale(1.18);
+  animation: pd-trace-marker-pop 0.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pd-trace-marker-pop {
+  from { transform: scale(1); }
+  to { transform: scale(1.18); }
 }
 
 .pd-trace-marker-ring {
@@ -1233,8 +1239,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pd-trace-marker {
-    transition: none;
+  .pd-trace-marker.is-hover {
+    animation: none;
+    transform: scale(1.18);
   }
 }
 
