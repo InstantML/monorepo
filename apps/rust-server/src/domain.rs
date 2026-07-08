@@ -2241,7 +2241,13 @@ pub fn validate_optional_name(value: Option<&str>, field: &str) -> AppResult<Opt
 pub fn validate_email(value: Option<&str>) -> AppResult<String> {
     let email = validate_name(value, "email")?.to_ascii_lowercase();
     if !email.contains('@') || !email.contains('.') || email.contains(' ') {
-        return Err(AppError::validation("email must be a valid email address"));
+        return Err(AppError::with_field_code(
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid_email",
+            "email",
+            None,
+            "email must be a valid email address",
+        ));
     }
     Ok(email)
 }
@@ -2418,6 +2424,19 @@ mod tests {
                 .expect("public uri")
                 .contains("bucket/runs"));
         }
+    }
+
+    #[test]
+    fn validate_email_tags_invalid_addresses_with_code_and_field() {
+        let error = validate_email(Some("user@berkeley")).expect_err("missing dot must fail");
+        assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(error.code(), Some("invalid_email"));
+        assert_eq!(error.field(), Some("email"));
+
+        assert_eq!(
+            validate_email(Some("User@Berkeley.EDU")).expect("valid email"),
+            "user@berkeley.edu"
+        );
     }
 
     #[test]

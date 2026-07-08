@@ -1090,6 +1090,8 @@ test("api client handles query strings and malformed responses", async (t) => {
   await assert.rejects(() => new ApiClient().get("/html-error"), /Server is unavailable/);
   globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "validation_error", request_id: "req_1" }) });
   await assert.rejects(() => new ApiClient().get("/bad-request"), /Request was invalid.+req_1/);
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "invalid_email", error: "email must be a valid email address", field: "email" }) });
+  await assert.rejects(() => new ApiClient().post("/api/orgs/org-1/invitations", { email: "user@berkeley" }), /Enter a valid email address/);
   globalThis.fetch = async () => ({
     ok: false,
     status: 403,
