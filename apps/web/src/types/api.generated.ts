@@ -4362,6 +4362,13 @@ export interface components {
             /** Format: int64 */
             stepless_trace_count: number;
             steps: components["schemas"]["TraceStepBucket"][];
+            /**
+             * Format: int64
+             * @description Run-wide count of errored traces, including stepless traces and traces
+             *     dropped when the bucket list is truncated. Not the sum of per-bucket
+             *     `error_trace_count`.
+             */
+            total_error_trace_count: number;
             /** Format: int64 */
             total_trace_count: number;
             truncated: boolean;

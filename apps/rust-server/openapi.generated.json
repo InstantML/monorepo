@@ -18494,6 +18494,7 @@
           "steps",
           "stepless_trace_count",
           "total_trace_count",
+          "total_error_trace_count",
           "truncated"
         ],
         "properties": {
@@ -18507,6 +18508,12 @@
             "items": {
               "$ref": "#/components/schemas/TraceStepBucket"
             }
+          },
+          "total_error_trace_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Run-wide count of errored traces, including stepless traces and traces\ndropped when the bucket list is truncated. Not the sum of per-bucket\n`error_trace_count`.",
+            "minimum": 0
           },
           "total_trace_count": {
             "type": "integer",

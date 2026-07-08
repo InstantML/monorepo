@@ -179,9 +179,9 @@ export function TraceMetricTimeline({
     [buckets],
   );
   const totalTraces = steps?.total_trace_count ?? 0;
-  // Run-wide (includes stepless and truncated-out traces) once the API field
-  // lands; the bucket sum is the fallback for older payload shapes.
-  const runWideErrors = (steps as (TraceStepSummary & { total_error_trace_count?: number }) | null)?.total_error_trace_count ?? errorTraceTotal;
+  // Run-wide: includes stepless and truncated-out errored traces, unlike the
+  // per-bucket sum.
+  const runWideErrors = steps?.total_error_trace_count ?? errorTraceTotal;
   const radiusFor = (count: number) => {
     if (maxTraceCount <= 0) return MARKER_MIN_R;
     const scaled = Math.sqrt(Math.max(0, count)) / Math.sqrt(maxTraceCount);

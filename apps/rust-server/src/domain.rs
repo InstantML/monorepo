@@ -1808,6 +1808,10 @@ pub struct TraceStepSummaryResponse {
     pub steps: Vec<TraceStepBucket>,
     pub stepless_trace_count: u64,
     pub total_trace_count: u64,
+    /// Run-wide count of errored traces, including stepless traces and traces
+    /// dropped when the bucket list is truncated. Not the sum of per-bucket
+    /// `error_trace_count`.
+    pub total_error_trace_count: u64,
     pub truncated: bool,
 }
 

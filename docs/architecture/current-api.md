@@ -1260,7 +1260,7 @@ Query:
 | `kind` | Optional span kind filter, or `all` |
 | `q` | Search root name, trace id prefix, rollout id, or thread id |
 | `from`, `to` | Optional RFC3339 `started_at` window. Project-scoped lists default to the last 7 days through now; `run_id` lists are unbounded unless a window is supplied. |
-| `min_step`, `max_step` | Optional overlapping step range |
+| `min_step`, `max_step` | Optional inclusive filter on each trace's anchor (its `min_step`), matching how `/traces/steps` buckets count traces. Traces without a step and multi-step spanners whose anchor falls outside the range are excluded. `min_step <= max_step`; steps may be negative. |
 | `limit` | Default 50, max 200 |
 | `cursor` | Opaque cursor returned by the previous page |
 
@@ -1283,18 +1283,21 @@ Query:
 
 | Parameter | Meaning |
 | --- | --- |
-| `min_step`, `max_step` | Optional inclusive step-bucket range, `min_step <= max_step` |
+| `min_step`, `max_step` | Optional inclusive step-bucket range, `min_step <= max_step`. Steps may be negative. |
 
 Buckets are ordered by ascending step and capped at 2,000; `truncated` is `true`
 when the run has more distinct steps than the cap, in which case the lowest
-2,000 steps are returned. `total_trace_count` and `stepless_trace_count` are
-always run-wide: they ignore `min_step`/`max_step`, so under a filtered range
-the bucket sum can be smaller than the totals. Only `steps` honors the range.
+2,000 steps are returned. `total_trace_count`, `stepless_trace_count`, and
+`total_error_trace_count` are always run-wide: they ignore `min_step`/`max_step`
+and include stepless and truncated-out traces, so under a filtered range the
+bucket sums can be smaller than the totals. `total_error_trace_count` is the
+run-wide count of errored traces and is not the sum of the per-bucket
+`error_trace_count` values. Only `steps` honors the range.
 
 Output:
 
 ```json
-{ "steps": [], "stepless_trace_count": 0, "total_trace_count": 0, "truncated": false }
+{ "steps": [], "stepless_trace_count": 0, "total_trace_count": 0, "total_error_trace_count": 0, "truncated": false }
 ```
 
 ### `GET /api/runs/:run_id/traces/:trace_id`

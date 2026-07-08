@@ -133,6 +133,30 @@ error-isolated: a failing steps query must not take down the list.
   per step, an error cluster + reward dip around one step band) against
   disposable ClickHouse + Rust + Next, driven in Chrome.
 
+## Final review
+
+2026-07-07: four specialized review agents (React correctness, Rust/contract,
+design-system/a11y, holistic product bar) swept the full feature diff. All 18
+confirmed findings were fixed and re-verified:
+
+- Interaction: frame-level nearest-bucket hit-testing (dense steps), derived
+  hover (no stale tooltips across live polls, rAF-coalesced, memoized lane
+  layers), loaded-ref invalidation (no false empty states), manual refresh,
+  first-N-of-M pinned disclosure.
+- A11y/design: two-layer focus ring, metric value in marker labels, roving
+  tabindex fallback, tooltip clamping, copy/pluralization, 5% light-theme
+  band keeping the metric line ≥3:1.
+- Backend: −0.0 step normalization, anchor semantics for step-filtered trace
+  lists (pinned counts now match bucket counts exactly; stepless traces no
+  longer leak in), negative-step query support matching ingest, u64-saturating
+  token sums, run-wide `total_error_trace_count`, idempotency-dedup and
+  status-update smoke coverage.
+
+Gates on the final tree: 20 rust trace tests + clippy + fmt, codegen clean,
+420 web tests + tsc, full traces UI smoke, and live verification against a
+seeded 30-step/80-trace run plus a genuinely live run observed growing
+across poll ticks in Chrome (both themes, keyboard, degraded states).
+
 ## Progress log
 
 - 2026-07-05: design accepted; branch `codex/trace-metric-correlation` cut

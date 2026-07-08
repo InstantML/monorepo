@@ -210,19 +210,7 @@ pub async fn list_traces(
             return Err(AppError::validation("to must be after from"));
         }
     }
-    let min_step = query
-        .get("min_step")
-        .map(|value| validate_query_step(value, "min_step"))
-        .transpose()?;
-    let max_step = query
-        .get("max_step")
-        .map(|value| validate_query_step(value, "max_step"))
-        .transpose()?;
-    if matches!((min_step, max_step), (Some(min_step), Some(max_step)) if min_step > max_step) {
-        return Err(AppError::validation(
-            "min_step must be less than or equal to max_step",
-        ));
-    }
+    let (min_step, max_step) = parse_trace_step_bounds(query)?;
     let cursor = query
         .get("cursor")
         .map(|value| decode_trace_list_cursor(value))
@@ -506,19 +494,7 @@ pub async fn trace_step_summary(
     run_id: Uuid,
     query: &HashMap<String, String>,
 ) -> AppResult<TraceStepSummaryResponse> {
-    let min_step = query
-        .get("min_step")
-        .map(|value| validate_query_step(value, "min_step"))
-        .transpose()?;
-    let max_step = query
-        .get("max_step")
-        .map(|value| validate_query_step(value, "max_step"))
-        .transpose()?;
-    if matches!((min_step, max_step), (Some(min_step), Some(max_step)) if min_step > max_step) {
-        return Err(AppError::validation(
-            "min_step must be less than or equal to max_step",
-        ));
-    }
+    let (min_step, max_step) = parse_trace_step_bounds(query)?;
     let run = {
         let data = store.data.lock().await;
         fetch_run_in_data(&data, ctx, run_id)?
@@ -545,6 +521,28 @@ pub async fn trace_step_summary(
     ))
 }
 
+/// Parses the shared `min_step`/`max_step` step-filter bounds used by both the
+/// traces list and the step-summary endpoints. Trace steps may be negative (any
+/// finite value), and `min_step` must be less than or equal to `max_step`.
+fn parse_trace_step_bounds(
+    query: &HashMap<String, String>,
+) -> AppResult<(Option<f64>, Option<f64>)> {
+    let min_step = query
+        .get("min_step")
+        .map(|value| validate_trace_query_step(value, "min_step"))
+        .transpose()?;
+    let max_step = query
+        .get("max_step")
+        .map(|value| validate_trace_query_step(value, "max_step"))
+        .transpose()?;
+    if matches!((min_step, max_step), (Some(min_step), Some(max_step)) if min_step > max_step) {
+        return Err(AppError::validation(
+            "min_step must be less than or equal to max_step",
+        ));
+    }
+    Ok((min_step, max_step))
+}
+
 fn build_trace_step_summary(
     mut bucket_rows: Vec<TraceStepBucketReadRow>,
     counts: TraceStepCountsReadRow,
@@ -559,6 +557,7 @@ fn build_trace_step_summary(
         steps,
         stepless_trace_count: counts.stepless_trace_count,
         total_trace_count: counts.total_trace_count,
+        total_error_trace_count: counts.error_trace_count,
         truncated,
     }
 }
@@ -819,8 +818,18 @@ fn aggregate_trace_spans(spans: &[TraceSpanCanonicalRow]) -> AppResult<TraceSpan
         input_tokens,
         output_tokens,
         cost_usd,
-        min_step: steps.iter().copied().reduce(f64::min),
-        max_step: steps.iter().copied().reduce(f64::max),
+        // `f64::min`/`f64::max` can yield -0.0; add 0.0 to normalize it to 0.0 so
+        // the stored anchor groups with 0.0 in the bucket query's GROUP BY step.
+        min_step: steps
+            .iter()
+            .copied()
+            .reduce(f64::min)
+            .map(|step| step + 0.0),
+        max_step: steps
+            .iter()
+            .copied()
+            .reduce(f64::max)
+            .map(|step| step + 0.0),
         summary_metrics,
         running_span_count: spans.iter().filter(|span| span.status == "running").count() as u64,
         error_count: spans.iter().filter(|span| span.status == "error").count() as u64,
@@ -1829,6 +1838,46 @@ mod tests {
         );
     }
 
+    fn step_query(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_allows_negative_finite_steps() {
+        let (min_step, max_step) =
+            parse_trace_step_bounds(&step_query(&[("min_step", "-5"), ("max_step", "2")])).unwrap();
+        assert_eq!(min_step, Some(-5.0));
+        assert_eq!(max_step, Some(2.0));
+
+        let (min_step, max_step) = parse_trace_step_bounds(&step_query(&[])).unwrap();
+        assert_eq!(min_step, None);
+        assert_eq!(max_step, None);
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_allows_equal_bounds() {
+        let (min_step, max_step) =
+            parse_trace_step_bounds(&step_query(&[("min_step", "3"), ("max_step", "3")])).unwrap();
+        assert_eq!(min_step, Some(3.0));
+        assert_eq!(max_step, Some(3.0));
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_rejects_min_over_max() {
+        let error = parse_trace_step_bounds(&step_query(&[("min_step", "5"), ("max_step", "2")]))
+            .unwrap_err();
+        assert!(error.message().contains("min_step must be less than"));
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_rejects_non_finite_steps() {
+        assert!(parse_trace_step_bounds(&step_query(&[("min_step", "nan")])).is_err());
+        assert!(parse_trace_step_bounds(&step_query(&[("max_step", "inf")])).is_err());
+    }
+
     fn step_bucket_row(
         step: f64,
         trace_count: u64,
@@ -1857,6 +1906,7 @@ mod tests {
         let counts = TraceStepCountsReadRow {
             total_trace_count: 9,
             stepless_trace_count: 2,
+            error_trace_count: 3,
         };
 
         let summary = build_trace_step_summary(rows, counts, MAX_TRACE_STEP_BUCKETS);
@@ -1864,6 +1914,9 @@ mod tests {
         assert!(!summary.truncated);
         assert_eq!(summary.total_trace_count, 9);
         assert_eq!(summary.stepless_trace_count, 2);
+        // Run-wide error total is taken from the counts row, not summed from the
+        // per-bucket error counts (which only add to 1 here).
+        assert_eq!(summary.total_error_trace_count, 3);
         assert_eq!(summary.steps.len(), 2);
         let first = &summary.steps[0];
         assert_eq!(first.step, 1.0);
@@ -1885,18 +1938,22 @@ mod tests {
         let counts = TraceStepCountsReadRow {
             total_trace_count: 5,
             stepless_trace_count: 0,
+            error_trace_count: 4,
         };
 
         let within = (0..3).map(|i| step_bucket_row(i as f64, 1, 0, 0)).collect();
         let summary = build_trace_step_summary(within, counts.clone(), 3);
         assert!(!summary.truncated);
         assert_eq!(summary.steps.len(), 3);
+        assert_eq!(summary.total_error_trace_count, 4);
 
         let over = (0..4).map(|i| step_bucket_row(i as f64, 1, 0, 0)).collect();
         let summary = build_trace_step_summary(over, counts, 3);
         assert!(summary.truncated);
         assert_eq!(summary.steps.len(), 3);
         assert_eq!(summary.steps.last().unwrap().step, 2.0);
+        // Errors from the truncated-out bucket still count toward the run-wide total.
+        assert_eq!(summary.total_error_trace_count, 4);
     }
 
     #[test]
@@ -1904,12 +1961,14 @@ mod tests {
         let counts = TraceStepCountsReadRow {
             total_trace_count: 0,
             stepless_trace_count: 0,
+            error_trace_count: 0,
         };
         let summary = build_trace_step_summary(Vec::new(), counts, MAX_TRACE_STEP_BUCKETS);
         assert!(summary.steps.is_empty());
         assert!(!summary.truncated);
         assert_eq!(summary.total_trace_count, 0);
         assert_eq!(summary.stepless_trace_count, 0);
+        assert_eq!(summary.total_error_trace_count, 0);
     }
 
     #[test]

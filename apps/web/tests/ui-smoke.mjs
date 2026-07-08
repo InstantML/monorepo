@@ -345,7 +345,8 @@ try {
     const lateSpanId = "b1b1b1b1b1b1b1b1";
     const steplessTraceId = "cccccccccccccccccccccccccccccccc";
     const steplessSpanId = "c1c1c1c1c1c1c1c1";
-    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, {
+    const stepTraceKey = `ui-smoke-trace-steps-${smokeId}`;
+    const stepTraceBatch = {
       events: [
         {
           trace_id: errorTraceId, span_id: errorSpanId, event_id: "00000000-0000-4000-8000-000000000201",
@@ -388,13 +389,88 @@ try {
           links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
         },
       ],
-    }, { headers: { "Idempotency-Key": `ui-smoke-trace-steps-${smokeId}` } });
+    };
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, stepTraceBatch, {
+      headers: { "Idempotency-Key": stepTraceKey },
+    });
     const seededStepSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps`);
     assert.ok(
       (seededStepSummary.steps ?? []).some((bucket) => bucket.step === 5 && bucket.error_trace_count >= 1),
       `seeded step summary should carry an error bucket at step 5: ${JSON.stringify(seededStepSummary)}`,
     );
     assert.equal(seededStepSummary.stepless_trace_count, 1, `expected one stepless trace: ${JSON.stringify(seededStepSummary)}`);
+    // total_error_trace_count is run-wide: the step-5 error plus zero stepless
+    // errors, and it is not the sum of per-bucket error_trace_count values.
+    assert.equal(
+      seededStepSummary.total_error_trace_count,
+      1,
+      `expected one run-wide errored trace: ${JSON.stringify(seededStepSummary)}`,
+    );
+    // Re-POST the identical batch with the SAME Idempotency-Key and body: ingest
+    // is idempotent, so the bucket aggregates must not change or double-count.
+    // Space the extra ingest/read bursts so they stay under the 5 req/s limiter.
+    await page.waitForTimeout(1200);
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, stepTraceBatch, {
+      headers: { "Idempotency-Key": stepTraceKey },
+    });
+    const replayedStepSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps`);
+    const bucketShape = (summary) => (summary.steps ?? []).map((bucket) => ({
+      step: bucket.step,
+      trace_count: bucket.trace_count,
+      error_trace_count: bucket.error_trace_count,
+      running_trace_count: bucket.running_trace_count,
+      span_count: bucket.span_count,
+      input_tokens: bucket.input_tokens,
+      output_tokens: bucket.output_tokens,
+    }));
+    assert.deepEqual(
+      bucketShape(replayedStepSummary),
+      bucketShape(seededStepSummary),
+      `idempotent re-POST must leave bucket counts unchanged: ${JSON.stringify(replayedStepSummary)}`,
+    );
+    assert.equal(
+      replayedStepSummary.total_trace_count,
+      seededStepSummary.total_trace_count,
+      `idempotent re-POST must not change total_trace_count: ${JSON.stringify(replayedStepSummary)}`,
+    );
+    assert.equal(
+      replayedStepSummary.total_error_trace_count,
+      seededStepSummary.total_error_trace_count,
+      `idempotent re-POST must not change total_error_trace_count: ${JSON.stringify(replayedStepSummary)}`,
+    );
+    // Follow-up batch (NEW key) that flips the step-8 rollout from ok to running
+    // via a higher-sequence event. The bucket must reflect the latest status
+    // (running) without double-counting the trace, and the run-wide totals must
+    // hold: still four traces and still one error (step 5 stays the sole error,
+    // keeping the timeline's error marker/band/pin assertions valid).
+    await page.waitForTimeout(1200);
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, {
+      events: [
+        {
+          trace_id: lateTraceId, span_id: lateSpanId, event_id: "00000000-0000-4000-8000-000000000303",
+          sequence: 3, event_kind: "updated", name: "rollout step 8", kind: "rollout", status: "running", step: 8,
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-8", started_at: traceStartedAt,
+          attributes: { source: "ui-smoke" }, metrics: { "gen_ai.usage.input_tokens": 6, "gen_ai.usage.output_tokens": 2 },
+          links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+      ],
+    }, { headers: { "Idempotency-Key": `ui-smoke-trace-step8-running-${smokeId}` } });
+    const updatedStepSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps`);
+    const step8Bucket = (updatedStepSummary.steps ?? []).find((bucket) => bucket.step === 8);
+    assert.ok(step8Bucket, `expected a step-8 bucket after status update: ${JSON.stringify(updatedStepSummary)}`);
+    assert.equal(step8Bucket.trace_count, 1, `step-8 status update must not double-count the trace: ${JSON.stringify(step8Bucket)}`);
+    assert.equal(step8Bucket.running_trace_count, 1, `step-8 bucket must reflect the latest running status: ${JSON.stringify(step8Bucket)}`);
+    assert.equal(step8Bucket.error_trace_count, 0, `step-8 running update must not add an error: ${JSON.stringify(step8Bucket)}`);
+    assert.equal(
+      updatedStepSummary.total_trace_count,
+      seededStepSummary.total_trace_count,
+      `status update must not change total_trace_count: ${JSON.stringify(updatedStepSummary)}`,
+    );
+    assert.equal(
+      updatedStepSummary.total_error_trace_count,
+      seededStepSummary.total_error_trace_count,
+      `status update off the error step must leave the run-wide error total unchanged: ${JSON.stringify(updatedStepSummary)}`,
+    );
     const imageArtifact = (await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
       type: "file",
       name: "qa-preview.png",

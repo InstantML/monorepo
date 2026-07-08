@@ -280,6 +280,7 @@ pub struct TraceStepBucketReadRow {
 pub struct TraceStepCountsReadRow {
     pub total_trace_count: u64,
     pub stepless_trace_count: u64,
+    pub error_trace_count: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -485,11 +486,17 @@ pub async fn list_trace_summaries(
                OR positionCaseInsensitive(thread_id, ?) > 0)",
         );
     }
+    // Step bounds filter on the trace's anchor (its min_step), matching exactly
+    // how /traces/steps buckets count traces: stepless traces and multi-step
+    // spanners are excluded so the list agrees with the bucket counts.
+    if query.min_step.is_some() || query.max_step.is_some() {
+        sql.push_str(" AND min_step IS NOT NULL");
+    }
     if query.min_step.is_some() {
-        sql.push_str(" AND (max_step IS NULL OR max_step >= ?)");
+        sql.push_str(" AND min_step >= ?");
     }
     if query.max_step.is_some() {
-        sql.push_str(" AND (min_step IS NULL OR min_step <= ?)");
+        sql.push_str(" AND min_step <= ?");
     }
     if query.cursor.is_some() {
         sql.push_str(
@@ -550,7 +557,7 @@ pub async fn trace_step_summaries(
 ) -> AppResult<Vec<TraceStepBucketReadRow>> {
     let mut sql = String::from(
         "SELECT \
-           assumeNotNull(min_step) AS step, \
+           assumeNotNull(min_step) + 0. AS step, \
            toUInt64(count()) AS trace_count, \
            toUInt64(countIf(status = 'error')) AS error_trace_count, \
            toUInt64(countIf(status = 'running')) AS running_trace_count, \
@@ -558,8 +565,8 @@ pub async fn trace_step_summaries(
            toUInt64(sum(error_count)) AS error_span_count, \
            avgOrNull(duration_ms) AS avg_duration_ms, \
            maxOrNull(duration_ms) AS max_duration_ms, \
-           toUInt64(sum(input_tokens)) AS input_tokens, \
-           toUInt64(sum(output_tokens)) AS output_tokens, \
+           toUInt64(least(sum(toUInt128(input_tokens)), toUInt128(18446744073709551615))) AS input_tokens, \
+           toUInt64(least(sum(toUInt128(output_tokens)), toUInt128(18446744073709551615))) AS output_tokens, \
            min(started_at) AS first_started_at, \
            max(started_at) AS last_started_at \
          FROM ( \
@@ -624,9 +631,12 @@ pub async fn trace_step_counts(
         .query(
             "SELECT \
                toUInt64(count()) AS total_trace_count, \
-               toUInt64(countIf(min_step IS NULL)) AS stepless_trace_count \
+               toUInt64(countIf(min_step IS NULL)) AS stepless_trace_count, \
+               toUInt64(countIf(status = 'error')) AS error_trace_count \
              FROM ( \
-               SELECT argMax(min_step, tuple(updated_at, event_id)) AS min_step \
+               SELECT \
+                 argMax(min_step, tuple(updated_at, event_id)) AS min_step, \
+                 argMax(status, tuple(updated_at, event_id)) AS status \
                FROM trace_summaries \
                WHERE org_id = ? \
                  AND project_id = ? \
