@@ -114,7 +114,10 @@ test("run detail correlates traces with metrics on a shared step timeline", () =
 
   // Step selection threads min_step/max_step into the list query and refetches.
   assert.match(detailSource, /min_step: step, max_step: step/);
-  assert.match(detailSource, /runWorkspaceTab, selectedTraceStep\]/);
+  // The list and step effects participate in the live-run poll cadence.
+  assert.match(detailSource, /runWorkspaceTab, selectedTraceStep, tracesPollTick\]/);
+  assert.match(detailSource, /runWorkspaceTab, tracesPollTick\]/);
+  assert.match(detailSource, /const tracesPollTick = liveRun \? liveTick : 0;/);
   assert.match(detailSource, /selectedStep=\{selectedTraceStep\}/);
   assert.match(detailSource, /onStepSelect=\{setSelectedTraceStep\}/);
 

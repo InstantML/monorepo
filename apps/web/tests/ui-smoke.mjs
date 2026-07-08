@@ -217,6 +217,17 @@ try {
         });
       }
     }
+    if (!docsScreenshotMode) {
+      // Extra scalar points aligned to the stepped traces seeded below, so the
+      // correlation timeline draws a metric line across the seeded trace steps
+      // (docs mode already logs a dense 0..46 curve that covers these).
+      for (const [step, ret] of [[5, 47], [8, 51]]) {
+        await pageApiRequest(page, "POST", `/runs/${seedRunId}/metrics`, {
+          step,
+          metrics: { "eval/return_mean": ret, "eval/score_distribution": 0.82, "train/reward": ret * 2, "train/loss": 0.3 },
+        });
+      }
+    }
     const traceId = "11111111111111111111111111111111";
     const rootSpanId = "2222222222222222";
     const childSpanId = "3333333333333333";

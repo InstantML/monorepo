@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, Copy, Database, GitBranch, GitFork, Square, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
@@ -591,28 +591,41 @@ export function DetailTabPane({
     };
   }, [liveRun]);
 
+  // Live runs re-poll the trace list and step aggregates on the shared series
+  // cadence; the ref lets a poll refresh keep the current rows on screen
+  // instead of flashing the skeleton every tick.
+  const tracesPollTick = liveRun ? liveTick : 0;
+  const tracesLoadedForRef = useRef("");
   useEffect(() => {
     if (runWorkspaceTab !== "traces" || !run) {
       setRecentTraces([]);
       setRecentTracesError("");
       setRecentTracesLoading(false);
+      tracesLoadedForRef.current = "";
       return;
     }
+    const scopeKey = `${runId}:${selectedTraceStep ?? "all"}`;
+    const isRefresh = tracesLoadedForRef.current === scopeKey;
     const controller = new AbortController();
     let cancelled = false;
-    setRecentTraces([]);
-    setRecentTracesLoading(true);
+    if (!isRefresh) {
+      setRecentTraces([]);
+      setRecentTracesLoading(true);
+    }
     setRecentTracesError("");
     retryTransientRequest(
       () => api.get(`/api/traces${queryString(runTraceListQuery(run, selectedTraceStep))}`, { signal: controller.signal }),
       { signal: controller.signal },
     )
       .then((payload) => {
-        if (!cancelled) setRecentTraces(((payload?.traces ?? []) as TraceSummary[]).slice(0, RECENT_TRACE_LIMIT));
+        if (cancelled) return;
+        setRecentTraces(((payload?.traces ?? []) as TraceSummary[]).slice(0, RECENT_TRACE_LIMIT));
+        tracesLoadedForRef.current = scopeKey;
       })
       .catch((caught) => {
         if (!cancelled && !isAbortError(caught)) {
           setRecentTraces([]);
+          tracesLoadedForRef.current = "";
           setRecentTracesError(caught instanceof Error ? caught.message : "Unable to load traces.");
         }
       })
@@ -623,34 +636,42 @@ export function DetailTabPane({
       cancelled = true;
       controller.abort();
     };
-  }, [api, run?.started_at, runId, runWorkspaceTab, selectedTraceStep]);
+  }, [api, run?.started_at, runId, runWorkspaceTab, selectedTraceStep, tracesPollTick]);
 
   // Per-step trace aggregates for the correlation timeline. Independent of the
   // list fetch above and the metric-series fetch below: one failing must not
   // block the others. Tab-gated + abortable, mirroring the recent-traces effect.
+  const stepsLoadedForRef = useRef("");
   useEffect(() => {
     if (runWorkspaceTab !== "traces" || !run) {
       setTraceSteps(null);
       setTraceStepsError("");
       setTraceStepsLoading(false);
       setSelectedTraceStep(null);
+      stepsLoadedForRef.current = "";
       return;
     }
+    const isRefresh = stepsLoadedForRef.current === runId;
     const controller = new AbortController();
     let cancelled = false;
-    setTraceSteps(null);
-    setTraceStepsLoading(true);
+    if (!isRefresh) {
+      setTraceSteps(null);
+      setTraceStepsLoading(true);
+    }
     setTraceStepsError("");
     retryTransientRequest(
       () => api.get(`/api/runs/${runId}/traces/steps`, { signal: controller.signal }),
       { signal: controller.signal },
     )
       .then((payload) => {
-        if (!cancelled && payload) setTraceSteps({ runId, payload: payload as TraceStepSummary });
+        if (cancelled || !payload) return;
+        setTraceSteps({ runId, payload: payload as TraceStepSummary });
+        stepsLoadedForRef.current = runId;
       })
       .catch((caught) => {
         if (!cancelled && !isAbortError(caught)) {
           setTraceSteps(null);
+          stepsLoadedForRef.current = "";
           setTraceStepsError(caught instanceof Error ? caught.message : "Unable to load trace activity.");
         }
       })
@@ -661,7 +682,7 @@ export function DetailTabPane({
       cancelled = true;
       controller.abort();
     };
-  }, [api, run?.started_at, runId, runWorkspaceTab]);
+  }, [api, run?.started_at, runId, runWorkspaceTab, tracesPollTick]);
 
   // Metric line for the timeline's selected key. Reuse the headline seriesMap
   // cache when the key is already loaded; otherwise fetch it once (same request
