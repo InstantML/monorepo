@@ -6,6 +6,17 @@ Status: Accepted first slice in implementation
 
 Owner: Codex
 
+## Review notes
+
+2026-07-07 (round-3 review): The "accessible timeline strip" listed in the
+accepted first slice (Traces tab viewer and Phase 3 frontend) was deferred out
+of this slice. The shipped Traces workspace renders the topology-preserving span
+tree, filters, child expansion, and span detail pane; the correlation timeline
+now ships separately as a step-axis timeline in PR #354. The tree view and its
+accessible table/text fallbacks still satisfy the accessibility requirements
+above; treat the timeline references in "Accepted First Slice", "Frontend UX",
+and Phase 3 as forward-looking to PR #354 rather than as part of this branch.
+
 ## Summary
 
 InstantML currently observes training runs through metrics, rank metrics, rich

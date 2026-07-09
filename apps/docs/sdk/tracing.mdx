@@ -72,6 +72,34 @@ run.finish()
 The root span appears as the trace summary. Child spans appear in the trace
 tree and can be expanded on demand.
 
+## Span parameters
+
+`run.trace(...)`, `trace.span(...)`, and `run.start_span(...)` accept the same
+span fields. Only `name` is required.
+
+| Parameter | Purpose |
+| --- | --- |
+| `kind` | Span label used for filtering and summary counts. Defaults to `custom`. |
+| `step` | Training step or episode the span belongs to. |
+| `rank` | Distributed rank; inherited by child spans when unset. |
+| `thread_id` | Groups spans that belong to one agent session or turn. Defaults to the trace id. |
+| `rollout_id` | Application-defined rollout or episode identifier. |
+| `attributes` | Short searchable labels. Serialized attributes are capped at 32 KB per span. |
+| `metrics` | Numeric span metrics such as reward or token counts. Capped at 16 KB per span. |
+| `links` | Related trace or span references. |
+| `capture` | `"off"` (default) or `"preview"`. See [Privacy and capture](#privacy-and-capture). |
+| `inputs` | Input payload, previewed only under `capture="preview"`. |
+| `trace_id` | Override the generated trace id, for example to stitch across processes. |
+| `span_id` | Override the generated span id. |
+
+`run.start_span(...)` and `trace.span(...)` also take `parent_span_id`.
+
+Kinds are validated against a fixed vocabulary. The SDK accepts `rollout`,
+`env_step`, `model`, `tool`, `retrieval`, `reward`, `evaluator`, `dataset`,
+`preprocessing`, `postprocessing`, `checkpoint`, `artifact`, `system`, and
+`custom`. Any other value raises `ValueError`, so use `custom` when none of the
+specific kinds fit.
+
 ## Decorate operations
 
 `run.trace_op(...)` wraps a sync or async function and records one span per

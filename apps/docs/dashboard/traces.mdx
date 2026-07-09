@@ -43,9 +43,9 @@ run unless a date window is supplied, so older imported or backfilled runs do
 not disappear from the trace list.
 
 The workspace deep-links with `run_id`, `trace_id`, and `span_id` query
-parameters. If the selected span is outside the initially loaded root window,
-the tree stays honest instead of selecting a different span. Expand visible
-parents to load child spans when the selected parent is already in the tree.
+parameters, so a copied URL reopens the same run, trace, and span selection.
+The tree only ever selects the span named in the URL; it never substitutes a
+different span. Expand a parent to load its child spans on demand.
 
 ## Span inspector
 
