@@ -10,6 +10,26 @@
   min-width: 0;
 }
 
+/* Status strips and empty states render as full-bleed rows directly inside the
+ * panel shell (these panels have no padded .panel-body), so the shared island
+ * chrome — borders on all sides plus rounded corners — collides with the
+ * panel's own border. Only the shell keeps a radius; inside it they are flat
+ * rows whose sole divider is a straight edge. */
+.traces-list-panel > .status-strip,
+.traces-detail-panel > .status-strip {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.traces-list-panel > .empty,
+.traces-detail-panel > .empty,
+.trace-inspector.empty {
+  border: 0;
+  border-radius: 0;
+}
+
 .trace-filter-row {
   display: grid;
   grid-template-columns: minmax(140px, 1fr) 120px 140px minmax(180px, 1.2fr);
