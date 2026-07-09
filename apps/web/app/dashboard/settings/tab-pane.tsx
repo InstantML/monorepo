@@ -123,8 +123,6 @@ type Props = {
   onMetricKey: (key: string) => void;
   onXMode: (mode: string) => void;
   onClose: () => void;
-  onDismissSettingsToast: () => void;
-  settingsToast: { text: string; tone: "status" | "error" } | null;
   orgName: string;
   orgPlanTier: string;
   reservedSeatCount: number;
@@ -185,8 +183,6 @@ export function SettingsTabPane({
   onMetricKey,
   onXMode,
   onClose,
-  onDismissSettingsToast,
-  settingsToast,
   orgName,
   orgPlanTier,
   reservedSeatCount,
@@ -309,12 +305,6 @@ export function SettingsTabPane({
     >
       <div className="settings-modal-card">
         <button className="icon-button settings-modal-close" type="button" aria-label="Close workspace settings" onClick={requestClose}><X size={16} /></button>
-        {settingsToast ? (
-          <div className={`settings-toast${settingsToast.tone === "error" ? " error" : ""}`} role={settingsToast.tone === "error" ? "alert" : "status"}>
-            <span>{settingsToast.text}</span>
-            <button aria-label="Dismiss notification" className="icon-button" onClick={onDismissSettingsToast} type="button"><X size={14} /></button>
-          </div>
-        ) : null}
         <nav className="settings-nav" aria-label="Settings sections">
           <span className="settings-nav-title">Settings</span>
           {SECTIONS.map(({ id, label, Icon }) => (

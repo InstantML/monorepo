@@ -269,7 +269,7 @@ function clientSafeError(status, payload) {
   const code = typeof payload?.code === "string" ? payload.code : "";
   if (isSafeSearchValidationError(status, payload)) return payload.error;
   if (code === "invalid_email") return "Enter a valid email address (like name@example.com).";
-  if (code === "validation_error" || status === 400) return "Request was invalid. Check the current filters and try again.";
+  if (code === "validation_error" || status === 400) return "Request was invalid. Check the input and try again.";
   if (code === "warehouse_unavailable") return "Starting data warehouse. Your runs will load once the warehouse is awake.";
   if (code === "payment_required" || status === 402) return "Payment is required before this workspace can accept new writes.";
   if (code === "clerk_email_unverified") return "Verify your email address in Clerk before continuing.";
