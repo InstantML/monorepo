@@ -25,7 +25,18 @@ import { DetailTabPane } from "./detail/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { RunFilterBar } from "./runs/run-filter-bar";
-import { AnalysisSkeleton } from "./ui/skeleton";
+import {
+  AgentPageSkeleton,
+  ArtifactsPageSkeleton,
+  CompareEmbedSkeleton,
+  DatasetsPageSkeleton,
+  DistributedPageSkeleton,
+  InsightsPageSkeleton,
+  ReportsPageSkeleton,
+  RunHealthPageSkeleton,
+  SettingsModalSkeleton,
+  TracesPageSkeleton,
+} from "./ui/skeleton";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { clearRunsetCaches } from "./reports/runset-cache";
@@ -66,19 +77,21 @@ import type { components } from "../../src/types/api.generated";
 // B3): each rarely-hit pane loads on demand instead of shipping in the
 // dashboard's first-load chunk. All panes are named exports, hence the
 // `.then((mod) => mod.X)` mapping. ssr is off — the shell is a client-only
-// tree — and the shared skeleton keeps the swap-in visually consistent with
-// the panes' own loading states. The options must stay inline object
-// literals; Next's compiler rejects a shared helper here.
-const AgentTabPane = dynamic(() => import("./agent/tab-pane").then((mod) => mod.AgentTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading agent" /> });
-const AlertsTabPane = dynamic(() => import("./alerts/tab-pane").then((mod) => mod.AlertsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading run health" /> });
-const ArtifactsTabPane = dynamic(() => import("./artifacts/tab-pane").then((mod) => mod.ArtifactsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading artifacts" /> });
-const CompareView = dynamic(() => import("./compare/tab-pane").then((mod) => mod.CompareView), { ssr: false, loading: () => <AnalysisSkeleton label="Loading comparison" /> });
-const DatasetsTabPane = dynamic(() => import("./datasets/tab-pane").then((mod) => mod.DatasetsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading datasets" /> });
-const DistributedTabPane = dynamic(() => import("./distributed/tab-pane").then((mod) => mod.DistributedTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading rank reducers" /> });
-const InsightsTabPane = dynamic(() => import("./insights/tab-pane").then((mod) => mod.InsightsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading insights" /> });
-const ReportsTabPane = dynamic(() => import("./reports/reports-tab-pane").then((mod) => mod.ReportsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading reports" /> });
-const SettingsTabPane = dynamic(() => import("./settings/tab-pane").then((mod) => mod.SettingsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading settings" /> });
-const TracesTabPane = dynamic(() => import("./traces/tab-pane").then((mod) => mod.TracesTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading traces" /> });
+// tree. Each pane's loading fallback is that page's own skeleton
+// (ui/skeleton.tsx): the page's real chrome with shimmering data regions, so
+// the module load reads as the page drawing itself in rather than a generic
+// placeholder swapping out. The options must stay inline object literals;
+// Next's compiler rejects a shared helper here.
+const AgentTabPane = dynamic(() => import("./agent/tab-pane").then((mod) => mod.AgentTabPane), { ssr: false, loading: () => <AgentPageSkeleton /> });
+const AlertsTabPane = dynamic(() => import("./alerts/tab-pane").then((mod) => mod.AlertsTabPane), { ssr: false, loading: () => <RunHealthPageSkeleton /> });
+const ArtifactsTabPane = dynamic(() => import("./artifacts/tab-pane").then((mod) => mod.ArtifactsTabPane), { ssr: false, loading: () => <ArtifactsPageSkeleton /> });
+const CompareView = dynamic(() => import("./compare/tab-pane").then((mod) => mod.CompareView), { ssr: false, loading: () => <CompareEmbedSkeleton /> });
+const DatasetsTabPane = dynamic(() => import("./datasets/tab-pane").then((mod) => mod.DatasetsTabPane), { ssr: false, loading: () => <DatasetsPageSkeleton /> });
+const DistributedTabPane = dynamic(() => import("./distributed/tab-pane").then((mod) => mod.DistributedTabPane), { ssr: false, loading: () => <DistributedPageSkeleton /> });
+const InsightsTabPane = dynamic(() => import("./insights/tab-pane").then((mod) => mod.InsightsTabPane), { ssr: false, loading: () => <InsightsPageSkeleton /> });
+const ReportsTabPane = dynamic(() => import("./reports/reports-tab-pane").then((mod) => mod.ReportsTabPane), { ssr: false, loading: () => <ReportsPageSkeleton /> });
+const SettingsTabPane = dynamic(() => import("./settings/tab-pane").then((mod) => mod.SettingsTabPane), { ssr: false, loading: () => <SettingsModalSkeleton /> });
+const TracesTabPane = dynamic(() => import("./traces/tab-pane").then((mod) => mod.TracesTabPane), { ssr: false, loading: () => <TracesPageSkeleton /> });
 
 // Bridge types from the utoipa-generated OpenAPI spec. All API request /
 // response shapes that have a matching Rust ToSchema struct flow through
