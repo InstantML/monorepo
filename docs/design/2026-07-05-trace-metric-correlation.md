@@ -183,6 +183,15 @@ identity color (no collision with ok-marker green, consistent with
 Overview/Metrics), Escape unpinning from the marker group, and a spinning
 refresh icon while the fetch is in flight (reduced-motion safe).
 
+2026-07-08 (rebase + review-fix integration): PR #344 squash-merged to main;
+this branch rebased onto main. The round-3 review fixes for #344 (26 findings:
+idempotency Drop guard, ingest rate-limit class, deduped window filters,
+timestamp range checks, monotone pagination keys, SDK thread/generator/
+batching/redaction/flush fixes, workspace deep links/keyboard/URL filters,
+dialect unification) had never been committed, so they ride here as
+24b33fbc, conflict-merged with this branch's anchor semantics and panel
+structure. Full gate stack green post-integration.
+
 ## Progress log
 
 - 2026-07-05: design accepted; branch `codex/trace-metric-correlation` cut
