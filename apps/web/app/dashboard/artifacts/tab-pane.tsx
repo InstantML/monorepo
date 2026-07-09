@@ -8,6 +8,7 @@ import { ArtifactBrowser } from "./artifact-browser";
 import { MetricCard } from "../ui/metric-card";
 import { RichObjectPanel } from "../detail/rich-object-panel";
 import { PageHead } from "../ui/page-head";
+import { ArtifactsWorkspaceSkeleton } from "../ui/skeleton";
 import { formatBytes } from "../../dashboard-models";
 import { formatNumber } from "../../../src/state.js";
 import type {
@@ -641,45 +642,6 @@ export function ArtifactsTabPane({
       </div>
       )}
     </>
-  );
-}
-
-function ArtifactsWorkspaceSkeleton() {
-  return (
-    <div className="artifact-workspace artifact-skeleton" aria-busy="true" aria-live="polite" aria-label="Loading artifacts">
-      <section className="panel artifact-catalog-panel">
-        <div className="panel-head"><h2><Package size={15} /> Collections</h2></div>
-        <div className="panel-body artifact-collection-list">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div className="artifact-skeleton-row" key={index}>
-              <span className="artifact-skeleton-line is-chip" />
-              <span className="artifact-skeleton-line is-title" />
-              <span className="artifact-skeleton-line is-meta" />
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="panel artifact-version-panel">
-        <div className="panel-head"><h2><Archive size={15} /> Versions</h2></div>
-        <div className="panel-body artifact-collection-list">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div className="artifact-skeleton-row is-version" key={index}>
-              <span className="artifact-skeleton-line is-box" />
-              <span className="artifact-skeleton-line is-title" />
-              <span className="artifact-skeleton-line is-meta" />
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="panel artifact-lineage-panel">
-        <div className="panel-head"><h2><GitBranch size={15} /> Lineage</h2></div>
-        <div className="panel-body artifact-collection-list">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <span className="artifact-skeleton-line is-block" key={index} />
-          ))}
-        </div>
-      </section>
-    </div>
   );
 }
 

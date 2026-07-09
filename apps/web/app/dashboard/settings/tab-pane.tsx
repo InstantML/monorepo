@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ComponentType } from "react";
-import { AlertTriangle, BookOpen, Copy, CreditCard, ExternalLink, Gauge, KeyRound, Plus, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Copy, CreditCard, ExternalLink, KeyRound, Plus, RefreshCw, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
+import { SETTINGS_SECTIONS } from "./sections";
+import type { SectionId } from "./sections";
 import { SettingRow } from "./setting-row";
 import { formatNumber } from "../../../src/state.js";
 import { roleLabel } from "../../../src/roles.js";
@@ -68,16 +69,9 @@ function planDisplayName(value?: string) {
   return "Free";
 }
 
-type SectionId = "usage" | "billing" | "seats" | "workspace" | "api" | "defaults";
-
-const SECTIONS: { id: SectionId; label: string; Icon: ComponentType<{ size?: number }> }[] = [
-  { id: "usage", label: "Plan Usage", Icon: Gauge },
-  { id: "billing", label: "Billing", Icon: CreditCard },
-  { id: "seats", label: "Seats", Icon: UserPlus },
-  { id: "workspace", label: "Workspace", Icon: Settings },
-  { id: "api", label: "API", Icon: KeyRound },
-  { id: "defaults", label: "Defaults", Icon: SlidersHorizontal },
-];
+// Section ids/labels/icons live in ./sections so the loading skeleton in
+// ui/skeleton.tsx renders the same nav without importing this module.
+const SECTIONS = SETTINGS_SECTIONS;
 
 type Props = {
   accountUser: { display_name?: string | null; primary_email?: string | null } | null;

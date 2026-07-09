@@ -335,3 +335,229 @@
     opacity: 1;
   }
 }
+
+/* ── Page-shaped skeleton pieces ────────────────────────────────────────── */
+/* Small parts the per-page skeletons in ui/skeleton.tsx compose inside the
+ * pages' real layout containers (hp-grid, traces-workspace, report-home, …),
+ * so each loading state occupies the same boxes as the loaded page. */
+
+/* Stacks page sections (e.g. the run-health hp-grid rows) without adding its
+ * own rhythm — the sections keep their real margins. */
+.dash-skel-flow {
+  min-width: 0;
+}
+
+.dash-skel-line {
+  height: 10px;
+  border-radius: 4px;
+}
+
+.dash-skel-line.is-title {
+  height: 13px;
+}
+
+.dash-skel-line.is-dim {
+  height: 8px;
+  opacity: 0.72;
+}
+
+.dash-skel-control {
+  height: 34px;
+  border-radius: var(--control-radius);
+}
+
+.dash-skel-button {
+  height: 30px;
+  border-radius: var(--control-radius);
+}
+
+.dash-skel-chip {
+  height: 22px;
+  border-radius: 999px;
+}
+
+.dash-skel-pill {
+  height: 20px;
+  border-radius: 999px;
+}
+
+.dash-skel-note {
+  height: 9px;
+  border-radius: 4px;
+}
+
+.dash-skel-meter {
+  height: 8px;
+  border-radius: 999px;
+}
+
+/* Segmented-toggle stand-in (Insights view switch). */
+.dash-skel-toggle {
+  height: 30px;
+  border-radius: 999px;
+}
+
+.dash-skel-stack {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.dash-skel-stack.is-tight {
+  gap: 8px;
+}
+
+.dash-skel-block {
+  border-radius: var(--control-radius);
+}
+
+.dash-skel-button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.dash-skel-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Table placeholder: a muted header row over ruled data rows. */
+.dash-skel-table {
+  display: grid;
+  align-content: start;
+}
+
+.dash-skel-table__row {
+  display: grid;
+  gap: 14px;
+  align-items: center;
+  min-height: 37px;
+  padding: 0 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.dash-skel-table__row:first-child {
+  border-top: 0;
+}
+
+.dash-skel-table__row.is-head {
+  min-height: 31px;
+}
+
+.dash-skel-table__row.is-head .dash-skel-table__cell {
+  height: 8px;
+  opacity: 0.72;
+}
+
+.dash-skel-table__cell {
+  height: 10px;
+  border-radius: 4px;
+}
+
+/* Label/value rows (settings lists, run-health detail panel). */
+.dash-skel-kv {
+  display: grid;
+  gap: 14px;
+}
+
+.dash-skel-kv__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 20px;
+}
+
+.dash-skel-kv__label {
+  height: 10px;
+}
+
+.dash-skel-kv__value {
+  height: 12px;
+}
+
+/* Run-health stat panels: big value over a sub line. */
+.dash-skel-stat {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.dash-skel-stat__value {
+  height: 22px;
+}
+
+.dash-skel-stat__sub {
+  height: 9px;
+}
+
+/* Traces: summary rows mirror .trace-row's grid; the tree indents like
+ * .trace-node rows. */
+.dash-skel-trace-list {
+  display: grid;
+  align-content: start;
+}
+
+.dash-skel-trace-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) 72px 64px 72px;
+  gap: var(--sp-2);
+  align-items: center;
+  min-height: 52px;
+  padding: 0 var(--sp-3);
+  border-top: 1px solid var(--line-soft);
+}
+
+.dash-skel-trace-row:first-child {
+  border-top: 0;
+}
+
+.dash-skel-trace-main {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.dash-skel-trace-tree {
+  display: grid;
+  gap: 13px;
+  align-content: start;
+  padding: var(--sp-3);
+}
+
+/* Reports: content stacks inside the real .report-list__row frame. */
+.dash-skel-report-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dash-skel-report-stamps {
+  display: grid;
+  gap: 7px;
+  justify-items: end;
+}
+
+.dash-skel-report-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Agent: capability-card stand-ins inside the real .agent-capability-grid. */
+.dash-skel-cap-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+}
+
+/* Analysis pages (insights, distributed) wrap the shared .dash-skel body in
+ * their own gapped grid, so drop the body's standalone top padding there. */
+.analysis-page > .dash-skel {
+  padding-top: 0;
+}
