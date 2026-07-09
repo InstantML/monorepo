@@ -221,6 +221,7 @@ export type TabId =
   | "runs"
   | "metrics"
   | "distributed"
+  | "traces"
   | "detail"
   | "compare"
   | "alerts"

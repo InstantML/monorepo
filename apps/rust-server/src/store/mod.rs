@@ -22,6 +22,7 @@ mod runs;
 mod summaries;
 mod system_usage;
 mod tenants;
+mod traces;
 mod usage;
 mod validation;
 mod workspace_views;
@@ -43,6 +44,7 @@ pub use runs::*;
 use summaries::*;
 pub use system_usage::*;
 pub use tenants::TenantRouteRecord;
+pub use traces::*;
 pub use usage::*;
 use validation::*;
 pub use workspace_views::*;
@@ -87,7 +89,7 @@ use crate::{
         CreateCurrentUserOrganizationRequest, CreateEmbedSessionRequest,
         CreateEmbedSessionResponse, CreateInvitationRequest, CreateObjectRequest,
         CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest, CreateRunForkRequest,
-        CreateRunRequest, CreateUserRequest, CreatedAuthSession,
+        CreateRunRequest, CreateTraceEventsRequest, CreateUserRequest, CreatedAuthSession,
         CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DataCellRow,
         DataCellWriterLeaseRow, DeleteArtifactAliasRequest, DeleteArtifactVersionRequest,
         DevGoogleAuthRequest, EmailDeliveryRow, EmbedAuthContext, EmbedCurrentSession,
@@ -104,23 +106,29 @@ use crate::{
         ReportRow, RequestContext, ReserveSeatRequest, RunControlRow, RunRow,
         SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
         SetArtifactAliasRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
-        UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest, UpdateReportRequest,
-        UpdateRunRequest, UploadArtifactRequest, UserRow, UserSessionRow,
-        VersionedArtifactManifestEntryInput, WorkspaceViewData, WorkspaceViewDataLimits,
-        WorkspaceViewDataOptions, WorkspaceViewDataPanelResult, WorkspaceViewDataRequest,
-        WorkspaceViewDataResponse, WorkspaceViewDeleteResponse, WorkspaceViewExportEnvelope,
-        WorkspaceViewExportIntegrity, WorkspaceViewExportSource, WorkspaceViewExportedView,
-        WorkspaceViewImportResponse, WorkspaceViewMetricSeries, WorkspaceViewRow,
-        WorkspaceViewSummary, BILLING_CANCELED, BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE,
-        BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE, BILLING_READ_ONLY_PAYMENT_REQUIRED,
-        DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT, DEFAULT_RUN_LIMIT, GIB_BYTES,
-        MAX_CONSOLE_LOG_LIMIT, MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES,
-        MAX_METRICS_PER_BATCH, MAX_METRIC_BATCH_POINTS, MAX_METRIC_LIMIT,
-        MAX_METRIC_SERIES_RUN_IDS, MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS,
-        MAX_RANK_HEATMAP_CELLS, MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT,
-        MAX_TEXT_BYTES, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE,
-        STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED, STORAGE_STATE_READY,
-        STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
+        TraceChildrenResponse, TraceDetailResponse, TraceEventInput, TraceIngestResponse,
+        TraceListResponse, TraceSpanItem, TraceSummaryItem, UpdateArtifactRetentionRequest,
+        UpdateDashboardPreferencesRequest, UpdateReportRequest, UpdateRunRequest,
+        UploadArtifactRequest, UserRow, UserSessionRow, VersionedArtifactManifestEntryInput,
+        WorkspaceViewData, WorkspaceViewDataLimits, WorkspaceViewDataOptions,
+        WorkspaceViewDataPanelResult, WorkspaceViewDataRequest, WorkspaceViewDataResponse,
+        WorkspaceViewDeleteResponse, WorkspaceViewExportEnvelope, WorkspaceViewExportIntegrity,
+        WorkspaceViewExportSource, WorkspaceViewExportedView, WorkspaceViewImportResponse,
+        WorkspaceViewMetricSeries, WorkspaceViewRow, WorkspaceViewSummary, BILLING_CANCELED,
+        BILLING_CHECKOUT_PENDING, BILLING_FREE_ACTIVE, BILLING_PAID_ACTIVE, BILLING_PAST_DUE_GRACE,
+        BILLING_READ_ONLY_PAYMENT_REQUIRED, DEFAULT_CONSOLE_LOG_LIMIT, DEFAULT_METRIC_LIMIT,
+        DEFAULT_RUN_LIMIT, DEFAULT_TRACE_CHILD_LIMIT, DEFAULT_TRACE_LIST_LIMIT,
+        DEFAULT_TRACE_SPAN_LIMIT, GIB_BYTES, MAX_CONSOLE_LOG_LIMIT,
+        MAX_CONSOLE_LOG_LINES_PER_BATCH, MAX_CONSOLE_LOG_MESSAGE_BYTES, MAX_METRICS_PER_BATCH,
+        MAX_METRIC_BATCH_POINTS, MAX_METRIC_LIMIT, MAX_METRIC_SERIES_RUN_IDS,
+        MAX_METRIC_SERIES_TOTAL_POINTS, MAX_RANK_CANONICAL_ROWS, MAX_RANK_HEATMAP_CELLS,
+        MAX_RANK_OUTLIERS, MAX_RANK_WORLD_SIZE, MAX_RUN_LIMIT, MAX_TEXT_BYTES,
+        MAX_TRACE_ATTRIBUTES_BYTES, MAX_TRACE_CHILD_LIMIT, MAX_TRACE_EVENTS_PER_BATCH,
+        MAX_TRACE_FIELD_BYTES, MAX_TRACE_LINKS_BYTES, MAX_TRACE_LIST_LIMIT,
+        MAX_TRACE_METRICS_BYTES, MAX_TRACE_NAME_BYTES, MAX_TRACE_PREVIEW_BYTES,
+        MAX_TRACE_SPAN_LIMIT, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
+        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED,
+        STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -208,6 +216,7 @@ pub struct Store {
     /// All personal/free orgs route here instead of getting a dedicated service.
     shared_cell_metric_store: Option<MetricStore>,
     inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
+    trace_ingest_capacity_locks: Arc<Mutex<HashMap<Uuid, Arc<Mutex<()>>>>>,
     artifact_upload_capacity_lock: Arc<Mutex<()>>,
     /// Short-TTL per-org usage cache for the plan-capacity write gate so
     /// steady-state ingest does not run ClickHouse aggregates per request.
@@ -390,6 +399,7 @@ impl Store {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
@@ -1258,6 +1268,14 @@ impl Store {
             ));
         }
         Ok(())
+    }
+
+    pub(super) async fn trace_ingest_capacity_lock(&self, org_id: Uuid) -> Arc<Mutex<()>> {
+        let mut locks = self.trace_ingest_capacity_locks.lock().await;
+        locks
+            .entry(org_id)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     pub(super) async fn release_idempotency_key(&self, org_id: Uuid, key: &str) {
@@ -2621,6 +2639,7 @@ mod tests {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(StoreData::default())),

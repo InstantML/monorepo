@@ -11,6 +11,7 @@ const repo = process.cwd();
 const externalApiBaseUrl = process.env.INSTANTML_UI_SMOKE_API_BASE || "";
 const backendMode = (process.env.INSTANTML_UI_SMOKE_BACKEND || "rust").toLowerCase();
 const fullWorkspaceSmoke = process.env.INSTANTML_UI_SMOKE_FULL_WORKSPACE === "1";
+const tracesOnlySmoke = process.env.INSTANTML_UI_SMOKE_TRACES_ONLY === "1";
 const docsScreenshotMode = process.env.INSTANTML_UI_SMOKE_DOC_SCREENSHOTS === "1";
 const docsProductDir = path.join(repo, "apps/docs/images/product");
 if (!externalApiBaseUrl && backendMode !== "node") {
@@ -86,22 +87,42 @@ try {
   const unexpectedBadRequestResourceUrls = [];
   const unexpectedRateLimitResourceUrls = [];
   const consoleErrorReads = [];
+  const unexpectedErrorContexts = [];
+  async function rememberUnexpectedErrorContext(text) {
+    if (!text.includes("Minified React error #418")) return;
+    const context = await page.evaluate(() => ({
+      href: window.location.href,
+      bodySnippet: document.body?.innerText?.slice(0, 2000) ?? "",
+      breadcrumb: document.querySelector(".breadcrumb")?.textContent?.trim() ?? "",
+      activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
+    })).catch((error) => ({ error: error.message }));
+    unexpectedErrorContexts.push({ text, context });
+  }
   page.on("console", (message) => {
     if (message.type() === "error") {
-      const read = consoleErrorText(message).then((text) => errors.push(text));
+      const read = consoleErrorText(message).then(async (text) => {
+        errors.push(text);
+        await rememberUnexpectedErrorContext(text);
+      });
       consoleErrorReads.push(read);
     }
   });
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    errors.push(error.message);
+    const read = rememberUnexpectedErrorContext(error.message);
+    consoleErrorReads.push(read);
+  });
   const summaryUrls = [];
   const objectUrls = [];
   const logUrls = [];
+  const traceUrls = [];
   const forkRequests = [];
   const objectNotFoundUrls = [];
   page.on("request", (request) => {
     if (request.url().includes("/api/runs/summary")) summaryUrls.push(request.url());
     if (request.url().includes("/objects")) objectUrls.push(request.url());
     if (request.url().includes("/logs")) logUrls.push(request.url());
+    if (request.url().includes("/api/traces") || request.url().includes("/traces/")) traceUrls.push(request.url());
     if (request.method() === "POST" && request.url().includes("/api/runs/") && request.url().endsWith("/forks")) {
       forkRequests.push({ headers: request.headers(), url: request.url() });
     }
@@ -196,6 +217,113 @@ try {
         });
       }
     }
+    const traceId = "11111111111111111111111111111111";
+    const rootSpanId = "2222222222222222";
+    const childSpanId = "3333333333333333";
+    const rewardSpanId = "4444444444444444";
+    const traceStartedAt = new Date().toISOString();
+    const traceEndedAt = new Date(Date.now() + 125).toISOString();
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, {
+      events: [
+        {
+          trace_id: traceId,
+          span_id: rootSpanId,
+          event_id: "00000000-0000-4000-8000-000000000101",
+          sequence: 1,
+          event_kind: "started",
+          name: "qa rollout trace",
+          kind: "rollout",
+          status: "running",
+          step: 1,
+          thread_id: "ui-smoke-thread",
+          rollout_id: "ui-smoke-rollout",
+          started_at: traceStartedAt,
+          attributes: { source: "ui-smoke" },
+          metrics: {},
+          links: [],
+          content_policy: "off",
+          redaction_state: "not_captured",
+          truncated: false,
+        },
+        {
+          trace_id: traceId,
+          span_id: childSpanId,
+          parent_span_id: rootSpanId,
+          event_id: "00000000-0000-4000-8000-000000000102",
+          sequence: 1,
+          event_kind: "finished",
+          name: "policy.forward",
+          kind: "model",
+          status: "ok",
+          step: 1,
+          thread_id: "ui-smoke-thread",
+          rollout_id: "ui-smoke-rollout",
+          started_at: traceStartedAt,
+          ended_at: traceEndedAt,
+          duration_ms: 87,
+          input_preview: "{\"obs\":[0.1,0.2]}",
+          output_preview: "{\"action\":1}",
+          attributes: { model: "smoke-policy" },
+          metrics: { "gen_ai.usage.input_tokens": 4, "gen_ai.usage.output_tokens": 2 },
+          links: [],
+          content_policy: "preview",
+          redaction_state: "captured",
+          truncated: false,
+        },
+        {
+          trace_id: traceId,
+          span_id: rewardSpanId,
+          parent_span_id: rootSpanId,
+          event_id: "00000000-0000-4000-8000-000000000104",
+          sequence: 1,
+          event_kind: "finished",
+          name: "reward.score",
+          kind: "reward",
+          status: "ok",
+          step: 1,
+          thread_id: "ui-smoke-thread",
+          rollout_id: "ui-smoke-rollout",
+          started_at: traceStartedAt,
+          ended_at: traceEndedAt,
+          duration_ms: 21,
+          input_preview: "{\"action\":1,\"authorization\":\"[REDACTED]\",\"obs\":[0.1,0.2]}",
+          output_preview: "{\"reward\":44,\"secret\":\"[REDACTED]\"}",
+          attributes: { api_key: "[REDACTED]", component: "reward" },
+          metrics: { reward: 44 },
+          links: [],
+          content_policy: "preview",
+          redaction_state: "captured",
+          truncated: false,
+        },
+        {
+          trace_id: traceId,
+          span_id: rootSpanId,
+          event_id: "00000000-0000-4000-8000-000000000103",
+          sequence: 2,
+          event_kind: "finished",
+          name: "qa rollout trace",
+          kind: "rollout",
+          status: "ok",
+          step: 1,
+          thread_id: "ui-smoke-thread",
+          rollout_id: "ui-smoke-rollout",
+          started_at: traceStartedAt,
+          ended_at: traceEndedAt,
+          duration_ms: 125,
+          attributes: { source: "ui-smoke" },
+          metrics: { reward: 44 },
+          links: [],
+          content_policy: "off",
+          redaction_state: "not_captured",
+          truncated: false,
+        },
+      ],
+    }, { headers: { "Idempotency-Key": `ui-smoke-trace-${smokeId}` } });
+    const seededTraceList = await pageApiGet(page, `/api/traces?run_id=${seedRunId}&limit=20`);
+    assert.ok(
+      (seededTraceList.traces ?? []).some((trace) => trace.trace_id === traceId && trace.root_name === "qa rollout trace"),
+      `seeded trace should be listable by run: ${JSON.stringify(seededTraceList)}`,
+    );
     const imageArtifact = (await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
       type: "file",
       name: "qa-preview.png",
@@ -397,9 +525,10 @@ try {
   summaryUrls.length = 0;
   objectUrls.length = 0;
   logUrls.length = 0;
+  traceUrls.length = 0;
   objectNotFoundUrls.length = 0;
 
-  if (docsScreenshotMode) {
+  if (docsScreenshotMode && !tracesOnlySmoke) {
     await captureDocScreenshots(page, webBaseUrl);
     if (browser) await browser.close().catch(() => {});
     if (nextServer) {
@@ -424,12 +553,14 @@ try {
   await page.unroute("**/api/runs/summary**");
   assert.equal(objectUrls.length, 0, "initial dashboard entry should not fetch rich objects");
   assert.equal(logUrls.length, 0, "initial dashboard entry should not fetch console logs");
+  assert.equal(traceUrls.length, 0, "initial dashboard entry should not fetch traces");
   await assertWorkbarDropdownVisible(page, "project-filter");
   await assertWorkbarDropdownVisible(page, "status-filter");
-  await page.getByRole("link", { name: /^Settings$/ }).click();
+  await openWorkspaceSettings(page);
   await page.waitForSelector("text=Plan Usage", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active").innerText(), /Free/);
+  assert.match(await page.locator('[role="dialog"][aria-label="Workspace settings"]').innerText(), /Free/);
   const inviteEmail = `teammate+${Date.now()}@example.com`;
+  await page.getByRole("button", { name: /^Seats$/ }).click();
   await page.getByLabel("Invite email").fill(inviteEmail);
   const [inviteResponse] = await Promise.all([
     page.waitForResponse((response) => {
@@ -443,19 +574,24 @@ try {
   assert.equal(invitePayload.delivery_error ?? null, null, "settings invite should not report an email delivery failure");
   assert.notEqual(invitePayload.invitation?.delivery_status, "send_failed", "settings invite should not persist a failed delivery status");
   await page.waitForSelector(`text=${inviteEmail}`, { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active").innerText(), new RegExp(escapeRegExp(inviteEmail)));
-  await page.getByRole("link", { name: /^API$/ }).click();
+  assert.match(await page.locator('[role="dialog"][aria-label="Workspace settings"]').innerText(), new RegExp(escapeRegExp(inviteEmail)));
+  await page.getByRole("button", { name: /^API$/ }).click();
   await page.waitForSelector("text=API Keys", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active").innerText(), /API Surface/);
+  assert.match(await page.locator('[role="dialog"][aria-label="Workspace settings"]').innerText(), /API keys/i);
   await page.getByLabel("API key name").fill("UI smoke dashboard key");
   await page.getByRole("button", { name: /^Create$/ }).click();
-  await page.waitForSelector(".tab-pane.active .api-key-reveal code", { timeout: 10000 });
-  assert.match(await page.locator(".tab-pane.active .api-key-reveal code").innerText(), /^instantml_/);
+  await page.waitForSelector('[role="dialog"][aria-label="Workspace settings"] .api-key-reveal code', { timeout: 10000 });
+  assert.match(await page.locator('[role="dialog"][aria-label="Workspace settings"] .api-key-reveal code').innerText(), /^instantml_/);
+  await closeWorkspaceSettings(page);
   await page.getByRole("link", { name: /^Runs$/ }).click();
   await page.waitForSelector(".workspace-run-row", { timeout: 15000 });
   let screenshotPath = path.join(dir, "ui-smoke-core.png");
 
-  if (!fullWorkspaceSmoke) {
+  if (tracesOnlySmoke) {
+    await assertRunDetailTraceFlow(page, traceUrls);
+    screenshotPath = path.join(dir, "ui-smoke-traces.png");
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+  } else if (!fullWorkspaceSmoke) {
     if (backendMode !== "node") {
       await assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName, smokeId);
     }
@@ -751,6 +887,11 @@ try {
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Run tags and notes"));
   assert.equal(objectUrls.length, objectRequestsBeforeSeedDetail, "Run Detail summary should not fetch rich objects before Artifacts is opened");
+  await assertVisibleRunDetailTraceLink(page, traceUrls);
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
+  await page.locator(".workspace-run-open").first().click();
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Run tags and notes"));
   if (backendMode !== "node") {
     await page.getByRole("button", { name: "Artifacts" }).click();
     await page.locator(".evidence-row", { hasText: "qa-checkpoint.json" }).click();
@@ -1555,12 +1696,11 @@ try {
   const tabChecks = [
     ["Run Health", "Run health"],
     ["Datasets", "Config-derived Datasets"],
+    ["Traces", "Trace summaries"],
     ["Artifacts", "Raw run artifacts"],
-    ["Imports", "Dry run"],
     ["Insights", "Insights"],
     ["Reports", "Experiment writeups"],
-    ["Settings", "Workspace"],
-    ["API", "API Surface"],
+    ["Agent", "Agent Workspace"],
   ];
   for (const [tab, expectedText] of tabChecks) {
     const objectsBeforeTabClick = objectUrls.length;
@@ -1706,7 +1846,7 @@ try {
   assert.ok(Number.parseFloat(data.chartStrokeWidth) <= 1.5, `chart lines should stay thin for overlap, got ${data.chartStrokeWidth}`);
   assert.ok(Number.parseFloat(data.chartPointRadius) <= 3.5, `chart markers should stay compact, got ${data.chartPointRadius}`);
   assert.equal(data.visibleBrandTitle, null);
-  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Datasets", "Artifacts", "Insights", "Run Health", "Reports", "Settings", "API"]);
+  assert.deepEqual(data.navTabs, ["Runs", "Metrics", "Distributed", "Traces", "Datasets", "Artifacts", "Insights", "Run Health", "Reports", "Agent"]);
   assert.ok(data.rows >= 6);
   assert.equal(data.chart, true);
   assert.ok(data.points > 0);
@@ -1817,6 +1957,16 @@ try {
   assert.deepEqual(unexpectedPaymentRequiredResourceUrls, []);
   assert.deepEqual(unexpectedBadRequestResourceUrls, []);
   assert.deepEqual(unexpectedRateLimitResourceUrls, []);
+  if (unexpectedErrors.length > 0) {
+    const browserState = await page.evaluate(() => ({
+      href: window.location.href,
+      title: document.title,
+      bodySnippet: document.body?.innerText?.slice(0, 2000) ?? "",
+      activeTab: document.querySelector(".tab-button.active")?.textContent?.trim() ?? "",
+      breadcrumb: document.querySelector(".breadcrumb")?.textContent?.trim() ?? "",
+    })).catch((error) => ({ error: error.message }));
+    console.error(`Unexpected browser errors: ${JSON.stringify({ unexpectedErrors, unexpectedErrorContexts, browserState }, null, 2)}`);
+  }
   assert.deepEqual(unexpectedErrors, []);
   console.log(`UI smoke passed. Screenshot: ${screenshotPath}`);
 } finally {
@@ -1833,12 +1983,7 @@ try {
 
 async function captureDocScreenshots(page, webBaseUrl) {
   const cap = async (name, settleMs = 700) => {
-    await page.waitForTimeout(settleMs);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.waitForTimeout(200);
-    await page.screenshot({ path: path.join(docsProductDir, name) });
-    await page.setViewportSize({ width: 1440, height: 1100 });
+    await captureDocsProductScreenshot(page, name, settleMs);
   };
   const shot = async (name, fn) => {
     try {
@@ -2022,7 +2167,31 @@ async function captureDocScreenshots(page, webBaseUrl) {
       }, null, { timeout: 8000 }).catch(() => {});
     });
 
-    // 12. Checkpoints (Overview's Resume Code action makes this checkpoint-centric
+    // 12. Run Detail trace list (lazy trace fetch only after opening Traces).
+    await shot("dashboard-run-detail-traces.png", async () => {
+      await detailTab("Traces").catch(() => {});
+      await page.waitForSelector(".pd-trace-row", { timeout: 10000 });
+      await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa rollout trace"), null, { timeout: 8000 });
+    });
+
+    // 13. Full Traces workspace with a redacted reward span selected.
+    await shot("dashboard-traces.png", async () => {
+      await page.goto(`${webBaseUrl}/dashboard/traces?run_id=${seedRunId}&trace_id=11111111111111111111111111111111&span_id=4444444444444444`, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".traces-workspace", { timeout: 12000 });
+      await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("qa rollout trace"), null, { timeout: 8000 });
+      await page.locator(".trace-row", { hasText: "qa rollout trace" }).first().waitFor({ timeout: 10000 });
+      const rootNode = page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first();
+      if (await rootNode.count()) await rootNode.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
+      const rewardNode = page.locator(".trace-node-button", { hasText: "reward.score" }).first();
+      if (await rewardNode.count()) await rewardNode.click({ timeout: 5000 }).catch(() => {});
+      await page.waitForFunction(() => {
+        const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+        return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
+      }, null, { timeout: 8000 });
+    });
+
+    // 14. Checkpoints (Overview's Resume Code action makes this checkpoint-centric
     // and visually distinct from the Run Detail shot).
     await shot("dashboard-checkpoints.png", async () => {
       await detailTab("Overview").catch(() => {});
@@ -2034,7 +2203,7 @@ async function captureDocScreenshots(page, webBaseUrl) {
       }
     });
 
-    // 13. Artifacts evidence (Artifacts tab previews objects + eval bundles).
+    // 15. Artifacts evidence (Artifacts tab previews objects + eval bundles).
     await shot("dashboard-artifacts-evidence.png", async () => {
       await detailTab("Artifacts").catch(() => {});
       await page.waitForSelector(".evidence-panel, .rich-object-card", { timeout: 10000 }).catch(() => {});
@@ -2045,18 +2214,18 @@ async function captureDocScreenshots(page, webBaseUrl) {
       }
     });
 
-    // 14. Distributed (rank metrics for the inspected run).
+    // 16. Distributed (rank metrics for the inspected run).
     await shot("dashboard-distributed.png", async () => {
       await navTo("Distributed", ".tab-pane.active");
       await page.waitForFunction(() => !/No rank metrics/i.test(document.querySelector(".tab-pane.active")?.textContent ?? ""), null, { timeout: 6000 }).catch(() => {});
     });
 
-    // 15. Artifacts browser (inspected-run artifact collections).
+    // 17. Artifacts browser (inspected-run artifact collections).
     await shot("dashboard-artifacts-browser.png", async () => {
       await navTo("Artifacts", ".tab-pane.active");
     });
 
-    // 16. Checkpoint fork modal.
+    // 18. Checkpoint fork modal.
     await navTo("Runs", ".workspace-run-row");
     await openSeed44();
     await detailTab("Overview").catch(() => {});
@@ -2073,7 +2242,7 @@ async function captureDocScreenshots(page, webBaseUrl) {
       ]);
       await page.waitForTimeout(800);
     }
-    // 17. Lineage graph — re-open the parent (seed-44); its Lineage tab now lists the child.
+    // 19. Lineage graph — re-open the parent (seed-44); its Lineage tab now lists the child.
     await navTo("Runs", ".workspace-run-row");
     await openSeed44();
     await shot("dashboard-lineage-graph.png", async () => {
@@ -2085,6 +2254,15 @@ async function captureDocScreenshots(page, webBaseUrl) {
   } catch (err) {
     console.log(`[doc-shot] phase B aborted: ${String(err.message ?? err).split("\n")[0]}`);
   }
+}
+
+async function captureDocsProductScreenshot(page, name, settleMs = 700) {
+  await page.waitForTimeout(settleMs);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(docsProductDir, name) });
+  await page.setViewportSize({ width: 1440, height: 1100 });
 }
 
 async function chooseSelect(page, selector, valueOrOptions) {
@@ -2259,8 +2437,9 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction((name) => document.querySelector(".workspace-run-list")?.textContent?.includes(name), viewerRunName);
 
-  await page.getByRole("link", { name: /^Settings$/ }).click();
+  await openWorkspaceSettings(page);
   await page.waitForSelector("text=Seats", { timeout: 10000 });
+  await page.getByRole("button", { name: /^Seats$/ }).click();
   await chooseSelect(page, "#seat-role", "viewer");
   await page.getByLabel("Invite email").fill(viewerEmail);
   const [viewerInviteResponse] = await Promise.all([
@@ -2280,12 +2459,13 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   const inviteTtlMs = new Date(invitePayload.invitation.expires_at).getTime() - new Date(invitePayload.invitation.created_at).getTime();
   assert.ok(inviteTtlMs > 6.9 * 24 * 60 * 60 * 1000 && inviteTtlMs < 7.1 * 24 * 60 * 60 * 1000, `invite TTL should be 7 days, got ${inviteTtlMs}`);
 
-  await page.waitForFunction((email) => document.querySelector(".tab-pane.active")?.textContent?.includes(email), viewerEmail);
-  const ownerSettingsText = await page.locator(".tab-pane.active").innerText();
+  await page.waitForFunction((email) => document.querySelector('[role="dialog"][aria-label="Workspace settings"]')?.textContent?.includes(email), viewerEmail);
+  const ownerSettingsText = await page.locator('[role="dialog"][aria-label="Workspace settings"]').innerText();
   assert.match(ownerSettingsText, /2\s*\/\s*2/, "pending viewer invite should reserve the included free seat");
   assert.match(ownerSettingsText, /Read only/);
   assert.match(ownerSettingsText, /Expires/);
   assert.doesNotMatch(ownerSettingsText, /send[_ ]failed|delivery failed/i);
+  await closeWorkspaceSettings(page);
 
   await openAccountWorkspaceMenu(page);
   await page.waitForFunction((name) => document.querySelector("#account-workspace-menu")?.textContent?.includes(name), primaryOrgName);
@@ -2350,16 +2530,18 @@ async function assertOrganizationWorkspaceFlow(page, webBaseUrl, primaryOrgName,
   assert.doesNotMatch(viewerMenuText, /Manage billing/);
   await page.keyboard.press("Escape");
 
-  await page.getByRole("link", { name: /^Settings$/ }).click();
-  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("Seat management is available to workspace admins."));
-  const viewerSettingsText = await page.locator(".tab-pane.active").innerText();
+  await openWorkspaceSettings(page);
+  await page.getByRole("button", { name: /^Seats$/ }).click();
+  await page.waitForFunction(() => document.querySelector('[role="dialog"][aria-label="Workspace settings"]')?.textContent?.includes("Seat management is available to workspace admins."));
+  const viewerSettingsText = await page.locator('[role="dialog"][aria-label="Workspace settings"]').innerText();
   assert.match(viewerSettingsText, /2\s*\/\s*2/, "viewer Settings should use membership metadata for seat usage");
   assert.doesNotMatch(viewerSettingsText, /Invite email/);
 
-  await page.getByRole("link", { name: /^API$/ }).click();
-  await page.waitForFunction(() => document.querySelector(".tab-pane.active")?.textContent?.includes("API-key management is available to workspace owners and admins."));
-  const viewerApiText = await page.locator(".tab-pane.active").innerText();
+  await page.getByRole("button", { name: /^API$/ }).click();
+  await page.waitForFunction(() => document.querySelector('[role="dialog"][aria-label="Workspace settings"]')?.textContent?.includes("API-key management is available to workspace owners and admins."));
+  const viewerApiText = await page.locator('[role="dialog"][aria-label="Workspace settings"]').innerText();
   assert.doesNotMatch(viewerApiText, /API key name/);
+  await closeWorkspaceSettings(page);
 }
 
 async function assertPaidCheckoutFlow(page, returnOrgId, smokeId) {
@@ -2452,6 +2634,87 @@ async function openAccountWorkspaceMenu(page) {
   await page.waitForSelector("#account-workspace-menu", { state: "visible", timeout: 10000 });
 }
 
+async function openWorkspaceSettings(page) {
+  await openAccountWorkspaceMenu(page);
+  await page.getByRole("button", { name: /Workspace settings/ }).click();
+  await page.waitForSelector('[role="dialog"][aria-label="Workspace settings"]', { state: "visible", timeout: 10000 });
+}
+
+async function closeWorkspaceSettings(page) {
+  const modal = page.locator('[role="dialog"][aria-label="Workspace settings"]');
+  if (await modal.count()) {
+    await modal.getByRole("button", { name: /Close workspace settings/ }).click();
+    await modal.waitFor({ state: "detached", timeout: 10000 });
+  }
+}
+
+async function assertRunDetailTraceFlow(page, traceUrls) {
+  await page.getByRole("link", { name: /^Runs$/ }).click();
+  await page.waitForSelector(".workspace-run-open", { state: "visible", timeout: 10000 });
+  await chooseSelect(page, "#project-filter", "demo");
+  await page.fill("#search", 'name:"rl-ppo-seed-44"');
+  await page.waitForFunction(() => document.querySelector(".workspace-run-open")?.getAttribute("aria-label")?.includes("rl-ppo-seed-44"));
+  const traceRequestsBeforeDetail = traceUrls.length;
+  await page.locator(".workspace-run-open").first().click();
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Run tags and notes"));
+  assert.equal(traceUrls.length, traceRequestsBeforeDetail, "Run Detail overview should not fetch traces before the local Traces section is opened");
+  await assertVisibleRunDetailTraceLink(page, traceUrls);
+}
+
+async function assertVisibleRunDetailTraceLink(page, traceUrls) {
+  const traceRequestsBeforeDetailTraces = traceUrls.length;
+  await page.getByRole("button", { name: "Traces" }).click();
+  await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa rollout trace")).catch(async (error) => {
+    const state = await page.evaluate(() => ({
+      activeRunTab: [...document.querySelectorAll(".run-workspace-tab")]
+        .find((node) => node.getAttribute("aria-pressed") === "true")?.textContent?.trim() ?? "",
+      detailSnippet: document.querySelector("#run-detail")?.textContent?.slice(0, 1200) ?? "",
+      href: window.location.href,
+      status: document.querySelector("#status-message")?.textContent ?? "",
+      traceRows: [...document.querySelectorAll("#run-detail .pd-trace-row")].map((row) => row.textContent?.replace(/\s+/g, " ").trim() ?? ""),
+    }));
+    throw new Error(`Run Detail Traces did not render seeded trace; traceUrls=${JSON.stringify(traceUrls.slice(-8))}; state=${JSON.stringify(state)}: ${error.message}`);
+  });
+  assert.ok(traceUrls.length > traceRequestsBeforeDetailTraces, "Run Detail Traces tab should fetch recent traces only when opened");
+  const traceLink = await page.locator("#run-detail .pd-trace-row", { hasText: "qa rollout trace" }).first().getAttribute("href");
+  assert.match(traceLink ?? "", /\/dashboard\/traces\?/);
+  assert.match(traceLink ?? "", /run_id=/);
+  assert.match(traceLink ?? "", /trace_id=11111111111111111111111111111111/);
+  assert.match(traceLink ?? "", /span_id=2222222222222222/);
+  if (docsScreenshotMode) {
+    await captureDocsProductScreenshot(page, "dashboard-run-detail-traces.png");
+  }
+  await page.locator("#run-detail .pd-trace-row", { hasText: "qa rollout trace" }).first().click();
+  await page.waitForURL(/\/dashboard\/traces\?/);
+  await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("qa rollout trace"));
+  await page.locator(".trace-row", { hasText: "qa rollout trace" }).first().waitFor({ timeout: 10000 });
+  await page.waitForFunction(() => {
+    const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+    return inspector.includes("qa rollout trace") && inspector.includes("2222222222222222");
+  });
+  const childTraceUrl = new URL(traceLink, page.url());
+  childTraceUrl.searchParams.set("span_id", "4444444444444444");
+  await page.goto(childTraceUrl.toString(), { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => {
+    const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+    return inspector.includes("44444444") && inspector.includes("outside the loaded tree window");
+  }, null, { timeout: 10000 });
+  await page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first().click({ timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
+  await page.locator(".trace-node-button", { hasText: "reward.score" }).first().click({ timeout: 5000 });
+  await page.waitForFunction(() => {
+    const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+    return inspector.includes("reward.score") && inspector.includes("4444444444444444");
+  }, null, { timeout: 8000 });
+  if (docsScreenshotMode) {
+    await page.waitForFunction(() => {
+      const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+      return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
+    }, null, { timeout: 8000 });
+    await captureDocsProductScreenshot(page, "dashboard-traces.png");
+  }
+}
+
 function isExpectedForbiddenResource(response) {
   let path = "";
   try {
@@ -2508,6 +2771,7 @@ function isExpectedRateLimitedResource(response) {
       || path.endsWith("/metrics")
       || path.endsWith("/objects")
       || path.endsWith("/logs")
+      || path.endsWith("/traces/events")
       || path.endsWith("/artifacts/upload");
   }
   return method === "GET" && (
@@ -2519,7 +2783,10 @@ function isExpectedRateLimitedResource(response) {
     || path === "/api/reports"
     || path === "/api/runs/summary"
     || path === "/api/runs/side-by-side"
+    || path === "/api/traces"
     || /^\/api\/runs\/[^/]+\/logs$/.test(path)
+    || /^\/api\/runs\/[^/]+\/traces\/[^/]+$/.test(path)
+    || /^\/api\/runs\/[^/]+\/traces\/[^/]+\/spans$/.test(path)
     || /^\/api\/artifacts\/[^/]+\/download$/.test(path)
     || /^\/api\/runs\/[^/]+\/artifacts$/.test(path)
     || /^\/api\/runs\/[^/]+\/lineage$/.test(path)
@@ -2536,7 +2803,7 @@ async function pageApiRequest(page, method, route, body, options = {}) {
   const attempts = 1 + (options.retries ?? 2);
   let result = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    result = await pageApiAttempt(page, method, route, body);
+    result = await pageApiAttempt(page, method, route, body, options);
     if (result.ok || (result.status < 500 && result.status !== 429) || attempt === attempts - 1) break;
     await page.waitForTimeout(result.status === 429 ? 600 : 250);
   }
@@ -2544,11 +2811,11 @@ async function pageApiRequest(page, method, route, body, options = {}) {
   return result.payload;
 }
 
-async function pageApiAttempt(page, method, route, body) {
-  return page.evaluate(async ({ method, route, body }) => {
+async function pageApiAttempt(page, method, route, body, options = {}) {
+  return page.evaluate(async ({ headers, method, route, body }) => {
     const response = await fetch(route, {
       method,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...headers },
       body: JSON.stringify(body),
     });
     const text = await response.text();
@@ -2559,7 +2826,7 @@ async function pageApiAttempt(page, method, route, body) {
       payload = { text };
     }
     return { ok: response.ok, payload, status: response.status };
-  }, { method, route, body });
+  }, { headers: options.headers ?? {}, method, route, body });
 }
 
 async function pageApiExpectStatus(page, method, route, body, expectedStatus) {
@@ -2583,17 +2850,23 @@ async function pageApiExpectStatus(page, method, route, body, expectedStatus) {
 }
 
 async function pageApiGet(page, route) {
-  const result = await page.evaluate(async (route) => {
-    const response = await fetch(route);
-    const text = await response.text();
-    let payload = {};
-    try {
-      payload = text ? JSON.parse(text) : {};
-    } catch {
-      payload = { text };
-    }
-    return { ok: response.ok, payload, status: response.status };
-  }, route);
+  const attempts = 3;
+  let result = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    result = await page.evaluate(async (route) => {
+      const response = await fetch(route);
+      const text = await response.text();
+      let payload = {};
+      try {
+        payload = text ? JSON.parse(text) : {};
+      } catch {
+        payload = { text };
+      }
+      return { ok: response.ok, payload, status: response.status };
+    }, route);
+    if (result.ok || (result.status < 500 && result.status !== 429) || attempt === attempts - 1) break;
+    await page.waitForTimeout(result.status === 429 ? 600 : 250);
+  }
   assert.equal(result.ok, true, `GET ${route}: ${JSON.stringify(result.payload)} (${result.status})`);
   return result.payload;
 }

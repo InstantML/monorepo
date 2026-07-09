@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import stat
@@ -20,6 +21,8 @@ import instantml.async_queue as async_queue
 import instantml.client as client_module
 import instantml.serialization as serialization_module
 import instantml.source as source_module
+import instantml.trace_payload as trace_payload
+import instantml.tracing as tracing_module
 import instantml.uploader as uploader
 from instantml.async_queue import AsyncQueueRepository, DeliveryResult, EnqueueBatchResult, drain_queue_once
 from instantml.client import (
@@ -1895,6 +1898,758 @@ def test_async_upload_mode_queues_metric_hot_path_without_network(monkeypatch, t
     assert run.upload_status()["pending"] == 4
 
 
+def test_trace_context_manager_batches_nested_events_with_previews():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with run.trace(
+        "rollout",
+        kind="rollout",
+        step=7,
+        attributes={"env": "cartpole"},
+        capture="preview",
+        inputs={"seed": 13},
+    ) as trace:
+        with trace.span("policy.generate", kind="model", inputs={"obs": [1, 2]}, capture="preview") as span:
+            span.log_metric({"gen_ai.usage.input_tokens": 3})
+            span.set_output({"action": 0})
+
+    assert len(calls) == 1
+    method, path, body, idempotency_key = calls[0]
+    assert method == "POST"
+    assert path == "/api/runs/run-1/traces/events"
+    assert idempotency_key.startswith("instantml-trace-run-1-")
+    events = body["events"]
+    assert [event["event_kind"] for event in events] == ["started", "started", "updated", "finished", "finished"]
+    root_start, child_start, child_update, child_finish, root_finish = events
+    assert "parent_span_id" not in root_start
+    assert child_start["parent_span_id"] == root_start["span_id"]
+    assert child_start["trace_id"] == root_start["trace_id"]
+    assert child_update["metrics"]["gen_ai.usage.input_tokens"] == 3
+    assert child_update["input_preview"] == child_start["input_preview"]
+    assert child_finish["input_preview"] == child_start["input_preview"]
+    assert child_finish["output_preview"]
+    assert root_finish["status"] == "ok"
+    assert root_start["content_policy"] == "preview"
+
+
+def test_trace_op_batches_preview_metadata_and_redacts_secrets():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    @run.trace_op(
+        kind="reward",
+        step=12,
+        rank=2,
+        thread_id="eval-thread",
+        rollout_id="episode-12",
+        attributes={"phase": "eval", "api_key": "instantml_SECRETKEY"},
+        metrics={"gen_ai.usage.input_tokens": 7, "score": 0.25},
+        links=[{"label": "docs", "authorization": "Bearer abcdefghijklmnop"}],
+        capture="preview",
+    )
+    def score_rollout(prompt, answer, *, api_key="sk-abcdefghijklmnopqrstuvwxyz"):
+        """Demo reward function."""
+        return {"reward": 1.0, "token": "instantml_OUTPUTSECRET"}
+
+    assert score_rollout.__name__ == "score_rollout"
+    assert score_rollout.__doc__ == "Demo reward function."
+    assert score_rollout("hello", "ok", api_key="sk-abcdefghijklmnopqrstuvwxyz") == {"reward": 1.0, "token": "instantml_OUTPUTSECRET"}
+    assert calls == []
+
+    run.flush()
+
+    assert len(calls) == 1
+    method, path, body, idempotency_key = calls[0]
+    assert method == "POST"
+    assert path == "/api/runs/run-1/traces/events"
+    assert idempotency_key.startswith("instantml-trace-run-1-")
+    start, finish = body["events"]
+    assert [event["event_kind"] for event in body["events"]] == ["started", "finished"]
+    assert start["name"].endswith("score_rollout")
+    assert start["kind"] == "reward"
+    assert start["step"] == 12.0
+    assert start["rank"] == 2
+    assert start["thread_id"] == "eval-thread"
+    assert start["rollout_id"] == "episode-12"
+    assert start["attributes"]["phase"] == "eval"
+    assert start["attributes"]["api_key"] == "[REDACTED]"
+    assert start["metrics"]["gen_ai.usage.input_tokens"] == 7
+    assert start["links"][0]["authorization"] == "[REDACTED]"
+    assert "hello" in start["input_preview"]
+    assert "sk-abcdefghijklmnopqrstuvwxyz" not in start["input_preview"]
+    assert "[REDACTED]" in start["input_preview"]
+    assert finish["status"] == "ok"
+    assert finish["input_preview"] == start["input_preview"]
+    assert "instantml_OUTPUTSECRET" not in finish["output_preview"]
+    assert "[REDACTED]" in finish["output_preview"]
+
+
+def test_trace_op_capture_off_exception_privacy_and_context_cleanup():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    @run.trace_op(kind="reward")
+    def fail_reward():
+        raise ValueError("password=super-secret")
+
+    with pytest.raises(ValueError, match="super-secret"):
+        fail_reward()
+
+    with run.trace("after-error", kind="rollout"):
+        pass
+
+    run.flush()
+    events = [event for call in calls for event in call[2]["events"]]
+    failed_start, failed_exception, next_start, next_finish = events
+    assert [event["event_kind"] for event in events] == ["started", "exception", "started", "finished"]
+    assert failed_exception["span_id"] == failed_start["span_id"]
+    assert failed_exception["status"] == "error"
+    assert failed_exception["error_type"] == "ValueError"
+    assert failed_exception["error_preview"] == ""
+    assert failed_exception["redaction_state"] == "not_captured"
+    assert "parent_span_id" not in next_start
+    assert next_start["trace_id"] != failed_start["trace_id"]
+    assert next_finish["status"] == "ok"
+
+
+def test_trace_op_nests_only_same_run_context_and_rejects_wrong_run_carrier():
+    calls_a = []
+    calls_b = []
+
+    class FakeClientA:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls_a.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    class FakeClientB:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls_b.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run_a = Run(client=FakeClientA(), run_id="run-a")
+    run_b = Run(client=FakeClientB(), run_id="run-b")
+
+    @run_a.trace_op(kind="tool")
+    def same_run_tool():
+        return "same"
+
+    @run_b.trace_op(kind="tool")
+    def other_run_tool():
+        return "other"
+
+    with run_a.trace("root", kind="rollout") as trace:
+        assert same_run_tool() == "same"
+        assert other_run_tool() == "other"
+        with pytest.raises(ValueError, match="run_id"):
+            with run_b.attach_trace_context(trace.context()):
+                pass
+
+    run_b.flush()
+
+    events_a = calls_a[0][2]["events"]
+    root_start, child_start, child_finish, root_finish = events_a
+    assert child_start["trace_id"] == root_start["trace_id"]
+    assert child_start["parent_span_id"] == root_start["span_id"]
+    assert child_finish["status"] == "ok"
+    assert root_finish["status"] == "ok"
+
+    events_b = calls_b[0][2]["events"]
+    other_start, other_finish = events_b
+    assert other_start["trace_id"] != root_start["trace_id"]
+    assert "parent_span_id" not in other_start
+    assert other_finish["status"] == "ok"
+
+
+def test_trace_op_async_function_traces_awaited_result_and_exception():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    @run.trace_op(kind="model", capture="preview")
+    async def infer(prompt):
+        await asyncio.sleep(0)
+        return {"answer": prompt.upper()}
+
+    @run.trace_op(kind="model", capture="preview")
+    async def fail_infer():
+        await asyncio.sleep(0)
+        raise RuntimeError("Authorization: Bearer abcdefghijklmnop")
+
+    async def scenario():
+        assert await infer("ok") == {"answer": "OK"}
+        with pytest.raises(RuntimeError, match="Bearer"):
+            await fail_infer()
+
+    asyncio.run(scenario())
+    run.flush()
+
+    events = calls[0][2]["events"]
+    assert [event["event_kind"] for event in events] == ["started", "finished", "started", "exception"]
+    assert "OK" in events[1]["output_preview"]
+    assert events[3]["error_type"] == "RuntimeError"
+    assert "Bearer abcdefghijklmnop" not in events[3]["error_preview"]
+    assert "[REDACTED]" in events[3]["error_preview"]
+
+
+def test_trace_op_rejects_static_span_id_and_explicit_trace_id_stays_root():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.raises(TypeError, match="span_id"):
+        run.trace_op(span_id="1111111111111111")  # type: ignore[call-arg]
+
+    explicit_trace_id = "1" * 32
+
+    @run.trace_op(kind="tool", trace_id=explicit_trace_id)
+    def explicit_trace():
+        return "ok"
+
+    with run.trace("root", kind="rollout"):
+        assert explicit_trace() == "ok"
+
+    events = calls[0][2]["events"]
+    explicit_start = next(event for event in events if event["name"].endswith("explicit_trace") and event["event_kind"] == "started")
+    assert explicit_start["trace_id"] == explicit_trace_id
+    assert "parent_span_id" not in explicit_start
+
+
+def test_trace_async_mode_queues_one_idempotent_batch(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FailingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("trace batch should enqueue instead of using network")
+
+    run = Run(client=FailingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    with run.trace("rollout", kind="rollout"):
+        pass
+
+    status = run.upload_status()
+    assert status["pending"] == 1
+    queue_path = tmp_path / "run-1" / "queue.sqlite3"
+    row = sqlite3.connect(queue_path).execute("select path, body_json, idempotency_key from events").fetchone()
+    assert row[0] == "/api/runs/run-1/traces/events"
+    assert row[2].startswith("instantml-trace-run-1-")
+    assert len(json.loads(row[1])["events"]) == 2
+    assert run._async_buffer is not None
+    assert run._async_buffer.stop(timeout=1.0)
+    if run._async_queue is not None:
+        run._async_queue.close()
+    run._finished = True
+    client_module._unregister_active_run(run)
+
+
+def test_trace_op_delivery_modes_preserve_trace_batch_idempotency(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class AsyncClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("trace_op batch should enqueue instead of using network")
+
+    async_run = Run(client=AsyncClient(), run_id="run-async", upload_mode="async", queue_dir=str(tmp_path / "async"))
+
+    @async_run.trace_op(kind="reward")
+    def async_reward(value):
+        return value
+
+    assert async_reward(1) == 1
+    assert async_reward(2) == 2
+    async_run.flush()
+    queue_path = tmp_path / "async" / "run-async" / "queue.sqlite3"
+    path, body_json, idempotency_key = sqlite3.connect(queue_path).execute("select path, body_json, idempotency_key from events").fetchone()
+    assert path == "/api/runs/run-async/traces/events"
+    assert idempotency_key.startswith("instantml-trace-run-async-")
+    assert len(json.loads(body_json)["events"]) == 4
+    assert async_run._async_buffer is not None
+    assert async_run._async_buffer.stop(timeout=1.0)
+    if async_run._async_queue is not None:
+        async_run._async_queue.close()
+    async_run._finished = True
+    client_module._unregister_active_run(async_run)
+
+    class SpoolClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("process spool should write trace_op batch to disk")
+
+    spool_run = Run(client=SpoolClient(), run_id="run-spool", upload_mode="spool", spool_dir=str(tmp_path / "spool"))
+
+    @spool_run.trace_op(kind="reward")
+    def spool_reward():
+        return 1
+
+    spool_reward()
+    spool_run.flush()
+    spool_event = _spool_events(tmp_path / "spool" / "run-spool")[0]
+    spool_request = spool_event["requests"][0]
+    assert spool_request["path"] == "/api/runs/run-spool/traces/events"
+    assert spool_request["idempotency_key"].startswith("instantml-trace-run-spool-")
+    assert len(spool_request["body"]["events"]) == 2
+    spool_run._finished = True
+    client_module._unregister_active_run(spool_run)
+
+    class OfflineClient:
+        offline_dir = str(tmp_path / "offline")
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise InstantMLError("offline")
+
+    offline_run = Run(client=OfflineClient(), run_id="run-offline")
+
+    @offline_run.trace_op(kind="reward")
+    def offline_reward():
+        return 1
+
+    offline_reward()
+    offline_run.flush()
+    spooled = json.loads((tmp_path / "offline" / "run-offline.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert spooled["path"] == "/api/runs/run-offline/traces/events"
+    assert spooled["idempotency_key"].startswith("instantml-trace-run-offline-")
+
+    replay_calls = []
+
+    class ReplayClient:
+        offline_dir = str(tmp_path / "offline")
+
+        def _request(self, method, path, body, idempotency_key=None):
+            replay_calls.append((method, path, body, idempotency_key))
+            return {}
+
+    replay = Run(client=ReplayClient(), run_id="run-offline")
+    assert replay.replay_offline() == 1
+    assert replay_calls[0][1] == "/api/runs/run-offline/traces/events"
+    assert replay_calls[0][3] == spooled["idempotency_key"]
+
+
+def test_trace_payload_validation_and_redaction_edges(monkeypatch):
+    with pytest.raises(TypeError, match="name"):
+        trace_payload.normalize_name(13)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="non-empty"):
+        trace_payload.normalize_name("  ")
+    with pytest.raises(ValueError, match="512 bytes"):
+        trace_payload.normalize_name("x" * 513)
+
+    assert trace_payload.normalize_optional_label("", "thread_id") is None
+    with pytest.raises(TypeError, match="thread_id"):
+        trace_payload.normalize_optional_label(7, "thread_id")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="512 bytes"):
+        trace_payload.normalize_optional_label("x" * 513, "thread_id")
+
+    with pytest.raises(TypeError, match="rank"):
+        trace_payload.normalize_rank(True)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="nonnegative"):
+        trace_payload.normalize_rank(-1)
+    with pytest.raises(TypeError, match="duration_ms"):
+        trace_payload.normalize_duration_ms("slow")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="finite"):
+        trace_payload.normalize_duration_ms(float("inf"))
+
+    with pytest.raises(TypeError, match="attributes"):
+        trace_payload.json_object([], "attributes", 100)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="links"):
+        trace_payload.json_object_or_array("bad", "links", 100)
+    with pytest.raises(ValueError, match="finite"):
+        trace_payload.json_object({"metric": float("nan")}, "attributes", 100)
+    with pytest.raises(TypeError, match="JSON serializable"):
+        trace_payload.json_object({"bad": object()}, "attributes", 100)
+    with pytest.raises(ValueError, match="serialized bytes"):
+        trace_payload.json_object({"large": "x" * 101}, "attributes", 100)
+
+    monkeypatch.setattr(trace_payload, "redact_json_value", lambda value, key=None: [])
+    with pytest.raises(TypeError, match="attributes"):
+        trace_payload.json_object({"ok": 1}, "attributes", 100)
+    monkeypatch.setattr(trace_payload, "redact_json_value", lambda value, key=None: "bad")
+    with pytest.raises(TypeError, match="links"):
+        trace_payload.json_object_or_array({"ok": 1}, "links", 100)
+
+
+def test_trace_payload_preview_and_identifier_edges():
+    class ExplodingString:
+        def __str__(self):
+            raise RuntimeError("boom")
+
+        def __repr__(self):
+            return "ExplodingString(value=instantml_SECRET123)"
+
+    class Unrepresentable:
+        def __str__(self):
+            raise RuntimeError("boom")
+
+        def __repr__(self):
+            raise RuntimeError("also boom")
+
+    text, truncated = trace_payload.preview_payload(ExplodingString(), "preview", "inputs")
+    assert text == "ExplodingString(value=[REDACTED])"
+    assert truncated is False
+    text, truncated = trace_payload.preview_payload(Unrepresentable(), "preview", "inputs")
+    assert text == "<unrepresentable>"
+    assert truncated is False
+    assert trace_payload.preview_payload(float("nan"), "preview", "inputs") == ('"nan"', False)
+    assert trace_payload.json_object({"items": {3, 1, 2}}, "attributes", 100) == {"items": [1, 2, 3]}
+
+    with pytest.raises(TypeError, match="trace_id"):
+        trace_payload.normalize_trace_id(123)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="32 hex"):
+        trace_payload.normalize_trace_id("not-hex")
+    with pytest.raises(ValueError, match="all zeros"):
+        trace_payload.normalize_trace_id("0" * 32)
+    with pytest.raises(TypeError, match="kind"):
+        trace_payload.normalize_kind(None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="kind"):
+        trace_payload.normalize_kind("unknown")
+
+    clipped, was_truncated = trace_payload._truncate_utf8("é" * 3000, trace_payload.MAX_TRACE_PREVIEW_BYTES + 1)
+    assert was_truncated is True
+    assert clipped
+    assert len(clipped.encode("utf-8")) <= trace_payload.MAX_TRACE_PREVIEW_BYTES + 1
+    assert trace_payload._truncate_utf8("é", 1) == ("", True)
+    with pytest.raises(TypeError, match="JSON serializable"):
+        trace_payload._ensure_serialized_size({"bad": object()}, "attributes", 100)
+
+
+def test_trace_context_attach_detach_start_span_and_wrap_inherit_parent():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.raises(TypeError, match="dictionary"):
+        run.attach_trace_context("bad")  # type: ignore[arg-type]
+
+    with run.trace("root", kind="rollout", thread_id="thread-a", rank=3) as trace:
+        assert trace.start() is trace
+        carrier = trace.context()
+        attached = run.attach_trace_context(carrier)
+        assert attached.__enter__() is attached
+        attached.__exit__(None, None, None)
+        attached.detach()
+        with run.attach_trace_context(carrier):
+            manual = run.start_span("worker.manual", kind="custom")
+            assert manual.parent_span_id == trace.span_id
+            assert manual.thread_id == "thread-a"
+            assert manual.rank == 3
+            assert manual._duration_ms() is not None
+            manual.finish(output={"ok": True})
+        direct = trace.start_span("trace.start-span", kind="custom")
+        assert direct.parent_span_id == trace.span_id
+        direct.finish()
+        wrapped = trace.wrap(lambda: run.start_span("worker.wrapped", kind="custom"))
+
+    wrapped_span = wrapped()
+    assert wrapped_span.parent_span_id == carrier["span_id"]
+    wrapped_span.finish()
+    run.flush()
+
+    events = [event for call in calls for event in call[2]["events"]]
+    assert any(event["name"] == "worker.manual" and event.get("parent_span_id") == carrier["span_id"] for event in events)
+    assert any(event["name"] == "worker.wrapped" and event.get("parent_span_id") == carrier["span_id"] for event in events)
+
+
+def test_trace_span_error_interrupt_double_finish_and_invalid_sync_payload():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.raises(RuntimeError, match="rollout failed"):
+        with run.trace("failing-rollout", kind="rollout", capture="preview"):
+            raise RuntimeError("rollout failed")
+
+    span = run.trace("manual-finish", kind="rollout")
+    span.finish(status="interrupted", output={"partial": True})
+    span.finish(status="ok")
+    assert span._duration_ms() is not None
+    manual_events = [event for call in calls for event in call[2]["events"] if event["name"] == "manual-finish"]
+    assert [event["event_kind"] for event in manual_events] == ["started", "interrupted"]
+
+    with pytest.raises(TypeError, match="JSON serializable"):
+        run.trace("bad-attributes", kind="rollout", attributes={"bad": object()})
+    with pytest.raises(ValueError, match="step"):
+        run.trace("bad-step", kind="rollout", step=float("nan")).start()
+    with pytest.raises(ValueError, match="status"):
+        run.trace("bad-finish-status", kind="rollout").finish(status="unknown")
+    pending = run.trace("pending-duration", kind="rollout")
+    assert pending._duration_ms() is None
+    pending.start()
+    pending.add_attributes({"phase": "eval"})
+    with pytest.raises(TypeError, match="JSON serializable"):
+        pending.add_attributes({"bad": object()})
+    with pytest.raises(ValueError, match="finite"):
+        pending.log_metric({"bad": float("nan")})
+    pending.finish()
+
+    run.flush()
+    events = [event for call in calls for event in call[2]["events"]]
+    failing_exception = next(event for event in events if event["name"] == "failing-rollout" and event["event_kind"] == "exception")
+    assert failing_exception["error_type"] == "RuntimeError"
+    manual_events = [event for event in events if event["name"] == "manual-finish"]
+    assert [event["event_kind"] for event in manual_events] == ["started", "interrupted"]
+
+
+def test_trace_async_invalid_start_finish_and_update_payloads_warn(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FailingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("trace batch should enqueue instead of using network")
+
+    run = Run(client=FailingClient(), run_id="run-async", upload_mode="async", queue_dir=str(tmp_path))
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        run.trace("bad-start", kind="rollout", step=float("nan")).start()
+
+    span = run.trace("bad-updates", kind="rollout")
+    span.start()
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        span.add_attributes({"bad": object()})
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        span.log_metric({"bad": float("nan")})
+    run._last_async_warning_at = 0
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        span.finish(status="unknown")
+
+    status = run.upload_status()
+    assert status["dropped"] == 4
+    assert status["pending"] == 1
+    assert run._async_buffer is not None
+    assert run._async_buffer.stop(timeout=1.0)
+    if run._async_queue is not None:
+        run._async_queue.close()
+    run._finished = True
+    client_module._unregister_active_run(run)
+
+
+def test_trace_op_decorator_fallbacks_and_helper_edges(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with pytest.raises(TypeError, match="callable"):
+        run.trace_op()(object())  # type: ignore[arg-type]
+
+    original_signature = tracing_module.inspect.signature
+
+    def flaky_signature(fn):
+        if getattr(fn, "__name__", "") == "signature_fallback":
+            raise ValueError("no signature")
+        return original_signature(fn)
+
+    monkeypatch.setattr(tracing_module.inspect, "signature", flaky_signature)
+
+    @run.trace_op(kind="tool", capture="preview")
+    def signature_fallback(*args, **kwargs):
+        return {"args": args, "kwargs": kwargs}
+
+    assert signature_fallback(1, token="instantml_SECRET123")["args"] == (1,)
+
+    @run.trace_op(kind="tool", capture="preview")
+    def one_arg(value):
+        return value
+
+    with pytest.raises(TypeError):
+        one_arg(1, 2)
+
+    assert tracing_module._redaction_state("off", True, False) == "not_captured"
+    assert tracing_module._redaction_state("preview", True, True) == "truncated"
+    assert tracing_module._redaction_state("preview", False, False) == "redacted"
+    assert tracing_module._error_preview(None, "preview") == (None, "", False)
+    assert tracing_module._error_preview("instantml_SECRET123", "preview") == ("Error", "[REDACTED]", False)
+
+    run.flush()
+    events = [event for call in calls for event in call[2]["events"]]
+    fallback_start = next(event for event in events if event["name"].endswith("signature_fallback") and event["event_kind"] == "started")
+    assert '"args":[1]' in fallback_start["input_preview"]
+    assert "instantml_SECRET123" not in fallback_start["input_preview"]
+    one_arg_start = next(event for event in events if event["name"].endswith("one_arg") and event["event_kind"] == "started")
+    assert '"args":[1,2]' in one_arg_start["input_preview"]
+    one_arg_exception = next(event for event in events if event["name"].endswith("one_arg") and event["event_kind"] == "exception")
+    assert one_arg_exception["error_type"] == "TypeError"
+
+
+def test_trace_batch_flushes_before_and_after_size_thresholds(monkeypatch):
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    monkeypatch.setattr(client_module, "MAX_TRACE_EVENTS_PER_BATCH", 2)
+    run._record_trace_event({"trace_id": "1" * 32, "span_id": "1" * 16, "event_id": "a"})
+    run._record_trace_event({"trace_id": "1" * 32, "span_id": "2" * 16, "event_id": "b"})
+    assert [len(call[2]["events"]) for call in calls] == [2]
+
+    calls.clear()
+    monkeypatch.setattr(client_module, "MAX_TRACE_EVENTS_PER_BATCH", trace_payload.MAX_TRACE_EVENTS_PER_BATCH)
+    first = {"trace_id": "2" * 32, "span_id": "3" * 16, "event_id": "c", "payload": "x" * 20}
+    first_bytes = client_module._estimated_json_bytes(first) + client_module._TRACE_EVENT_SIZE_OVERHEAD_BYTES
+    monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_BYTES", first_bytes + 1)
+    run._record_trace_event(first)
+    run._record_trace_event({"trace_id": "2" * 32, "span_id": "4" * 16, "event_id": "d", "payload": "y" * 20})
+    run.flush()
+    assert [len(call[2]["events"]) for call in calls] == [1, 1]
+
+
+def test_trace_record_event_hot_path_does_not_json_serialize(monkeypatch):
+    class FallbackSized:
+        def __str__(self):
+            return "fallback"
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("trace event should not flush")
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    assert client_module._estimated_json_bytes(FallbackSized()) == len(json.dumps("fallback").encode("utf-8"))
+    assert client_module._estimated_json_bytes([1, 2]) >= len(json.dumps([1, 2], separators=(",", ":")).encode("utf-8"))
+    escaped_text = "\"\\\n\u00e9\U0001f642"
+    assert client_module._estimated_json_bytes(escaped_text) >= len(json.dumps(escaped_text).encode("utf-8"))
+    minimal_event = {
+        "trace_id": "3" * 32,
+        "span_id": "5" * 16,
+        "event_id": "hot-path",
+        "sequence": 1,
+        "event_kind": "started",
+        "name": "reward.score",
+        "kind": "reward",
+        "status": "running",
+        "started_at": "2026-07-03T12:00:00Z",
+        "attributes": {},
+        "metrics": {},
+        "links": [],
+        "content_policy": "off",
+        "redaction_state": "not_captured",
+        "truncated": False,
+    }
+    actual_bytes = len(json.dumps(minimal_event, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    estimated_bytes = client_module._estimated_json_bytes(minimal_event) + client_module._TRACE_EVENT_SIZE_OVERHEAD_BYTES
+    assert estimated_bytes <= actual_bytes + 128
+
+    def fail_json_dump(*args, **kwargs):
+        raise AssertionError("trace event size should be estimated without json.dumps")
+
+    monkeypatch.setattr(client_module.json, "dumps", fail_json_dump)
+    run._record_trace_event(minimal_event)
+
+    assert len(run._trace_events) == 1
+
+
+def test_trace_async_invalid_payload_warns_and_counts_drop(monkeypatch, tmp_path):
+    monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
+
+    class FailingClient:
+        base_url = "http://example.test"
+        timeout = 1.0
+        offline_dir = None
+
+        def _resolve_api_key(self):
+            return None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise AssertionError("trace batch should enqueue instead of using network")
+
+    run = Run(client=FailingClient(), run_id="run-1", upload_mode="async", queue_dir=str(tmp_path))
+    with pytest.warns(RuntimeWarning, match="trace span dropped an invalid payload"):
+        with run.trace("rollout", kind="rollout", metrics={"bad": float("nan")}):
+            pass
+
+    status = run.upload_status()
+    assert status["dropped"] == 1
+    assert status["pending"] == 1
+    assert run._async_buffer is not None
+    assert run._async_buffer.stop(timeout=1.0)
+    if run._async_queue is not None:
+        run._async_queue.close()
+    run._finished = True
+    client_module._unregister_active_run(run)
+
+
 def test_async_producer_buffer_force_flushes_for_status(monkeypatch, tmp_path):
     monkeypatch.setattr(Run, "_start_async_uploader", lambda self: None)
 
@@ -3658,6 +4413,35 @@ def test_offline_spool_and_replay(api_server, tmp_path):
     assert metrics[0]["value"] == 12.0
 
 
+def test_trace_offline_replay_preserves_idempotency_key(tmp_path):
+    calls = []
+
+    class FailingClient:
+        offline_dir = str(tmp_path)
+
+        def _request(self, method, path, body, idempotency_key=None):
+            raise InstantMLError("offline")
+
+    run = Run(client=FailingClient(), run_id="run-1")
+    with run.trace("rollout", kind="rollout"):
+        pass
+
+    spooled = json.loads((tmp_path / "run-1.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert spooled["idempotency_key"].startswith("instantml-trace-run-1-")
+
+    class ReplayClient:
+        offline_dir = str(tmp_path)
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {}
+
+    replay = Run(client=ReplayClient(), run_id="run-1")
+    assert replay.replay_offline() == 1
+    assert calls[0][1] == "/api/runs/run-1/traces/events"
+    assert calls[0][3] == spooled["idempotency_key"]
+
+
 def test_process_uploader_drains_spool_and_cli(monkeypatch, tmp_path):
     calls = []
 
@@ -3802,6 +4586,26 @@ def test_process_uploader_sends_event_id_as_log_idempotency_key(tmp_path):
     assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
     assert calls[0][1] == "/api/runs/run-1/logs"
     assert calls[0][3] == event_id
+
+
+def test_process_uploader_sends_trace_request_idempotency_key(tmp_path):
+    calls = []
+
+    class IdempotentClient:
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {}
+
+    run = Run(client=IdempotentClient(), run_id="run-1", upload_mode="spool", spool_dir=str(tmp_path))
+    with run.trace("rollout", kind="rollout"):
+        pass
+    run.flush()
+    event = _spool_events(tmp_path / "run-1")[0]
+    request_key = event["requests"][0]["idempotency_key"]
+
+    assert uploader.drain_spool(str(tmp_path), client=IdempotentClient()) == 1
+    assert calls[0][1] == "/api/runs/run-1/traces/events"
+    assert calls[0][3] == request_key
 
 
 def test_package_level_drain_spool_wrapper(tmp_path):

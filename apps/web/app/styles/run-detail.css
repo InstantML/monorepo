@@ -1051,3 +1051,70 @@
   color: var(--muted);
   font-size: 11.5px;
 }
+
+.pd-traces-panel .pd-panel-body {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.pd-trace-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pd-trace-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) 82px 78px 132px;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+.pd-trace-row:hover,
+.pd-trace-row:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.pd-trace-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pd-trace-main strong,
+.pd-trace-main small,
+.pd-trace-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pd-trace-main strong {
+  color: var(--text);
+  font-size: var(--fs-ui);
+}
+
+.pd-trace-main small,
+.pd-trace-meta {
+  color: var(--muted);
+  font-size: var(--fs-data);
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .pd-trace-row {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .pd-trace-meta {
+    display: none;
+  }
+}

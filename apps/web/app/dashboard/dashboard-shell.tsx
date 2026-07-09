@@ -77,6 +77,7 @@ const DistributedTabPane = dynamic(() => import("./distributed/tab-pane").then((
 const InsightsTabPane = dynamic(() => import("./insights/tab-pane").then((mod) => mod.InsightsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading insights" /> });
 const ReportsTabPane = dynamic(() => import("./reports/reports-tab-pane").then((mod) => mod.ReportsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading reports" /> });
 const SettingsTabPane = dynamic(() => import("./settings/tab-pane").then((mod) => mod.SettingsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading settings" /> });
+const TracesTabPane = dynamic(() => import("./traces/tab-pane").then((mod) => mod.TracesTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading traces" /> });
 
 // Bridge types from the utoipa-generated OpenAPI spec. All API request /
 // response shapes that have a matching Rust ToSchema struct flow through
@@ -237,7 +238,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
+const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts", "traces"]);
 
 const EMPTY_OVERVIEW: Overview = { total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 };
 // The Overview cockpit lives at a static route segment while every other tab is
@@ -4848,6 +4849,18 @@ function dismissTopOverlay() {
         <section className={`tab-pane ${visibleTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {visibleTab === "datasets" ? (
             <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} />
+          ) : null}
+        </section>
+
+        <section className={`tab-pane ${visibleTab === "traces" ? "active" : ""}`} aria-label="Traces">
+          {visibleTab === "traces" ? (
+            <TracesTabPane
+              api={api}
+              onSelectRun={setPrimaryRunId}
+              primaryRun={primaryRun}
+              project={project}
+              sortedRuns={sortedRuns}
+            />
           ) : null}
         </section>
 
