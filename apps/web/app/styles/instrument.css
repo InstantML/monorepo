@@ -159,13 +159,15 @@ button:focus-visible,
 }
 
 /* 9 — Status semantics: running = signal, finished = quiet idle, failed = crit.
- *     (statusTone maps running→live, finished→good, failed→bad.) */
+ *     (statusTone maps running→live, finished→good, failed→bad.)
+ *     Title-case labels — tags never shout in all caps — with tracking eased
+ *     to match (0.08em was tuned for uppercase). */
 .pill {
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: capitalize;
 }
 
 .pill.live,
@@ -189,15 +191,14 @@ button:focus-visible,
   color: var(--danger);
 }
 
-/* 9b — Run-rail status chips match .pill casing: uppercase mono. Kept small
- * (9px, tight tracking) so the uppercase label doesn't read heavier than the
- * metric value beside it. */
+/* 9b — Run-rail status chips match .pill casing: title-case mono (the
+ * capitalize transform comes from dashboard-runs.css). Kept small (9px, tight
+ * tracking) so the label doesn't read heavier than the metric value beside it. */
 .workspace-run-status {
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* 14 — Run detail: the metadata rail pins and scrolls independently so the

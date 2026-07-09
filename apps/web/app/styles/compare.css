@@ -183,7 +183,6 @@ button.compare-row-head.active {
 
 .compare-reference-badge {
   color: var(--accent-strong);
-  text-transform: uppercase;
 }
 
 .compare-signal-cell,
@@ -433,7 +432,6 @@ button.compare-row-head.active {
   padding: 1px 8px;
   font-size: var(--fs-label);
   font-weight: 700;
-  text-transform: uppercase;
   cursor: help;
 }
 
@@ -867,7 +865,6 @@ button.compare-row-head.active {
   padding: 2px 7px;
   font-size: var(--fs-data);
   font-weight: 760;
-  text-transform: uppercase;
 }
 
 .artifact-version-grid {

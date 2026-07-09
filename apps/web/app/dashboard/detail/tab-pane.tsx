@@ -300,7 +300,8 @@ function StatusChip({ status }: { status: string }) {
     return <span className="pd-chip pd-chip--live"><span className="pd-pulse" />Live</span>;
   }
   if (status === "failed") return <span className="pd-chip pd-chip--crit">Failed</span>;
-  if (status === "stopping" || status === "stopped") return <span className="pd-chip pd-chip--warn">{status}</span>;
+  if (status === "stopping") return <span className="pd-chip pd-chip--warn">Stopping</span>;
+  if (status === "stopped") return <span className="pd-chip pd-chip--warn">Stopped</span>;
   return <span className="pd-chip pd-chip--done">{status === "finished" ? "Finished" : status}</span>;
 }
 

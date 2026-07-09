@@ -64,7 +64,7 @@
   position: absolute; top: 0; left: 0; right: 0;
   background: var(--accent); color: #00150B;
   font-family: var(--font-mono, var(--font-mono-next), ui-monospace, monospace);
-  font-size: var(--fs-data); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  font-size: var(--fs-data); font-weight: 700; letter-spacing: 0.04em;
   padding: 8px 16px; text-align: center;
   border-top-left-radius: 8px; border-top-right-radius: 8px;
 }
