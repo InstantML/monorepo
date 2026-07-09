@@ -29,6 +29,7 @@ import { AnalysisSkeleton } from "./ui/skeleton";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { clearRunsetCaches } from "./reports/runset-cache";
+import { ToastStack, useToasts } from "./ui/toasts";
 import { useFocusTrap } from "./ui/use-focus-trap";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
@@ -825,6 +826,9 @@ export function DashboardShell({
   const [newApiKey, setNewApiKey] = useState("");
   const [apiAdminMessage, setApiAdminMessage] = useState("");
   const [apiAdminTone, setApiAdminTone] = useState<"status" | "error">("status");
+  // Action feedback (invites, billing, API keys) renders as app-root toasts
+  // that stay visible over modals; passive load errors stay inline.
+  const { toasts, notify, dismissToast } = useToasts();
   const [adminBusy, setAdminBusy] = useState(false);
 
   const hasSeriesRef = useRef(false);
@@ -2818,14 +2822,19 @@ export function DashboardShell({
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      notify("Seat management is available to workspace admins.", "error");
+      return;
+    }
+    const email = inviteEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      notify("Enter a valid email address (like name@example.com).", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Sending invitation...");
+    const progressId = notify("Sending invitation...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/invitations`, {
-        email: inviteEmail.trim(),
+        email,
         role: inviteRole,
       });
       setInviteEmail("");
@@ -2835,11 +2844,16 @@ export function DashboardShell({
       if (previewLink && invitationId) {
         setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
       }
-      setMessage(deliveryError ? `Invitation created, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link ready." : "Invitation sent.");
+      if (deliveryError) {
+        notify(`Invitation created, but the email could not be delivered: ${deliveryError}. Retry from the seats list.`, "error");
+      } else {
+        notify(previewLink ? "Invitation link ready." : `Invitation sent to ${email}.`);
+      }
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to send invitation.");
+      notify(error instanceof Error ? error.message : "Unable to send invitation.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -2847,11 +2861,11 @@ export function DashboardShell({
   async function resendInvitation(invitationId: string) {
     if (!activeOrgId) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      notify("Seat management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Resending invitation...");
+    const progressId = notify("Resending invitation...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/resend`, {});
       const deliveryError = typeof payload.delivery_error === "string" ? payload.delivery_error : "";
@@ -2859,11 +2873,16 @@ export function DashboardShell({
       if (previewLink) {
         setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
       }
-      setMessage(deliveryError ? `Invitation updated, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link updated." : "Invitation resent.");
+      if (deliveryError) {
+        notify(`Invitation updated, but the email could not be delivered: ${deliveryError}.`, "error");
+      } else {
+        notify(previewLink ? "Invitation link updated." : "Invitation resent.");
+      }
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to resend invitation.");
+      notify(error instanceof Error ? error.message : "Unable to resend invitation.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -2871,11 +2890,11 @@ export function DashboardShell({
   async function revokeInvitation(invitationId: string) {
     if (!activeOrgId) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      notify("Seat management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Revoking invitation...");
+    const progressId = notify("Revoking invitation...");
     try {
       await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/revoke`, {});
       setInvitationLinks((current) => {
@@ -2883,11 +2902,12 @@ export function DashboardShell({
         delete next[invitationId];
         return next;
       });
-      setMessage("Invitation revoked.");
+      notify("Invitation revoked.");
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to revoke invitation.");
+      notify(error instanceof Error ? error.message : "Unable to revoke invitation.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -2897,14 +2917,14 @@ export function DashboardShell({
     if (!link) return;
     const safeLink = safeSameOriginInviteUrl(link);
     if (!safeLink) {
-      setMessage("Invitation link was not a valid InstantML invite URL.");
+      notify("Invitation link was not a valid InstantML invite URL.", "error");
       return;
     }
     try {
       if (!await copyTextToClipboard(safeLink)) throw new Error("copy failed");
-      setMessage("Invitation link copied.");
+      notify("Invitation link copied.");
     } catch {
-      setMessage("Copy failed. Select and copy the invitation link manually.");
+      notify("Copy failed. Select and copy the invitation link manually.", "error");
     }
   }
 
@@ -2913,7 +2933,7 @@ export function DashboardShell({
     if (!link) return;
     const safeLink = safeSameOriginInviteUrl(link);
     if (!safeLink) {
-      setMessage("Invitation link was not a valid InstantML invite URL.");
+      notify("Invitation link was not a valid InstantML invite URL.", "error");
       return;
     }
     window.open(safeLink, "_blank", "noopener,noreferrer");
@@ -2921,29 +2941,30 @@ export function DashboardShell({
 
   async function openBillingPortal() {
     if (!canManageOrg) {
-      setMessage("Billing management is available to workspace admins.");
+      notify("Billing management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Opening billing portal...");
+    const progressId = notify("Opening billing portal...");
     try {
       const payload = await api.post("/api/billing/portal", {});
       const url = safeCheckoutRedirectUrl(payload.url);
       if (!url) throw new Error("Billing portal URL was not trusted.");
       window.location.assign(url);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to open billing portal.");
+      dismissToast(progressId);
+      notify(error instanceof Error ? error.message : "Unable to open billing portal.", "error");
       setAdminBusy(false);
     }
   }
 
   async function changeBillingPlan(plan: "free" | "pro" | "premium") {
     if (!canManageOrg) {
-      setMessage("Billing management is available to workspace admins.");
+      notify("Billing management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage(`Changing billing plan to ${planDisplayName(plan)}...`);
+    const progressId = notify(`Changing billing plan to ${planDisplayName(plan)}...`);
     try {
       const payload = await api.post("/api/billing/change-plan", { plan_tier: plan });
       const checkoutUrl = safeCheckoutRedirectUrl(payload?.checkout?.url);
@@ -2954,88 +2975,78 @@ export function DashboardShell({
       if (payload?.checkout?.url) throw new Error("Billing checkout URL was not trusted.");
       if (payload?.checkout) {
         await loadOrgSettings();
-        setMessage("Checkout could not be opened. Retry from billing settings.");
+        notify("Checkout could not be opened. Retry from billing settings.", "error");
         return;
       }
       await loadOrgSettings();
-      setMessage("Billing plan updated.");
+      notify("Billing plan updated.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to change billing plan.");
+      notify(error instanceof Error ? error.message : "Unable to change billing plan.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
 
   async function cancelBilling() {
     if (!canManageOrg) {
-      setMessage("Billing management is available to workspace admins.");
+      notify("Billing management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Scheduling cancellation...");
+    const progressId = notify("Scheduling cancellation...");
     try {
       await api.post("/api/billing/cancel", { at_period_end: true });
       await loadOrgSettings();
-      setMessage("Cancellation recorded.");
+      notify("Cancellation recorded.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to cancel billing.");
+      notify(error instanceof Error ? error.message : "Unable to cancel billing.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
 
   async function createDashboardApiKey() {
     if (!activeOrgId || !canManageOrg) {
-      setMessage("API key management is available to workspace admins.");
+      notify("API key management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
     setNewApiKey("");
-    setApiAdminTone("status");
-    setApiAdminMessage("Creating API key...");
-    setMessage("Creating API key...");
+    const progressId = notify("Creating API key...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/api-keys`, {
         name: apiKeyName.trim() || "Dashboard SDK key",
       });
       if (typeof payload.api_key === "string") setNewApiKey(payload.api_key);
       await loadApiKeys();
-      setApiAdminTone("status");
-      setApiAdminMessage("API key created. Copy it now; the secret will not be shown again.");
-      setMessage("API key created.");
+      notify("API key created. Copy it now; the secret will not be shown again.");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unable to create API key.";
-      setApiAdminTone("error");
-      setApiAdminMessage(detail);
-      setMessage(detail);
+      notify(error instanceof Error ? error.message : "Unable to create API key.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
 
   async function revokeDashboardApiKey(keyId: string) {
     if (!activeOrgId || !keyId || !canManageOrg) {
-      setMessage("API key management is available to workspace admins.");
+      notify("API key management is available to workspace admins.", "error");
       return;
     }
     // Irreversible for any SDK still using the key — always confirm.
     if (!window.confirm("Revoke this API key? SDK clients using it stop authenticating immediately. This cannot be undone.")) return;
     setAdminBusy(true);
-    setApiAdminTone("status");
-    setApiAdminMessage("Revoking API key...");
-    setMessage("Revoking API key...");
+    const progressId = notify("Revoking API key...");
     try {
       await api.post(`/api/orgs/${activeOrgId}/api-keys/${keyId}/revoke`, {});
       await loadApiKeys();
-      setApiAdminTone("status");
-      setApiAdminMessage("API key revoked.");
-      setMessage("API key revoked.");
+      notify("API key revoked.");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unable to revoke API key.";
-      setApiAdminTone("error");
-      setApiAdminMessage(detail);
-      setMessage(detail);
+      notify(error instanceof Error ? error.message : "Unable to revoke API key.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -3044,13 +3055,9 @@ export function DashboardShell({
     if (!newApiKey) return;
     try {
       if (!await copyTextToClipboard(newApiKey)) throw new Error("copy failed");
-      setApiAdminTone("status");
-      setApiAdminMessage("API key copied.");
-      setMessage("API key copied.");
+      notify("API key copied.");
     } catch {
-      setApiAdminTone("error");
-      setApiAdminMessage("Copy failed. Select the key above and copy it manually.");
-      setMessage("Copy failed. Select the key above and copy it manually.");
+      notify("Copy failed. Select the key above and copy it manually.", "error");
     }
   }
 
@@ -5017,6 +5024,7 @@ function dismissTopOverlay() {
           updatedAt={deleteViewTarget.updatedAt ?? ""}
         />
       ) : null}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }
