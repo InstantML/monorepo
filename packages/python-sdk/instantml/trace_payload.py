@@ -282,6 +282,8 @@ def redact_json_value(value: Any, key: str | None = None) -> Any:
     if isinstance(value, dict):
         return {str(item_key): redact_json_value(item_value, str(item_key)) for item_key, item_value in value.items()}
     if isinstance(value, list):
+        if len(value) == 2 and isinstance(value[0], str) and _is_secret_key(value[0]):
+            return [redact_string(value[0]), _REDACTED]
         return [redact_json_value(item) for item in value]
     if isinstance(value, str):
         return redact_string(value)

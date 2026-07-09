@@ -232,6 +232,42 @@ pub struct Store {
     last_control_refresh: Arc<Mutex<Option<Instant>>>,
 }
 
+pub(super) struct IdempotencyReservation {
+    inflight: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
+    entry: Option<(Uuid, String)>,
+}
+
+impl IdempotencyReservation {
+    async fn release(mut self) {
+        self.release_inner().await;
+    }
+
+    async fn release_inner(&mut self) {
+        let Some(entry) = self.entry.take() else {
+            return;
+        };
+        self.inflight.lock().await.remove(&entry);
+    }
+}
+
+impl Drop for IdempotencyReservation {
+    fn drop(&mut self) {
+        let Some(entry) = self.entry.take() else {
+            return;
+        };
+        if let Ok(mut inflight) = self.inflight.try_lock() {
+            inflight.remove(&entry);
+            return;
+        }
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let inflight = Arc::clone(&self.inflight);
+            handle.spawn(async move {
+                inflight.lock().await.remove(&entry);
+            });
+        }
+    }
+}
+
 const CONTROL_REFRESH_MIN_INTERVAL: StdDuration = StdDuration::from_secs(2);
 const DATA_CELL_WRITER_LEASE_DEFAULT_TTL_SECS: i64 = 30;
 const DATA_CELL_WRITER_LEASE_POSITIVE_CACHE: StdDuration = StdDuration::from_millis(500);
@@ -1268,6 +1304,24 @@ impl Store {
             ));
         }
         Ok(())
+    }
+
+    pub(super) async fn reserve_idempotency_key_guard(
+        &self,
+        org_id: Uuid,
+        key: &str,
+    ) -> AppResult<IdempotencyReservation> {
+        let entry = (org_id, key.to_string());
+        let mut inflight = self.inflight_idempotency.lock().await;
+        if !inflight.insert(entry.clone()) {
+            return Err(AppError::conflict(
+                "idempotency key is already being processed",
+            ));
+        }
+        Ok(IdempotencyReservation {
+            inflight: Arc::clone(&self.inflight_idempotency),
+            entry: Some(entry),
+        })
     }
 
     pub(super) async fn trace_ingest_capacity_lock(&self, org_id: Uuid) -> Arc<Mutex<()>> {
@@ -3815,6 +3869,22 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(err.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn idempotency_reservation_guard_releases_on_drop() {
+        let store = store_without_control_db();
+        let org_id = Uuid::from_u128(1);
+        let key = "guarded-idempotency";
+        {
+            let _guard = store
+                .reserve_idempotency_key_guard(org_id, key)
+                .await
+                .unwrap();
+            assert!(store.reserve_idempotency_key(org_id, key).await.is_err());
+        }
+        store.reserve_idempotency_key(org_id, key).await.unwrap();
+        store.release_idempotency_key(org_id, key).await;
     }
 
     #[tokio::test]

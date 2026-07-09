@@ -33,6 +33,7 @@ const commandKey = process.platform === "darwin" ? "Meta" : "Control";
 let nextServer = null;
 let browser = null;
 let expectedBadRequestResourceErrors = 0;
+let expectedConflictResourceErrors = 0;
 let expectedPaymentRequiredResourceErrors = 0;
 let expectedServiceUnavailableResourceErrors = 0;
 let expectedServiceUnavailableApiErrors = 0;
@@ -234,7 +235,7 @@ try {
     const rewardSpanId = "4444444444444444";
     const traceStartedAt = new Date().toISOString();
     const traceEndedAt = new Date(Date.now() + 125).toISOString();
-    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, {
+    const traceBatch = {
       events: [
         {
           trace_id: traceId,
@@ -329,7 +330,16 @@ try {
           truncated: false,
         },
       ],
-    }, { headers: { "Idempotency-Key": `ui-smoke-trace-${smokeId}` } });
+    };
+    const traceIngestHeaders = { "Idempotency-Key": `ui-smoke-trace-${smokeId}` };
+    const firstTraceIngest = await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, traceBatch, { headers: traceIngestHeaders });
+    const replayedTraceIngest = await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, traceBatch, { headers: traceIngestHeaders });
+    assert.deepEqual(replayedTraceIngest, firstTraceIngest, "trace ingest should replay the stored response for the same idempotency key and body");
+    const mutatedTraceBatch = JSON.parse(JSON.stringify(traceBatch));
+    mutatedTraceBatch.events[0].name = "qa rollout trace mutated";
+    expectedConflictResourceErrors += 1;
+    const mutatedTraceIngest = await pageApiAttempt(page, "POST", `/api/runs/${seedRunId}/traces/events`, mutatedTraceBatch, { headers: traceIngestHeaders });
+    assert.equal(mutatedTraceIngest.status, 409, `mutated trace idempotency replay should conflict: ${JSON.stringify(mutatedTraceIngest.payload)}`);
     const seededTraceList = await pageApiGet(page, `/api/traces?run_id=${seedRunId}&limit=20`);
     assert.ok(
       (seededTraceList.traces ?? []).some((trace) => trace.trace_id === traceId && trace.root_name === "qa rollout trace"),
@@ -2090,6 +2100,10 @@ try {
       expectedBadRequestResourceErrors -= 1;
       return false;
     }
+    if (expectedConflictResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 409 (Conflict)") {
+      expectedConflictResourceErrors -= 1;
+      return false;
+    }
     if (expectedPaymentRequiredResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 402 (Payment Required)") {
       expectedPaymentRequiredResourceErrors -= 1;
       return false;
@@ -2863,20 +2877,18 @@ async function assertVisibleRunDetailTraceLink(page, traceUrls, { assertTimeline
   await page.goto(childTraceUrl.toString(), { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => {
     const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
-    return inspector.includes("44444444") && inspector.includes("outside the loaded tree window");
-  }, null, { timeout: 10000 });
-  await page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first().click({ timeout: 5000 });
+    return inspector.includes("reward.score") && inspector.includes("4444444444444444");
+  }, null, { timeout: 12000 });
   await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
-  await page.locator(".trace-node-button", { hasText: "reward.score" }).first().click({ timeout: 5000 });
   await page.waitForFunction(() => {
     const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
     return inspector.includes("reward.score") && inspector.includes("4444444444444444");
   }, null, { timeout: 8000 });
+  await page.waitForFunction(() => {
+    const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+    return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
+  }, null, { timeout: 8000 });
   if (docsScreenshotMode) {
-    await page.waitForFunction(() => {
-      const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
-      return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
-    }, null, { timeout: 8000 });
     await captureDocsProductScreenshot(page, "dashboard-traces.png");
   }
 }

@@ -229,6 +229,8 @@ pub struct TraceSpanIndexReadRow {
     pub parent_span_id: String,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub started_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Row, Deserialize)]
@@ -454,12 +456,6 @@ pub async fn list_trace_summaries(
                GROUP BY run_id, idempotency_key \
              )",
     );
-    if query.from.is_some() {
-        sql.push_str(" AND started_at >= parseDateTime64BestEffort(?, 6, 'UTC')");
-    }
-    if query.to.is_some() {
-        sql.push_str(" AND started_at < parseDateTime64BestEffort(?, 6, 'UTC')");
-    }
     if query.run_id.is_some() {
         sql.push_str(" AND run_id = ?");
     }
@@ -469,6 +465,12 @@ pub async fn list_trace_summaries(
     );
     if query.status.is_some() {
         sql.push_str(" AND status = ?");
+    }
+    if query.from.is_some() {
+        sql.push_str(" AND summary_started_at >= parseDateTime64BestEffort(?, 6, 'UTC')");
+    }
+    if query.to.is_some() {
+        sql.push_str(" AND summary_started_at < parseDateTime64BestEffort(?, 6, 'UTC')");
     }
     if query.kind.is_some() {
         sql.push_str(" AND has(kinds, ?)");
@@ -513,17 +515,17 @@ pub async fn list_trace_summaries(
         .bind(query.project_id)
         .bind(org_id)
         .bind(query.project_id);
-    if let Some(from) = query.from {
-        q = q.bind(from.to_rfc3339());
-    }
-    if let Some(to) = query.to {
-        q = q.bind(to.to_rfc3339());
-    }
     if let Some(run_id) = query.run_id {
         q = q.bind(run_id);
     }
     if let Some(status) = &query.status {
         q = q.bind(status);
+    }
+    if let Some(from) = query.from {
+        q = q.bind(from.to_rfc3339());
+    }
+    if let Some(to) = query.to {
+        q = q.bind(to.to_rfc3339());
     }
     if let Some(kind) = &query.kind {
         q = q.bind(kind);
@@ -696,9 +698,9 @@ pub async fn child_span_ids(
     query: TraceSpanWindowQuery<'_>,
 ) -> AppResult<Vec<TraceSpanIndexReadRow>> {
     let mut sql = String::from(
-        "SELECT span_id, span_parent_id AS parent_span_id, first_started_at AS started_at \
+        "SELECT span_id, span_parent_id AS parent_span_id, first_started_at AS started_at, first_created_at AS created_at \
          FROM ( \
-           SELECT span_id, any(parent_span_id) AS span_parent_id, min(started_at) AS first_started_at \
+           SELECT span_id, any(parent_span_id) AS span_parent_id, min(started_at) AS first_started_at, min(created_at) AS first_created_at \
            FROM trace_span_index \
            WHERE org_id = ? AND project_id = ? AND run_id = ? AND trace_id = ? AND parent_span_id = ? \
              AND idempotency_key IN ( \
@@ -712,11 +714,11 @@ pub async fn child_span_ids(
     );
     if query.cursor.is_some() {
         sql.push_str(
-            " AND (first_started_at > parseDateTime64BestEffort(?, 6, 'UTC') \
-               OR (first_started_at = parseDateTime64BestEffort(?, 6, 'UTC') AND span_id > ?))",
+            " AND (first_created_at > parseDateTime64BestEffort(?, 6, 'UTC') \
+               OR (first_created_at = parseDateTime64BestEffort(?, 6, 'UTC') AND span_id > ?))",
         );
     }
-    sql.push_str(" ORDER BY first_started_at ASC, span_id ASC LIMIT ?");
+    sql.push_str(" ORDER BY first_created_at ASC, span_id ASC LIMIT ?");
 
     let mut q = store
         .client()
@@ -729,8 +731,8 @@ pub async fn child_span_ids(
         .bind(query.org_id)
         .bind(query.project_id)
         .bind(query.run_id);
-    if let Some((started_at, span_id)) = query.cursor {
-        let cursor_at = started_at.to_rfc3339();
+    if let Some((created_at, span_id)) = query.cursor {
+        let cursor_at = created_at.to_rfc3339();
         q = q.bind(cursor_at.clone()).bind(cursor_at).bind(span_id);
     }
     q.bind(query.limit)

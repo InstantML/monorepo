@@ -4,7 +4,7 @@ import { Activity, Copy, Database, GitBranch, GitFork, Square, X } from "lucide-
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
+import { ApiError, isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
 import { defaultForkRunName } from "../../../src/checkpoints.js";
 import { smoothSeries } from "../../../src/charts.js";
 import { canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, preferredMetricKey } from "../../../src/state.js";
@@ -13,6 +13,7 @@ import { MetricChart } from "../metrics/metric-chart";
 import { RunEvidenceExplorer, RunGraphPanel, RunLogsPanel, RunSystemPanel } from "../components/run-workspace";
 import type { RunWorkspaceTabId } from "../components/run-workspace";
 import { formatDuration } from "../ui/duration";
+import { relativeTime } from "../ui/relative-time";
 import { Skeleton } from "../ui/skeleton";
 import { RunMetricTable } from "./run-detail";
 import { TraceMetricTimeline } from "./trace-timeline";
@@ -647,7 +648,7 @@ export function DetailTabPane({
         if (!cancelled && !isAbortError(caught)) {
           setRecentTraces([]);
           tracesLoadedForRef.current = "";
-          setRecentTracesError(caught instanceof Error ? caught.message : "Unable to load traces.");
+          setRecentTracesError(caught instanceof ApiError ? caught.safeMessage : caught instanceof Error ? caught.message : "Unable to load traces.");
         }
       })
       .finally(() => {
@@ -1125,11 +1126,11 @@ function RecentTracesPanel({
                 <span className={`trace-status ${trace.status}`}>{trace.status}</span>
                 <span className="pd-trace-main">
                   <strong>{trace.root_name || trace.trace_id.slice(0, 8)}</strong>
-                  <small>{trace.kinds.slice(0, 3).join(", ") || "custom"} · {trace.thread_id || trace.rollout_id || trace.trace_id.slice(0, 8)}</small>
+                  <small>{run.name} · {trace.kinds.slice(0, 3).join(", ") || "custom"}</small>
                 </span>
                 <span className="pd-trace-meta">{formatNumber(trace.span_count, 0)} spans</span>
                 <span className="pd-trace-meta">{formatDuration(trace.duration_ms)}</span>
-                <span className="pd-trace-meta">{formatRunTime(trace.updated_at)}</span>
+                <span className="pd-trace-meta" title={formatRunTime(trace.updated_at)}>{relativeTime(trace.updated_at)}</span>
               </a>
             ))}
           </div>

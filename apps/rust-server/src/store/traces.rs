@@ -15,6 +15,8 @@ const TRACE_SUMMARY_RECOMPUTE_LIMIT: i64 = 100_001;
 const TRACE_SUMMARY_VISIBLE_SPAN_LIMIT: usize = 100_000;
 const DEFAULT_TRACE_LOOKBACK_DAYS: i64 = 7;
 const MAX_TRACE_STEP_BUCKETS: i64 = 2000;
+const CLICKHOUSE_DATETIME64_MIN_YEAR: i32 = 1900;
+const CLICKHOUSE_DATETIME64_MAX_YEAR: i32 = 2299;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TraceListWindow {
@@ -58,8 +60,8 @@ pub async fn ingest_trace_events(
     idempotency_key: String,
 ) -> AppResult<TraceIngestResponse> {
     let request_hash = hex::encode(hash_idempotency(run_id, &raw)?);
-    store
-        .reserve_idempotency_key(ctx.org_id, &idempotency_key)
+    let idempotency_guard = store
+        .reserve_idempotency_key_guard(ctx.org_id, &idempotency_key)
         .await?;
     let result = async {
         let run = {
@@ -184,9 +186,7 @@ pub async fn ingest_trace_events(
         Ok(response)
     }
     .await;
-    store
-        .release_idempotency_key(ctx.org_id, &idempotency_key)
-        .await;
+    idempotency_guard.release().await;
     result
 }
 
@@ -963,11 +963,11 @@ fn validate_trace_events(events: Vec<TraceEventInput>) -> AppResult<Vec<ValidTra
         let name = validate_short_string(&input.name, "name", MAX_TRACE_NAME_BYTES)?;
         let thread_id = optional_short_string(input.thread_id.as_deref(), "thread_id")?;
         let rollout_id = optional_short_string(input.rollout_id.as_deref(), "rollout_id")?;
-        let started_at = parse_rfc3339(&input.started_at, "started_at")?;
+        let started_at = parse_clickhouse_rfc3339(&input.started_at, "started_at")?;
         let ended_at = input
             .ended_at
             .as_deref()
-            .map(|value| parse_rfc3339(value, "ended_at"))
+            .map(|value| parse_clickhouse_rfc3339(value, "ended_at"))
             .transpose()?;
         let duration_ms = validate_optional_nonnegative_finite(input.duration_ms, "duration_ms")?;
         if let Some(ended_at) = ended_at {
@@ -1445,6 +1445,16 @@ fn parse_rfc3339(value: &str, field: &str) -> AppResult<DateTime<Utc>> {
         .map_err(|_| AppError::validation(format!("{field} must be RFC3339 timestamp")))
 }
 
+fn parse_clickhouse_rfc3339(value: &str, field: &str) -> AppResult<DateTime<Utc>> {
+    let dt = parse_rfc3339(value, field)?;
+    if dt.year() < CLICKHOUSE_DATETIME64_MIN_YEAR || dt.year() > CLICKHOUSE_DATETIME64_MAX_YEAR {
+        return Err(AppError::validation(format!(
+            "{field} must be between {CLICKHOUSE_DATETIME64_MIN_YEAR}-01-01T00:00:00Z and {CLICKHOUSE_DATETIME64_MAX_YEAR}-12-31T23:59:59Z"
+        )));
+    }
+    Ok(dt)
+}
+
 fn json_from_str(value: &str) -> AppResult<Value> {
     serde_json::from_str(value).map_err(|_| AppError::internal("stored trace JSON is invalid"))
 }
@@ -1477,7 +1487,7 @@ fn decode_trace_list_cursor(value: &str) -> AppResult<TraceListCursor> {
         .get("started_at")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::validation("cursor is invalid"))
-        .and_then(|value| parse_rfc3339(value, "cursor.started_at"))?;
+        .and_then(|value| parse_clickhouse_rfc3339(value, "cursor.started_at"))?;
     let trace_id = payload
         .get("trace_id")
         .and_then(Value::as_str)
@@ -1491,7 +1501,7 @@ fn decode_trace_list_cursor(value: &str) -> AppResult<TraceListCursor> {
 
 fn encode_trace_child_cursor(row: &TraceSpanIndexReadRow) -> AppResult<String> {
     let payload = json!({
-        "started_at": row.started_at.to_rfc3339(),
+        "created_at": row.created_at.to_rfc3339(),
         "span_id": row.span_id
     });
     let bytes = serde_json::to_vec(&payload)
@@ -1505,17 +1515,17 @@ fn decode_trace_child_cursor(value: &str) -> AppResult<(DateTime<Utc>, String)> 
         .map_err(|_| AppError::validation("cursor is invalid"))?;
     let payload: Value =
         serde_json::from_slice(&bytes).map_err(|_| AppError::validation("cursor is invalid"))?;
-    let started_at = payload
-        .get("started_at")
+    let created_at = payload
+        .get("created_at")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::validation("cursor is invalid"))
-        .and_then(|value| parse_rfc3339(value, "cursor.started_at"))?;
+        .and_then(|value| parse_clickhouse_rfc3339(value, "cursor.created_at"))?;
     let span_id = payload
         .get("span_id")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::validation("cursor is invalid"))
         .and_then(|value| validate_span_id(value, "cursor.span_id"))?;
-    Ok((started_at, span_id))
+    Ok((created_at, span_id))
 }
 
 #[cfg(test)]
@@ -1536,11 +1546,11 @@ fn trace_list_window(
 ) -> AppResult<TraceListWindow> {
     let from = query
         .get("from")
-        .map(|value| parse_rfc3339(value, "from"))
+        .map(|value| parse_clickhouse_rfc3339(value, "from"))
         .transpose()?;
     let to = query
         .get("to")
-        .map(|value| parse_rfc3339(value, "to"))
+        .map(|value| parse_clickhouse_rfc3339(value, "to"))
         .transpose()?;
     if run_id.is_some() {
         return Ok(TraceListWindow { from, to });
@@ -1578,6 +1588,37 @@ mod tests {
 
     fn fixed_now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 7, 3, 12, 0, 0).unwrap()
+    }
+
+    fn valid_trace_event() -> TraceEventInput {
+        TraceEventInput {
+            trace_id: trace_id(),
+            span_id: "086e83747d0e381e".to_string(),
+            parent_span_id: None,
+            event_id: Uuid::new_v4(),
+            sequence: 1,
+            event_kind: "finished".to_string(),
+            name: "rollout".to_string(),
+            kind: "rollout".to_string(),
+            status: "ok".to_string(),
+            step: Some(1.0),
+            rank: None,
+            thread_id: None,
+            rollout_id: None,
+            started_at: "2026-07-03T12:00:00Z".to_string(),
+            ended_at: Some("2026-07-03T12:00:01.250Z".to_string()),
+            duration_ms: None,
+            input_preview: None,
+            output_preview: None,
+            error_type: None,
+            error_preview: None,
+            attributes: Some(json!({})),
+            metrics: Some(json!({})),
+            links: Some(json!([])),
+            content_policy: Some("off".to_string()),
+            redaction_state: Some("not_captured".to_string()),
+            truncated: Some(false),
+        }
     }
 
     fn canonical_span(
@@ -1828,13 +1869,14 @@ mod tests {
             span_id: "086e83747d0e381e".to_string(),
             parent_span_id: String::new(),
             started_at: datetime_from_millis(1_780_000_000_000),
+            created_at: datetime_from_millis(1_780_000_000_123),
         };
         let encoded = encode_trace_child_cursor(&row).unwrap();
-        let (started_at, span_id) = decode_trace_child_cursor(&encoded).unwrap();
+        let (created_at, span_id) = decode_trace_child_cursor(&encoded).unwrap();
         assert_eq!(span_id, row.span_id);
         assert_eq!(
-            started_at.timestamp_millis(),
-            row.started_at.timestamp_millis()
+            created_at.timestamp_millis(),
+            row.created_at.timestamp_millis()
         );
     }
 
@@ -1969,6 +2011,26 @@ mod tests {
         assert_eq!(summary.total_trace_count, 0);
         assert_eq!(summary.stepless_trace_count, 0);
         assert_eq!(summary.total_error_trace_count, 0);
+    }
+
+    #[test]
+    fn trace_timestamps_reject_values_outside_clickhouse_datetime64_range() {
+        let mut query = HashMap::new();
+        query.insert("from".to_string(), "2500-01-01T00:00:00Z".to_string());
+        assert!(trace_list_window(&query, None, fixed_now()).is_err());
+
+        let mut event = valid_trace_event();
+        event.started_at = "2500-01-01T00:00:00Z".to_string();
+        assert!(validate_trace_events(vec![event]).is_err());
+
+        let cursor = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({
+                "started_at": "1800-01-01T00:00:00Z",
+                "trace_id": trace_id()
+            }))
+            .unwrap(),
+        );
+        assert!(decode_trace_list_cursor(&cursor).is_err());
     }
 
     #[test]

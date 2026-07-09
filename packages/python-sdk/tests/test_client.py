@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.error
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -1970,7 +1971,6 @@ def test_trace_op_batches_preview_metadata_and_redacts_secrets():
     assert score_rollout.__name__ == "score_rollout"
     assert score_rollout.__doc__ == "Demo reward function."
     assert score_rollout("hello", "ok", api_key="sk-abcdefghijklmnopqrstuvwxyz") == {"reward": 1.0, "token": "instantml_OUTPUTSECRET"}
-    assert calls == []
 
     run.flush()
 
@@ -2118,12 +2118,81 @@ def test_trace_op_async_function_traces_awaited_result_and_exception():
     asyncio.run(scenario())
     run.flush()
 
-    events = calls[0][2]["events"]
+    events = [event for call in calls for event in call[2]["events"]]
     assert [event["event_kind"] for event in events] == ["started", "finished", "started", "exception"]
     assert "OK" in events[1]["output_preview"]
     assert events[3]["error_type"] == "RuntimeError"
     assert "Bearer abcdefghijklmnop" not in events[3]["error_preview"]
     assert "[REDACTED]" in events[3]["error_preview"]
+
+
+def test_trace_op_generator_and_async_generator_finish_on_iteration():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    @run.trace_op(kind="dataset", capture="preview")
+    def stream_rows(limit):
+        for index in range(limit):
+            yield {"row": index}
+
+    @run.trace_op(kind="dataset", capture="preview")
+    def broken_rows():
+        yield {"row": 1}
+        raise RuntimeError("password=leaked")
+
+    assert tracing_module.inspect.isgeneratorfunction(stream_rows)
+    assert list(stream_rows(2)) == [{"row": 0}, {"row": 1}]
+    with pytest.raises(RuntimeError, match="leaked"):
+        list(broken_rows())
+
+    @run.trace_op(kind="dataset", capture="preview")
+    async def async_rows(limit):
+        for index in range(limit):
+            await asyncio.sleep(0)
+            yield {"row": index}
+
+    @run.trace_op(kind="dataset", capture="preview")
+    async def broken_async_rows():
+        yield {"row": 1}
+        raise RuntimeError("token=async-secret")
+
+    async def collect_async():
+        assert tracing_module.inspect.isasyncgenfunction(async_rows)
+        collected = []
+        async for row in async_rows(2):
+            collected.append(row)
+        assert collected == [{"row": 0}, {"row": 1}]
+        with pytest.raises(RuntimeError, match="async-secret"):
+            async for _row in broken_async_rows():
+                pass
+
+    asyncio.run(collect_async())
+
+    events = [event for call in calls for event in call[2]["events"]]
+    assert [event["event_kind"] for event in events] == [
+        "started",
+        "finished",
+        "started",
+        "exception",
+        "started",
+        "finished",
+        "started",
+        "exception",
+    ]
+    assert events[1]["status"] == "ok"
+    assert events[3]["error_type"] == "RuntimeError"
+    assert "password=leaked" not in events[3]["error_preview"]
+    assert events[5]["status"] == "ok"
+    assert "async-secret" not in events[7]["error_preview"]
+    assert "[REDACTED]" in events[7]["error_preview"]
 
 
 def test_trace_op_rejects_static_span_id_and_explicit_trace_id_stays_root():
@@ -2212,10 +2281,10 @@ def test_trace_op_delivery_modes_preserve_trace_batch_idempotency(monkeypatch, t
     assert async_reward(2) == 2
     async_run.flush()
     queue_path = tmp_path / "async" / "run-async" / "queue.sqlite3"
-    path, body_json, idempotency_key = sqlite3.connect(queue_path).execute("select path, body_json, idempotency_key from events").fetchone()
-    assert path == "/api/runs/run-async/traces/events"
-    assert idempotency_key.startswith("instantml-trace-run-async-")
-    assert len(json.loads(body_json)["events"]) == 4
+    rows = sqlite3.connect(queue_path).execute("select path, body_json, idempotency_key from events order by rowid").fetchall()
+    assert [row[0] for row in rows] == ["/api/runs/run-async/traces/events", "/api/runs/run-async/traces/events"]
+    assert all(row[2].startswith("instantml-trace-run-async-") for row in rows)
+    assert [len(json.loads(row[1])["events"]) for row in rows] == [2, 2]
     assert async_run._async_buffer is not None
     assert async_run._async_buffer.stop(timeout=1.0)
     if async_run._async_queue is not None:
@@ -2343,6 +2412,10 @@ def test_trace_payload_preview_and_identifier_edges():
     assert truncated is False
     assert trace_payload.preview_payload(float("nan"), "preview", "inputs") == ('"nan"', False)
     assert trace_payload.json_object({"items": {3, 1, 2}}, "attributes", 100) == {"items": [1, 2, 3]}
+    assert trace_payload.redact_json_value([["password", "hunter2-super-secret"], ["safe", "value"]]) == [
+        ["password", "[REDACTED]"],
+        ["safe", "value"],
+    ]
 
     with pytest.raises(TypeError, match="trace_id"):
         trace_payload.normalize_trace_id(123)  # type: ignore[arg-type]
@@ -2405,6 +2478,50 @@ def test_trace_context_attach_detach_start_span_and_wrap_inherit_parent():
     events = [event for call in calls for event in call[2]["events"]]
     assert any(event["name"] == "worker.manual" and event.get("parent_span_id") == carrier["span_id"] for event in events)
     assert any(event["name"] == "worker.wrapped" and event.get("parent_span_id") == carrier["span_id"] for event in events)
+
+
+def test_trace_wrap_and_span_updates_are_thread_safe():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append((method, path, body, idempotency_key))
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    with run.trace("root", kind="rollout") as trace:
+        def work(index):
+            span = run.start_span(f"worker.{index}", kind="custom")
+            parent = span.parent_span_id
+            span.finish()
+            return parent
+
+        wrapped = trace.wrap(work)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            parents = list(pool.map(wrapped, range(8)))
+        assert parents == [trace.span_id] * 8
+
+        update_span = trace.start_span("shared-updates", kind="custom")
+
+        def update(index):
+            update_span.log_metric(f"metric.{index}", index)
+            update_span.add_attributes({f"attr.{index}": index})
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(update, range(40)))
+        update_span.finish()
+
+    run.flush()
+    events = [event for call in calls for event in call[2]["events"]]
+    update_sequences = [
+        event["sequence"]
+        for event in events
+        if event["span_id"] == update_span.span_id
+    ]
+    assert len(update_sequences) == len(set(update_sequences))
+    assert update_sequences == sorted(update_sequences)
 
 
 def test_trace_span_error_interrupt_double_finish_and_invalid_sync_payload():
@@ -2572,6 +2689,15 @@ def test_trace_batch_flushes_before_and_after_size_thresholds(monkeypatch):
     run._record_trace_event({"trace_id": "2" * 32, "span_id": "4" * 16, "event_id": "d", "payload": "y" * 20})
     run.flush()
     assert [len(call[2]["events"]) for call in calls] == [1, 1]
+
+    calls.clear()
+    monkeypatch.setattr(client_module, "MAX_TRACE_EVENTS_PER_BATCH", 2)
+    monkeypatch.setattr(client_module, "_TRACE_BATCH_MAX_BYTES", 512 * 1024)
+    run._submit_trace_batch([
+        {"trace_id": "3" * 32, "span_id": f"{index + 1:016x}", "event_id": str(index)}
+        for index in range(5)
+    ])
+    assert [len(call[2]["events"]) for call in calls] == [2, 2, 1]
 
 
 def test_trace_record_event_hot_path_does_not_json_serialize(monkeypatch):

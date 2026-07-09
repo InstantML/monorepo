@@ -12,7 +12,7 @@
 
 .trace-filter-row {
   display: grid;
-  grid-template-columns: minmax(140px, 1fr) 120px 140px minmax(180px, 1.2fr);
+  grid-template-columns: minmax(140px, 1fr) 120px 140px 136px minmax(180px, 1.2fr);
   gap: var(--sp-2);
   padding: var(--sp-3);
   border-bottom: 1px solid var(--line);
@@ -128,7 +128,6 @@
   color: var(--text-2);
   font: 650 var(--fs-label)/1 var(--font-mono);
   letter-spacing: 0;
-  text-transform: capitalize;
 }
 
 .trace-status.ok {

@@ -3235,7 +3235,7 @@ class Run:
 
     def _record_trace_event(self, event: dict[str, Any]) -> None:
         event_bytes = _estimated_json_bytes(event) + _TRACE_EVENT_SIZE_OVERHEAD_BYTES
-        should_flush = False
+        ready_batches: list[list[dict[str, Any]]] = []
         with self._lock:
             if (
                 self._trace_events
@@ -3244,15 +3244,17 @@ class Run:
                     or self._trace_events_bytes + event_bytes > _TRACE_BATCH_MAX_BYTES
                 )
             ):
-                should_flush = True
-        if should_flush:
-            self._flush_trace_events()
-        with self._lock:
+                ready_batches.append(self._trace_events)
+                self._trace_events = []
+                self._trace_events_bytes = 0
             self._trace_events.append(event)
             self._trace_events_bytes += event_bytes
-            should_flush = len(self._trace_events) >= MAX_TRACE_EVENTS_PER_BATCH or self._trace_events_bytes >= _TRACE_BATCH_MAX_BYTES
-        if should_flush:
-            self._flush_trace_events()
+            if len(self._trace_events) >= MAX_TRACE_EVENTS_PER_BATCH or self._trace_events_bytes >= _TRACE_BATCH_MAX_BYTES:
+                ready_batches.append(self._trace_events)
+                self._trace_events = []
+                self._trace_events_bytes = 0
+        for batch in ready_batches:
+            self._submit_trace_batch(batch)
 
     def _flush_trace_events(self) -> None:
         with self._lock:
@@ -3264,6 +3266,10 @@ class Run:
         self._submit_trace_batch(events)
 
     def _submit_trace_batch(self, events: list[dict[str, Any]]) -> None:
+        for batch in _trace_event_batches(events):
+            self._submit_trace_event_batch(batch)
+
+    def _submit_trace_event_batch(self, events: list[dict[str, Any]]) -> None:
         method = "POST"
         path = f"/api/runs/{self.run_id}/traces/events"
         body = {"events": events}
@@ -4257,6 +4263,26 @@ def _estimated_json_string_bytes(value: str) -> int:
         else:
             total += 12
     return total
+
+
+def _trace_event_batches(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    batches: list[list[dict[str, Any]]] = []
+    current: list[dict[str, Any]] = []
+    current_bytes = 0
+    for event in events:
+        event_bytes = _estimated_json_bytes(event) + _TRACE_EVENT_SIZE_OVERHEAD_BYTES
+        if current and (
+            len(current) >= MAX_TRACE_EVENTS_PER_BATCH
+            or current_bytes + event_bytes > _TRACE_BATCH_MAX_BYTES
+        ):
+            batches.append(current)
+            current = []
+            current_bytes = 0
+        current.append(event)
+        current_bytes += event_bytes
+    if current:
+        batches.append(current)
+    return batches
 
 
 class _SpoolSegmentWriter:

@@ -11,6 +11,8 @@ const paneSource = readFileSync(new URL("../app/dashboard/traces/tab-pane.tsx", 
 const timelineSource = readFileSync(new URL("../app/dashboard/detail/trace-timeline.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../app/styles/traces.css", import.meta.url), "utf8");
 const runDetailStyles = readFileSync(new URL("../app/styles/run-detail.css", import.meta.url), "utf8");
+const traceQueryHelper = sourceBlock(paneSource, "export function traceListQueryParams", "function flattenDisplayedSpans");
+const traceFetchCall = sourceBlock(paneSource, "() => api.get<TraceListResponse>", "if (requestId !== listRequestRef.current) return;");
 
 test("traces is a first-class dashboard route and nav item", () => {
   assert.ok(DASHBOARD_TAB_IDS.includes("traces"));
@@ -35,12 +37,15 @@ test("traces tab uses bounded list, detail, and child endpoints", () => {
   assert.match(paneSource, /traceIdForActions/);
   assert.match(paneSource, /setDetail\(null\);/);
   assert.match(paneSource, /detail\?\.trace\.run_id === selectedRunId && detail\.trace\.trace_id === selectedTraceId/);
-  assert.match(paneSource, /function traceListQueryParams/);
-  assert.match(paneSource, /const scopedRunId = runFilter \|\| undefined/);
-  assert.match(paneSource, /project: scopedRunId \? undefined : project/);
-  assert.match(paneSource, /run_id: scopedRunId/);
-  assert.doesNotMatch(paneSource, /from:/);
-  assert.doesNotMatch(paneSource, /to:/);
+  assert.match(paneSource, /export function traceListQueryParams/);
+  assert.match(traceQueryHelper, /const scopedRunId = runFilter \|\| undefined/);
+  assert.match(traceQueryHelper, /project: scopedRunId \? undefined : project/);
+  assert.match(traceQueryHelper, /run_id: scopedRunId/);
+  assert.match(traceQueryHelper, /traceTimeWindow\(timeRange, nowMs\)/);
+  assert.match(traceQueryHelper, /from: "1900-01-01T00:00:00.000Z"/);
+  assert.match(traceQueryHelper, /to: "2299-12-31T23:59:59.000Z"/);
+  assert.doesNotMatch(traceFetchCall, /from:/);
+  assert.doesNotMatch(traceFetchCall, /to:/);
 });
 
 test("traces tab exposes tree, inspector, status, and responsive styles", () => {
@@ -50,12 +55,17 @@ test("traces tab exposes tree, inspector, status, and responsive styles", () => 
   assert.match(styles, /\.trace-inspector/);
   assert.match(styles, /@media \(max-width: 720px\)/);
   assert.match(paneSource, /<CustomSelect/);
+  assert.match(paneSource, /id="trace-time-filter"/);
+  assert.match(paneSource, /"preprocessing", "postprocessing"/);
   assert.match(paneSource, /role="listbox"/);
   assert.match(paneSource, /role="option"/);
+  assert.match(paneSource, /onKeyDown=\{\(event\) => handleTraceRowKeyDown\(event, index\)\}/);
+  assert.match(paneSource, /onKeyDown=\{\(event\) => onKeyDown\(event, span\)\}/);
   assert.match(paneSource, /aria-selected=/);
   assert.match(paneSource, /outside the loaded tree window/);
   assert.match(paneSource, /summary=\{inspectorSummary\}/);
   assert.match(paneSource, /selectedDetail \? indexDisplayedSpans\(selectedDetail\.spans, childrenByParent\)/);
+  assert.match(paneSource, /of \{formatNumber\(selectedDetail\.trace\.total_span_count, 0\)\} spans loaded/);
   assert.doesNotMatch(paneSource, /\?\? all\[0\]/);
   assert.doesNotMatch(paneSource, /role="table"/);
   assert.doesNotMatch(styles, /border-radius:\s*8px/);
@@ -73,9 +83,19 @@ test("run detail exposes recent traces lazily with exact deep links", () => {
   assert.doesNotMatch(detailSource, /params\.to\s*=/);
   assert.match(detailSource, /\/dashboard\/traces\$\{queryString\(\{/);
   assert.match(detailSource, /span_id: trace\.root_span_id \|\| undefined/);
+  assert.match(detailSource, /caught instanceof ApiError \? caught\.safeMessage/);
+  assert.match(detailSource, /relativeTime\(trace\.updated_at\)/);
   assert.match(runDetailStyles, /\.pd-trace-row/);
   assert.match(runDetailStyles, /grid-template-columns: 84px minmax\(0, 1fr\) 82px 78px 132px/);
 });
+
+function sourceBlock(source, start, end) {
+  const from = source.indexOf(start);
+  assert.notEqual(from, -1, `missing block start ${start}`);
+  const to = source.indexOf(end, from);
+  assert.notEqual(to, -1, `missing block end ${end}`);
+  return source.slice(from, to);
+}
 
 test("run detail correlates traces with metrics on a shared step timeline", () => {
   // The timeline component exists and draws the metric line + activity lane.
