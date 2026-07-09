@@ -6937,3 +6937,72 @@ def test_init_succeeds_with_credentials_file(monkeypatch, tmp_path):
     monkeypatch.setattr(Client, "_request", fake_request)
     run = im.init(project="test", base_url="http://example.test", upload_mode="sync")
     assert run.run_id == "run-3"
+
+
+def test_trace_span_updates_after_finish_are_ignored():
+    calls = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            calls.append(body)
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+    span = run.trace("finished-span", kind="rollout")
+    span.start()
+    span.finish(status="ok")
+    emitted = sum(len(body["events"]) for body in calls)
+    span.add_attributes({"late": True})
+    span.log_metric("late_metric", 1.0)
+    run._flush_trace_events()
+    assert sum(len(body["events"]) for body in calls) == emitted
+    assert "late" not in span.attributes
+    assert "late_metric" not in span.metrics
+
+
+def test_trace_op_generator_close_marks_span_interrupted():
+    events = []
+
+    class FakeClient:
+        offline_dir = None
+
+        def _request(self, method, path, body, idempotency_key=None):
+            events.extend(body["events"])
+            return {"inserted": len(body["events"]), "trace_ids": [body["events"][0]["trace_id"]]}
+
+    run = Run(client=FakeClient(), run_id="run-1")
+
+    @run.trace_op(name="gen.op", kind="dataset")
+    def stream():
+        yield 1
+        yield 2
+
+    generator = stream()
+    assert next(generator) == 1
+    generator.close()
+    run._flush_trace_events()
+    interrupted = [event for event in events if event["name"] == "gen.op" and event["event_kind"] == "interrupted"]
+    assert len(interrupted) == 1
+    assert interrupted[0]["status"] == "cancelled" or interrupted[0]["status"] == "interrupted"
+
+    async_events_before = len(events)
+
+    @run.trace_op(name="agen.op", kind="dataset")
+    async def astream():
+        yield 1
+        yield 2
+
+    async def consume_one_and_close():
+        agen = astream()
+        assert await agen.__anext__() == 1
+        await agen.aclose()
+
+    asyncio.run(consume_one_and_close())
+    run._flush_trace_events()
+    ainterrupted = [
+        event for event in events[async_events_before:]
+        if event["name"] == "agen.op" and event["event_kind"] == "interrupted"
+    ]
+    assert len(ainterrupted) == 1
