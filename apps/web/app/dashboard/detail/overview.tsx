@@ -115,8 +115,10 @@ function tailTimestamp(value: string) {
 function tailLevel(message: string): { level: string; tone: string } | null {
   const match = message.match(/^\s*\[?\b(INFO|WARN|WARNING|ERROR|ERR|FATAL|DEBUG|TRACE)\b\]?:?\s*/i);
   if (!match) return null;
-  const level = match[1].toUpperCase();
-  const tone = level.startsWith("ERR") || level === "FATAL" ? "er" : level.startsWith("WARN") ? "wr" : "ok";
+  // Show the level exactly as the log emitted it; only the tone lookup normalizes.
+  const level = match[1];
+  const normalized = level.toUpperCase();
+  const tone = normalized.startsWith("ERR") || normalized === "FATAL" ? "er" : normalized.startsWith("WARN") ? "wr" : "ok";
   return { level, tone };
 }
 
@@ -309,9 +311,9 @@ function artifactDownloadUrl(artifact: Artifact) {
 }
 
 function artifactGlyph(artifact: Artifact) {
-  if (artifact.type === "checkpoint") return "CKPT";
-  if (artifact.type === "rollout") return "ROLL";
-  return artifact.type.slice(0, 4).toUpperCase() || "FILE";
+  if (artifact.type === "checkpoint") return "ckpt";
+  if (artifact.type === "rollout") return "roll";
+  return artifact.type.slice(0, 4) || "file";
 }
 
 export function bestCheckpointId(artifacts: Artifact[]) {

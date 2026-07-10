@@ -2266,7 +2266,6 @@ button.secondary.danger-action:hover:not(:disabled),
   color: var(--accent-strong);
   font: 700 9px/1.4 var(--font-sans);
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* Client picker: branded logo tiles. */

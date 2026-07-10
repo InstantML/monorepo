@@ -338,10 +338,10 @@
       letter-spacing: var(--tracking-eyebrow); text-transform: uppercase; color: var(--muted); }
     .group-row b { color: var(--text-2); }
 
-    /* Chips / tags / dots */
+    /* Chips / tags / dots — title-case labels; tags never render in all caps */
     .chip { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: var(--radius);
-      font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 500; letter-spacing: 0.08em;
-      text-transform: uppercase; border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
+      font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 500; letter-spacing: 0.04em;
+      border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
     .chip--live { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
     .chip--done { background: transparent; color: var(--muted); }
     .chip--warm { background: var(--warm-soft); border-color: color-mix(in srgb, var(--warm) 35%, transparent); color: var(--warm); }
@@ -749,7 +749,7 @@
             <div class="bench-row">
               <span class="tag">baseline</span><span class="tag">sweep-7</span><span class="tag">fork:041</span>
             </div>
-            <p class="note">Chips are uppercase 10px mono, 20px tall, <code class="mono">*-dim</code> background. Tags are quiet, never colored.</p>
+            <p class="note">Chips are title-case 10px mono (never all caps), 20px tall, <code class="mono">*-dim</code> background. Tags are quiet, never colored.</p>
           </div>
         </div>
         <div class="panel"><div class="panel__head"><span class="mlabel">status dots · .dot / .pulse</span></div>
