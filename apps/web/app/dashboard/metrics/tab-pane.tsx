@@ -53,6 +53,8 @@ type Props = {
   selectedRuns: RunSummary[];
   series: MetricSeries[];
   seriesLoading: boolean;
+  statusMessage: string;
+  statusTone: "error" | "loading" | "ok";
   smoothing: number;
   sortedRuns: RunSummary[];
   visibleMetricCatalogRows: MetricCatalogRow[];
@@ -90,6 +92,8 @@ export function MetricsTabPane({
   series,
   seriesLoading,
   smoothing,
+  statusMessage,
+  statusTone,
   sortedRuns,
   visibleMetricCatalogRows,
   xMode,
@@ -129,6 +133,10 @@ export function MetricsTabPane({
 
   return (
     <div className="analysis-page metrics-analysis metrics-parity">
+      {/* The runs/series fetches live in the shell; without this strip a
+          mid-session API failure leaves the pane claiming "no runs have
+          logged this metric" as if it were true. */}
+      {statusTone === "error" ? <div className="status-strip error" role="alert">{statusMessage}</div> : null}
       <PageHead
         title="Metrics"
         lede={activeMetricCatalogRow

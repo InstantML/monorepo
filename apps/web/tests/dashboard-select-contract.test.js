@@ -117,3 +117,12 @@ test("project selector dedupes same-named projects", () => {
   // option instead of rendering twice with two checkmarks.
   assert.match(shellSrc, /const names = \[\.\.\.new Set<string>\(\(projectPayload\.projects \?\? \[\]\)\.map\(\(item: \{ name: string \}\) => item\.name\)\)\]/);
 });
+
+test("metrics pane surfaces shared-fetch failures instead of posing as empty", () => {
+  const shellSrc = read("app/dashboard/dashboard-shell.tsx");
+  const metricsSrc = read("app/dashboard/metrics/tab-pane.tsx");
+  // The runs/series fetches live in the shell; the metrics pane must render
+  // the error tone, otherwise an API failure reads as "no runs logged this".
+  assert.match(shellSrc, /statusMessage=\{message\}\s*\n\s*statusTone=\{currentMessageTone\}/);
+  assert.match(metricsSrc, /statusTone === "error" \? <div className="status-strip error" role="alert">\{statusMessage\}<\/div> : null/);
+});

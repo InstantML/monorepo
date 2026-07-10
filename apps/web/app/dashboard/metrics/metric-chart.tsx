@@ -953,7 +953,7 @@ export const MetricChart = memo(function MetricChart({
               onMouseLeave={() => setLegendHoverId((current) => (current === item.id ? null : current))}
               tabIndex={0}
               title={item.identifier ?? item.name}
-            ><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> {item.identifier ?? item.name}</span>
+            ><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> <span className="legend-chip-label">{item.identifier ?? item.name}</span></span>
           );
         })}
         {legendExpandable ? (

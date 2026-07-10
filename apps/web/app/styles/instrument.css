@@ -276,6 +276,15 @@ button:focus-visible,
   background: var(--accent);
 }
 
+.status-strip.error {
+  color: var(--danger);
+  border-color: var(--danger-soft, var(--line));
+}
+
+.status-strip.error::before {
+  background: var(--danger);
+}
+
 /* 16 — Analysis stat strips fill the space their row gives them (never
  *      overlap a sibling title); values are data → mono. */
 .analysis-stat-strip {

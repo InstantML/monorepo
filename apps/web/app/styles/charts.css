@@ -1358,6 +1358,10 @@ small {
   gap: 8px;
   min-height: 22px;
   min-width: 0;
+  /* Cap the readable measure: in a wide single-column legend the grid track
+     can be 1400px+, so without a cap a pathological run name renders as one
+     screen-wide legend line. Full name stays on the chip's title. */
+  max-width: 52ch;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
@@ -1365,9 +1369,17 @@ small {
   color: var(--text);
   font-size: var(--fs-data);
   padding: 3px 6px;
-  text-overflow: ellipsis;
   white-space: nowrap;
   transition: background 0.12s ease;
+}
+
+/* The run name gets its own truncation box so the inline color swatch keeps
+   its place when the label is capped (desktop) or clamped (mobile). */
+.legend-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .legend-chip:hover {
