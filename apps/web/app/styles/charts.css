@@ -1358,6 +1358,10 @@ small {
   gap: 8px;
   min-height: 22px;
   min-width: 0;
+  /* Cap the readable measure: in a wide single-column legend the grid track
+     can be 1400px+, so without a cap a pathological run name renders as one
+     screen-wide legend line. Full name stays on the chip's title. */
+  max-width: 52ch;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: var(--tight-radius);

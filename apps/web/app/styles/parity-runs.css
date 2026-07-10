@@ -337,11 +337,15 @@
 }
 
 .runs-table-view .runs-dtable .td-name .run-name-button {
-  /* charts.css .run-name-button truncates via inline-flex + overflow hidden;
-     the auto-layout column sizes to the name, so let it breathe. */
-  display: inline;
-  overflow: visible;
-  max-width: none;
+  /* The auto-layout column sizes to the name, so let typical names breathe —
+     but cap the cell so a pathological 100+ char name can't push every metric
+     column off-screen. Ellipsized names keep the full text on title/aria. */
+  display: inline-block;
+  vertical-align: bottom;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(52ch, 38vw);
   background: none;
   border: 0;
   padding: 0;
@@ -508,6 +512,13 @@
   font-family: var(--font-mono), monospace;
   font-size: var(--fs-micro);
   color: var(--muted);
+  /* A single runaway tag shouldn't widen the whole tags column; the full
+     value stays on the chip's title. */
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 /* ── Footer ──────────────────────────────────────────────────────────────── */
