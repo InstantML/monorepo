@@ -620,10 +620,13 @@
   .legend-chip {
     max-width: 100%;
     min-height: 32px;
+  }
+  /* Wrapping stays (L6), but a pathological run name must not become a
+     ten-line block that pushes the chart off-screen. Clamp the label span so
+     the inline color swatch keeps its place. */
+  .legend-chip-label {
     overflow-wrap: anywhere;
     white-space: normal;
-    /* Wrapping stays (L6), but a pathological run name must not become a
-       ten-line block that pushes the chart off-screen. */
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
@@ -1177,9 +1180,11 @@
    * Allow chips to wrap their text on touch devices. */
   .chart-legend { grid-template-columns: 1fr; }
   .legend-chip {
-    white-space: normal;
     padding: 6px 9px;
     min-height: 32px;
+  }
+  .legend-chip-label {
+    white-space: normal;
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;

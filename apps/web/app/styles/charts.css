@@ -1363,6 +1363,13 @@ small {
      screen-wide legend line. Full name stays on the chip's title. */
   max-width: 52ch;
   overflow: hidden;
+}
+
+.legend-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border: 1px solid transparent;
   border-radius: var(--tight-radius);
   background: transparent;
