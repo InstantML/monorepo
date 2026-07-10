@@ -200,6 +200,10 @@ def log_report_artifact(run: Any, path: Path, step: int) -> dict[str, Any]:
     except InstantMLError as error:
         if not upload_disabled(error):
             raise
+        run.log_console(
+            f"step {step}: artifact byte uploads disabled; recording {path.name} metadata only",
+            stream="stderr",
+        )
         return run.log_file(
             name=path.name,
             uri=path.resolve().as_uri(),
