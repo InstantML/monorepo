@@ -233,3 +233,30 @@ structure. Full gate stack green post-integration.
   run-wide panel-head totals, step-click filter chip + list pinning, clear),
   and the run-detail/traces/tracing docs plus the web README document the
   correlation timeline.
+- 2026-07-09 (production rollout + live verification): main (both tracing PRs)
+  deployed to the hosted API via `deploy-cloud-run.yml`; trace routes verified
+  live. A real SDK run (`examples/agent-rl-tracing`, new) seeded traces with an
+  error cluster, metrics, rank metrics, console logs, checkpoints, and a file
+  artifact on instantml.ai; every surface verified in the dashboard. Hosted
+  testing surfaced and fixed: invalid `eval` trace kind (use `evaluator`),
+  artifact byte uploads disabled on hosted (the example falls back to
+  metadata-only artifacts — rendered as "REFERENCE ONLY" in the UI), `?runs=`
+  deep links opening the newest run instead of the linked run (primaryRunId
+  now seeds from the URL), a project-wide "No artifacts yet" claim on a
+  run-scoped panel, and duplicate same-named project options. The web
+  frontend still needs a Vercel redeploy from post-#354 main for the timeline
+  to appear on instantml.ai (production deploys are blocked on Vercel
+  authorization for the merge author); the timeline was verified on the
+  current build locally against the same seeded data shape.
+- 2026-07-09 (artifacts + logging deep verification): a 19-check scripted pass
+  against the live stack covered artifact byte upload/download round-trips
+  (sha256-equal), versioned artifact collections (manifest, lineage, alias
+  handling — `latest`/`vN` are server-reserved and auto-managed), rollout
+  metadata artifacts, and console logging (volume, stream isolation,
+  multi-line, unicode/HTML-safe rendering, limit/tail pagination, ordering).
+  UI verified: Artifacts workspace collection/version/manifest/lineage panels,
+  run-detail download vs metadata-only affordances, and the Logs filter. On
+  the hosted API the same log/list contracts hold and metadata-only artifact
+  downloads 404 cleanly ("artifact bytes not found"). No product defects; the
+  only failures were correct server validations (reserved aliases, Free-plan
+  project cap).

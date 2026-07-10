@@ -497,7 +497,11 @@ export function ArtifactsTabPane({
             <Package size={22} aria-hidden />
             <strong>No artifacts yet</strong>
             <span>
-              Checkpoints, rollouts, and files logged from the SDK will appear here
+              {/* The raw panel is scoped to the inspected run, so the empty state
+                  must not claim the whole project is empty when it isn't. */}
+              {primaryRun
+                ? `No versioned collections in this project, and no raw artifacts logged for ${primaryRun.name} yet`
+                : "Checkpoints, rollouts, and files logged from the SDK will appear here"}
               {versionedUnsupported ? " — this backend serves raw run artifacts only" : ""}.
             </span>
             <code>run.log_artifact(&quot;policy/step-1000&quot;, path=&quot;ckpt.pt&quot;)</code>

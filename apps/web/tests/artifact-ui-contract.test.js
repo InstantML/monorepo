@@ -70,3 +70,11 @@ test("artifact lineage UI uses versioned artifact endpoints and keeps raw run ar
   assert.match(apiSrc, /artifact-versions/);
   assert.match(apiSrc, /artifact-entries/);
 });
+
+test("artifacts empty state scopes its claim to the inspected run", () => {
+  const paneSource = fs.readFileSync(path.join(webRoot, "app/dashboard/artifacts/tab-pane.tsx"), "utf8");
+  // The raw-artifacts panel is per-run; when a primary run exists the empty
+  // state must name it instead of implying the whole project has no artifacts.
+  assert.match(paneSource, /No versioned collections in this project, and no raw artifacts logged for \$\{primaryRun\.name\} yet/);
+  assert.match(paneSource, /: "Checkpoints, rollouts, and files logged from the SDK will appear here"/);
+});

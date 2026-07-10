@@ -763,7 +763,12 @@ export function DashboardShell({
     typeof window === "undefined" ? [] : runSelectionFromSearch(window.location.search));
   const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
-  const [primaryRunId, setPrimaryRunId] = useState("");
+  // Deep links must anchor the run workspace to the linked run, so the primary
+  // run seeds from ?runs=… too; otherwise the first summary load would default
+  // it to the newest run in the project and /dashboard/detail?runs=<id> links
+  // would open the wrong run.
+  const [primaryRunId, setPrimaryRunId] = useState<string>(() =>
+    typeof window === "undefined" ? "" : runSelectionFromSearch(window.location.search)[0] ?? "");
   const [series, setSeries] = useState<MetricSeries[]>([]);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [liveSeriesTick, setLiveSeriesTick] = useState(0);
@@ -1432,7 +1437,9 @@ export function DashboardShell({
         )
         : Promise.resolve(null);
       const projectPayload = await retryTransientRequest(() => api.get("/projects", options), retryOptions);
-      const names = (projectPayload.projects ?? []).map((item: { name: string }) => item.name);
+      // Project filtering is by name, so same-named rows (e.g. from direct
+      // storage seeders) collapse to one selectable option.
+      const names = [...new Set<string>((projectPayload.projects ?? []).map((item: { name: string }) => item.name))];
       setProjects(names);
       setProject((current) => current && !names.includes(current) ? "" : current);
       if (shouldLoadPreference) {
@@ -1891,6 +1898,7 @@ export function DashboardShell({
         selectionUrlSyncRef.current = true;
         applyingUrlSelectionRef.current = true;
         setSelectedRunIds(urlRunIds);
+        setPrimaryRunId(urlRunIds[0]);
       }
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
       const summaryTotal = summaryTotalRef.current;
