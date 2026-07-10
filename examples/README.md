@@ -18,6 +18,11 @@ Expected examples:
 - `query-api/`: deterministic post-hoc SDK query example that seeds 20 runs,
   then reads run pages, bounded metric series, single-run rich objects, and
   table rows through `Api.query_*` helpers.
+- `agent-rl-tracing/`: GRPO-style tool-agent loop that exercises every
+  telemetry surface in one run — rollout/model/tool/reward trace spans plus a
+  stepless eval trace, step metrics, per-rank distributed metrics, console
+  logs, checkpoints, and an uploaded file artifact — with a configurable tool
+  outage correlated to a reward dip for the trace × metric timeline.
 - Fine-tuning example if practical.
 - Importer fixture/demo.
 
