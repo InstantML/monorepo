@@ -4802,6 +4802,8 @@ function dismissTopOverlay() {
               selectedRuns={metricSeriesRuns}
               series={displaySeries}
               seriesLoading={seriesLoading}
+              statusMessage={message}
+              statusTone={currentMessageTone}
               smoothing={smoothing}
               sortedRuns={sortedRuns}
               visibleMetricCatalogRows={visibleMetricCatalogRows}
