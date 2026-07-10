@@ -248,3 +248,15 @@ structure. Full gate stack green post-integration.
   to appear on instantml.ai (production deploys are blocked on Vercel
   authorization for the merge author); the timeline was verified on the
   current build locally against the same seeded data shape.
+- 2026-07-09 (artifacts + logging deep verification): a 19-check scripted pass
+  against the live stack covered artifact byte upload/download round-trips
+  (sha256-equal), versioned artifact collections (manifest, lineage, alias
+  handling — `latest`/`vN` are server-reserved and auto-managed), rollout
+  metadata artifacts, and console logging (volume, stream isolation,
+  multi-line, unicode/HTML-safe rendering, limit/tail pagination, ordering).
+  UI verified: Artifacts workspace collection/version/manifest/lineage panels,
+  run-detail download vs metadata-only affordances, and the Logs filter. On
+  the hosted API the same log/list contracts hold and metadata-only artifact
+  downloads 404 cleanly ("artifact bytes not found"). No product defects; the
+  only failures were correct server validations (reserved aliases, Free-plan
+  project cap).
