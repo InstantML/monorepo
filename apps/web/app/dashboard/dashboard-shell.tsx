@@ -1437,7 +1437,9 @@ export function DashboardShell({
         )
         : Promise.resolve(null);
       const projectPayload = await retryTransientRequest(() => api.get("/projects", options), retryOptions);
-      const names = (projectPayload.projects ?? []).map((item: { name: string }) => item.name);
+      // Project filtering is by name, so same-named rows (e.g. from direct
+      // storage seeders) collapse to one selectable option.
+      const names = [...new Set<string>((projectPayload.projects ?? []).map((item: { name: string }) => item.name))];
       setProjects(names);
       setProject((current) => current && !names.includes(current) ? "" : current);
       if (shouldLoadPreference) {

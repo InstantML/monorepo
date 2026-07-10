@@ -110,3 +110,10 @@ test("run deep links anchor the primary run, not just the selection", () => {
   // The summary-load fallback only fills an empty primary, never overrides it.
   assert.match(shellSrc, /setPrimaryRunId\(\(current\) => current \|\| nextSummary\.runs\[0\]\?\.id \|\| ""\)/);
 });
+
+test("project selector dedupes same-named projects", () => {
+  const shellSrc = read("app/dashboard/dashboard-shell.tsx");
+  // Filtering is name-keyed, so duplicate project rows must collapse to one
+  // option instead of rendering twice with two checkmarks.
+  assert.match(shellSrc, /const names = \[\.\.\.new Set<string>\(\(projectPayload\.projects \?\? \[\]\)\.map\(\(item: \{ name: string \}\) => item\.name\)\)\]/);
+});
