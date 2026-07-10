@@ -763,7 +763,12 @@ export function DashboardShell({
     typeof window === "undefined" ? [] : runSelectionFromSearch(window.location.search));
   const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
-  const [primaryRunId, setPrimaryRunId] = useState("");
+  // Deep links must anchor the run workspace to the linked run, so the primary
+  // run seeds from ?runs=… too; otherwise the first summary load would default
+  // it to the newest run in the project and /dashboard/detail?runs=<id> links
+  // would open the wrong run.
+  const [primaryRunId, setPrimaryRunId] = useState<string>(() =>
+    typeof window === "undefined" ? "" : runSelectionFromSearch(window.location.search)[0] ?? "");
   const [series, setSeries] = useState<MetricSeries[]>([]);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [liveSeriesTick, setLiveSeriesTick] = useState(0);
@@ -1891,6 +1896,7 @@ export function DashboardShell({
         selectionUrlSyncRef.current = true;
         applyingUrlSelectionRef.current = true;
         setSelectedRunIds(urlRunIds);
+        setPrimaryRunId(urlRunIds[0]);
       }
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
       const summaryTotal = summaryTotalRef.current;

@@ -98,3 +98,15 @@ test("topbar project selector labels the empty project scope as all projects", (
   assert.match(topbarSrc, /value: "", label: "All projects"/);
   assert.doesNotMatch(topbarSrc, /\{project \|\| "demo"\}/);
 });
+
+test("run deep links anchor the primary run, not just the selection", () => {
+  const shellSrc = read("app/dashboard/dashboard-shell.tsx");
+
+  // ?runs=… seeds the primary run at mount so /dashboard/detail?runs=<id>
+  // opens that run instead of defaulting to the newest run in the project.
+  assert.match(shellSrc, /const \[primaryRunId, setPrimaryRunId\] = useState<string>\(\(\) =>\s*\n\s*typeof window === "undefined" \? "" : runSelectionFromSearch\(window\.location\.search\)\[0\] \?\? ""\)/);
+  // popstate restores must re-anchor the primary run the same way.
+  assert.match(shellSrc, /setSelectedRunIds\(urlRunIds\);\s*\n\s*setPrimaryRunId\(urlRunIds\[0\]\);/);
+  // The summary-load fallback only fills an empty primary, never overrides it.
+  assert.match(shellSrc, /setPrimaryRunId\(\(current\) => current \|\| nextSummary\.runs\[0\]\?\.id \|\| ""\)/);
+});
