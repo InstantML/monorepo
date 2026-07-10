@@ -33,6 +33,7 @@ const commandKey = process.platform === "darwin" ? "Meta" : "Control";
 let nextServer = null;
 let browser = null;
 let expectedBadRequestResourceErrors = 0;
+let expectedConflictResourceErrors = 0;
 let expectedPaymentRequiredResourceErrors = 0;
 let expectedServiceUnavailableResourceErrors = 0;
 let expectedServiceUnavailableApiErrors = 0;
@@ -217,13 +218,24 @@ try {
         });
       }
     }
+    if (!docsScreenshotMode) {
+      // Extra scalar points aligned to the stepped traces seeded below, so the
+      // correlation timeline draws a metric line across the seeded trace steps
+      // (docs mode already logs a dense 0..46 curve that covers these).
+      for (const [step, ret] of [[5, 47], [8, 51]]) {
+        await pageApiRequest(page, "POST", `/runs/${seedRunId}/metrics`, {
+          step,
+          metrics: { "eval/return_mean": ret, "eval/score_distribution": 0.82, "train/reward": ret * 2, "train/loss": 0.3 },
+        });
+      }
+    }
     const traceId = "11111111111111111111111111111111";
     const rootSpanId = "2222222222222222";
     const childSpanId = "3333333333333333";
     const rewardSpanId = "4444444444444444";
     const traceStartedAt = new Date().toISOString();
     const traceEndedAt = new Date(Date.now() + 125).toISOString();
-    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, {
+    const traceBatch = {
       events: [
         {
           trace_id: traceId,
@@ -318,11 +330,173 @@ try {
           truncated: false,
         },
       ],
-    }, { headers: { "Idempotency-Key": `ui-smoke-trace-${smokeId}` } });
+    };
+    const traceIngestHeaders = { "Idempotency-Key": `ui-smoke-trace-${smokeId}` };
+    const firstTraceIngest = await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, traceBatch, { headers: traceIngestHeaders });
+    const replayedTraceIngest = await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, traceBatch, { headers: traceIngestHeaders });
+    assert.deepEqual(replayedTraceIngest, firstTraceIngest, "trace ingest should replay the stored response for the same idempotency key and body");
+    const mutatedTraceBatch = JSON.parse(JSON.stringify(traceBatch));
+    mutatedTraceBatch.events[0].name = "qa rollout trace mutated";
+    expectedConflictResourceErrors += 1;
+    const mutatedTraceIngest = await pageApiAttempt(page, "POST", `/api/runs/${seedRunId}/traces/events`, mutatedTraceBatch, { headers: traceIngestHeaders });
+    assert.equal(mutatedTraceIngest.status, 409, `mutated trace idempotency replay should conflict: ${JSON.stringify(mutatedTraceIngest.payload)}`);
     const seededTraceList = await pageApiGet(page, `/api/traces?run_id=${seedRunId}&limit=20`);
     assert.ok(
       (seededTraceList.traces ?? []).some((trace) => trace.trace_id === traceId && trace.root_name === "qa rollout trace"),
       `seeded trace should be listable by run: ${JSON.stringify(seededTraceList)}`,
+    );
+    // Additional stepped traces so the correlation timeline has >1 step bucket,
+    // an error step (danger band + err marker), and a stepless trace: one error
+    // rollout at step 5, one ok rollout at step 8, and one rollout with no step.
+    // The existing "qa rollout trace" sits at step 1, giving buckets 1/5/8.
+    const errorTraceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const errorSpanId = "a1a1a1a1a1a1a1a1";
+    const lateTraceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const lateSpanId = "b1b1b1b1b1b1b1b1";
+    const steplessTraceId = "cccccccccccccccccccccccccccccccc";
+    const steplessSpanId = "c1c1c1c1c1c1c1c1";
+    const stepTraceKey = `ui-smoke-trace-steps-${smokeId}`;
+    const stepTraceBatch = {
+      events: [
+        {
+          trace_id: errorTraceId, span_id: errorSpanId, event_id: "00000000-0000-4000-8000-000000000201",
+          sequence: 1, event_kind: "started", name: "calc tool timeout", kind: "rollout", status: "running", step: 5,
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-5", started_at: traceStartedAt,
+          attributes: { source: "ui-smoke" }, metrics: {}, links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+        {
+          trace_id: errorTraceId, span_id: errorSpanId, event_id: "00000000-0000-4000-8000-000000000202",
+          sequence: 2, event_kind: "finished", name: "calc tool timeout", kind: "rollout", status: "error", step: 5,
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-5", started_at: traceStartedAt, ended_at: traceEndedAt,
+          duration_ms: 210, error_type: "TimeoutError",
+          attributes: { source: "ui-smoke" }, metrics: { "gen_ai.usage.input_tokens": 12, "gen_ai.usage.output_tokens": 3 },
+          links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+        {
+          trace_id: lateTraceId, span_id: lateSpanId, event_id: "00000000-0000-4000-8000-000000000301",
+          sequence: 1, event_kind: "started", name: "rollout step 8", kind: "rollout", status: "running", step: 8,
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-8", started_at: traceStartedAt,
+          attributes: { source: "ui-smoke" }, metrics: {}, links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+        {
+          trace_id: lateTraceId, span_id: lateSpanId, event_id: "00000000-0000-4000-8000-000000000302",
+          sequence: 2, event_kind: "finished", name: "rollout step 8", kind: "rollout", status: "ok", step: 8,
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-8", started_at: traceStartedAt, ended_at: traceEndedAt,
+          duration_ms: 96, attributes: { source: "ui-smoke" }, metrics: { "gen_ai.usage.input_tokens": 6, "gen_ai.usage.output_tokens": 2 },
+          links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+        {
+          trace_id: steplessTraceId, span_id: steplessSpanId, event_id: "00000000-0000-4000-8000-000000000401",
+          sequence: 1, event_kind: "started", name: "stepless rollout", kind: "rollout", status: "running",
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-stepless", started_at: traceStartedAt,
+          attributes: { source: "ui-smoke" }, metrics: {}, links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+        {
+          trace_id: steplessTraceId, span_id: steplessSpanId, event_id: "00000000-0000-4000-8000-000000000402",
+          sequence: 2, event_kind: "finished", name: "stepless rollout", kind: "rollout", status: "ok",
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-stepless", started_at: traceStartedAt, ended_at: traceEndedAt,
+          duration_ms: 54, attributes: { source: "ui-smoke" }, metrics: {},
+          links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+      ],
+    };
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, stepTraceBatch, {
+      headers: { "Idempotency-Key": stepTraceKey },
+    });
+    const seededStepSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps`);
+    assert.ok(
+      (seededStepSummary.steps ?? []).some((bucket) => bucket.step === 5 && bucket.error_trace_count >= 1),
+      `seeded step summary should carry an error bucket at step 5: ${JSON.stringify(seededStepSummary)}`,
+    );
+    assert.equal(seededStepSummary.stepless_trace_count, 1, `expected one stepless trace: ${JSON.stringify(seededStepSummary)}`);
+    // total_error_trace_count is run-wide: the step-5 error plus zero stepless
+    // errors, and it is not the sum of per-bucket error_trace_count values.
+    assert.equal(
+      seededStepSummary.total_error_trace_count,
+      1,
+      `expected one run-wide errored trace: ${JSON.stringify(seededStepSummary)}`,
+    );
+    // Bind-order canary with DISTINCT bounds: a swapped min/max bind would
+    // invert both ranges and fail these loudly. The anchor-filtered list must
+    // return exactly the step-5 trace (stepless and step-8 excluded), and the
+    // bucket window must keep only step 8.
+    const anchoredList = await pageApiGet(page, `/api/traces?run_id=${seedRunId}&min_step=5&max_step=5&limit=20`);
+    assert.equal(
+      (anchoredList.traces ?? []).length,
+      1,
+      `step-anchored list should hold exactly the step-5 trace: ${JSON.stringify(anchoredList.traces?.map((t) => t.root_name))}`,
+    );
+    assert.match(anchoredList.traces[0].root_name, /calc tool timeout/, "step-anchored list should return the step-5 error trace");
+    const windowedSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps?min_step=8`);
+    assert.deepEqual(
+      (windowedSummary.steps ?? []).map((bucket) => bucket.step),
+      [8],
+      `min_step window should keep only the step-8 bucket: ${JSON.stringify(windowedSummary.steps?.map((b) => b.step))}`,
+    );
+    // Re-POST the identical batch with the SAME Idempotency-Key and body: ingest
+    // is idempotent, so the bucket aggregates must not change or double-count.
+    // Space the extra ingest/read bursts so they stay under the 5 req/s limiter.
+    await page.waitForTimeout(1200);
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, stepTraceBatch, {
+      headers: { "Idempotency-Key": stepTraceKey },
+    });
+    const replayedStepSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps`);
+    const bucketShape = (summary) => (summary.steps ?? []).map((bucket) => ({
+      step: bucket.step,
+      trace_count: bucket.trace_count,
+      error_trace_count: bucket.error_trace_count,
+      running_trace_count: bucket.running_trace_count,
+      span_count: bucket.span_count,
+      input_tokens: bucket.input_tokens,
+      output_tokens: bucket.output_tokens,
+    }));
+    assert.deepEqual(
+      bucketShape(replayedStepSummary),
+      bucketShape(seededStepSummary),
+      `idempotent re-POST must leave bucket counts unchanged: ${JSON.stringify(replayedStepSummary)}`,
+    );
+    assert.equal(
+      replayedStepSummary.total_trace_count,
+      seededStepSummary.total_trace_count,
+      `idempotent re-POST must not change total_trace_count: ${JSON.stringify(replayedStepSummary)}`,
+    );
+    assert.equal(
+      replayedStepSummary.total_error_trace_count,
+      seededStepSummary.total_error_trace_count,
+      `idempotent re-POST must not change total_error_trace_count: ${JSON.stringify(replayedStepSummary)}`,
+    );
+    // Follow-up batch (NEW key) that flips the step-8 rollout from ok to running
+    // via a higher-sequence event. The bucket must reflect the latest status
+    // (running) without double-counting the trace, and the run-wide totals must
+    // hold: still four traces and still one error (step 5 stays the sole error,
+    // keeping the timeline's error marker/band/pin assertions valid).
+    await page.waitForTimeout(1200);
+    await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/traces/events`, {
+      events: [
+        {
+          trace_id: lateTraceId, span_id: lateSpanId, event_id: "00000000-0000-4000-8000-000000000303",
+          sequence: 3, event_kind: "updated", name: "rollout step 8", kind: "rollout", status: "running", step: 8,
+          thread_id: "ui-smoke-thread", rollout_id: "ui-smoke-rollout-8", started_at: traceStartedAt,
+          attributes: { source: "ui-smoke" }, metrics: { "gen_ai.usage.input_tokens": 6, "gen_ai.usage.output_tokens": 2 },
+          links: [], content_policy: "off", redaction_state: "not_captured", truncated: false,
+        },
+      ],
+    }, { headers: { "Idempotency-Key": `ui-smoke-trace-step8-running-${smokeId}` } });
+    const updatedStepSummary = await pageApiGet(page, `/api/runs/${seedRunId}/traces/steps`);
+    const step8Bucket = (updatedStepSummary.steps ?? []).find((bucket) => bucket.step === 8);
+    assert.ok(step8Bucket, `expected a step-8 bucket after status update: ${JSON.stringify(updatedStepSummary)}`);
+    assert.equal(step8Bucket.trace_count, 1, `step-8 status update must not double-count the trace: ${JSON.stringify(step8Bucket)}`);
+    assert.equal(step8Bucket.running_trace_count, 1, `step-8 bucket must reflect the latest running status: ${JSON.stringify(step8Bucket)}`);
+    assert.equal(step8Bucket.error_trace_count, 0, `step-8 running update must not add an error: ${JSON.stringify(step8Bucket)}`);
+    assert.equal(
+      updatedStepSummary.total_trace_count,
+      seededStepSummary.total_trace_count,
+      `status update must not change total_trace_count: ${JSON.stringify(updatedStepSummary)}`,
+    );
+    assert.equal(
+      updatedStepSummary.total_error_trace_count,
+      seededStepSummary.total_error_trace_count,
+      `status update off the error step must leave the run-wide error total unchanged: ${JSON.stringify(updatedStepSummary)}`,
     );
     const imageArtifact = (await pageApiRequest(page, "POST", `/api/runs/${seedRunId}/artifacts/upload`, {
       type: "file",
@@ -1926,6 +2100,10 @@ try {
       expectedBadRequestResourceErrors -= 1;
       return false;
     }
+    if (expectedConflictResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 409 (Conflict)") {
+      expectedConflictResourceErrors -= 1;
+      return false;
+    }
     if (expectedPaymentRequiredResourceErrors > 0 && error === "Failed to load resource: the server responded with a status of 402 (Payment Required)") {
       expectedPaymentRequiredResourceErrors -= 1;
       return false;
@@ -2658,11 +2836,12 @@ async function assertRunDetailTraceFlow(page, traceUrls) {
   await page.locator(".workspace-run-open").first().click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("Run tags and notes"));
   assert.equal(traceUrls.length, traceRequestsBeforeDetail, "Run Detail overview should not fetch traces before the local Traces section is opened");
-  await assertVisibleRunDetailTraceLink(page, traceUrls);
+  await assertVisibleRunDetailTraceLink(page, traceUrls, { assertTimeline: true });
 }
 
-async function assertVisibleRunDetailTraceLink(page, traceUrls) {
+async function assertVisibleRunDetailTraceLink(page, traceUrls, { assertTimeline = false } = {}) {
   const traceRequestsBeforeDetailTraces = traceUrls.length;
+  const stepsUrlsBeforeOpen = traceUrls.filter((url) => url.includes("/traces/steps")).length;
   await page.getByRole("button", { name: "Traces" }).click();
   await page.waitForFunction(() => document.querySelector("#run-detail")?.textContent?.includes("qa rollout trace")).catch(async (error) => {
     const state = await page.evaluate(() => ({
@@ -2681,6 +2860,7 @@ async function assertVisibleRunDetailTraceLink(page, traceUrls) {
   assert.match(traceLink ?? "", /run_id=/);
   assert.match(traceLink ?? "", /trace_id=11111111111111111111111111111111/);
   assert.match(traceLink ?? "", /span_id=2222222222222222/);
+  if (assertTimeline) await assertTraceMetricTimeline(page, traceUrls, stepsUrlsBeforeOpen);
   if (docsScreenshotMode) {
     await captureDocsProductScreenshot(page, "dashboard-run-detail-traces.png");
   }
@@ -2697,22 +2877,94 @@ async function assertVisibleRunDetailTraceLink(page, traceUrls) {
   await page.goto(childTraceUrl.toString(), { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => {
     const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
-    return inspector.includes("44444444") && inspector.includes("outside the loaded tree window");
-  }, null, { timeout: 10000 });
-  await page.locator(".trace-node-button", { hasText: "qa rollout trace" }).first().click({ timeout: 5000 });
+    return inspector.includes("reward.score") && inspector.includes("4444444444444444");
+  }, null, { timeout: 12000 });
   await page.waitForFunction(() => document.querySelector(".traces-workspace")?.textContent?.includes("reward.score"), null, { timeout: 10000 });
-  await page.locator(".trace-node-button", { hasText: "reward.score" }).first().click({ timeout: 5000 });
   await page.waitForFunction(() => {
     const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
     return inspector.includes("reward.score") && inspector.includes("4444444444444444");
   }, null, { timeout: 8000 });
+  await page.waitForFunction(() => {
+    const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
+    return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
+  }, null, { timeout: 8000 });
   if (docsScreenshotMode) {
-    await page.waitForFunction(() => {
-      const inspector = document.querySelector(".trace-inspector")?.textContent ?? "";
-      return inspector.includes("reward.score") && inspector.includes("[REDACTED]");
-    }, null, { timeout: 8000 });
     await captureDocsProductScreenshot(page, "dashboard-traces.png");
   }
+}
+
+// Correlation timeline in the run-workspace Traces tab: assert the step-bucket
+// aggregate fetches only on tab open, markers + danger band render, the panel
+// head shows run-wide totals, and clicking the error step pins the recent-traces
+// list to that step (with a clearable chip). Leaves the filter cleared so the
+// caller's deep-link assertions on "qa rollout trace" continue to work.
+async function assertTraceMetricTimeline(page, traceUrls, stepsUrlsBeforeOpen) {
+  assert.equal(stepsUrlsBeforeOpen, 0, "per-step trace aggregate should not be fetched before the Traces tab opens");
+  assert.ok(
+    traceUrls.some((url) => url.includes("/traces/steps")),
+    `Traces tab should fetch the per-step aggregate: ${JSON.stringify(traceUrls.slice(-8))}`,
+  );
+  await page.waitForSelector("#run-detail .pd-trace-timeline", { timeout: 10000 });
+  await page.waitForSelector("#run-detail .pd-trace-marker", { timeout: 10000 });
+  const markerCount = await page.locator("#run-detail .pd-trace-marker").count();
+  assert.ok(markerCount >= 3, `timeline should render a marker per stepped bucket (>=3): got ${markerCount}`);
+  assert.ok(await page.locator("#run-detail .pd-trace-marker.err").count() >= 1, "timeline should mark the error step");
+  assert.ok(await page.locator("#run-detail .pd-trace-error-band").count() >= 1, "timeline should draw the error band over the error step");
+
+  const timelineSummary = (await page.locator("#run-detail .pd-trace-timeline-summary").innerText()).replace(/\s+/g, " ").trim();
+  assert.match(timelineSummary, /4 traces/, `timeline summary should show run-wide totals incl. the stepless trace: ${timelineSummary}`);
+  assert.match(timelineSummary, /1 error/, `timeline summary should show the error total: ${timelineSummary}`);
+  assert.match(timelineSummary, /steps \d+[–-]8/, `timeline summary should show the step range: ${timelineSummary}`);
+
+  // Click the error step's lane position. Pointer selection resolves through the
+  // frame's nearest-bucket hit-test (the keyboard buttons are pointer-transparent),
+  // so click the SVG marker's box center rather than the marker button.
+  const errBox = await page.locator("#run-detail .pd-trace-marker.err").first().boundingBox();
+  assert.ok(errBox, "error marker should expose a bounding box to click");
+  await page.mouse.click(errBox.x + errBox.width / 2, errBox.y + errBox.height / 2);
+  await page.waitForSelector("#run-detail .pd-trace-filter-chip", { timeout: 10000 });
+  const chipText = (await page.locator("#run-detail .pd-trace-filter-chip").innerText()).replace(/\s+/g, " ").trim();
+  assert.match(chipText, /step 5/, `pinned filter chip should name the selected step: ${chipText}`);
+  await page.waitForFunction(() => {
+    const list = document.querySelector("#run-detail .pd-trace-list")?.textContent ?? "";
+    return list.includes("calc tool timeout") && !list.includes("qa rollout trace");
+  }, null, { timeout: 10000 });
+  // Anchor semantics: the pinned list row count must equal the bucket's
+  // trace_count (a stepless or spanning-trace leak would add rows).
+  const pinnedRowCount = await page.locator("#run-detail .pd-trace-list .pd-trace-row").count();
+  assert.equal(pinnedRowCount, 1, `pinned list should hold exactly the bucket's traces: got ${pinnedRowCount}`);
+
+  // Clearing the chip drops the filter and restores the full recent list.
+  await page.locator("#run-detail .pd-trace-filter-chip").click();
+  await page.waitForFunction(() => !document.querySelector("#run-detail .pd-trace-filter-chip"), null, { timeout: 10000 });
+  await page.waitForFunction(
+    () => document.querySelector("#run-detail .pd-trace-list")?.textContent?.includes("qa rollout trace"),
+    null,
+    { timeout: 10000 },
+  );
+
+  // Keyboard path: the marker buttons are pointer-transparent, so drive the
+  // roving tab stop with arrows + Enter and assert selection state.
+  await page.focus("#run-detail .pd-trace-marker-btn[tabindex='0']");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("#run-detail .pd-trace-filter-chip", { timeout: 10000 });
+  const pressedCount = await page.locator("#run-detail .pd-trace-marker-btn[aria-pressed='true']").count();
+  assert.equal(pressedCount, 1, "keyboard Enter should pin exactly one step (aria-pressed)");
+  await page.locator("#run-detail .pd-trace-filter-chip").click();
+  await page.waitForFunction(() => !document.querySelector("#run-detail .pd-trace-filter-chip"), null, { timeout: 10000 });
+
+  // Refresh round-trip: a new steps fetch lands and rendered rows persist
+  // (no skeleton flash on refresh by design).
+  const stepsFetchesBeforeRefresh = traceUrls.filter((url) => url.includes("/traces/steps")).length;
+  await page.locator('#run-detail [aria-label="Refresh trace activity"]').click();
+  await page.waitForTimeout(1500);
+  const stepsFetchesAfterRefresh = traceUrls.filter((url) => url.includes("/traces/steps")).length;
+  assert.ok(
+    stepsFetchesAfterRefresh > stepsFetchesBeforeRefresh,
+    `refresh should refetch the step aggregate (${stepsFetchesBeforeRefresh} -> ${stepsFetchesAfterRefresh})`,
+  );
+  assert.ok(await page.locator("#run-detail .pd-trace-marker").count() >= 3, "markers should persist through refresh without a skeleton flash");
 }
 
 function isExpectedForbiddenResource(response) {

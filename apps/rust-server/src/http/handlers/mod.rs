@@ -73,7 +73,9 @@ pub(super) use runs::{
     log_rank_metrics, overview, rank_metrics_summary, runs_summary, side_by_side, stop_ack,
     stop_run, stop_runs, stop_signal, update_run,
 };
-pub(super) use traces::{get_trace_children, get_trace_detail, list_traces, log_trace_events};
+pub(super) use traces::{
+    get_trace_children, get_trace_detail, get_trace_step_summary, list_traces, log_trace_events,
+};
 pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
 #[cfg(test)]

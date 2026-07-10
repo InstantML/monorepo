@@ -1788,6 +1788,34 @@ pub struct TraceListResponse {
 }
 
 #[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceStepBucket {
+    pub step: f64,
+    pub trace_count: u64,
+    pub error_trace_count: u64,
+    pub running_trace_count: u64,
+    pub span_count: u64,
+    pub error_span_count: u64,
+    pub avg_duration_ms: Option<f64>,
+    pub max_duration_ms: Option<f64>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub first_started_at: DateTime<Utc>,
+    pub last_started_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceStepSummaryResponse {
+    pub steps: Vec<TraceStepBucket>,
+    pub stepless_trace_count: u64,
+    pub total_trace_count: u64,
+    /// Run-wide count of errored traces, including stepless traces and traces
+    /// dropped when the bucket list is truncated. Not the sum of per-bucket
+    /// `error_trace_count`.
+    pub total_error_trace_count: u64,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct TraceDetailSummary {
     pub trace_id: String,
     pub run_id: Uuid,

@@ -69,6 +69,25 @@ the latest traces for the selected run without applying the project-level
 lookback, and links each row into the full Traces workspace with the exact trace
 and root span selected.
 
+Above the list, a **trace activity timeline** correlates one run metric with
+per-step trace activity on a shared step axis:
+
+- A metric line plots the key chosen with the **Metric** selector.
+- A lane below the axis shows one marker per step. Marker size scales with the
+  number of traces at that step, and marker color separates normal, running,
+  and errored steps; a danger band highlights runs of consecutive error steps.
+- The panel head shows run-wide totals — total and errored traces plus the
+  covered step range.
+- Clicking a step pins the list below to that step and shows a clearable filter
+  chip; the list then refetches with `min_step`/`max_step` set to the step.
+
+The totals are always run-wide and include traces logged without a step, so they
+can exceed the sum of the visible buckets, and the pinned list shows only the
+selected step's traces. The lane covers the first 2,000 distinct steps of a run;
+longer runs are truncated with a note. Runs with no stepped traces show the
+recent list without the lane. The underlying aggregate is
+`GET /api/runs/:run_id/traces/steps`.
+
 Use the Run Detail section when you are already inspecting one run. Use the
 global Traces workspace when you want to filter across runs or inspect a tree in
 detail.

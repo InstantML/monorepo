@@ -7,12 +7,16 @@ use chrono::TimeZone;
 use crate::trace_store::{
     self as ch_traces, TraceChildCountRow, TraceIngestBatchRow, TraceListCursor, TraceListQuery,
     TraceSpanCanonicalRow, TraceSpanEventRow, TraceSpanIndexReadRow, TraceSpanIndexRow,
-    TraceSummaryReadRow, TraceSummaryRow, MAX_TRACE_SEARCH_TERMS,
+    TraceStepBucketReadRow, TraceStepCountsReadRow, TraceStepSummaryQuery, TraceSummaryReadRow,
+    TraceSummaryRow, MAX_TRACE_SEARCH_TERMS,
 };
 
 const TRACE_SUMMARY_RECOMPUTE_LIMIT: i64 = 100_001;
 const TRACE_SUMMARY_VISIBLE_SPAN_LIMIT: usize = 100_000;
 const DEFAULT_TRACE_LOOKBACK_DAYS: i64 = 7;
+const MAX_TRACE_STEP_BUCKETS: i64 = 2000;
+const CLICKHOUSE_DATETIME64_MIN_YEAR: i32 = 1900;
+const CLICKHOUSE_DATETIME64_MAX_YEAR: i32 = 2299;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TraceListWindow {
@@ -56,8 +60,8 @@ pub async fn ingest_trace_events(
     idempotency_key: String,
 ) -> AppResult<TraceIngestResponse> {
     let request_hash = hex::encode(hash_idempotency(run_id, &raw)?);
-    store
-        .reserve_idempotency_key(ctx.org_id, &idempotency_key)
+    let idempotency_guard = store
+        .reserve_idempotency_key_guard(ctx.org_id, &idempotency_key)
         .await?;
     let result = async {
         let run = {
@@ -182,9 +186,7 @@ pub async fn ingest_trace_events(
         Ok(response)
     }
     .await;
-    store
-        .release_idempotency_key(ctx.org_id, &idempotency_key)
-        .await;
+    idempotency_guard.release().await;
     result
 }
 
@@ -208,19 +210,7 @@ pub async fn list_traces(
             return Err(AppError::validation("to must be after from"));
         }
     }
-    let min_step = query
-        .get("min_step")
-        .map(|value| validate_query_step(value, "min_step"))
-        .transpose()?;
-    let max_step = query
-        .get("max_step")
-        .map(|value| validate_query_step(value, "max_step"))
-        .transpose()?;
-    if matches!((min_step, max_step), (Some(min_step), Some(max_step)) if min_step > max_step) {
-        return Err(AppError::validation(
-            "min_step must be less than or equal to max_step",
-        ));
-    }
+    let (min_step, max_step) = parse_trace_step_bounds(query)?;
     let cursor = query
         .get("cursor")
         .map(|value| decode_trace_list_cursor(value))
@@ -498,6 +488,97 @@ pub async fn trace_children(
     })
 }
 
+pub async fn trace_step_summary(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
+    query: &HashMap<String, String>,
+) -> AppResult<TraceStepSummaryResponse> {
+    let (min_step, max_step) = parse_trace_step_bounds(query)?;
+    let run = {
+        let data = store.data.lock().await;
+        fetch_run_in_data(&data, ctx, run_id)?
+    };
+    let metric_store = store.metric_store_for_org(ctx.org_id).await?;
+    let (bucket_rows, counts) = tokio::try_join!(
+        ch_traces::trace_step_summaries(
+            &metric_store,
+            ctx.org_id,
+            TraceStepSummaryQuery {
+                project_id: run.project_id,
+                run_id: run.id,
+                min_step,
+                max_step,
+                limit: MAX_TRACE_STEP_BUCKETS + 1,
+            },
+        ),
+        ch_traces::trace_step_counts(&metric_store, ctx.org_id, run.project_id, run.id),
+    )?;
+    Ok(build_trace_step_summary(
+        bucket_rows,
+        counts,
+        MAX_TRACE_STEP_BUCKETS,
+    ))
+}
+
+/// Parses the shared `min_step`/`max_step` step-filter bounds used by both the
+/// traces list and the step-summary endpoints. Trace steps may be negative (any
+/// finite value), and `min_step` must be less than or equal to `max_step`.
+fn parse_trace_step_bounds(
+    query: &HashMap<String, String>,
+) -> AppResult<(Option<f64>, Option<f64>)> {
+    let min_step = query
+        .get("min_step")
+        .map(|value| validate_trace_query_step(value, "min_step"))
+        .transpose()?;
+    let max_step = query
+        .get("max_step")
+        .map(|value| validate_trace_query_step(value, "max_step"))
+        .transpose()?;
+    if matches!((min_step, max_step), (Some(min_step), Some(max_step)) if min_step > max_step) {
+        return Err(AppError::validation(
+            "min_step must be less than or equal to max_step",
+        ));
+    }
+    Ok((min_step, max_step))
+}
+
+fn build_trace_step_summary(
+    mut bucket_rows: Vec<TraceStepBucketReadRow>,
+    counts: TraceStepCountsReadRow,
+    max_buckets: i64,
+) -> TraceStepSummaryResponse {
+    let truncated = bucket_rows.len() as i64 > max_buckets;
+    if truncated {
+        bucket_rows.truncate(max_buckets.max(0) as usize);
+    }
+    let steps = bucket_rows.into_iter().map(trace_step_bucket).collect();
+    TraceStepSummaryResponse {
+        steps,
+        stepless_trace_count: counts.stepless_trace_count,
+        total_trace_count: counts.total_trace_count,
+        total_error_trace_count: counts.error_trace_count,
+        truncated,
+    }
+}
+
+fn trace_step_bucket(row: TraceStepBucketReadRow) -> TraceStepBucket {
+    TraceStepBucket {
+        step: row.step,
+        trace_count: row.trace_count,
+        error_trace_count: row.error_trace_count,
+        running_trace_count: row.running_trace_count,
+        span_count: row.span_count,
+        error_span_count: row.error_span_count,
+        avg_duration_ms: row.avg_duration_ms,
+        max_duration_ms: row.max_duration_ms,
+        input_tokens: row.input_tokens,
+        output_tokens: row.output_tokens,
+        first_started_at: row.first_started_at,
+        last_started_at: row.last_started_at,
+    }
+}
+
 fn trace_event_row(
     org_id: Uuid,
     run: &RunRow,
@@ -737,8 +818,18 @@ fn aggregate_trace_spans(spans: &[TraceSpanCanonicalRow]) -> AppResult<TraceSpan
         input_tokens,
         output_tokens,
         cost_usd,
-        min_step: steps.iter().copied().reduce(f64::min),
-        max_step: steps.iter().copied().reduce(f64::max),
+        // `f64::min`/`f64::max` can yield -0.0; add 0.0 to normalize it to 0.0 so
+        // the stored anchor groups with 0.0 in the bucket query's GROUP BY step.
+        min_step: steps
+            .iter()
+            .copied()
+            .reduce(f64::min)
+            .map(|step| step + 0.0),
+        max_step: steps
+            .iter()
+            .copied()
+            .reduce(f64::max)
+            .map(|step| step + 0.0),
         summary_metrics,
         running_span_count: spans.iter().filter(|span| span.status == "running").count() as u64,
         error_count: spans.iter().filter(|span| span.status == "error").count() as u64,
@@ -872,11 +963,11 @@ fn validate_trace_events(events: Vec<TraceEventInput>) -> AppResult<Vec<ValidTra
         let name = validate_short_string(&input.name, "name", MAX_TRACE_NAME_BYTES)?;
         let thread_id = optional_short_string(input.thread_id.as_deref(), "thread_id")?;
         let rollout_id = optional_short_string(input.rollout_id.as_deref(), "rollout_id")?;
-        let started_at = parse_rfc3339(&input.started_at, "started_at")?;
+        let started_at = parse_clickhouse_rfc3339(&input.started_at, "started_at")?;
         let ended_at = input
             .ended_at
             .as_deref()
-            .map(|value| parse_rfc3339(value, "ended_at"))
+            .map(|value| parse_clickhouse_rfc3339(value, "ended_at"))
             .transpose()?;
         let duration_ms = validate_optional_nonnegative_finite(input.duration_ms, "duration_ms")?;
         if let Some(ended_at) = ended_at {
@@ -1354,6 +1445,16 @@ fn parse_rfc3339(value: &str, field: &str) -> AppResult<DateTime<Utc>> {
         .map_err(|_| AppError::validation(format!("{field} must be RFC3339 timestamp")))
 }
 
+fn parse_clickhouse_rfc3339(value: &str, field: &str) -> AppResult<DateTime<Utc>> {
+    let dt = parse_rfc3339(value, field)?;
+    if dt.year() < CLICKHOUSE_DATETIME64_MIN_YEAR || dt.year() > CLICKHOUSE_DATETIME64_MAX_YEAR {
+        return Err(AppError::validation(format!(
+            "{field} must be between {CLICKHOUSE_DATETIME64_MIN_YEAR}-01-01T00:00:00Z and {CLICKHOUSE_DATETIME64_MAX_YEAR}-12-31T23:59:59Z"
+        )));
+    }
+    Ok(dt)
+}
+
 fn json_from_str(value: &str) -> AppResult<Value> {
     serde_json::from_str(value).map_err(|_| AppError::internal("stored trace JSON is invalid"))
 }
@@ -1386,7 +1487,7 @@ fn decode_trace_list_cursor(value: &str) -> AppResult<TraceListCursor> {
         .get("started_at")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::validation("cursor is invalid"))
-        .and_then(|value| parse_rfc3339(value, "cursor.started_at"))?;
+        .and_then(|value| parse_clickhouse_rfc3339(value, "cursor.started_at"))?;
     let trace_id = payload
         .get("trace_id")
         .and_then(Value::as_str)
@@ -1400,7 +1501,7 @@ fn decode_trace_list_cursor(value: &str) -> AppResult<TraceListCursor> {
 
 fn encode_trace_child_cursor(row: &TraceSpanIndexReadRow) -> AppResult<String> {
     let payload = json!({
-        "started_at": row.started_at.to_rfc3339(),
+        "created_at": row.created_at.to_rfc3339(),
         "span_id": row.span_id
     });
     let bytes = serde_json::to_vec(&payload)
@@ -1414,17 +1515,17 @@ fn decode_trace_child_cursor(value: &str) -> AppResult<(DateTime<Utc>, String)> 
         .map_err(|_| AppError::validation("cursor is invalid"))?;
     let payload: Value =
         serde_json::from_slice(&bytes).map_err(|_| AppError::validation("cursor is invalid"))?;
-    let started_at = payload
-        .get("started_at")
+    let created_at = payload
+        .get("created_at")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::validation("cursor is invalid"))
-        .and_then(|value| parse_rfc3339(value, "cursor.started_at"))?;
+        .and_then(|value| parse_clickhouse_rfc3339(value, "cursor.created_at"))?;
     let span_id = payload
         .get("span_id")
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::validation("cursor is invalid"))
         .and_then(|value| validate_span_id(value, "cursor.span_id"))?;
-    Ok((started_at, span_id))
+    Ok((created_at, span_id))
 }
 
 #[cfg(test)]
@@ -1445,11 +1546,11 @@ fn trace_list_window(
 ) -> AppResult<TraceListWindow> {
     let from = query
         .get("from")
-        .map(|value| parse_rfc3339(value, "from"))
+        .map(|value| parse_clickhouse_rfc3339(value, "from"))
         .transpose()?;
     let to = query
         .get("to")
-        .map(|value| parse_rfc3339(value, "to"))
+        .map(|value| parse_clickhouse_rfc3339(value, "to"))
         .transpose()?;
     if run_id.is_some() {
         return Ok(TraceListWindow { from, to });
@@ -1487,6 +1588,37 @@ mod tests {
 
     fn fixed_now() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 7, 3, 12, 0, 0).unwrap()
+    }
+
+    fn valid_trace_event() -> TraceEventInput {
+        TraceEventInput {
+            trace_id: trace_id(),
+            span_id: "086e83747d0e381e".to_string(),
+            parent_span_id: None,
+            event_id: Uuid::new_v4(),
+            sequence: 1,
+            event_kind: "finished".to_string(),
+            name: "rollout".to_string(),
+            kind: "rollout".to_string(),
+            status: "ok".to_string(),
+            step: Some(1.0),
+            rank: None,
+            thread_id: None,
+            rollout_id: None,
+            started_at: "2026-07-03T12:00:00Z".to_string(),
+            ended_at: Some("2026-07-03T12:00:01.250Z".to_string()),
+            duration_ms: None,
+            input_preview: None,
+            output_preview: None,
+            error_type: None,
+            error_preview: None,
+            attributes: Some(json!({})),
+            metrics: Some(json!({})),
+            links: Some(json!([])),
+            content_policy: Some("off".to_string()),
+            redaction_state: Some("not_captured".to_string()),
+            truncated: Some(false),
+        }
     }
 
     fn canonical_span(
@@ -1737,14 +1869,168 @@ mod tests {
             span_id: "086e83747d0e381e".to_string(),
             parent_span_id: String::new(),
             started_at: datetime_from_millis(1_780_000_000_000),
+            created_at: datetime_from_millis(1_780_000_000_123),
         };
         let encoded = encode_trace_child_cursor(&row).unwrap();
-        let (started_at, span_id) = decode_trace_child_cursor(&encoded).unwrap();
+        let (created_at, span_id) = decode_trace_child_cursor(&encoded).unwrap();
         assert_eq!(span_id, row.span_id);
         assert_eq!(
-            started_at.timestamp_millis(),
-            row.started_at.timestamp_millis()
+            created_at.timestamp_millis(),
+            row.created_at.timestamp_millis()
         );
+    }
+
+    fn step_query(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_allows_negative_finite_steps() {
+        let (min_step, max_step) =
+            parse_trace_step_bounds(&step_query(&[("min_step", "-5"), ("max_step", "2")])).unwrap();
+        assert_eq!(min_step, Some(-5.0));
+        assert_eq!(max_step, Some(2.0));
+
+        let (min_step, max_step) = parse_trace_step_bounds(&step_query(&[])).unwrap();
+        assert_eq!(min_step, None);
+        assert_eq!(max_step, None);
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_allows_equal_bounds() {
+        let (min_step, max_step) =
+            parse_trace_step_bounds(&step_query(&[("min_step", "3"), ("max_step", "3")])).unwrap();
+        assert_eq!(min_step, Some(3.0));
+        assert_eq!(max_step, Some(3.0));
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_rejects_min_over_max() {
+        let error = parse_trace_step_bounds(&step_query(&[("min_step", "5"), ("max_step", "2")]))
+            .unwrap_err();
+        assert!(error.message().contains("min_step must be less than"));
+    }
+
+    #[test]
+    fn parse_trace_step_bounds_rejects_non_finite_steps() {
+        assert!(parse_trace_step_bounds(&step_query(&[("min_step", "nan")])).is_err());
+        assert!(parse_trace_step_bounds(&step_query(&[("max_step", "inf")])).is_err());
+    }
+
+    fn step_bucket_row(
+        step: f64,
+        trace_count: u64,
+        error_trace_count: u64,
+        running_trace_count: u64,
+    ) -> TraceStepBucketReadRow {
+        TraceStepBucketReadRow {
+            step,
+            trace_count,
+            error_trace_count,
+            running_trace_count,
+            span_count: trace_count * 3,
+            error_span_count: error_trace_count,
+            avg_duration_ms: Some(120.0),
+            max_duration_ms: Some(200.0),
+            input_tokens: trace_count * 10,
+            output_tokens: trace_count * 5,
+            first_started_at: datetime_from_millis(1_780_000_000_000),
+            last_started_at: datetime_from_millis(1_780_000_050_000),
+        }
+    }
+
+    #[test]
+    fn build_trace_step_summary_maps_bucket_math_and_counts() {
+        let rows = vec![step_bucket_row(1.0, 4, 1, 2), step_bucket_row(2.0, 3, 0, 0)];
+        let counts = TraceStepCountsReadRow {
+            total_trace_count: 9,
+            stepless_trace_count: 2,
+            error_trace_count: 3,
+        };
+
+        let summary = build_trace_step_summary(rows, counts, MAX_TRACE_STEP_BUCKETS);
+
+        assert!(!summary.truncated);
+        assert_eq!(summary.total_trace_count, 9);
+        assert_eq!(summary.stepless_trace_count, 2);
+        // Run-wide error total is taken from the counts row, not summed from the
+        // per-bucket error counts (which only add to 1 here).
+        assert_eq!(summary.total_error_trace_count, 3);
+        assert_eq!(summary.steps.len(), 2);
+        let first = &summary.steps[0];
+        assert_eq!(first.step, 1.0);
+        assert_eq!(first.trace_count, 4);
+        assert_eq!(first.error_trace_count, 1);
+        assert_eq!(first.running_trace_count, 2);
+        assert_eq!(first.span_count, 12);
+        assert_eq!(first.error_span_count, 1);
+        assert_eq!(first.avg_duration_ms, Some(120.0));
+        assert_eq!(first.max_duration_ms, Some(200.0));
+        assert_eq!(first.input_tokens, 40);
+        assert_eq!(first.output_tokens, 20);
+        assert_eq!(summary.steps[1].step, 2.0);
+        assert_eq!(summary.steps[1].error_trace_count, 0);
+    }
+
+    #[test]
+    fn build_trace_step_summary_flags_and_truncates_over_cap() {
+        let counts = TraceStepCountsReadRow {
+            total_trace_count: 5,
+            stepless_trace_count: 0,
+            error_trace_count: 4,
+        };
+
+        let within = (0..3).map(|i| step_bucket_row(i as f64, 1, 0, 0)).collect();
+        let summary = build_trace_step_summary(within, counts.clone(), 3);
+        assert!(!summary.truncated);
+        assert_eq!(summary.steps.len(), 3);
+        assert_eq!(summary.total_error_trace_count, 4);
+
+        let over = (0..4).map(|i| step_bucket_row(i as f64, 1, 0, 0)).collect();
+        let summary = build_trace_step_summary(over, counts, 3);
+        assert!(summary.truncated);
+        assert_eq!(summary.steps.len(), 3);
+        assert_eq!(summary.steps.last().unwrap().step, 2.0);
+        // Errors from the truncated-out bucket still count toward the run-wide total.
+        assert_eq!(summary.total_error_trace_count, 4);
+    }
+
+    #[test]
+    fn build_trace_step_summary_handles_empty_run() {
+        let counts = TraceStepCountsReadRow {
+            total_trace_count: 0,
+            stepless_trace_count: 0,
+            error_trace_count: 0,
+        };
+        let summary = build_trace_step_summary(Vec::new(), counts, MAX_TRACE_STEP_BUCKETS);
+        assert!(summary.steps.is_empty());
+        assert!(!summary.truncated);
+        assert_eq!(summary.total_trace_count, 0);
+        assert_eq!(summary.stepless_trace_count, 0);
+        assert_eq!(summary.total_error_trace_count, 0);
+    }
+
+    #[test]
+    fn trace_timestamps_reject_values_outside_clickhouse_datetime64_range() {
+        let mut query = HashMap::new();
+        query.insert("from".to_string(), "2500-01-01T00:00:00Z".to_string());
+        assert!(trace_list_window(&query, None, fixed_now()).is_err());
+
+        let mut event = valid_trace_event();
+        event.started_at = "2500-01-01T00:00:00Z".to_string();
+        assert!(validate_trace_events(vec![event]).is_err());
+
+        let cursor = URL_SAFE_NO_PAD.encode(
+            serde_json::to_vec(&json!({
+                "started_at": "1800-01-01T00:00:00Z",
+                "trace_id": trace_id()
+            }))
+            .unwrap(),
+        );
+        assert!(decode_trace_list_cursor(&cursor).is_err());
     }
 
     #[test]

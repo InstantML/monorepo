@@ -57,6 +57,29 @@ The Traces section lists the latest traces for the selected run. It fetches
 links each trace to the full Traces workspace with the exact `run_id`,
 `trace_id`, and root `span_id`.
 
+Above the list, a **trace activity timeline** puts one run metric and per-step
+trace activity on a shared step axis, so you can see where a metric moved and
+where traces ran or failed in a single view:
+
+- The metric line at the top plots one key; pick it with the **Metric**
+  selector in the panel head.
+- The lane below the axis draws one marker per step bucket. Marker size scales
+  with the number of traces at that step, and color encodes health: normal,
+  running-only, or errored. A shaded danger band spans contiguous steps that
+  contain errored traces.
+- The panel head reports run-wide totals — total traces and errored traces
+  across the whole run, plus the covered step range.
+- Click a step to pin the list below to that step: a filter chip appears and the
+  list refetches only the traces anchored there. Click the chip to clear it.
+
+The totals in the panel head are always run-wide and include traces logged
+without a step, so they can be larger than the sum of the visible buckets — the
+lane only shows stepped traces, and the list under a pinned step shows only that
+step's traces. Runs that log no stepped traces skip the lane and note the
+stepless count instead. The lane is capped at the first 2,000 distinct steps
+(see [`GET /api/runs/:run_id/traces/steps`](/architecture/current-api));
+longer runs show a truncation note.
+
 Use this section when you are already inspecting one run and want to jump from a
 metric regression or failed checkpoint to the execution tree that produced it.
 

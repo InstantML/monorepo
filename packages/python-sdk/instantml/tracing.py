@@ -235,22 +235,28 @@ class TraceSpan:
         self._output = value
 
     def add_attributes(self, values: dict[str, Any]) -> None:
-        try:
-            self.attributes.update(json_object(values, "attributes", MAX_TRACE_ATTRIBUTES_BYTES))
-            self._emit(event_kind="updated", status="running", attributes=self.attributes)
-        except (TypeError, ValueError) as exc:
-            if not self._drop_invalid_payload(exc):
-                raise
+        with self._lock:
+            if self._finished:
+                return
+            try:
+                self.attributes.update(json_object(values, "attributes", MAX_TRACE_ATTRIBUTES_BYTES))
+                self._emit(event_kind="updated", status="running", attributes=self.attributes)
+            except (TypeError, ValueError) as exc:
+                if not self._drop_invalid_payload(exc):
+                    raise
 
     def log_metric(self, key: str | dict[str, Any], value: Any | None = None) -> None:
         metrics = key if isinstance(key, dict) else {str(key): value}
-        try:
-            normalized = json_object(metrics, "metrics", MAX_TRACE_METRICS_BYTES)
-            self.metrics.update(normalized)
-            self._emit(event_kind="updated", status="running", metrics=self.metrics)
-        except (TypeError, ValueError) as exc:
-            if not self._drop_invalid_payload(exc):
-                raise
+        with self._lock:
+            if self._finished:
+                return
+            try:
+                normalized = json_object(metrics, "metrics", MAX_TRACE_METRICS_BYTES)
+                self.metrics.update(normalized)
+                self._emit(event_kind="updated", status="running", metrics=self.metrics)
+            except (TypeError, ValueError) as exc:
+                if not self._drop_invalid_payload(exc):
+                    raise
 
     def context(self) -> dict[str, Any]:
         return self._context().as_dict()
@@ -259,11 +265,15 @@ class TraceSpan:
         self.run._flush_trace_events()
 
     def wrap(self, fn: Callable[..., Any]) -> Callable[..., Any]:
-        copied = contextvars.copy_context()
+        span_context = self._context()
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            return copied.run(fn, *args, **kwargs)
+            token = _CURRENT_TRACE_CONTEXT.set(span_context)
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                _CURRENT_TRACE_CONTEXT.reset(token)
 
         return wrapper
 
@@ -401,6 +411,50 @@ def trace_op_decorator(
         except (TypeError, ValueError):
             signature = None
 
+        if inspect.isasyncgenfunction(fn):
+
+            @functools.wraps(fn)
+            async def async_generator_wrapper(*args: Any, **kwargs: Any):
+                span = _decorator_span(run, operation_name, signature, args, kwargs)
+                token = _CURRENT_TRACE_CONTEXT.set(span._context())
+                try:
+                    async for item in fn(*args, **kwargs):
+                        yield item
+                except GeneratorExit:
+                    _finish_decorator_span(span, status="interrupted")
+                    raise
+                except BaseException as exc:
+                    _finish_decorator_span(span, status="error", error=exc)
+                    raise
+                else:
+                    _finish_decorator_span(span, status="ok")
+                finally:
+                    _CURRENT_TRACE_CONTEXT.reset(token)
+
+            return async_generator_wrapper
+
+        if inspect.isgeneratorfunction(fn):
+
+            @functools.wraps(fn)
+            def generator_wrapper(*args: Any, **kwargs: Any):
+                span = _decorator_span(run, operation_name, signature, args, kwargs)
+                token = _CURRENT_TRACE_CONTEXT.set(span._context())
+                try:
+                    for item in fn(*args, **kwargs):
+                        yield item
+                except GeneratorExit:
+                    _finish_decorator_span(span, status="interrupted")
+                    raise
+                except BaseException as exc:
+                    _finish_decorator_span(span, status="error", error=exc)
+                    raise
+                else:
+                    _finish_decorator_span(span, status="ok")
+                finally:
+                    _CURRENT_TRACE_CONTEXT.reset(token)
+
+            return generator_wrapper
+
         if inspect.iscoroutinefunction(fn):
 
             @functools.wraps(fn)
@@ -483,7 +537,7 @@ def _decorator_inputs(
 
 
 def _finish_decorator_span(span: TraceSpan, *, status: str, error: BaseException | str | None = None) -> None:
-    span.finish(status=status, error=error, flush=False)
+    span.finish(status=status, error=error)
 
 
 def _redaction_state(capture: str, content_available: bool, truncated: bool) -> str:

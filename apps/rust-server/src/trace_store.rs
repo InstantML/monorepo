@@ -229,6 +229,8 @@ pub struct TraceSpanIndexReadRow {
     pub parent_span_id: String,
     #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
     pub started_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Row, Deserialize)]
@@ -256,6 +258,40 @@ pub struct TraceListQuery {
 pub struct TraceListCursor {
     pub started_at: DateTime<Utc>,
     pub trace_id: String,
+}
+
+#[derive(Row, Deserialize)]
+pub struct TraceStepBucketReadRow {
+    pub step: f64,
+    pub trace_count: u64,
+    pub error_trace_count: u64,
+    pub running_trace_count: u64,
+    pub span_count: u64,
+    pub error_span_count: u64,
+    pub avg_duration_ms: Option<f64>,
+    pub max_duration_ms: Option<f64>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub first_started_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::micros")]
+    pub last_started_at: DateTime<Utc>,
+}
+
+#[derive(Row, Deserialize, Clone)]
+pub struct TraceStepCountsReadRow {
+    pub total_trace_count: u64,
+    pub stepless_trace_count: u64,
+    pub error_trace_count: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct TraceStepSummaryQuery {
+    pub project_id: Uuid,
+    pub run_id: Uuid,
+    pub min_step: Option<f64>,
+    pub max_step: Option<f64>,
+    pub limit: i64,
 }
 
 pub struct TraceSpanWindowQuery<'a> {
@@ -420,12 +456,6 @@ pub async fn list_trace_summaries(
                GROUP BY run_id, idempotency_key \
              )",
     );
-    if query.from.is_some() {
-        sql.push_str(" AND started_at >= parseDateTime64BestEffort(?, 6, 'UTC')");
-    }
-    if query.to.is_some() {
-        sql.push_str(" AND started_at < parseDateTime64BestEffort(?, 6, 'UTC')");
-    }
     if query.run_id.is_some() {
         sql.push_str(" AND run_id = ?");
     }
@@ -435,6 +465,12 @@ pub async fn list_trace_summaries(
     );
     if query.status.is_some() {
         sql.push_str(" AND status = ?");
+    }
+    if query.from.is_some() {
+        sql.push_str(" AND summary_started_at >= parseDateTime64BestEffort(?, 6, 'UTC')");
+    }
+    if query.to.is_some() {
+        sql.push_str(" AND summary_started_at < parseDateTime64BestEffort(?, 6, 'UTC')");
     }
     if query.kind.is_some() {
         sql.push_str(" AND has(kinds, ?)");
@@ -452,11 +488,17 @@ pub async fn list_trace_summaries(
                OR positionCaseInsensitive(thread_id, ?) > 0)",
         );
     }
+    // Step bounds filter on the trace's anchor (its min_step), matching exactly
+    // how /traces/steps buckets count traces: stepless traces and multi-step
+    // spanners are excluded so the list agrees with the bucket counts.
+    if query.min_step.is_some() || query.max_step.is_some() {
+        sql.push_str(" AND min_step IS NOT NULL");
+    }
     if query.min_step.is_some() {
-        sql.push_str(" AND (max_step IS NULL OR max_step >= ?)");
+        sql.push_str(" AND min_step >= ?");
     }
     if query.max_step.is_some() {
-        sql.push_str(" AND (min_step IS NULL OR min_step <= ?)");
+        sql.push_str(" AND min_step <= ?");
     }
     if query.cursor.is_some() {
         sql.push_str(
@@ -473,17 +515,17 @@ pub async fn list_trace_summaries(
         .bind(query.project_id)
         .bind(org_id)
         .bind(query.project_id);
-    if let Some(from) = query.from {
-        q = q.bind(from.to_rfc3339());
-    }
-    if let Some(to) = query.to {
-        q = q.bind(to.to_rfc3339());
-    }
     if let Some(run_id) = query.run_id {
         q = q.bind(run_id);
     }
     if let Some(status) = &query.status {
         q = q.bind(status);
+    }
+    if let Some(from) = query.from {
+        q = q.bind(from.to_rfc3339());
+    }
+    if let Some(to) = query.to {
+        q = q.bind(to.to_rfc3339());
     }
     if let Some(kind) = &query.kind {
         q = q.bind(kind);
@@ -506,6 +548,116 @@ pub async fn list_trace_summaries(
     }
     q.bind(query.limit)
         .fetch_all::<TraceSummaryReadRow>()
+        .await
+        .map_err(clickhouse_read_error)
+}
+
+pub async fn trace_step_summaries(
+    store: &MetricStore,
+    org_id: Uuid,
+    query: TraceStepSummaryQuery,
+) -> AppResult<Vec<TraceStepBucketReadRow>> {
+    let mut sql = String::from(
+        "SELECT \
+           assumeNotNull(min_step) + 0. AS step, \
+           toUInt64(count()) AS trace_count, \
+           toUInt64(countIf(status = 'error')) AS error_trace_count, \
+           toUInt64(countIf(status = 'running')) AS running_trace_count, \
+           toUInt64(sum(span_count)) AS span_count, \
+           toUInt64(sum(error_count)) AS error_span_count, \
+           avgOrNull(duration_ms) AS avg_duration_ms, \
+           maxOrNull(duration_ms) AS max_duration_ms, \
+           toUInt64(least(sum(toUInt128(input_tokens)), toUInt128(18446744073709551615))) AS input_tokens, \
+           toUInt64(least(sum(toUInt128(output_tokens)), toUInt128(18446744073709551615))) AS output_tokens, \
+           min(started_at) AS first_started_at, \
+           max(started_at) AS last_started_at \
+         FROM ( \
+           SELECT \
+             argMax(status, tuple(updated_at, event_id)) AS status, \
+             argMax(span_count, tuple(updated_at, event_id)) AS span_count, \
+             argMax(error_count, tuple(updated_at, event_id)) AS error_count, \
+             argMax(duration_ms, tuple(updated_at, event_id)) AS duration_ms, \
+             argMax(input_tokens, tuple(updated_at, event_id)) AS input_tokens, \
+             argMax(output_tokens, tuple(updated_at, event_id)) AS output_tokens, \
+             argMax(min_step, tuple(updated_at, event_id)) AS min_step, \
+             argMax(started_at, tuple(updated_at, event_id)) AS started_at \
+           FROM trace_summaries \
+           WHERE org_id = ? \
+             AND project_id = ? \
+             AND run_id = ? \
+             AND (run_id, idempotency_key) IN ( \
+               SELECT run_id, idempotency_key \
+               FROM trace_ingest_batches \
+               WHERE org_id = ? AND project_id = ? AND status = 'accepted' \
+               GROUP BY run_id, idempotency_key \
+             ) \
+           GROUP BY project_id, run_id, trace_id \
+         ) WHERE min_step IS NOT NULL",
+    );
+    if query.min_step.is_some() {
+        sql.push_str(" AND min_step >= ?");
+    }
+    if query.max_step.is_some() {
+        sql.push_str(" AND min_step <= ?");
+    }
+    sql.push_str(" GROUP BY step ORDER BY step ASC LIMIT ?");
+
+    let mut q = store
+        .client()
+        .query(&sql)
+        .bind(org_id)
+        .bind(query.project_id)
+        .bind(query.run_id)
+        .bind(org_id)
+        .bind(query.project_id);
+    if let Some(min_step) = query.min_step {
+        q = q.bind(min_step);
+    }
+    if let Some(max_step) = query.max_step {
+        q = q.bind(max_step);
+    }
+    q.bind(query.limit)
+        .fetch_all::<TraceStepBucketReadRow>()
+        .await
+        .map_err(clickhouse_read_error)
+}
+
+pub async fn trace_step_counts(
+    store: &MetricStore,
+    org_id: Uuid,
+    project_id: Uuid,
+    run_id: Uuid,
+) -> AppResult<TraceStepCountsReadRow> {
+    store
+        .client()
+        .query(
+            "SELECT \
+               toUInt64(count()) AS total_trace_count, \
+               toUInt64(countIf(min_step IS NULL)) AS stepless_trace_count, \
+               toUInt64(countIf(status = 'error')) AS error_trace_count \
+             FROM ( \
+               SELECT \
+                 argMax(min_step, tuple(updated_at, event_id)) AS min_step, \
+                 argMax(status, tuple(updated_at, event_id)) AS status \
+               FROM trace_summaries \
+               WHERE org_id = ? \
+                 AND project_id = ? \
+                 AND run_id = ? \
+                 AND (run_id, idempotency_key) IN ( \
+                   SELECT run_id, idempotency_key \
+                   FROM trace_ingest_batches \
+                   WHERE org_id = ? AND project_id = ? AND status = 'accepted' \
+                   GROUP BY run_id, idempotency_key \
+                 ) \
+               GROUP BY project_id, run_id, trace_id \
+             )",
+        )
+        .bind(org_id)
+        .bind(project_id)
+        .bind(run_id)
+        .bind(org_id)
+        .bind(project_id)
+        .fetch_one::<TraceStepCountsReadRow>()
         .await
         .map_err(clickhouse_read_error)
 }
@@ -546,9 +698,9 @@ pub async fn child_span_ids(
     query: TraceSpanWindowQuery<'_>,
 ) -> AppResult<Vec<TraceSpanIndexReadRow>> {
     let mut sql = String::from(
-        "SELECT span_id, span_parent_id AS parent_span_id, first_started_at AS started_at \
+        "SELECT span_id, span_parent_id AS parent_span_id, first_started_at AS started_at, first_created_at AS created_at \
          FROM ( \
-           SELECT span_id, any(parent_span_id) AS span_parent_id, min(started_at) AS first_started_at \
+           SELECT span_id, any(parent_span_id) AS span_parent_id, min(started_at) AS first_started_at, min(created_at) AS first_created_at \
            FROM trace_span_index \
            WHERE org_id = ? AND project_id = ? AND run_id = ? AND trace_id = ? AND parent_span_id = ? \
              AND idempotency_key IN ( \
@@ -562,11 +714,11 @@ pub async fn child_span_ids(
     );
     if query.cursor.is_some() {
         sql.push_str(
-            " AND (first_started_at > parseDateTime64BestEffort(?, 6, 'UTC') \
-               OR (first_started_at = parseDateTime64BestEffort(?, 6, 'UTC') AND span_id > ?))",
+            " AND (first_created_at > parseDateTime64BestEffort(?, 6, 'UTC') \
+               OR (first_created_at = parseDateTime64BestEffort(?, 6, 'UTC') AND span_id > ?))",
         );
     }
-    sql.push_str(" ORDER BY first_started_at ASC, span_id ASC LIMIT ?");
+    sql.push_str(" ORDER BY first_created_at ASC, span_id ASC LIMIT ?");
 
     let mut q = store
         .client()
@@ -579,8 +731,8 @@ pub async fn child_span_ids(
         .bind(query.org_id)
         .bind(query.project_id)
         .bind(query.run_id);
-    if let Some((started_at, span_id)) = query.cursor {
-        let cursor_at = started_at.to_rfc3339();
+    if let Some((created_at, span_id)) = query.cursor {
+        let cursor_at = created_at.to_rfc3339();
         q = q.bind(cursor_at.clone()).bind(cursor_at).bind(span_id);
     }
     q.bind(query.limit)
