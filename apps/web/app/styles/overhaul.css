@@ -1998,8 +1998,11 @@ button.secondary.danger-action:hover:not(:disabled),
   border-radius: var(--radius);
 }
 .panel-head {
-  min-height: 0;
-  height: 48px;
+  /* Fixed-height heads clipped nothing (overflow stays visible), so on
+     narrow viewports a wrapped controls row spilled underneath the panel
+     body. Single-row heads still render at exactly 48px. */
+  min-height: 48px;
+  height: auto;
   padding: 0 16px;
   border-bottom: 1px solid var(--line-soft);
   gap: 10px;

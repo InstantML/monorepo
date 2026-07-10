@@ -622,6 +622,12 @@
     min-height: 32px;
     overflow-wrap: anywhere;
     white-space: normal;
+    /* Wrapping stays (L6), but a pathological run name must not become a
+       ten-line block that pushes the chart off-screen. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
   }
   .copy-button {
     min-height: 44px;
@@ -1174,5 +1180,9 @@
     white-space: normal;
     padding: 6px 9px;
     min-height: 32px;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
   }
 }
