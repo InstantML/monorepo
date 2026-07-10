@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import instantml as im
+from instantml import InstantMLError
 
 PROMPTS = (
     "What is the population of France divided by the area of Texas?",
@@ -167,6 +168,46 @@ def save_checkpoint(path: Path, config: TrainConfig, step: int, reward_mean: flo
     return path
 
 
+def upload_disabled(error: InstantMLError) -> bool:
+    return "uploads are disabled" in str(error)
+
+
+def log_checkpoint_artifact(run: Any, path: Path, step: int, reward_mean: float) -> dict[str, Any]:
+    """Upload checkpoint bytes; fall back to a metadata-only artifact when the
+    deployment has byte uploads disabled."""
+    metadata = {"framework": "json", "reward_mean": reward_mean}
+    try:
+        return run.log_checkpoint_file(str(path), step=step, metadata=metadata)
+    except InstantMLError as error:
+        if not upload_disabled(error):
+            raise
+        run.log_console(
+            f"step {step}: artifact byte uploads disabled; recording checkpoint metadata only",
+            stream="stderr",
+        )
+        return run.log_checkpoint(
+            name=path.name,
+            uri=path.resolve().as_uri(),
+            step=step,
+            size_bytes=path.stat().st_size,
+            metadata=metadata,
+        )
+
+
+def log_report_artifact(run: Any, path: Path, step: int) -> dict[str, Any]:
+    try:
+        return run.upload_file(str(path), name=path.name, step=step)
+    except InstantMLError as error:
+        if not upload_disabled(error):
+            raise
+        return run.log_file(
+            name=path.name,
+            uri=path.resolve().as_uri(),
+            step=step,
+            size_bytes=path.stat().st_size,
+        )
+
+
 def run_training(run: Any, config: TrainConfig, artifact_dir: Path) -> dict[str, Any]:
     rng = random.Random(config.seed)
     step_summaries: list[dict[str, Any]] = []
@@ -178,11 +219,7 @@ def run_training(run: Any, config: TrainConfig, artifact_dir: Path) -> dict[str,
             checkpoint_path = save_checkpoint(
                 artifact_dir / f"policy-step-{step}.json", config, step, summary["reward/mean"]
             )
-            artifact = run.log_checkpoint_file(
-                str(checkpoint_path),
-                step=step,
-                metadata={"framework": "json", "reward_mean": summary["reward/mean"]},
-            )
+            artifact = log_checkpoint_artifact(run, checkpoint_path, step, summary["reward/mean"])
             checkpoints.append({"step": step, "artifact_id": artifact.get("id")})
 
     report_path = artifact_dir / "eval-report.json"
@@ -193,13 +230,13 @@ def run_training(run: Any, config: TrainConfig, artifact_dir: Path) -> dict[str,
         "final_reward_mean": step_summaries[-1]["reward/mean"],
     }
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-    report_artifact = run.upload_file(str(report_path), name="eval-report.json", step=config.steps)
+    report_artifact = log_report_artifact(run, report_path, config.steps)
 
     # A stepless evaluation trace: the timeline should report it in the
     # run-wide totals without granting it a step bucket.
     with run.trace(
         "eval.holdout_summary",
-        kind="eval",
+        kind="evaluator",
         capture="preview",
         inputs={"suite": "holdout-20"},
     ) as evaluation:

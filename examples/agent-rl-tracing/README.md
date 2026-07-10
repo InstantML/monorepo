@@ -48,6 +48,11 @@ python3 examples/agent-rl-tracing/train.py \
   --summary-json .instantml/agent-rl-tracing/summary.json
 ```
 
+Deployments that disable artifact byte uploads (`artifact byte uploads are
+disabled by server configuration`) still get checkpoint and report artifacts:
+the example falls back to metadata-only records with `file://` URIs and notes
+the fallback on the run's stderr log.
+
 Then open the run in the dashboard and check:
 
 - **Traces tab**: the trace × metric timeline shows ok/error markers per
