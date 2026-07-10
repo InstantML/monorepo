@@ -24,7 +24,17 @@
   color: var(--text);
   min-width: 0;
 }
-.pd-name { overflow: hidden; text-overflow: ellipsis; }
+/* Two-class specificity on purpose: the legacy .run-workspace-name rule in
+   overhaul.css sets flex: 0 0 auto on this same span, which forbids shrinking
+   and lets 100+ char run names overflow into the header actions. */
+.pd-title .pd-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pd-title .pd-chip { flex: none; }
 .pd-meta {
   margin-top: 4px;
   font: 500 10px/1.5 var(--font-mono);
@@ -159,6 +169,9 @@
 .pd-codewell {
   font: 500 11.5px/1.75 var(--font-mono);
   white-space: pre-wrap;
+  /* Unbroken tokens (base64 blobs, URLs, hash strings) must wrap in place —
+     without this a long config value forces a multi-screen sideways scroll. */
+  overflow-wrap: anywhere;
   background: var(--bg-soft);
   padding: 12px; overflow-x: auto;
   color: var(--text-2);
