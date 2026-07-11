@@ -379,7 +379,7 @@ export function RunsTabPane({
             onRequestStop={onRequestStop}
             onSelectAllVisible={onSelectAllVisible}
             onTableColumns={onTableColumns}
-            onToggleRun={(runId) => onToggleRun(runId)}
+            onToggleRun={onToggleRun}
             pageSize={pageSize}
             pageStart={pageStart}
             paginationBusy={paginationBusy}

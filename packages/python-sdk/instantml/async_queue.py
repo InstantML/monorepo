@@ -443,10 +443,11 @@ class AsyncQueueRepository:
     ) -> PreparedQueuedEvent:
         # The server hashes the raw per-event body and idempotency keys are
         # per-event, so canonical producer ordering is not needed for dedup;
-        # drop sort_keys and encode once, reusing the bytes for length (D7c).
-        encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
-        payload = encoded.decode("utf-8")
-        size_bytes = len(encoded)
+        # drop sort_keys (D7c). json.dumps defaults to ensure_ascii=True, so
+        # the payload is pure ASCII and len(str) IS the UTF-8 byte size — no
+        # encode/decode round-trip on the training thread per event.
+        payload = json.dumps(body, separators=(",", ":"))
+        size_bytes = len(payload)
         return PreparedQueuedEvent(
             created_at=time.time() if created_at is None else created_at,
             method=method,

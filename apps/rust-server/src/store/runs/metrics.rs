@@ -50,8 +50,7 @@ pub async fn log_metrics(
                         "idempotency key was already used with a different request body",
                     ));
                 }
-                let run = fetch_run_in_data(&data, ctx, run_id)?;
-                ensure_run_access_in_data(ctx, &run)?;
+                ensure_run_visible_in_data(&data, ctx, run_id)?;
             }
             ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
             enforce_plan_capacity(
@@ -89,8 +88,7 @@ pub async fn log_metrics(
     }
     {
         let data = store.data.lock().await;
-        let run = fetch_run_in_data(&data, ctx, run_id)?;
-        ensure_run_access_in_data(ctx, &run)?;
+        ensure_run_visible_in_data(&data, ctx, run_id)?;
     }
     ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
     enforce_plan_capacity(
@@ -143,8 +141,7 @@ pub async fn log_metrics_batch(
                         "idempotency key was already used with a different request body",
                     ));
                 }
-                let run = fetch_run_in_data(&data, ctx, run_id)?;
-                ensure_run_access_in_data(ctx, &run)?;
+                ensure_run_visible_in_data(&data, ctx, run_id)?;
             }
             ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
             enforce_plan_capacity(
@@ -182,8 +179,7 @@ pub async fn log_metrics_batch(
     }
     {
         let data = store.data.lock().await;
-        let run = fetch_run_in_data(&data, ctx, run_id)?;
-        ensure_run_access_in_data(ctx, &run)?;
+        ensure_run_visible_in_data(&data, ctx, run_id)?;
     }
     ensure_billing_write_allowed(store, ctx.org_id, "log metrics").await?;
     enforce_plan_capacity(
@@ -247,8 +243,7 @@ pub async fn get_metrics(
 ) -> AppResult<Value> {
     {
         let data = store.data.lock().await;
-        let run = fetch_run_in_data(&data, ctx, run_id)?;
-        ensure_run_access_in_data(ctx, &run)?;
+        ensure_run_visible_in_data(&data, ctx, run_id)?;
     }
     let limit = validate_limit(
         query.get("limit").map(String::as_str),
@@ -296,8 +291,7 @@ pub async fn metrics_series_batched(
     {
         let data = store.data.lock().await;
         for run_id in &run_ids {
-            let run = fetch_run_in_data(&data, ctx, *run_id)?;
-            ensure_run_access_in_data(ctx, &run)?;
+            ensure_run_visible_in_data(&data, ctx, *run_id)?;
         }
     }
     let limit = validate_limit(

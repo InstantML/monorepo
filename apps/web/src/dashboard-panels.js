@@ -361,8 +361,10 @@ function runCreatedUnix(run) {
   return Number.isFinite(created) ? created / 1000 : null;
 }
 
-export function fieldValueForRun(run, fieldId) {
-  const parsed = parseFieldId(fieldId);
+export function fieldValueForRun(run, fieldId, parsedField) {
+  // Loops over many runs pass the pre-parsed descriptor so the field id's
+  // split/decodeURIComponent work runs once per field instead of once per run.
+  const parsed = parsedField === undefined ? parseFieldId(fieldId) : parsedField;
   if (!parsed) return null;
   if (parsed.source === "metric") {
     const aggregate = run?.metric_aggregates?.[parsed.key];
@@ -528,9 +530,11 @@ function sourceRank(source) {
 export function scatterPointsForRuns(runs, xField, yField) {
   const points = [];
   let missing = 0;
+  const parsedX = parseFieldId(xField);
+  const parsedY = parseFieldId(yField);
   for (const [index, run] of (runs ?? []).entries()) {
-    const x = fieldValueForRun(run, xField);
-    const y = fieldValueForRun(run, yField);
+    const x = fieldValueForRun(run, xField, parsedX);
+    const y = fieldValueForRun(run, yField, parsedY);
     if (x === null || y === null) {
       missing += 1;
       continue;
@@ -551,8 +555,9 @@ export function distributionSummaryForRuns(runs, valueField, groupField = "", re
   let missing = 0;
   let plotted = 0;
   const safeRuns = Array.isArray(runs) ? runs : [];
+  const parsedValueField = parseFieldId(valueField);
   for (const [index, run] of safeRuns.entries()) {
-    const value = fieldValueForRun(run, valueField);
+    const value = fieldValueForRun(run, valueField, parsedValueField);
     const groupValue = groupField ? categoricalValueForRun(run, groupField) : "Ungrouped visible runs";
     if (value === null || groupValue === null) {
       missing += 1;
@@ -655,29 +660,42 @@ export function parallelCoordinatesForRuns(runs, axisFields, axisScales = {}) {
 }
 
 function buildParallelAxis(runs, fieldId, requestedScale) {
+  const parsedField = parseFieldId(fieldId);
   const values = [];
+  let positive = true;
+  let rawMin = Infinity;
+  let rawMax = -Infinity;
   for (const run of runs) {
-    const raw = fieldValueForRun(run, fieldId);
+    const raw = fieldValueForRun(run, fieldId, parsedField);
     if (raw === null) continue;
     values.push({ runId: run?.id, raw });
+    if (raw <= 0) positive = false;
+    if (raw < rawMin) rawMin = raw;
+    if (raw > rawMax) rawMax = raw;
   }
   if (!values.length) return null;
-  const positive = values.every((item) => item.raw > 0);
   const scale = requestedScale === "log" && positive ? "log" : "linear";
-  const scaledValues = values.map((item) => ({
-    ...item,
-    scaled: scale === "log" ? Math.log10(item.raw) : item.raw,
-  }));
-  const min = Math.min(...scaledValues.map((item) => item.scaled));
-  const max = Math.max(...scaledValues.map((item) => item.scaled));
+  // Scaled values, their extent, and the per-run map accumulate in one pass —
+  // the previous map/spread form cloned every entry and spread up to
+  // thousands of arguments into Math.min/Math.max four separate times.
+  let min = Infinity;
+  let max = -Infinity;
+  const scaled = new Array(values.length);
+  for (let index = 0; index < values.length; index += 1) {
+    const value = scale === "log" ? Math.log10(values[index].raw) : values[index].raw;
+    scaled[index] = value;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
   const span = max - min;
   const valuesByRunId = new Map();
-  for (const item of scaledValues) {
+  for (let index = 0; index < values.length; index += 1) {
+    const item = values[index];
     if (!item.runId) continue;
     valuesByRunId.set(item.runId, {
       raw: item.raw,
-      scaled: item.scaled,
-      normalized: span === 0 ? 0.5 : (item.scaled - min) / span,
+      scaled: scaled[index],
+      normalized: span === 0 ? 0.5 : (scaled[index] - min) / span,
     });
   }
   return {
@@ -686,8 +704,8 @@ function buildParallelAxis(runs, fieldId, requestedScale) {
     scale,
     min,
     max,
-    rawMin: Math.min(...values.map((item) => item.raw)),
-    rawMax: Math.max(...values.map((item) => item.raw)),
+    rawMin,
+    rawMax,
     missingCount: Math.max(0, runs.length - values.length),
     valuesByRunId,
   };

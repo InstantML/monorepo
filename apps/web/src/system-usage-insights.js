@@ -125,12 +125,23 @@ export function formatSamples(value) {
   return `${formatCompact(numeric, 0)} samples`;
 }
 
+// Intl.NumberFormat construction is far more expensive than .format(); cache
+// one instance per digits/notation combination (a handful total).
+const compactFormatters = new Map();
+
 export function formatCompact(value, digits = 1) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return "-";
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: digits,
-    minimumFractionDigits: 0,
-    notation: Math.abs(numeric) >= 10000 ? "compact" : "standard",
-  }).format(numeric);
+  const notation = Math.abs(numeric) >= 10000 ? "compact" : "standard";
+  const cacheKey = `${digits}:${notation}`;
+  let formatter = compactFormatters.get(cacheKey);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: digits,
+      minimumFractionDigits: 0,
+      notation,
+    });
+    compactFormatters.set(cacheKey, formatter);
+  }
+  return formatter.format(numeric);
 }

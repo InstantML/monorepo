@@ -164,12 +164,24 @@ test("MetricChart wires the y-axis controls, log empty state, and plot clipping"
   assert.match(source, /const miniY = useMemo\(\(\) => yMapper\(domain, miniHeight, padY\), \[domain, miniHeight, padY\]\)/);
   // The unzoomed range and hidden summary view must not duplicate the full
   // normalization / summary scans on every chart render.
-  assert.match(source, /showRange && zoomRange\s*\? normalizeSeries/);
+  assert.match(source, /const rangeActive = showRange && Boolean\(zoomRange\)/);
+  assert.match(source, /rangeActive\s*\n?\s*\? normalizeSeries/);
   assert.match(source, /chartView === "summary" \? chartSummaryModel/);
   assert.match(source, /normalizeSeries\(series\.slice\(0, MINI_RANGE_SERIES_LIMIT\)/);
-  assert.match(source, /showRange && zoomRange \? chartDomain\(series, xMode, metricKey, null, yAxisOptions\)/);
+  assert.match(source, /rangeActive \? chartDomain\(series, xMode, metricKey, null, yAxisOptions\)/);
   assert.match(source, /styleIndexes=\{styleIndexes\}/);
   assert.match(source, /useLineStyles=\{useLineStyles\}/);
+  // Overview + full-domain memos key on rangeActive — never on the zoomRange
+  // object — so re-zooming to a new window reuses both cached results instead
+  // of re-scanning the full domain per gesture.
+  assert.doesNotMatch(source, /\[frameHeight, metricKey, pad, rangeActive, series, width, xMode, yAxisOptions, zoomRange\]/);
+  assert.match(source, /\[metricKey, rangeActive, series, xMode, yAxisOptions\]/);
+  // Style slots hash series identity only; keying on the raw series keeps the
+  // array referentially stable across zoom-window renormalizations.
+  assert.match(source, /chartStyleIndexesForItems\(series\), \[series\]/);
+  // Tooltip rows rank lean rows first and resolve display fields only for the
+  // sliced top rows (Intl formatting per series cost ~30ms/hover at 2,000).
+  assert.match(source, /ranked\.slice\(0, TOOLTIP_ROW_LIMIT\)\.map/);
   // Number inputs must shrink inside the compact popover instead of keeping
   // their intrinsic browser width and spilling past the panel edge.
   assert.match(chartsCss, /\.chart-y-range-field input \{[\s\S]*?width: 100%;[\s\S]*?min-width: 0;/);

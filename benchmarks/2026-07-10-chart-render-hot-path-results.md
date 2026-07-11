@@ -87,3 +87,24 @@ full-list color/dash assignments while removing that long task.
   only for the five lines the mini overview renders.
 
 All design gates in `docs/design/2026-07-09-chart-render-hot-path.md` passed.
+
+## Same-Day Follow-Up Pass
+
+A second optimization pass on the same machine (flatten-free domain extents,
+two-phase tooltip rows that defer Intl formatting to the sliced top rows,
+zoom-gesture-invariant overview/domain memos, identity-keyed style indexes,
+and lean monotonic-aware summary points) moved the 2,000 × 60 helper numbers
+to:
+
+- single normalization 0.98× of the frozen legacy pass (the monotonic
+  bookkeeping is now paid for by the removed flatten);
+- combined hover 5.20× over legacy (was 4.52×);
+- lazy summary model 2.66 ms (was 7.12 ms);
+- zoom overview preparation 1.03 ms (was 8.99 ms), 48× over legacy.
+
+The browser fixture measured 192.1 ms first committed paint (was 208.6 ms),
+68.9 ms pointer-to-tooltip p95, 197.2 ms summary switch (was 236.2 ms), zero
+zoom/reset long tasks, and zero console errors. The re-zoom domain/overview
+reuse is not visible in this fixture (it times a single zoom gesture); its
+effect is on subsequent zoom selections, which no longer re-scan the full
+series for an identical domain.

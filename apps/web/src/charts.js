@@ -5,21 +5,22 @@ import { metricGoal } from "./state.js";
  * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
 export function normalizeSeries(series, width, height, padding = 28, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
-  const points = series.flatMap((item) => item.points);
-  if (points.length === 0) return [];
+  // Domain stats iterate the nested series arrays directly — flattening via
+  // series.flatMap() allocated an O(total points) copy (≈1 MB per call at a
+  // 120k-point selection) on every normalization just to take extents.
+  const full = seriesXStats(series, xKey, null);
+  if (full.count === 0) return [];
   const yScale = yAxis?.scale === "log" ? "log" : "linear";
   const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
-  // Iterative extent (no intermediate xValues array, no Math.min(...spread) —
-  // the spread form is both slower and overflows the call stack past ~100k pts).
-  const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
-  const range = boundedXRange(xRange, fullMinX, fullMaxX);
-  const visiblePoints = range ? points.filter((point) => pointInRange(point, xKey, range)) : points;
-  const domainPoints = visiblePoints.length ? visiblePoints : points;
-  const visibleExtent = range && visiblePoints.length > 1 ? xExtent(visiblePoints, xKey) : null;
-  const rawMinStep = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
-  const rawMaxStep = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
+  const range = boundedXRange(xRange, full.min, full.max);
+  const visible = range ? seriesXStats(series, xKey, range) : full;
+  const visibleExtent = range && visible.count > 1 ? visible : null;
+  const rawMinStep = visibleExtent ? visibleExtent.min : range?.min ?? full.min;
+  const rawMaxStep = visibleExtent ? visibleExtent.max : range?.max ?? full.max;
   const { min: minStep, max: maxStep } = stepDomain(rawMinStep, rawMaxStep);
-  const yDomain = valueDomain(domainPoints, metricKey, yScale, yRange);
+  // An x-zoom that empties the window falls back to the full data for the y
+  // domain, mirroring the old visiblePoints.length ? visiblePoints : points.
+  const yDomain = valueDomain(series, xKey, visible.count ? range : null, metricKey, yScale, yRange);
   const minValue = yDomain.minY;
   const maxValue = yDomain.maxY;
   // Spans are guaranteed positive by stepDomain/valueDomain, so we never clamp
@@ -79,17 +80,16 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
  * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
 export function chartDomain(series, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
-  const points = series.flatMap((item) => item.points);
-  if (points.length === 0) return null;
+  const full = seriesXStats(series, xKey, null);
+  if (full.count === 0) return null;
   const yScale = yAxis?.scale === "log" ? "log" : "linear";
   const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
-  const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
-  const range = boundedXRange(xRange, fullMinX, fullMaxX);
-  const visiblePoints = range ? points.filter((point) => pointInRange(point, xKey, range)) : points;
-  const visibleExtent = range && visiblePoints.length > 1 ? xExtent(visiblePoints, xKey) : null;
-  const yDomain = valueDomain(visiblePoints.length ? visiblePoints : points, metricKey, yScale, yRange);
-  const rawMinX = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
-  const rawMaxX = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
+  const range = boundedXRange(xRange, full.min, full.max);
+  const visible = range ? seriesXStats(series, xKey, range) : full;
+  const visibleExtent = range && visible.count > 1 ? visible : null;
+  const yDomain = valueDomain(series, xKey, visible.count ? range : null, metricKey, yScale, yRange);
+  const rawMinX = visibleExtent ? visibleExtent.min : range?.min ?? full.min;
+  const rawMaxX = visibleExtent ? visibleExtent.max : range?.max ?? full.max;
   const xDomain = stepDomain(rawMinX, rawMaxX);
   return {
     minX: xDomain.min,
@@ -385,15 +385,22 @@ function chartSummaryTakeawayFromRows(rows, metricKey) {
 }
 
 function chartSummaryPoints(item) {
-  const points = item?.normalizedPoints?.length ? item.normalizedPoints : item?.points ?? [];
-  return points
-    .filter((point) => Number.isFinite(Number(point?.value)))
-    .map((point) => ({
-      ...point,
-      value: Number(point.value),
-      xValue: Number.isFinite(Number(point.xValue)) ? Number(point.xValue) : Number(point.step),
-    }))
-    .sort((a, b) => a.xValue - b.xValue);
+  const useNormalized = Boolean(item?.normalizedPoints?.length);
+  const source = useNormalized ? item.normalizedPoints : item?.points ?? [];
+  // Lean rows: the summary only reads value/step/xValue, so spread-cloning
+  // every normalized point (~10 fields each) was pure allocation churn at
+  // 2,000 × 60 points.
+  const points = [];
+  for (const point of source) {
+    const value = Number(point?.value);
+    if (!Number.isFinite(value)) continue;
+    const xRaw = Number(point.xValue);
+    points.push({ step: point.step, value, xValue: Number.isFinite(xRaw) ? xRaw : Number(point.step) });
+  }
+  // Normalized points flagged monotonic are already in x order; raw/legacy
+  // inputs keep the sort.
+  if (!(useNormalized && item.xMonotonic === true)) points.sort((a, b) => a.xValue - b.xValue);
+  return points;
 }
 
 function bestSummaryPoint(points, goal) {
@@ -534,18 +541,24 @@ function xValue(point, xKey) {
   return point.step;
 }
 
-// Min/max of the x dimension computed in a single pass. Avoids allocating a
-// mapped values array and avoids Math.min(...array) (which is O(n) to spread
-// and throws RangeError on very large series).
-function xExtent(points, xKey) {
+// Point count plus min/max of the x dimension in one nested pass, optionally
+// restricted to an x range. Iterates the per-series arrays in place: no
+// flattened copy, no mapped values array, no Math.min(...spread) (which is
+// O(n) to spread and throws RangeError on very large series).
+function seriesXStats(series, xKey, range) {
+  let count = 0;
   let min = Infinity;
   let max = -Infinity;
-  for (const point of points) {
-    const value = xValue(point, xKey);
-    if (value < min) min = value;
-    if (value > max) max = value;
+  for (const item of series) {
+    for (const point of item.points) {
+      const value = xValue(point, xKey);
+      if (range && !(value >= range.min && value <= range.max)) continue;
+      count += 1;
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
   }
-  return { min, max };
+  return { count, min, max };
 }
 
 function boundedXRange(range, minX, maxX) {
@@ -577,17 +590,20 @@ function distanceToSegment(x, y, x1, y1, x2, y2) {
   return { distance: Math.hypot(x - px, y - py), t };
 }
 
-function valueDomain(points, metricKey = "", yScale = "linear", yRange = null) {
+function valueDomain(series, xKey, range, metricKey = "", yScale = "linear", yRange = null) {
   // A manual range IS the domain; data outside it gets clipped by the chart.
   if (yRange) return { minY: yRange.min, maxY: yRange.max };
   let minY = Infinity;
   let maxY = -Infinity;
-  for (const point of points) {
-    const value = Number(point.value);
-    if (!Number.isFinite(value)) continue;
-    if (yScale === "log" && value <= 0) continue;
-    if (value < minY) minY = value;
-    if (value > maxY) maxY = value;
+  for (const item of series) {
+    for (const point of item.points) {
+      if (range && !pointInRange(point, xKey, range)) continue;
+      const value = Number(point.value);
+      if (!Number.isFinite(value)) continue;
+      if (yScale === "log" && value <= 0) continue;
+      if (value < minY) minY = value;
+      if (value > maxY) maxY = value;
+    }
   }
   if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
     // No usable values (e.g. log scale over all-negative data) still needs a

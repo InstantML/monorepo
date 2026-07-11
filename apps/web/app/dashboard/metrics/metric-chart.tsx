@@ -102,33 +102,43 @@ function ChartSummaryTable({
   );
 }
 
-function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
-  const rows = normalizedSeries.map((item, index) => {
-    const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
+function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, useLineStyles: boolean, activeRunId?: string) {
+  // Two-phase build: rank every series with lean rows first, then resolve
+  // display fields for only the sliced top rows. Anything Intl-backed here
+  // (formatNumber → toLocaleString) costs tens of milliseconds per hover at
+  // 2,000 series when computed for rows the slice below throws away.
+  const ranked = normalizedSeries.map((item, index) => {
     const nearest = nearestPointByX(item, xValue);
+    const smoothedValue = item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : null;
     return {
-      id: item.id,
-      index,
       active: item.id === activeRunId,
-      name: item.identifier ?? item.name,
-      value: nearest?.value ?? null,
-      smoothedValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : null,
-      rankValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : nearest?.value ?? null,
-      label: xMode === "time" ? formatAxisValue(nearest?.xValue, xMode) : `Step ${formatNumber(nearest?.step, 0)}`,
-      point: nearest,
-      colorIndex,
-      lineStyleClass: chartLineStyleClass(useLineStyles ? colorIndex : 0),
+      index,
+      item,
+      nearest,
+      rankValue: smoothedValue ?? nearest?.value ?? null,
+      smoothedValue,
     };
   });
   // Rank by value at the hovered x (descending) like wandb/neptune, but keep the
   // actively-hovered run pinned to the top so it stays easy to read.
-  rows.sort((a, b) => {
+  ranked.sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     const av = a.rankValue ?? Number.NEGATIVE_INFINITY;
     const bv = b.rankValue ?? Number.NEGATIVE_INFINITY;
     return bv - av;
   });
-  return rows.slice(0, TOOLTIP_ROW_LIMIT);
+  return ranked.slice(0, TOOLTIP_ROW_LIMIT).map((row) => {
+    const colorIndex = styleIndexes[row.index] ?? chartSeriesColorIndex(row.item, row.index);
+    return {
+      id: row.item.id,
+      active: row.active,
+      name: row.item.identifier ?? row.item.name,
+      value: row.nearest?.value ?? null,
+      smoothedValue: row.smoothedValue,
+      colorIndex,
+      lineStyleClass: chartLineStyleClass(useLineStyles ? colorIndex : 0),
+    };
+  });
 }
 
 const MiniRange = memo(function MiniRange({
@@ -394,17 +404,25 @@ export const MetricChart = memo(function MetricChart({
     () => normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, zoomRange, yAxisOptions),
     [frameHeight, metricKey, pad, series, width, xMode, yAxisOptions, zoomRange],
   );
-  const rangeNormalizedSeries: any[] = useMemo(
-    () => (showRange && zoomRange
+  // Overview work is keyed on whether a zoom window exists — not the zoomRange
+  // object — because the unzoomed overview series and full domain are invariant
+  // across zoom-window values. Keying on the object identity re-ran both (an
+  // O(total points) domain scan plus the five-series normalization) for an
+  // identical result on every drag-to-zoom gesture.
+  const rangeActive = showRange && Boolean(zoomRange);
+  const overviewNormalizedSeries: any[] | null = useMemo(
+    () => (rangeActive
       ? normalizeSeries(series.slice(0, MINI_RANGE_SERIES_LIMIT), width, frameHeight, pad, xMode, metricKey, null, yAxisOptions)
-      : normalizedSeries),
-    [frameHeight, metricKey, normalizedSeries, pad, series, showRange, width, xMode, yAxisOptions, zoomRange],
+      : null),
+    [frameHeight, metricKey, pad, rangeActive, series, width, xMode, yAxisOptions],
   );
+  const rangeNormalizedSeries: any[] = overviewNormalizedSeries ?? normalizedSeries;
   const domain = normalizedSeries.find((item) => item.domain)?.domain ?? null;
-  const fullDomain = useMemo(
-    () => (showRange && zoomRange ? chartDomain(series, xMode, metricKey, null, yAxisOptions) : domain),
-    [domain, metricKey, series, showRange, xMode, yAxisOptions, zoomRange],
+  const unzoomedDomain = useMemo(
+    () => (rangeActive ? chartDomain(series, xMode, metricKey, null, yAxisOptions) : null),
+    [metricKey, rangeActive, series, xMode, yAxisOptions],
   );
+  const fullDomain = unzoomedDomain ?? domain;
 
   const [hover, setHover] = useState<HoverPoint>(null);
   const denseChart = shouldUseDenseChart(normalizedSeries);
@@ -424,7 +442,10 @@ export const MetricChart = memo(function MetricChart({
     "--series-muted-opacity": seriesMutedOpacity,
     "--series-hover-canvas-opacity": seriesHoverCanvasOpacity,
   } as CSSProperties;
-  const styleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
+  // Style slots hash only series identity (id/identifier/name), so key on the
+  // raw series: zoom-window renormalizations then reuse the same array and the
+  // memos downstream (MiniRange polylines, canvas dash setup) stay warm.
+  const styleIndexes = useMemo(() => chartStyleIndexesForItems(series), [series]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [tooltipPlacement, setTooltipPlacement] = useState<TooltipPlacement | null>(null);
@@ -595,8 +616,8 @@ export const MetricChart = memo(function MetricChart({
   // Memoized so non-hover state changes (tooltip placement, legend hover,
   // menu toggles) don't re-rank every series against the hovered x (A3).
   const hoverRows = useMemo(
-    () => (hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, xMode, useLineStyles, hover.runId) : []),
-    [hover, normalizedSeries, styleIndexes, useLineStyles, xMode],
+    () => (hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, useLineStyles, hover.runId) : []),
+    [hover, normalizedSeries, styleIndexes, useLineStyles],
   );
   const hiddenHoverRows = hover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
@@ -1105,7 +1126,7 @@ export const MetricChart = memo(function MetricChart({
       {showRange ? (
         <div className="chart-range-row">
           <MiniRange
-            domain={fullDomain ?? domain}
+            domain={fullDomain}
             normalizedSeries={rangeNormalizedSeries}
             onZoomRangeChange={onZoomRangeChange}
             styleIndexes={styleIndexes}

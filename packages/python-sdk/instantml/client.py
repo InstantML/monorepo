@@ -3475,6 +3475,11 @@ class _LocalStore:
         self._lock = threading.RLock()
         self._connection = sqlite3.connect(self.path, timeout=1.0, check_same_thread=False)
         self._connection.execute("pragma journal_mode=wal")
+        # WAL still fsyncs every commit at the default synchronous=FULL, and
+        # record_metrics commits per log call on the training thread; NORMAL
+        # defers the fsync to WAL checkpoints (safe for this best-effort local
+        # mirror) so a 10-100 Hz training loop is not throttled by disk syncs.
+        self._connection.execute("pragma synchronous=normal")
         self._connection.execute("pragma busy_timeout=1000")
         self._create_schema()
         self._connection.execute(
@@ -3606,6 +3611,9 @@ class _LocalStore:
         self._lock = threading.RLock()
         self._connection = sqlite3.connect(self.path, timeout=1.0, check_same_thread=False)
         self._connection.execute("pragma journal_mode=wal")
+        # Same rationale as __init__: synchronous is per-connection, so the
+        # post-fork connection must re-apply NORMAL or per-commit fsyncs return.
+        self._connection.execute("pragma synchronous=normal")
         self._connection.execute("pragma busy_timeout=1000")
 
 

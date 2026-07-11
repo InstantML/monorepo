@@ -42,6 +42,7 @@ import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { clearRunsetCaches } from "./reports/runset-cache";
 import { ToastStack, useToasts } from "./ui/toasts";
 import { useFocusTrap } from "./ui/use-focus-trap";
+import { useStableHandler } from "./ui/use-stable-handler";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
 import {
@@ -4475,6 +4476,24 @@ function dismissTopOverlay() {
     : "";
   const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
 
+  // Stable identities for handlers that flow into memo()'d children (workspace
+  // panel cards, runs-table rows). The function declarations above are
+  // recreated on every shell render; passed raw, they defeat those memo
+  // boundaries so every keystroke/selection re-rendered every panel chart and
+  // table row. Placed above the session early returns to keep hook order fixed.
+  const stableToggleRun = useStableHandler(toggleRun);
+  const stableToggleWorkspaceSection = useStableHandler(toggleWorkspaceSection);
+  const stableDuplicateWorkspacePanel = useStableHandler(duplicateWorkspacePanel);
+  const stableRemoveWorkspacePanel = useStableHandler(removeWorkspacePanel);
+  const stableMoveWorkspacePanel = useStableHandler(moveWorkspacePanel);
+  const stableResizeWorkspacePanel = useStableHandler(resizeWorkspacePanel);
+  const stableSetWorkspacePanelSmoothing = useStableHandler(setWorkspacePanelSmoothing);
+  const stableTogglePinnedMetric = useStableHandler(togglePinnedMetric);
+  const stableEditPanel = useStableHandler((sectionId: string, panelId: string) => setEditingPanelRef({ sectionId, panelId }));
+  const stableFullscreenPanel = useStableHandler((sectionId: string, panelId: string) => setFullscreenPanelRef({ sectionId, panelId }));
+  const stableOpenRun = useStableHandler((id: string) => { setPrimaryRunId(id); selectTab("detail"); });
+  const stableRequestStopRuns = useStableHandler((runIds: string[]) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single"));
+
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
     return (
@@ -4696,27 +4715,27 @@ function dismissTopOverlay() {
               onCloseEditingPanel={() => setEditingPanelRef(null)}
               onColumnsOpen={setColumnsOpen}
               onColumnMetricFilter={setColumnMetricFilter}
-              onDuplicatePanel={duplicateWorkspacePanel}
-              onEditPanel={(sectionId, panelId) => setEditingPanelRef({ sectionId, panelId })}
+              onDuplicatePanel={stableDuplicateWorkspacePanel}
+              onEditPanel={stableEditPanel}
               onExportSelectedRuns={exportSelectedRunsCsv}
-              onFullscreenPanel={(sectionId, panelId) => setFullscreenPanelRef({ sectionId, panelId })}
+              onFullscreenPanel={stableFullscreenPanel}
               onFullscreenPanelClose={() => setFullscreenPanelRef(null)}
               onFullscreenPanelMove={moveFullscreenPanel}
               onInspectRun={setPrimaryRunId}
-              onMovePanel={moveWorkspacePanel}
+              onMovePanel={stableMoveWorkspacePanel}
               onGoToPage={goToRunPage}
               onNextPage={goToNextRunPage}
-              onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
+              onOpenRun={stableOpenRun}
               onPageSize={changeRunPageSize}
               onPanelSearch={setPanelSearch}
-              onPinnedMetric={togglePinnedMetric}
+              onPinnedMetric={stableTogglePinnedMetric}
               onPreviousPage={goToPreviousRunPage}
               onRefresh={loadDashboard}
-              onRemovePanel={removeWorkspacePanel}
-              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
+              onRemovePanel={stableRemoveWorkspacePanel}
+              onRequestStop={stableRequestStopRuns}
               onResetWorkspace={resetWorkspaceLayout}
-              onResizePanel={resizeWorkspacePanel}
-              onPanelSmoothing={setWorkspacePanelSmoothing}
+              onResizePanel={stableResizeWorkspacePanel}
+              onPanelSmoothing={stableSetWorkspacePanelSmoothing}
               onRunRailCollapsed={(collapsed) => {
                 setRunsRailCollapsed(collapsed);
                 setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");
@@ -4732,8 +4751,8 @@ function dismissTopOverlay() {
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
-              onToggleRun={toggleRun}
-              onToggleSection={toggleWorkspaceSection}
+              onToggleRun={stableToggleRun}
+              onToggleSection={stableToggleWorkspaceSection}
               onUpdateEditingPanel={updateEditingPanel}
               orgMemberships={orgMemberships}
               orgName={sessionPayload?.organization?.name ?? ""}
@@ -4789,7 +4808,7 @@ function dismissTopOverlay() {
               onMetricFilter={setMetricFilter}
               onMetricKey={changeMetricKey}
               onChartLeave={() => setHover(null)}
-              onPinnedMetric={togglePinnedMetric}
+              onPinnedMetric={stableTogglePinnedMetric}
               onPointHoverChange={(point, key) => { setHoverMetricKey(key); setHover(point); }}
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
               onSmoothing={setSmoothing}
@@ -4853,7 +4872,7 @@ function dismissTopOverlay() {
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
-              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
+              onRequestStop={stableRequestStopRuns}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primarySeries={primaryDisplaySeries}

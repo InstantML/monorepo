@@ -85,10 +85,19 @@ Current navigation, workspace, and comparison controls:
   binary-search-bounded hover candidates for finite monotonic x-values with an
   exact linear fallback for malformed/custom input. Zoom keeps an all-series
   overview domain but normalizes only the five preview lines it draws, while
-  preserving full-list color/dash assignments. Run `npm run benchmark:charts`
-  and `npm run benchmark:charts:browser`; the 2026-07-10 local M1 result is in
+  preserving full-list color/dash assignments; the overview and its full
+  domain are keyed on whether a zoom window exists (not the window value), so
+  re-zooming to a new window reuses both. Domain extents iterate the nested
+  series arrays without flattening a total-points copy, tooltip rows rank lean
+  rows first and resolve Intl-formatted display fields only for the sliced top
+  rows, chart style slots are keyed on series identity so zoom
+  renormalizations don't invalidate downstream memos, and summary rows reuse
+  the monotonic-x hint to skip re-sorting normalized points. Run
+  `npm run benchmark:charts` and `npm run benchmark:charts:browser`; the
+  2026-07-10 local M1 result (including the same-day follow-up pass) is in
   `benchmarks/2026-07-10-chart-render-hot-path-results.md`.
 - Runs rail bulk-selection: the rail header has a tri-state master checkbox that selects or clears every run on the current page, shift-clicking a run extends the selection from the last interacted run, and a banner offers "Select all N matching filter" (capped at `MAX_SELECTED_RUNS = 2000`) when more runs match the filter than fit on the visible page, including after filters clear the current selection to zero. Bulk selection pages through the Rust `projection=selection` response so it does not fetch full ClickHouse metric aggregates for every selected run, and both summary/search loads and bulk-selection pages retry short transient proxy/backend failures before showing a global API issue. The dashboard auto-selects the first `DEFAULT_SELECTED_RUNS = 100` most recent runs once on initial load; explicit empty selections and large cross-page selections are preserved across search/filter refreshes. Workspace and Metrics line panels load selected-run series through bounded adaptive `POST /api/metrics/series` chunks with adaptive per-series point limits, retry transient proxy/backend failures, and patch the chart as chunks return, so the rail can drive 2,000-run selections without N per-run requests.
+- Handlers that flow from the dashboard shell into memo()'d children (workspace panel cards, runs-table rows) are wrapped in a stable-identity hook (`ui/use-stable-handler.ts`), so shell re-renders (panel search keystrokes, selection toggles, polls) no longer re-render every panel chart and table row through fresh closure identities. Insights explorers memoize scatter/parallel-coords geometry and reuse the default k-means clustering when the projection axes match, `formatNumber`/`formatMetricValue`/`formatCompact` reuse cached `Intl.NumberFormat` instances, and metric-key filtering skips re-sorting catalogs that are already normalized.
 - High-load dashboard render paths build page-scoped run ID maps instead of scanning visible rows for every selected run, Compare row, stop-control candidate, table row, rail row, and chart series label. The table and rail memoize selected-run `Set`s and metric-series/run-index maps so row rendering stays linear in visible rows. Empty metric-key filters reuse the already computed option list instead of sorting/filtering large catalogs on every render. The Metrics catalog indexes requested rows by metric key and iterates only populated run aggregates, avoiding per-run probes across sparse thousand-key catalogs while preserving duplicate-key rows and selected-run counts as selections approach the 2,000-run cap.
 - Dashboard startup avoids request waterfalls where route dependencies do not exist: projects and saved project preference load concurrently, and the overview request starts alongside the summary request while preserving preference gating for the initial runs query.
 - Selected-run CSV export downloads raw selected-run data through
