@@ -50,10 +50,18 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
     const normalizedPoints = new Array(plottable.length);
     let path = "";
     let smoothPath = "";
+    let xMonotonic = true;
+    let previousX = Number.NEGATIVE_INFINITY;
+    let previousXValue = Number.NEGATIVE_INFINITY;
     for (let i = 0; i < plottable.length; i += 1) {
       const point = plottable[i];
       const xv = xValue(point, xKey);
       const x = padding + ((xv - minStep) / stepSpan) * innerW;
+      if (!Number.isFinite(x) || !Number.isFinite(xv) || x < previousX || xv < previousXValue) {
+        xMonotonic = false;
+      }
+      previousX = x;
+      previousXValue = xv;
       const y = mapY(point.value);
       const smoothable = smoothed && Number.isFinite(point.smoothedValue) && (yScale !== "log" || point.smoothedValue > 0);
       const ySmoothed = smoothable ? mapY(point.smoothedValue) : undefined;
@@ -62,7 +70,7 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
       path += `${i ? " " : ""}${xs},${y.toFixed(2)}`;
       if (smoothed) smoothPath += `${i ? " " : ""}${xs},${(ySmoothed ?? y).toFixed(2)}`;
     }
-    return { ...item, points: filtered, path, smoothPath, normalizedPoints, domain, hiddenNonPositive: filtered.length - plottable.length };
+    return { ...item, points: filtered, path, smoothPath, normalizedPoints, domain, hiddenNonPositive: filtered.length - plottable.length, xMonotonic };
   });
 }
 
@@ -192,8 +200,18 @@ export function nearestPoint(normalizedSeries, x, y, maxDistance = 18) {
     }
   };
   for (const item of normalizedSeries) {
+    const points = item.normalizedPoints ?? [];
+    let start = 0;
+    let end = points.length - 1;
+    if (item.xMonotonic === true && Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(maxDistance) && maxDistance > 0) {
+      const lower = lowerBoundPoint(points, x - maxDistance, "x");
+      const upper = upperBoundPoint(points, x + maxDistance, "x");
+      start = Math.max(0, lower - 1);
+      end = Math.min(points.length - 1, upper);
+    }
     let previous = null;
-    for (const point of item.normalizedPoints ?? []) {
+    for (let index = start; index <= end; index += 1) {
+      const point = points[index];
       // Hit-test against the displayed line: the smoothed curve when smoothing
       // is on, otherwise the raw line.
       const pointY = point.displayY ?? point.y;
@@ -207,6 +225,57 @@ export function nearestPoint(normalizedSeries, x, y, maxDistance = 18) {
     }
   }
   return nearest;
+}
+
+export function nearestPointByX(item, targetX) {
+  const points = item?.normalizedPoints ?? [];
+  if (!points.length) return null;
+  if (item?.xMonotonic !== true || !Number.isFinite(targetX)) {
+    return linearNearestPointByX(points, targetX);
+  }
+
+  const rightIndex = lowerBoundPoint(points, targetX, "xValue");
+  if (rightIndex <= 0) return points[0];
+  if (rightIndex >= points.length) return points[firstEqualPointIndex(points, points.length - 1, "xValue")];
+  const leftIndex = rightIndex - 1;
+  const leftDistance = Math.abs(points[leftIndex].xValue - targetX);
+  const rightDistance = Math.abs(points[rightIndex].xValue - targetX);
+  const selectedIndex = leftDistance <= rightDistance ? leftIndex : rightIndex;
+  return points[firstEqualPointIndex(points, selectedIndex, "xValue")];
+}
+
+function linearNearestPointByX(points, targetX) {
+  let nearest = null;
+  for (const point of points) {
+    if (!nearest || Math.abs(point.xValue - targetX) < Math.abs(nearest.xValue - targetX)) nearest = point;
+  }
+  return nearest;
+}
+
+function firstEqualPointIndex(points, index, key) {
+  return lowerBoundPoint(points, points[index][key], key);
+}
+
+function lowerBoundPoint(points, target, key) {
+  let low = 0;
+  let high = points.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (points[middle][key] < target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+function upperBoundPoint(points, target, key) {
+  let low = 0;
+  let high = points.length;
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2);
+    if (points[middle][key] <= target) low = middle + 1;
+    else high = middle;
+  }
+  return low;
 }
 
 export function svgPointFromClient(rect, clientX, clientY, width, height, options = {}) {
@@ -287,6 +356,15 @@ export function chartSummaryRows(series, metricKey = "") {
 
 export function chartSummaryTakeaway(series, metricKey = "") {
   const rows = chartSummaryRows(series, metricKey);
+  return chartSummaryTakeawayFromRows(rows, metricKey);
+}
+
+export function chartSummaryModel(series, metricKey = "") {
+  const rows = chartSummaryRows(series, metricKey);
+  return { rows, takeaway: chartSummaryTakeawayFromRows(rows, metricKey) };
+}
+
+function chartSummaryTakeawayFromRows(rows, metricKey) {
   const goal = metricGoal(metricKey);
   const direction = goal === "minimize" ? "Lower is better" : "Higher is better";
   const plottedRows = rows.filter((row) => row.points > 0);

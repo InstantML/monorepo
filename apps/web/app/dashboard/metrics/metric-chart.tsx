@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, 
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
-import { axisTicks, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
+import { axisTicks, chartDomain, chartSummaryModel, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, nearestPointByX, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
 import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
@@ -34,6 +34,7 @@ const TOOLTIP_ROW_LIMIT = 8;
 // Series this sparse render per-point markers — a 1–2 point polyline is
 // invisible or ambiguous without them.
 const SPARSE_POINT_THRESHOLD = 2;
+const MINI_RANGE_SERIES_LIMIT = 5;
 
 type ChartView = "chart" | "summary";
 
@@ -104,11 +105,7 @@ function ChartSummaryTable({
 function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
   const rows = normalizedSeries.map((item, index) => {
     const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
-    const points = item.normalizedPoints ?? [];
-    const nearest = points.reduce((best: any, point: any) => {
-      if (!best) return point;
-      return Math.abs(point.xValue - xValue) < Math.abs(best.xValue - xValue) ? point : best;
-    }, null);
+    const nearest = nearestPointByX(item, xValue);
     return {
       id: item.id,
       index,
@@ -138,6 +135,8 @@ const MiniRange = memo(function MiniRange({
   domain,
   normalizedSeries,
   onZoomRangeChange,
+  styleIndexes,
+  useLineStyles,
   width,
   xMode,
   zoomRange,
@@ -145,6 +144,8 @@ const MiniRange = memo(function MiniRange({
   domain: any;
   normalizedSeries: any[];
   onZoomRangeChange?: (range: ChartZoomRange) => void;
+  styleIndexes: number[];
+  useLineStyles: boolean;
   width: number;
   xMode: string;
   zoomRange?: ChartZoomRange;
@@ -165,14 +166,12 @@ const MiniRange = memo(function MiniRange({
   const activeRange = sanitizeRange(draftRange ?? zoomRange, domain);
   const activeMinX = activeRange ? miniX(activeRange.min) : 0;
   const activeMaxX = activeRange ? miniX(activeRange.max) : 0;
-  const rangeStyleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
-  const useLineStyles = normalizedSeries.length > CHART_PALETTE.length;
   // Per-series SVG point strings are O(points) to build — memoize them so
   // drag-to-zoom re-renders (and any parent-driven re-render) reuse the
   // geometry instead of restringifying every polyline (perf audit A3).
   const rangePolylines = useMemo(
-    () => normalizedSeries.slice(0, 5).map((item, index) => {
-      const colorIndex = rangeStyleIndexes[index] ?? chartSeriesColorIndex(item, index);
+    () => normalizedSeries.slice(0, MINI_RANGE_SERIES_LIMIT).map((item, index) => {
+      const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
       return {
         className: `range-series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`,
         id: item.id,
@@ -180,7 +179,7 @@ const MiniRange = memo(function MiniRange({
         stroke: chartColor(colorIndex),
       };
     }),
-    [miniX, miniY, normalizedSeries, rangeStyleIndexes, useLineStyles],
+    [miniX, miniY, normalizedSeries, styleIndexes, useLineStyles],
   );
 
   function valueFromClient(target: SVGSVGElement, clientX: number, clientY: number) {
@@ -396,11 +395,16 @@ export const MetricChart = memo(function MetricChart({
     [frameHeight, metricKey, pad, series, width, xMode, yAxisOptions, zoomRange],
   );
   const rangeNormalizedSeries: any[] = useMemo(
-    () => (showRange ? normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, null, yAxisOptions) : normalizedSeries),
-    [frameHeight, metricKey, normalizedSeries, pad, series, showRange, width, xMode, yAxisOptions],
+    () => (showRange && zoomRange
+      ? normalizeSeries(series.slice(0, MINI_RANGE_SERIES_LIMIT), width, frameHeight, pad, xMode, metricKey, null, yAxisOptions)
+      : normalizedSeries),
+    [frameHeight, metricKey, normalizedSeries, pad, series, showRange, width, xMode, yAxisOptions, zoomRange],
   );
   const domain = normalizedSeries.find((item) => item.domain)?.domain ?? null;
-  const fullDomain = rangeNormalizedSeries.find((item) => item.domain)?.domain ?? domain;
+  const fullDomain = useMemo(
+    () => (showRange && zoomRange ? chartDomain(series, xMode, metricKey, null, yAxisOptions) : domain),
+    [domain, metricKey, series, showRange, xMode, yAxisOptions, zoomRange],
+  );
 
   const [hover, setHover] = useState<HoverPoint>(null);
   const denseChart = shouldUseDenseChart(normalizedSeries);
@@ -582,8 +586,12 @@ export const MetricChart = memo(function MetricChart({
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
-  const summaryRows = useMemo(() => chartSummaryRows(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
-  const summaryTakeaway = useMemo(() => chartSummaryTakeaway(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
+  const summaryModel = useMemo(
+    () => (chartView === "summary" ? chartSummaryModel(normalizedSeries, metricKey) : null),
+    [chartView, metricKey, normalizedSeries],
+  );
+  const summaryRows = summaryModel?.rows ?? [];
+  const summaryTakeaway = summaryModel?.takeaway ?? "";
   // Memoized so non-hover state changes (tooltip placement, legend hover,
   // menu toggles) don't re-rank every series against the hovered x (A3).
   const hoverRows = useMemo(
@@ -1100,6 +1108,8 @@ export const MetricChart = memo(function MetricChart({
             domain={fullDomain ?? domain}
             normalizedSeries={rangeNormalizedSeries}
             onZoomRangeChange={onZoomRangeChange}
+            styleIndexes={styleIndexes}
+            useLineStyles={useLineStyles}
             width={width}
             xMode={xMode}
             zoomRange={zoomRange}

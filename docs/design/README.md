@@ -133,6 +133,10 @@ Current draft designs:
   write-path throughput slice — batch ingest endpoint, per-org write-gate usage
   cache, ClickHouse async inserts, SDK batched delivery with connection reuse,
   and the `benchmark:ingest` measurement harness.
+- `2026-07-09-chart-render-hot-path.md`: implemented frontend chart hot-path
+  slice — unzoomed normalization reuse, lazy summary modeling,
+  binary-search-bounded hover with exact fallback semantics, five-series zoom
+  overview preparation, and helper plus real-browser 2,000-run benchmarks.
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 

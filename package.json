@@ -43,6 +43,8 @@
     "benchmark:competitive-gates": "node tools/competitive-benchmark-gates.mjs",
     "benchmark:sdk-overhead": "python3 benchmarks/sdk_logging_overhead.py run",
     "benchmark:ingest": "node tools/rust-ingest-benchmark.mjs",
+    "benchmark:charts": "node --expose-gc benchmarks/chart_render_hot_path.mjs",
+    "benchmark:charts:browser": "node benchmarks/chart_browser_benchmark.mjs",
     "seed:hosted-scale": "node tools/hosted-tenant-scale-seed.mjs",
     "benchmark:rich-objects": "node tools/rust-rich-objects-benchmark.mjs",
     "benchmark:rank-insights": "node tools/rank-insights-benchmark.mjs",
