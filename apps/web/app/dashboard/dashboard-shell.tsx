@@ -42,6 +42,7 @@ import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { clearRunsetCaches } from "./reports/runset-cache";
 import { ToastStack, useToasts } from "./ui/toasts";
 import { useFocusTrap } from "./ui/use-focus-trap";
+import { useStableHandler } from "./ui/use-stable-handler";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
 import {
@@ -82,6 +83,13 @@ import type { components } from "../../src/types/api.generated";
 // the module load reads as the page drawing itself in rather than a generic
 // placeholder swapping out. The options must stay inline object literals;
 // Next's compiler rejects a shared helper here.
+// Stable empties for tab-gated memos: off-tab polls reuse these identities
+// instead of allocating fresh arrays (and re-running the builders).
+const EMPTY_METRIC_CATALOG_ROWS: never[] = [];
+const EMPTY_ALERT_ROWS: never[] = [];
+const EMPTY_DATASET_ROWS: never[] = [];
+const EMPTY_QUICK_SEARCH_ITEMS: never[] = [];
+
 const AgentTabPane = dynamic(() => import("./agent/tab-pane").then((mod) => mod.AgentTabPane), { ssr: false, loading: () => <AgentPageSkeleton /> });
 const AlertsTabPane = dynamic(() => import("./alerts/tab-pane").then((mod) => mod.AlertsTabPane), { ssr: false, loading: () => <RunHealthPageSkeleton /> });
 const ArtifactsTabPane = dynamic(() => import("./artifacts/tab-pane").then((mod) => mod.ArtifactsTabPane), { ssr: false, loading: () => <ArtifactsPageSkeleton /> });
@@ -1026,7 +1034,14 @@ export function DashboardShell({
     () => (selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id)),
     [selectedRunIds, sortedRuns],
   );
-  const metricCatalogRows = useMemo(() => buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds), [metricCatalogSelectionIds, metricOptions, sortedRuns]);
+  const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
+  // Tab-gated derived data: these memos key on sortedRuns, which gets a new
+  // identity on every poll while any run is training. Their consumers mount
+  // only on their own tab, so off-tab recomputation was pure per-poll waste.
+  const metricCatalogRows = useMemo(
+    () => (visibleTab === "metrics" ? buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds) : EMPTY_METRIC_CATALOG_ROWS),
+    [metricCatalogSelectionIds, metricOptions, sortedRuns, visibleTab],
+  );
   const visibleMetricCatalogRows = useMemo(() => metricCatalogRows.slice(0, MAX_METRIC_CATALOG_ROWS), [metricCatalogRows]);
   const activeMetricCatalogRow = useMemo(() => metricCatalogRows.find((row) => row.key === metricKey) ?? null, [metricCatalogRows, metricKey]);
   const primaryDisplaySeries = useMemo(() => {
@@ -1057,8 +1072,14 @@ export function DashboardShell({
       })
   ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, resolveRunSummary, smoothing]);
   const inspectedPoint = hover;
-  const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
-  const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
+  const alertRows = useMemo(
+    () => (visibleTab === "alerts" ? buildAlertRows(sortedRuns, metricKey) : EMPTY_ALERT_ROWS),
+    [metricKey, sortedRuns, visibleTab],
+  );
+  const datasetRows = useMemo(
+    () => (visibleTab === "datasets" ? buildDatasetRows(sortedRuns, metricKey) : EMPTY_DATASET_ROWS),
+    [metricKey, sortedRuns, visibleTab],
+  );
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
@@ -1339,6 +1360,10 @@ export function DashboardShell({
     "#stop-reason",
   );
   const quickSearchItems = useMemo<QuickSearchItem[]>(() => {
+    // The palette is closed almost always; building ~200 items (each with a
+    // fresh onSelect closure) on every poll-driven sortedRuns change was
+    // wasted work for a hidden modal.
+    if (!quickSearchOpen) return EMPTY_QUICK_SEARCH_ITEMS;
     const items: QuickSearchItem[] = [
       ...tabs.map((tab) => ({
         id: `tab:${tab.id}`,
@@ -1410,7 +1435,7 @@ export function DashboardShell({
       },
     ];
     return items;
-  }, [allMetricOptions, changeMetricKey, changeProject, projects, runsRailCollapsed, savedViews, sortedRuns, theme, visibleArtifacts]);
+  }, [allMetricOptions, changeMetricKey, changeProject, projects, quickSearchOpen, runsRailCollapsed, savedViews, sortedRuns, theme, visibleArtifacts]);
   const filteredQuickSearchItems = useMemo(() => {
     const queryParts = quickSearchInput.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const filtered = queryParts.length
@@ -4473,7 +4498,24 @@ function dismissTopOverlay() {
   const stopDialogSkippedSummary = stopDialogSkipRows.length
     ? stopDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
     : "";
-  const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
+
+  // Stable identities for handlers that flow into memo()'d children (workspace
+  // panel cards, runs-table rows). The function declarations above are
+  // recreated on every shell render; passed raw, they defeat those memo
+  // boundaries so every keystroke/selection re-rendered every panel chart and
+  // table row. Placed above the session early returns to keep hook order fixed.
+  const stableToggleRun = useStableHandler(toggleRun);
+  const stableToggleWorkspaceSection = useStableHandler(toggleWorkspaceSection);
+  const stableDuplicateWorkspacePanel = useStableHandler(duplicateWorkspacePanel);
+  const stableRemoveWorkspacePanel = useStableHandler(removeWorkspacePanel);
+  const stableMoveWorkspacePanel = useStableHandler(moveWorkspacePanel);
+  const stableResizeWorkspacePanel = useStableHandler(resizeWorkspacePanel);
+  const stableSetWorkspacePanelSmoothing = useStableHandler(setWorkspacePanelSmoothing);
+  const stableTogglePinnedMetric = useStableHandler(togglePinnedMetric);
+  const stableEditPanel = useStableHandler((sectionId: string, panelId: string) => setEditingPanelRef({ sectionId, panelId }));
+  const stableFullscreenPanel = useStableHandler((sectionId: string, panelId: string) => setFullscreenPanelRef({ sectionId, panelId }));
+  const stableOpenRun = useStableHandler((id: string) => { setPrimaryRunId(id); selectTab("detail"); });
+  const stableRequestStopRuns = useStableHandler((runIds: string[]) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single"));
 
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
@@ -4696,27 +4738,27 @@ function dismissTopOverlay() {
               onCloseEditingPanel={() => setEditingPanelRef(null)}
               onColumnsOpen={setColumnsOpen}
               onColumnMetricFilter={setColumnMetricFilter}
-              onDuplicatePanel={duplicateWorkspacePanel}
-              onEditPanel={(sectionId, panelId) => setEditingPanelRef({ sectionId, panelId })}
+              onDuplicatePanel={stableDuplicateWorkspacePanel}
+              onEditPanel={stableEditPanel}
               onExportSelectedRuns={exportSelectedRunsCsv}
-              onFullscreenPanel={(sectionId, panelId) => setFullscreenPanelRef({ sectionId, panelId })}
+              onFullscreenPanel={stableFullscreenPanel}
               onFullscreenPanelClose={() => setFullscreenPanelRef(null)}
               onFullscreenPanelMove={moveFullscreenPanel}
               onInspectRun={setPrimaryRunId}
-              onMovePanel={moveWorkspacePanel}
+              onMovePanel={stableMoveWorkspacePanel}
               onGoToPage={goToRunPage}
               onNextPage={goToNextRunPage}
-              onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
+              onOpenRun={stableOpenRun}
               onPageSize={changeRunPageSize}
               onPanelSearch={setPanelSearch}
-              onPinnedMetric={togglePinnedMetric}
+              onPinnedMetric={stableTogglePinnedMetric}
               onPreviousPage={goToPreviousRunPage}
               onRefresh={loadDashboard}
-              onRemovePanel={removeWorkspacePanel}
-              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
+              onRemovePanel={stableRemoveWorkspacePanel}
+              onRequestStop={stableRequestStopRuns}
               onResetWorkspace={resetWorkspaceLayout}
-              onResizePanel={resizeWorkspacePanel}
-              onPanelSmoothing={setWorkspacePanelSmoothing}
+              onResizePanel={stableResizeWorkspacePanel}
+              onPanelSmoothing={stableSetWorkspacePanelSmoothing}
               onRunRailCollapsed={(collapsed) => {
                 setRunsRailCollapsed(collapsed);
                 setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");
@@ -4732,8 +4774,8 @@ function dismissTopOverlay() {
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
-              onToggleRun={toggleRun}
-              onToggleSection={toggleWorkspaceSection}
+              onToggleRun={stableToggleRun}
+              onToggleSection={stableToggleWorkspaceSection}
               onUpdateEditingPanel={updateEditingPanel}
               orgMemberships={orgMemberships}
               orgName={sessionPayload?.organization?.name ?? ""}
@@ -4789,7 +4831,7 @@ function dismissTopOverlay() {
               onMetricFilter={setMetricFilter}
               onMetricKey={changeMetricKey}
               onChartLeave={() => setHover(null)}
-              onPinnedMetric={togglePinnedMetric}
+              onPinnedMetric={stableTogglePinnedMetric}
               onPointHoverChange={(point, key) => { setHoverMetricKey(key); setHover(point); }}
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
               onSmoothing={setSmoothing}
@@ -4853,7 +4895,7 @@ function dismissTopOverlay() {
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
-              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
+              onRequestStop={stableRequestStopRuns}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primarySeries={primaryDisplaySeries}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Activity, ChevronDown, CircleStop, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, DragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
@@ -78,6 +78,121 @@ type RunRailTip = { text: string; rect: DOMRect };
 // tooltip it replaces sat on top of the card and could not be styled). It shows
 // the full untruncated name, every tag, and the note — the bits the bounded row
 // has to abbreviate.
+// One rail row, memo()'d so sweeping the pointer down the rail (which updates
+// highlightRunId per row) re-renders only the two rows whose highlight state
+// changed instead of re-running tooltip/status/config formatting for the whole
+// page of rows. Handlers must stay referentially stable (the shell provides
+// stable identities; the setters are useState setters).
+const WorkspaceRailRow = memo(function WorkspaceRailRow({
+  canControlRuns,
+  highlighted,
+  index,
+  metricKey,
+  onInspectRun,
+  onOpenRun,
+  onRequestStop,
+  onToggleRun,
+  run,
+  selected,
+  setBulkPromptEnabled,
+  setHighlightRunId,
+  setRailTip,
+}: {
+  canControlRuns: boolean;
+  highlighted: boolean;
+  index: number;
+  metricKey: string;
+  onInspectRun: (runId: string) => void;
+  onOpenRun: (runId: string) => void;
+  onRequestStop: (runIds: string[]) => void;
+  onToggleRun: (runId: string, options?: { shift?: boolean }) => void;
+  run: RunSummary;
+  selected: boolean;
+  setBulkPromptEnabled: (enabled: boolean) => void;
+  setHighlightRunId: (value: string | null | ((current: string | null) => string | null)) => void;
+  setRailTip: (tip: RunRailTip | null) => void;
+}) {
+  const compareLabel = selected ? `Deselect ${run.name}` : `Select ${run.name}`;
+  const railTooltip = runRailTooltip(run);
+  const uploadHealth = uploadHealthForRun(run);
+  const configSummary = runConfigSummary(run);
+  const compactConfigSummary = compactRailConfigSummary(run);
+  const statusLabel = displayStatusForRun(run) || run.status || "unknown";
+  const canStop = canRequestStop(run, canControlRuns);
+  const latestMetricValue = metricKey ? run.latest_metrics?.[metricKey] : undefined;
+  const hasLatestMetricValue = typeof latestMetricValue === "number" && Number.isFinite(latestMetricValue);
+  const runColor = chartColor(stableChartIndex(run.id || run.name, index));
+  return (
+    <div
+      className={`workspace-run-row ${selected ? "selected" : ""}${highlighted ? " is-highlighted" : ""}`}
+      onMouseEnter={(event) => {
+        setHighlightRunId(run.id);
+        setRailTip({ text: railTooltip, rect: event.currentTarget.getBoundingClientRect() });
+      }}
+      onMouseLeave={() => {
+        setHighlightRunId((current) => (current === run.id ? null : current));
+        setRailTip(null);
+      }}
+    >
+      <button
+        aria-label={compareLabel}
+        aria-pressed={selected}
+        className="workspace-run-select"
+        onClick={(event) => {
+          setBulkPromptEnabled(true);
+          onToggleRun(run.id, { shift: event.shiftKey });
+        }}
+        title={selected ? "Remove from comparison" : "Add to comparison"}
+        type="button"
+      >
+        <span className="workspace-eye" aria-hidden="true"><span /></span>
+      </button>
+      <button
+        aria-label={`Open ${run.name}`}
+        className="workspace-run-open"
+        data-rail-tooltip={railTooltip}
+        onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
+        type="button"
+      >
+        <i className="legend-dot" style={{ backgroundColor: runColor }} aria-hidden="true" />
+        <span className="workspace-run-body">
+          <strong>{compactRailRunName(run.name)}</strong>
+          <small title={`${run.project} · ${configSummary}`}>{run.project} · {compactConfigSummary}</small>
+          <span className="workspace-run-evidence">
+            <span className={`workspace-run-status ${runStatusClass(statusLabel)}`}>{statusLabel}</span>
+            {hasLatestMetricValue ? (
+              <span className="workspace-run-metric-chip" title={`${metricKey}: ${latestMetricValue}`}>
+                <span className="wrm-name">{shortMetricName(metricKey)}</span>
+                <span className="wrm-value">{compactRailMetricValue(latestMetricValue)}</span>
+              </span>
+            ) : null}
+            {/* Exception-only: synced is the unmarked default. */}
+            {uploadHealth.state !== "unknown" && uploadHealth.state !== "synced" ? (
+              <span className={`upload-health-chip ${uploadHealth.tone}`} title={uploadHealth.detail || undefined}>{uploadHealth.label}</span>
+            ) : null}
+          </span>
+          {/* Tags + note moved off the card to keep rows a fixed size;
+              they surface in the hover tooltip (RunRailTooltip). */}
+        </span>
+      </button>
+      {canStop ? (
+        <button
+          aria-label={`Review stop request for ${run.name}`}
+          className="workspace-run-stop"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRequestStop([run.id]);
+          }}
+          title="Review stop request"
+          type="button"
+        >
+          <CircleStop size={15} />
+        </button>
+      ) : null}
+    </div>
+  );
+});
+
 function RunRailTooltip({ tip }: { tip: RunRailTip | null }) {
   if (!tip || typeof document === "undefined") return null;
   const [name, ...details] = tip.text.split("\n");
@@ -498,89 +613,24 @@ export function RunsWorkspace({
         <div className="workspace-run-list">
           {initialRunsLoading ? (
             <RunsRailSkeleton />
-          ) : workspaceRuns.length ? workspaceRuns.map((run, index) => {
-            const selected = selectedRunIdSet.has(run.id);
-            const compareLabel = selected ? `Deselect ${run.name}` : `Select ${run.name}`;
-            const railTooltip = runRailTooltip(run);
-            const uploadHealth = uploadHealthForRun(run);
-            const configSummary = runConfigSummary(run);
-            const compactConfigSummary = compactRailConfigSummary(run);
-            const statusLabel = displayStatusForRun(run) || run.status || "unknown";
-            const canStop = canRequestStop(run, canControlRuns);
-            const latestMetricValue = metricKey ? run.latest_metrics?.[metricKey] : undefined;
-            const hasLatestMetricValue = typeof latestMetricValue === "number" && Number.isFinite(latestMetricValue);
-            const runColor = chartColor(stableChartIndex(run.id || run.name, index));
-            return (
-              <div
-                className={`workspace-run-row ${selected ? "selected" : ""}${run.id === highlightRunId ? " is-highlighted" : ""}`}
-                key={run.id}
-                onMouseEnter={(event) => {
-                  setHighlightRunId(run.id);
-                  setRailTip({ text: railTooltip, rect: event.currentTarget.getBoundingClientRect() });
-                }}
-                onMouseLeave={() => {
-                  setHighlightRunId((current) => (current === run.id ? null : current));
-                  setRailTip(null);
-                }}
-              >
-                <button
-                  aria-label={compareLabel}
-                  aria-pressed={selected}
-                  className="workspace-run-select"
-                  onClick={(event) => {
-                    setBulkPromptEnabled(true);
-                    onToggleRun(run.id, { shift: event.shiftKey });
-                  }}
-                  title={selected ? "Remove from comparison" : "Add to comparison"}
-                  type="button"
-                >
-                  <span className="workspace-eye" aria-hidden="true"><span /></span>
-                </button>
-                <button
-                  aria-label={`Open ${run.name}`}
-                  className="workspace-run-open"
-                  data-rail-tooltip={railTooltip}
-                  onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
-                  type="button"
-                >
-                  <i className="legend-dot" style={{ backgroundColor: runColor }} aria-hidden="true" />
-                  <span className="workspace-run-body">
-                    <strong>{compactRailRunName(run.name)}</strong>
-                    <small title={`${run.project} · ${configSummary}`}>{run.project} · {compactConfigSummary}</small>
-                    <span className="workspace-run-evidence">
-                      <span className={`workspace-run-status ${runStatusClass(statusLabel)}`}>{statusLabel}</span>
-                      {hasLatestMetricValue ? (
-                        <span className="workspace-run-metric-chip" title={`${metricKey}: ${latestMetricValue}`}>
-                          <span className="wrm-name">{shortMetricName(metricKey)}</span>
-                          <span className="wrm-value">{compactRailMetricValue(latestMetricValue)}</span>
-                        </span>
-                      ) : null}
-                      {/* Exception-only: synced is the unmarked default. */}
-                      {uploadHealth.state !== "unknown" && uploadHealth.state !== "synced" ? (
-                        <span className={`upload-health-chip ${uploadHealth.tone}`} title={uploadHealth.detail || undefined}>{uploadHealth.label}</span>
-                      ) : null}
-                    </span>
-                    {/* Tags + note moved off the card to keep rows a fixed size;
-                        they surface in the hover tooltip (RunRailTooltip). */}
-                  </span>
-                </button>
-                {canStop ? (
-                  <button
-                    aria-label={`Review stop request for ${run.name}`}
-                    className="workspace-run-stop"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRequestStop([run.id]);
-                    }}
-                    title="Review stop request"
-                    type="button"
-                  >
-                    <CircleStop size={15} />
-                  </button>
-                ) : null}
-              </div>
-            );
-          }) : (
+          ) : workspaceRuns.length ? workspaceRuns.map((run, index) => (
+            <WorkspaceRailRow
+              canControlRuns={canControlRuns}
+              highlighted={run.id === highlightRunId}
+              index={index}
+              key={run.id}
+              metricKey={metricKey}
+              onInspectRun={onInspectRun}
+              onOpenRun={onOpenRun}
+              onRequestStop={onRequestStop}
+              onToggleRun={onToggleRun}
+              run={run}
+              selected={selectedRunIdSet.has(run.id)}
+              setBulkPromptEnabled={setBulkPromptEnabled}
+              setHighlightRunId={setHighlightRunId}
+              setRailTip={setRailTip}
+            />
+          )) : (
             <div className="empty compact-empty">
               <strong>No runs match the current filters.</strong>
               <span>Clear search, project, and status filters to return to the run list.</span>

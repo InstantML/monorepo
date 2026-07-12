@@ -5,21 +5,24 @@ import { metricGoal } from "./state.js";
  * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
 export function normalizeSeries(series, width, height, padding = 28, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
-  const points = series.flatMap((item) => item.points);
-  if (points.length === 0) return [];
   const yScale = yAxis?.scale === "log" ? "log" : "linear";
   const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
-  // Iterative extent (no intermediate xValues array, no Math.min(...spread) —
-  // the spread form is both slower and overflows the call stack past ~100k pts).
-  const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
-  const range = boundedXRange(xRange, fullMinX, fullMaxX);
-  const visiblePoints = range ? points.filter((point) => pointInRange(point, xKey, range)) : points;
-  const domainPoints = visiblePoints.length ? visiblePoints : points;
-  const visibleExtent = range && visiblePoints.length > 1 ? xExtent(visiblePoints, xKey) : null;
-  const rawMinStep = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
-  const rawMaxStep = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
+  // Domain stats iterate the nested series arrays directly — flattening via
+  // series.flatMap() allocated an O(total points) copy (≈1 MB per call at a
+  // 120k-point selection) — and one fused pass collects the point count plus
+  // x and y extents together instead of separate extent/domain scans.
+  const full = seriesStats(series, xKey, null, yScale, !yRange);
+  if (full.count === 0) return [];
+  const range = boundedXRange(xRange, full.minX, full.maxX);
+  const visible = range ? seriesStats(series, xKey, range, yScale, !yRange) : full;
+  const visibleExtent = range && visible.count > 1 ? visible : null;
+  const rawMinStep = visibleExtent ? visibleExtent.minX : range?.min ?? full.minX;
+  const rawMaxStep = visibleExtent ? visibleExtent.maxX : range?.max ?? full.maxX;
   const { min: minStep, max: maxStep } = stepDomain(rawMinStep, rawMaxStep);
-  const yDomain = valueDomain(domainPoints, metricKey, yScale, yRange);
+  // An x-zoom that empties the window falls back to the full data for the y
+  // domain, mirroring the old visiblePoints.length ? visiblePoints : points.
+  const yStats = visible.count ? visible : full;
+  const yDomain = valueDomain(yStats.minY, yStats.maxY, metricKey, yScale, yRange);
   const minValue = yDomain.minY;
   const maxValue = yDomain.maxY;
   // Spans are guaranteed positive by stepDomain/valueDomain, so we never clamp
@@ -44,12 +47,10 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
           .map((pair) => pair[1])
       : positive;
     const smoothed = Boolean(item.smoothed);
-    // Single pass builds normalizedPoints + both path strings, and computes
-    // xValue once per point (it parses a Date in time mode — calling it twice
-    // doubled that cost on every render).
+    // Single pass builds normalizedPoints and computes xValue once per point
+    // (it parses a Date in time mode — calling it twice doubled that cost on
+    // every render).
     const normalizedPoints = new Array(plottable.length);
-    let path = "";
-    let smoothPath = "";
     let xMonotonic = true;
     let previousX = Number.NEGATIVE_INFINITY;
     let previousXValue = Number.NEGATIVE_INFINITY;
@@ -65,12 +66,56 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
       const y = mapY(point.value);
       const smoothable = smoothed && Number.isFinite(point.smoothedValue) && (yScale !== "log" || point.smoothedValue > 0);
       const ySmoothed = smoothable ? mapY(point.smoothedValue) : undefined;
-      normalizedPoints[i] = { ...point, x, y, ySmoothed, displayY: ySmoothed ?? y, xValue: xv };
-      const xs = x.toFixed(2);
-      path += `${i ? " " : ""}${xs},${y.toFixed(2)}`;
-      if (smoothed) smoothPath += `${i ? " " : ""}${xs},${(ySmoothed ?? y).toFixed(2)}`;
+      // Fixed-shape literal (no spread): drops fields no normalized-point
+      // consumer reads (e.g. `key`) and keeps every point on one hidden class
+      // for the canvas-stroke and hover hot loops.
+      normalizedPoints[i] = {
+        step: point.step,
+        value: point.value,
+        created_at: point.created_at,
+        smoothedValue: point.smoothedValue,
+        x,
+        y,
+        ySmoothed,
+        displayY: ySmoothed ?? y,
+        xValue: xv,
+      };
     }
-    return { ...item, points: filtered, path, smoothPath, normalizedPoints, domain, hiddenNonPositive: filtered.length - plottable.length, xMonotonic };
+    // Polyline strings are built lazily on first read and cached: dense-canvas
+    // charts stroke the numeric points directly and never read them, so the
+    // eager build did two toFixed calls plus megabyte-scale string appends per
+    // point for output the common path threw away. The hovered-series focus
+    // overlay, sparse SVG charts, and SVG export still materialize on demand.
+    let pathCache = null;
+    let smoothPathCache = null;
+    const buildPathStrings = () => {
+      let path = "";
+      let smoothPath = "";
+      for (let i = 0; i < normalizedPoints.length; i += 1) {
+        const point = normalizedPoints[i];
+        const xs = point.x.toFixed(2);
+        path += `${i ? " " : ""}${xs},${point.y.toFixed(2)}`;
+        if (smoothed) smoothPath += `${i ? " " : ""}${xs},${(point.ySmoothed ?? point.y).toFixed(2)}`;
+      }
+      pathCache = path;
+      smoothPathCache = smoothPath;
+    };
+    return {
+      ...item,
+      points: filtered,
+      normalizedPoints,
+      domain,
+      hiddenNonPositive: filtered.length - plottable.length,
+      xMonotonic,
+      get path() {
+        if (pathCache === null) buildPathStrings();
+        return pathCache;
+      },
+      get smoothPath() {
+        if (smoothPathCache === null) buildPathStrings();
+        return smoothPathCache;
+      },
+    };
   });
 }
 
@@ -79,17 +124,17 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
  * @param {{ scale?: "linear" | "log", range?: { min: number, max: number } | null } | null} [yAxis]
  */
 export function chartDomain(series, xKey = "step", metricKey = "", xRange = null, yAxis = null) {
-  const points = series.flatMap((item) => item.points);
-  if (points.length === 0) return null;
   const yScale = yAxis?.scale === "log" ? "log" : "linear";
   const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
-  const { min: fullMinX, max: fullMaxX } = xExtent(points, xKey);
-  const range = boundedXRange(xRange, fullMinX, fullMaxX);
-  const visiblePoints = range ? points.filter((point) => pointInRange(point, xKey, range)) : points;
-  const visibleExtent = range && visiblePoints.length > 1 ? xExtent(visiblePoints, xKey) : null;
-  const yDomain = valueDomain(visiblePoints.length ? visiblePoints : points, metricKey, yScale, yRange);
-  const rawMinX = visibleExtent ? visibleExtent.min : range?.min ?? fullMinX;
-  const rawMaxX = visibleExtent ? visibleExtent.max : range?.max ?? fullMaxX;
+  const full = seriesStats(series, xKey, null, yScale, !yRange);
+  if (full.count === 0) return null;
+  const range = boundedXRange(xRange, full.minX, full.maxX);
+  const visible = range ? seriesStats(series, xKey, range, yScale, !yRange) : full;
+  const visibleExtent = range && visible.count > 1 ? visible : null;
+  const yStats = visible.count ? visible : full;
+  const yDomain = valueDomain(yStats.minY, yStats.maxY, metricKey, yScale, yRange);
+  const rawMinX = visibleExtent ? visibleExtent.minX : range?.min ?? full.minX;
+  const rawMaxX = visibleExtent ? visibleExtent.maxX : range?.max ?? full.maxX;
   const xDomain = stepDomain(rawMinX, rawMaxX);
   return {
     minX: xDomain.min,
@@ -385,15 +430,22 @@ function chartSummaryTakeawayFromRows(rows, metricKey) {
 }
 
 function chartSummaryPoints(item) {
-  const points = item?.normalizedPoints?.length ? item.normalizedPoints : item?.points ?? [];
-  return points
-    .filter((point) => Number.isFinite(Number(point?.value)))
-    .map((point) => ({
-      ...point,
-      value: Number(point.value),
-      xValue: Number.isFinite(Number(point.xValue)) ? Number(point.xValue) : Number(point.step),
-    }))
-    .sort((a, b) => a.xValue - b.xValue);
+  const useNormalized = Boolean(item?.normalizedPoints?.length);
+  const source = useNormalized ? item.normalizedPoints : item?.points ?? [];
+  // Lean rows: the summary only reads value/step/xValue, so spread-cloning
+  // every normalized point (~10 fields each) was pure allocation churn at
+  // 2,000 × 60 points.
+  const points = [];
+  for (const point of source) {
+    const value = Number(point?.value);
+    if (!Number.isFinite(value)) continue;
+    const xRaw = Number(point.xValue);
+    points.push({ step: point.step, value, xValue: Number.isFinite(xRaw) ? xRaw : Number(point.step) });
+  }
+  // Normalized points flagged monotonic are already in x order; raw/legacy
+  // inputs keep the sort.
+  if (!(useNormalized && item.xMonotonic === true)) points.sort((a, b) => a.xValue - b.xValue);
+  return points;
 }
 
 function bestSummaryPoint(points, goal) {
@@ -534,18 +586,34 @@ function xValue(point, xKey) {
   return point.step;
 }
 
-// Min/max of the x dimension computed in a single pass. Avoids allocating a
-// mapped values array and avoids Math.min(...array) (which is O(n) to spread
-// and throws RangeError on very large series).
-function xExtent(points, xKey) {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const point of points) {
-    const value = xValue(point, xKey);
-    if (value < min) min = value;
-    if (value > max) max = value;
+// Point count plus x extents (and, unless a manual y-range makes them moot,
+// y extents) in one fused nested pass, optionally restricted to an x range.
+// Iterates the per-series arrays in place: no flattened copy, no mapped
+// values array, no Math.min(...spread) (which is O(n) to spread and throws
+// RangeError on very large series), and no second whole-data pass for the y
+// domain.
+function seriesStats(series, xKey, range, yScale, trackY) {
+  let count = 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const item of series) {
+    for (const point of item.points) {
+      const xv = xValue(point, xKey);
+      if (range && !(xv >= range.min && xv <= range.max)) continue;
+      count += 1;
+      if (xv < minX) minX = xv;
+      if (xv > maxX) maxX = xv;
+      if (!trackY) continue;
+      const value = Number(point.value);
+      if (!Number.isFinite(value)) continue;
+      if (yScale === "log" && value <= 0) continue;
+      if (value < minY) minY = value;
+      if (value > maxY) maxY = value;
+    }
   }
-  return { min, max };
+  return { count, minX, maxX, minY, maxY };
 }
 
 function boundedXRange(range, minX, maxX) {
@@ -577,18 +645,9 @@ function distanceToSegment(x, y, x1, y1, x2, y2) {
   return { distance: Math.hypot(x - px, y - py), t };
 }
 
-function valueDomain(points, metricKey = "", yScale = "linear", yRange = null) {
+function valueDomain(minY, maxY, metricKey = "", yScale = "linear", yRange = null) {
   // A manual range IS the domain; data outside it gets clipped by the chart.
   if (yRange) return { minY: yRange.min, maxY: yRange.max };
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const point of points) {
-    const value = Number(point.value);
-    if (!Number.isFinite(value)) continue;
-    if (yScale === "log" && value <= 0) continue;
-    if (value < minY) minY = value;
-    if (value > maxY) maxY = value;
-  }
   if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
     // No usable values (e.g. log scale over all-negative data) still needs a
     // drawable window so the axes render under the empty-state message.

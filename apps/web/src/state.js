@@ -142,7 +142,19 @@ export function metricFilterIsRegex(pattern) {
 }
 
 export function filterMetricKeys(keys, pattern) {
-  const uniqueKeys = [...new Set((keys ?? []).filter((key) => key && !isInternalInstantMlMetric(key)))].sort();
+  // Callers pass catalogs that are usually already unique and sorted (e.g.
+  // metricKeysFromSummary output), and this runs per keystroke in the filter
+  // boxes — skip the Set + sort re-normalization when a linear scan proves the
+  // input is already normalized.
+  const source = (keys ?? []).filter((key) => key && !isInternalInstantMlMetric(key));
+  let normalized = true;
+  for (let index = 1; index < source.length; index += 1) {
+    if (source[index - 1] >= source[index]) {
+      normalized = false;
+      break;
+    }
+  }
+  const uniqueKeys = normalized ? source : [...new Set(source)].sort();
   const trimmed = String(pattern ?? "").trim();
   if (!trimmed) return uniqueKeys;
   try {
@@ -262,9 +274,23 @@ export function identifierForRun(run, mode) {
   return run.name;
 }
 
+// toLocaleString constructs a locale formatter per call, which dominates
+// large-table renders (hundreds of cells × every poll). Cache one
+// Intl.NumberFormat per digit count — .format() on a cached instance is
+// ~20-50× cheaper and produces identical output.
+const numberFormatters = new Map();
+function numberFormatter(digits) {
+  let formatter = numberFormatters.get(digits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: digits });
+    numberFormatters.set(digits, formatter);
+  }
+  return formatter;
+}
+
 export function formatNumber(value, digits = 2) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
-  return Number(value).toLocaleString(undefined, { maximumFractionDigits: digits });
+  return numberFormatter(digits).format(Number(value));
 }
 
 // Metric values span ~1e-8 (learning rates) to ~1e6 (token counts). Fixed
@@ -274,7 +300,7 @@ export function formatMetricValue(value, digits = 3) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "-";
   const num = Number(value);
   if (num !== 0 && Math.abs(num) < 10 ** -digits) return num.toExponential(2);
-  return num.toLocaleString(undefined, { maximumFractionDigits: digits });
+  return numberFormatter(digits).format(num);
 }
 
 function numericDesc(left, right) {

@@ -128,6 +128,15 @@ pub(super) fn run_matches_search(
         return true;
     }
     if let Some(doc) = data.run_search_documents.get(&run.id) {
+        // Match against the cached document in place when the display status
+        // already agrees with the stored one (the common case). The
+        // unconditional clone copied a potentially config/metadata-sized
+        // document for every run in the org on each filtered query, under the
+        // store lock.
+        let display_status = run_control_display_status(run, run_control_for(data, run));
+        if doc.status == display_status {
+            return search.matches(doc.as_ref());
+        }
         let mut doc = doc.as_ref().clone();
         apply_display_status_to_search_document(data, run, &mut doc);
         return search.matches(&doc);

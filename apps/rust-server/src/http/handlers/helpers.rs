@@ -544,7 +544,10 @@ pub fn read_json_with_raw<T: DeserializeOwned>(
     max_bytes: usize,
 ) -> AppResult<(T, Value)> {
     let raw = read_json_value(headers, bytes, max_bytes)?;
-    let typed = serde_json::from_value::<T>(raw.clone())
+    // Deserialize by reference: from_value(raw.clone()) deep-cloned the whole
+    // parsed tree (2x peak allocation for multi-MB metric/trace batches) just
+    // to keep `raw` alive for idempotency hashing.
+    let typed = T::deserialize(&raw)
         .map_err(|_| AppError::validation("request body must be valid JSON"))?;
     Ok((typed, raw))
 }

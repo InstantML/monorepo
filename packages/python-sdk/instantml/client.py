@@ -416,7 +416,9 @@ class Client:
         retry_rate_limits: bool = True,
     ) -> dict[str, Any]:
         url = self.base_url.rstrip("/") + path
-        data = None if body is None else json.dumps(body).encode("utf-8")
+        # Compact separators match prepare_event and shave whitespace bytes from
+        # every payload (sub-1KiB bodies ship uncompressed).
+        data = None if body is None else json.dumps(body, separators=(",", ":")).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         api_key = self._resolve_api_key()
         if api_key:
@@ -1431,6 +1433,7 @@ class _AsyncProducerBuffer:
             elif len(self._buffer) + 1 > self._hard_max_events or self._buffer_bytes + event.body_size_bytes > self._hard_max_bytes:
                 warning = ("async producer buffer hard limit reached; dropped event", 1)
             else:
+                was_empty = not self._buffer
                 sequence = self._next_sequence
                 self._next_sequence += 1
                 self._buffer.append((sequence, event))
@@ -1448,7 +1451,14 @@ class _AsyncProducerBuffer:
                     raise
                 if len(self._buffer) >= self._max_events or self._buffer_bytes >= self._max_bytes:
                     self._flush_requested = True
-                self._condition.notify_all()
+                # Wake the writer only when it has something new to react to:
+                # a flush threshold was crossed, or the buffer went empty ->
+                # non-empty (it may be parked without an age timer). Waking on
+                # every append made the hot logging path and the writer trade
+                # the lock per event; mid-batch appends can rely on the
+                # writer's own age-based timeout.
+                if self._flush_requested or was_empty:
+                    self._condition.notify_all()
                 return True
         if warning is not None:
             self._run._warn_async_drop(warning[0], count_local=True, count=warning[1])
@@ -3475,6 +3485,11 @@ class _LocalStore:
         self._lock = threading.RLock()
         self._connection = sqlite3.connect(self.path, timeout=1.0, check_same_thread=False)
         self._connection.execute("pragma journal_mode=wal")
+        # WAL still fsyncs every commit at the default synchronous=FULL, and
+        # record_metrics commits per log call on the training thread; NORMAL
+        # defers the fsync to WAL checkpoints (safe for this best-effort local
+        # mirror) so a 10-100 Hz training loop is not throttled by disk syncs.
+        self._connection.execute("pragma synchronous=normal")
         self._connection.execute("pragma busy_timeout=1000")
         self._create_schema()
         self._connection.execute(
@@ -3606,6 +3621,9 @@ class _LocalStore:
         self._lock = threading.RLock()
         self._connection = sqlite3.connect(self.path, timeout=1.0, check_same_thread=False)
         self._connection.execute("pragma journal_mode=wal")
+        # Same rationale as __init__: synchronous is per-connection, so the
+        # post-fork connection must re-apply NORMAL or per-commit fsyncs return.
+        self._connection.execute("pragma synchronous=normal")
         self._connection.execute("pragma busy_timeout=1000")
 
 

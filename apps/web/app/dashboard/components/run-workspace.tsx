@@ -20,7 +20,7 @@ import type { MouseEvent, ReactNode } from "react";
 
 import { isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
 import { buildCheckpointResumeCode } from "../../../src/checkpoints.js";
-import { buildEvidenceSections, firstEvidenceItem } from "../../../src/evidence.js";
+import { buildEvidenceSectionItems, filterEvidenceSections, firstEvidenceItem } from "../../../src/evidence.js";
 import { ansiTokens, terminalWindow } from "../../../src/terminal.js";
 import { displayStatusForRun, formatNumber, statusTone } from "../../../src/state.js";
 import { ArtifactBrowser } from "../artifacts/artifact-browser";
@@ -371,7 +371,10 @@ export function RunEvidenceExplorer({
   run: RunSummary;
 }) {
   const [search, setSearch] = useState("");
-  const sections = useMemo(() => buildEvidenceSections({ artifacts: artifacts as any[], objects: objects as any[], search }), [artifacts, objects, search]);
+  // Item construction (which JSON.stringifies object metadata for searchText)
+  // is cached per data change; keystrokes only re-run the cheap filter pass.
+  const unfilteredSections = useMemo(() => buildEvidenceSectionItems({ artifacts: artifacts as any[], objects: objects as any[] }), [artifacts, objects]);
+  const sections = useMemo(() => filterEvidenceSections(unfilteredSections, search), [search, unfilteredSections]);
   const fallbackItem = firstEvidenceItem(sections);
   const [selectedId, setSelectedId] = useState("");
   const selected = useMemo(() => {
