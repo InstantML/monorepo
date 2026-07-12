@@ -548,73 +548,93 @@ export function SideBySide({
   const defaultSortCol = `metric:${metricKey}`;
   const [sort, setSort] = useState<SortState>({ col: defaultSortCol, dir: metricGoal(metricKey) === "minimize" ? "asc" : "desc" });
 
-  if (!payload?.rows?.length) return <div className="empty">Select runs to compare configs, metrics, and attributes.</div>;
-  const rawRuns = (payload.runs ?? []) as RunSummary[];
+  // Derived compare data is memoized (above the empty-payload early return so
+  // hook order stays fixed): the metric lookup spans every sparse payload row
+  // (thousands of paths), and rebuilding it — plus the search/config/matrix
+  // scans below — on every sort click and parent poll was pure waste. Only
+  // sortedRuns reacts to the sort state.
+  const rawRuns = useMemo(() => (payload?.runs ?? []) as RunSummary[], [payload]);
 
   // Stable run-identity color by selected order (independent of sort), so a run
   // keeps the same swatch across re-sorts and matches the charts' color identity.
-  const colorByRunId = new Map(rawRuns.map((run, index) => [run.id, identityColor(index)]));
+  const colorByRunId = useMemo(() => new Map(rawRuns.map((run, index) => [run.id, identityColor(index)])), [rawRuns]);
 
-  const searchTokens = compareSearchTokens(search);
-  const runMatches = searchTokens.length
-    ? rawRuns.filter((run) => searchTokens.every((token) => compareRunSearchText(run, artifactsByRun).includes(token)))
-    : rawRuns;
+  const searchTokens = useMemo(() => compareSearchTokens(search), [search]);
+  const runMatches = useMemo(
+    () => (searchTokens.length
+      ? rawRuns.filter((run) => searchTokens.every((token) => compareRunSearchText(run, artifactsByRun).includes(token)))
+      : rawRuns),
+    [artifactsByRun, rawRuns, searchTokens],
+  );
   const runSearchActive = searchTokens.length > 0;
-  const visibleRuns = runSearchActive && runMatches.length ? runMatches : runSearchActive ? [] : rawRuns;
+  const visibleRuns = useMemo(
+    () => (runSearchActive && runMatches.length ? runMatches : runSearchActive ? [] : rawRuns),
+    [rawRuns, runMatches, runSearchActive],
+  );
 
   const referenceRunId = (selectedReferenceRunId && visibleRuns.some((run) => run.id === selectedReferenceRunId) ? selectedReferenceRunId : "")
-    || (payload.reference_run_id && visibleRuns.some((run: RunSummary) => run.id === payload.reference_run_id) ? payload.reference_run_id : "")
+    || (payload?.reference_run_id && visibleRuns.some((run: RunSummary) => run.id === payload.reference_run_id) ? payload.reference_run_id : "")
     || visibleRuns[0]?.id
     || rawRuns[0]?.id
     || "";
 
   const resolvedLayout = layout === "auto" ? "rows" : layout;
-  const lookup = buildMetricLookup(payload.rows ?? [], rawRuns);
+  const lookup = useMemo(() => buildMetricLookup(payload?.rows ?? [], rawRuns), [payload, rawRuns]);
 
   // Columns for the rows table: metric columns, then status/duration/artifacts, then
   // config columns (variation-first). "Diff only" hides config columns identical
   // across every run.
-  const configKeys = deriveConfigKeys(visibleRuns);
-  const orderedConfigKeys = configSortKey ? [configSortKey, ...configKeys.filter((key) => key !== configSortKey)] : configKeys;
-  const visibleConfigKeys = (diffOnly ? orderedConfigKeys.filter((key) => configValuesDiffer(visibleRuns, key)) : orderedConfigKeys).slice(0, 5);
+  const configKeys = useMemo(() => deriveConfigKeys(visibleRuns), [visibleRuns]);
+  const visibleConfigKeys = useMemo(() => {
+    const ordered = configSortKey ? [configSortKey, ...configKeys.filter((key) => key !== configSortKey)] : configKeys;
+    return (diffOnly ? ordered.filter((key) => configValuesDiffer(visibleRuns, key)) : ordered).slice(0, 5);
+  }, [configKeys, configSortKey, diffOnly, visibleRuns]);
   // Drop the Artifacts column entirely when no compared run has any — an all-"—"
   // column is dead weight that just pushes config columns off-screen.
-  const anyArtifacts = visibleRuns.some((run) => artifactTotalForRun(run) > 0 || (artifactsByRun[run.id]?.length ?? 0) > 0);
-  const columns: CompareColumn[] = [
-    ...metricTableKeys.map((key): MetricColumn => ({ kind: "metric", key: `metric:${key}`, metricKey: key, goal: metricGoal(key) })),
-    // Status lives in the sticky identity column (always visible while scrolling
-    // wide metric tables), so it deliberately has no standalone column here —
-    // a second Status column just printed every run's status twice.
-    { kind: "duration", key: "duration" },
-    ...(anyArtifacts ? [{ kind: "artifacts", key: "artifacts" } as AttrColumn] : []),
-    ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),
-  ];
+  const columns: CompareColumn[] = useMemo(() => {
+    const anyArtifacts = visibleRuns.some((run) => artifactTotalForRun(run) > 0 || (artifactsByRun[run.id]?.length ?? 0) > 0);
+    return [
+      ...metricTableKeys.map((key): MetricColumn => ({ kind: "metric", key: `metric:${key}`, metricKey: key, goal: metricGoal(key) })),
+      // Status lives in the sticky identity column (always visible while scrolling
+      // wide metric tables), so it deliberately has no standalone column here —
+      // a second Status column just printed every run's status twice.
+      { kind: "duration", key: "duration" },
+      ...(anyArtifacts ? [{ kind: "artifacts", key: "artifacts" } as AttrColumn] : []),
+      ...visibleConfigKeys.map((key): ConfigColumn => ({ kind: "config", key: `config:${key}`, configKey: key })),
+    ];
+  }, [artifactsByRun, metricTableKeys, visibleConfigKeys, visibleRuns]);
 
   // If the actively-sorted column was removed (e.g. a metric column deleted), fall
   // back to the default sort so the row order is never silently ambiguous.
   const sortColValid = sort.col === "identity" || columns.some((column) => column.key === sort.col);
-  const effectiveSort: SortState = sortColValid ? sort : { col: defaultSortCol, dir: metricGoal(metricKey) === "minimize" ? "asc" : "desc" };
-  const sortedRuns = sortRunsForTable(visibleRuns, effectiveSort, lookup);
+  const effectiveCol = sortColValid ? sort.col : defaultSortCol;
+  const effectiveDir = sortColValid ? sort.dir : metricGoal(metricKey) === "minimize" ? "asc" : "desc";
+  const effectiveSort: SortState = { col: effectiveCol, dir: effectiveDir };
+  const sortedRuns = useMemo(
+    () => sortRunsForTable(visibleRuns, { col: effectiveCol, dir: effectiveDir }, lookup),
+    [effectiveCol, effectiveDir, lookup, visibleRuns],
+  );
+
+  // ── matrix (transposed) layout state ────────────────────────────────────────
+  const matrixRows = useMemo(() => {
+    if (resolvedLayout !== "columns") return [];
+    const all = buildCompareRows(payload?.rows ?? [], visibleRuns).map((row) => ({
+      ...row,
+      different: compareRowIsDifferent(row, visibleRuns, referenceRunId),
+      reference: row.values?.[referenceRunId],
+    }));
+    const diffRows = diffOnly ? all.filter((row) => row.different) : all;
+    const searched = runSearchActive ? diffRows : filterCompareRows(diffRows, search);
+    return sortCompareRows(searched, rowSort).slice(0, 80);
+  }, [diffOnly, payload, referenceRunId, resolvedLayout, rowSort, runSearchActive, search, visibleRuns]);
+
+  if (!payload?.rows?.length) return <div className="empty">Select runs to compare configs, metrics, and attributes.</div>;
 
   const onSortColumn = (col: string, preferAsc: boolean) => {
     setSort((current) => current.col === col ? { col, dir: current.dir === "asc" ? "desc" : "asc" } : { col, dir: preferAsc ? "asc" : "desc" });
   };
 
   const handleReference = onReferenceRunId ? (runId: string) => onReferenceRunId(runId) : undefined;
-
-  // ── matrix (transposed) layout state ────────────────────────────────────────
-  const matrixRows = resolvedLayout === "columns"
-    ? (() => {
-        const all = buildCompareRows(payload.rows ?? [], visibleRuns).map((row) => ({
-          ...row,
-          different: compareRowIsDifferent(row, visibleRuns, referenceRunId),
-          reference: row.values?.[referenceRunId],
-        }));
-        const diffRows = diffOnly ? all.filter((row) => row.different) : all;
-        const searched = runSearchActive ? diffRows : filterCompareRows(diffRows, search);
-        return sortCompareRows(searched, rowSort).slice(0, 80);
-      })()
-    : [];
 
   const hasRuns = visibleRuns.length > 0;
 

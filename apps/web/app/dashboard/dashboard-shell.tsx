@@ -83,6 +83,13 @@ import type { components } from "../../src/types/api.generated";
 // the module load reads as the page drawing itself in rather than a generic
 // placeholder swapping out. The options must stay inline object literals;
 // Next's compiler rejects a shared helper here.
+// Stable empties for tab-gated memos: off-tab polls reuse these identities
+// instead of allocating fresh arrays (and re-running the builders).
+const EMPTY_METRIC_CATALOG_ROWS: never[] = [];
+const EMPTY_ALERT_ROWS: never[] = [];
+const EMPTY_DATASET_ROWS: never[] = [];
+const EMPTY_QUICK_SEARCH_ITEMS: never[] = [];
+
 const AgentTabPane = dynamic(() => import("./agent/tab-pane").then((mod) => mod.AgentTabPane), { ssr: false, loading: () => <AgentPageSkeleton /> });
 const AlertsTabPane = dynamic(() => import("./alerts/tab-pane").then((mod) => mod.AlertsTabPane), { ssr: false, loading: () => <RunHealthPageSkeleton /> });
 const ArtifactsTabPane = dynamic(() => import("./artifacts/tab-pane").then((mod) => mod.ArtifactsTabPane), { ssr: false, loading: () => <ArtifactsPageSkeleton /> });
@@ -1027,7 +1034,14 @@ export function DashboardShell({
     () => (selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id)),
     [selectedRunIds, sortedRuns],
   );
-  const metricCatalogRows = useMemo(() => buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds), [metricCatalogSelectionIds, metricOptions, sortedRuns]);
+  const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
+  // Tab-gated derived data: these memos key on sortedRuns, which gets a new
+  // identity on every poll while any run is training. Their consumers mount
+  // only on their own tab, so off-tab recomputation was pure per-poll waste.
+  const metricCatalogRows = useMemo(
+    () => (visibleTab === "metrics" ? buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds) : EMPTY_METRIC_CATALOG_ROWS),
+    [metricCatalogSelectionIds, metricOptions, sortedRuns, visibleTab],
+  );
   const visibleMetricCatalogRows = useMemo(() => metricCatalogRows.slice(0, MAX_METRIC_CATALOG_ROWS), [metricCatalogRows]);
   const activeMetricCatalogRow = useMemo(() => metricCatalogRows.find((row) => row.key === metricKey) ?? null, [metricCatalogRows, metricKey]);
   const primaryDisplaySeries = useMemo(() => {
@@ -1058,8 +1072,14 @@ export function DashboardShell({
       })
   ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, resolveRunSummary, smoothing]);
   const inspectedPoint = hover;
-  const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
-  const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
+  const alertRows = useMemo(
+    () => (visibleTab === "alerts" ? buildAlertRows(sortedRuns, metricKey) : EMPTY_ALERT_ROWS),
+    [metricKey, sortedRuns, visibleTab],
+  );
+  const datasetRows = useMemo(
+    () => (visibleTab === "datasets" ? buildDatasetRows(sortedRuns, metricKey) : EMPTY_DATASET_ROWS),
+    [metricKey, sortedRuns, visibleTab],
+  );
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
@@ -1340,6 +1360,10 @@ export function DashboardShell({
     "#stop-reason",
   );
   const quickSearchItems = useMemo<QuickSearchItem[]>(() => {
+    // The palette is closed almost always; building ~200 items (each with a
+    // fresh onSelect closure) on every poll-driven sortedRuns change was
+    // wasted work for a hidden modal.
+    if (!quickSearchOpen) return EMPTY_QUICK_SEARCH_ITEMS;
     const items: QuickSearchItem[] = [
       ...tabs.map((tab) => ({
         id: `tab:${tab.id}`,
@@ -1411,7 +1435,7 @@ export function DashboardShell({
       },
     ];
     return items;
-  }, [allMetricOptions, changeMetricKey, changeProject, projects, runsRailCollapsed, savedViews, sortedRuns, theme, visibleArtifacts]);
+  }, [allMetricOptions, changeMetricKey, changeProject, projects, quickSearchOpen, runsRailCollapsed, savedViews, sortedRuns, theme, visibleArtifacts]);
   const filteredQuickSearchItems = useMemo(() => {
     const queryParts = quickSearchInput.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const filtered = queryParts.length
@@ -4474,7 +4498,6 @@ function dismissTopOverlay() {
   const stopDialogSkippedSummary = stopDialogSkipRows.length
     ? stopDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
     : "";
-  const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
 
   // Stable identities for handlers that flow into memo()'d children (workspace
   // panel cards, runs-table rows). The function declarations above are

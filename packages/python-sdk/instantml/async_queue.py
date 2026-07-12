@@ -1116,7 +1116,7 @@ def _send_request(
         headers["Idempotency-Key"] = idempotency_key
     request = urllib.request.Request(
         url,
-        data=json.dumps(body).encode("utf-8"),
+        data=json.dumps(body, separators=(",", ":")).encode("utf-8"),
         method=method,
         headers=headers,
     )

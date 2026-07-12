@@ -254,11 +254,11 @@ modeling land first. Indexed hover lands only after exact linear-equivalence and
 combined pointer-pipeline benchmarks pass. This keeps the riskier algorithmic
 change removable without losing the low-risk render win.
 
-Deferred: moving tooltip DOM updates fully outside React, lazily constructing
-SVG path strings for dense-canvas charts, replacing the remaining flattened
-extent arrays in normalization, and summary-table pagination/virtualization.
-Those changes need
-separate measurement after this slice removes the obvious duplicate work.
+Deferred: moving tooltip DOM updates fully outside React and summary-table
+pagination/virtualization. Lazy SVG path-string construction and the removal
+of the flattened extent arrays — deferred by the original slice — landed in
+the 2026-07-11 follow-up pass recorded in the results file. Remaining items
+need separate measurement.
 
 ## Failure Modes
 

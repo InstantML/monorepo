@@ -1,11 +1,12 @@
 "use client";
 
 import { Activity, ChevronDown, ChevronRight, Copy, GitBranch, RefreshCw, Search } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { ApiError, isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
 import { formatNumber } from "../../../src/state.js";
+import { useStableHandler } from "../ui/use-stable-handler";
 import type { components } from "../../../src/types/api.generated";
 import type { RunSummary } from "../../dashboard-types";
 import { formatDuration } from "../ui/duration";
@@ -302,6 +303,11 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     replaceTraceUrl(nextRunId, "", "", currentTraceUrlFilters(statusFilter, kindFilter, timeRange, debouncedQuery));
   }
 
+  // Stable identities so the memo()'d tree nodes skip re-renders on parent
+  // state changes that don't affect the tree (function declarations below are
+  // recreated per render otherwise).
+  const stableToggleSpan = useStableHandler(toggleSpan);
+  const stableHandleTreeKeyDown = useStableHandler(handleTreeKeyDown);
   const loadChildren = useCallback(async (parentSpanId: string, cursor = ""): Promise<TraceChildrenResponse | null> => {
     if (!selectedRunId || !selectedTraceId) return null;
     const requestTraceKey = traceKey(selectedRunId, selectedTraceId);
@@ -600,9 +606,9 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
                   detail={selectedDetail}
                   expanded={expanded}
                   focusableSpanId={selectedSpan?.span_id ?? displayedSpanIndex.first?.span_id ?? ""}
-                  onKeyDown={handleTreeKeyDown}
+                  onKeyDown={stableHandleTreeKeyDown}
                   onLoadMoreChildren={loadChildren}
-                  onToggle={toggleSpan}
+                  onToggle={stableToggleSpan}
                   selectedSpanId={selectedSpanId}
                 />
                 {selectedDetail.trace.total_span_count > loadedSpanCount ? (
@@ -660,7 +666,14 @@ function TraceTree({
   );
 }
 
-function TraceTreeNode({
+const EMPTY_KNOWN_CHILDREN: TraceSpan[] = [];
+
+// memo()'d so poll-driven parent re-renders with unchanged tree props skip
+// re-rendering up to TRACE_SPAN_LIMIT nodes; recursion goes through the
+// memoized wrapper so child subtrees skip too.
+const TraceTreeNode = memo(TraceTreeNodeBase);
+
+function TraceTreeNodeBase({
   childrenByParent,
   expanded,
   focusableSpanId,
@@ -685,12 +698,16 @@ function TraceTreeNode({
 }) {
   const childWindow = childrenByParent[span.span_id];
   const isExpanded = expanded.has(span.span_id);
-  const knownChildren = knownChildrenByParent[span.span_id] ?? [];
-  const knownChildIds = new Set(knownChildren.map((child) => child.span_id));
-  const children = [
-    ...knownChildren,
-    ...(childWindow?.spans ?? []).filter((child) => !knownChildIds.has(child.span_id)),
-  ];
+  const knownChildren = knownChildrenByParent[span.span_id] ?? EMPTY_KNOWN_CHILDREN;
+  // Merged child list cached per (known, loaded-window) pair — the Set build
+  // ran for every node on every tree render.
+  const children = useMemo(() => {
+    const knownChildIds = new Set(knownChildren.map((child) => child.span_id));
+    return [
+      ...knownChildren,
+      ...(childWindow?.spans ?? []).filter((child) => !knownChildIds.has(child.span_id)),
+    ];
+  }, [childWindow, knownChildren]);
   const hasChildren = span.child_count > 0 || children.length > 0;
   return (
     <div className="trace-node">

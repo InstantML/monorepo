@@ -47,7 +47,6 @@ export class ApiClient {
     const method = String(options.method ?? "GET").toUpperCase();
     const { headers, requestId } = headersWithRequestId(options.headers);
     const url = this.baseUrl + path;
-    const safePath = safeApiPathForLogs(path);
     const startedAt = nowMs();
     let response = null;
     let payload = null;
@@ -68,7 +67,7 @@ export class ApiClient {
         logApiRequest("failure", {
           requestId: finalRequestId,
           method,
-          path: safePath,
+          path,
           status: response.status,
           durationMs: elapsedMs(startedAt),
           code: error.code,
@@ -81,7 +80,7 @@ export class ApiClient {
       logApiRequest("success", {
         requestId: finalRequestId,
         method,
-        path: safePath,
+        path,
         status: response.status,
         durationMs: elapsedMs(startedAt),
         code: "ok",
@@ -99,7 +98,7 @@ export class ApiClient {
       logApiRequest("failure", {
         requestId: finalRequestId,
         method,
-        path: safePath,
+        path,
         status: 0,
         durationMs: elapsedMs(startedAt),
         code: "network_error",
@@ -113,7 +112,6 @@ export class ApiClient {
     const method = String(options.method ?? "GET").toUpperCase();
     const { headers, requestId } = headersWithRequestId(options.headers);
     const url = this.baseUrl + path;
-    const safePath = safeApiPathForLogs(path);
     const startedAt = nowMs();
     let response = null;
     let payload = null;
@@ -134,7 +132,7 @@ export class ApiClient {
         logApiRequest("failure", {
           requestId: finalRequestId,
           method,
-          path: safePath,
+          path,
           status: response.status,
           durationMs: elapsedMs(startedAt),
           code: error.code,
@@ -151,7 +149,7 @@ export class ApiClient {
       logApiRequest("success", {
         requestId: finalRequestId,
         method,
-        path: safePath,
+        path,
         status: response.status,
         durationMs: elapsedMs(startedAt),
         code: "ok",
@@ -172,7 +170,7 @@ export class ApiClient {
           logApiRequest("failure", {
             requestId: traced.requestId,
             method,
-            path: safePath,
+            path,
             status: traced.status || response.status,
             durationMs: elapsedMs(startedAt),
             code: traced.code || "malformed_response",
@@ -189,7 +187,7 @@ export class ApiClient {
       logApiRequest("failure", {
         requestId: finalRequestId,
         method,
-        path: safePath,
+        path,
         status: 0,
         durationMs: elapsedMs(startedAt),
         code: "network_error",
@@ -559,20 +557,25 @@ function joinSafePath(segments) {
 }
 
 function logApiRequest(outcome, detail) {
+  // The common path — success with frontend logging disabled — returns before
+  // any work, so the URL parse + route classification in safeApiPathForLogs
+  // is no longer paid on every API call of a polling dashboard.
+  const emitSuccess = outcome === "success";
+  if (emitSuccess && !frontendApiLogsEnabled()) return;
   const event = {
     event: "instantml_api_request",
     outcome,
     requestId: detail.requestId,
     traceId: detail.requestId,
     method: detail.method,
-    path: detail.path,
+    path: safeApiPathForLogs(detail.path),
     status: detail.status,
     durationMs: detail.durationMs,
     code: detail.code || "",
     retryable: Boolean(detail.retryable),
   };
-  if (outcome === "success") {
-    if (frontendApiLogsEnabled()) console.info?.("instantml_api_request", event);
+  if (emitSuccess) {
+    console.info?.("instantml_api_request", event);
     return;
   }
   if (detail.status >= 500 || detail.status === 0) {

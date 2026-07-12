@@ -417,7 +417,8 @@ export const MetricChart = memo(function MetricChart({
     [frameHeight, metricKey, pad, rangeActive, series, width, xMode, yAxisOptions],
   );
   const rangeNormalizedSeries: any[] = overviewNormalizedSeries ?? normalizedSeries;
-  const domain = normalizedSeries.find((item) => item.domain)?.domain ?? null;
+  // Every normalized item shares one domain object; the first carries it.
+  const domain = normalizedSeries[0]?.domain ?? null;
   const unzoomedDomain = useMemo(
     () => (rangeActive ? chartDomain(series, xMode, metricKey, null, yAxisOptions) : null),
     [metricKey, rangeActive, series, xMode, yAxisOptions],

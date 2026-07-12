@@ -51,10 +51,11 @@ class _FakeHTTPResponse:
 class _FakeConnection:
     instances: list["_FakeConnection"] = []
 
-    def __init__(self, host, port, timeout=None):
+    def __init__(self, host, port, timeout=None, context=None):
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.context = context
         self.sock = type("_Sock", (), {"settimeout": lambda self, t: None})()
         self.requests: list[tuple] = []
         self.closed = False
@@ -116,7 +117,7 @@ def test_pool_maps_http_error(fake_pool):
 def test_pool_wraps_httpexception_as_urlerror(fake_pool, monkeypatch):
     # A fresh (non-reused) connection whose request raises HTTPException is
     # surfaced as URLError.
-    def make_broken(host, port, timeout=None):
+    def make_broken(host, port, timeout=None, context=None):
         conn = _FakeConnection(host, port, timeout)
         conn.raise_on_request = http.client.HTTPException("broken")
         return conn
@@ -173,7 +174,7 @@ def test_pool_httpexception_during_uncompressed_retry(fake_pool, monkeypatch):
     monkeypatch.setattr(http_pool, "_gzip_disabled", False)
     big = json.dumps({"metrics": {"k": "v" * 4000}}).encode("utf-8")
 
-    def make_conn(host, port, timeout=None):
+    def make_conn(host, port, timeout=None, context=None):
         conn = _FakeConnection(host, port, timeout)
         # gzip attempt returns 415; the uncompressed retry raises HTTPException.
         responses = iter([_FakeHTTPResponse(status=415)])
@@ -196,7 +197,7 @@ def test_pool_httpexception_during_uncompressed_retry(fake_pool, monkeypatch):
 
 
 def test_pool_read_oserror_closes_connection(fake_pool, monkeypatch):
-    def make_conn(host, port, timeout=None):
+    def make_conn(host, port, timeout=None, context=None):
         conn = _FakeConnection(host, port, timeout)
 
         class Resp:
@@ -222,7 +223,7 @@ def test_pool_keepalive_retry_fresh_also_fails(fake_pool, monkeypatch):
     dead.raise_on_request = ConnectionError("reset")
     fake_pool._release(key, dead)
 
-    def make_broken(host, port, timeout=None):
+    def make_broken(host, port, timeout=None, context=None):
         conn = _FakeConnection(host, port, timeout)
         conn.raise_on_request = ConnectionError("still dead")
         return conn
