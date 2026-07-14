@@ -124,6 +124,7 @@
             "pages": [
               "guides/imports",
               "guides/wandb-alternative",
+              "guides/agent-mcp-benchmark",
               "guides/instantml-vs-mlflow",
               "guides/wandb-import-guide",
               "guides/wandb-neptune-imports",

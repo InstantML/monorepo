@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_API_URL,
   DEFAULT_WEB_URL,
   bearerTokenFromHeader,
+  isMainModule,
   parseCliOptions,
 } from "../mcp-server.mjs";
 
@@ -46,6 +51,23 @@ test("MCP entrypoint accepts a frontend URL override for report share links", ()
     }).webUrl,
     "http://127.0.0.1:3000",
   );
+});
+
+test("MCP entrypoint detection survives symlinked launch paths", () => {
+  const serverPath = fileURLToPath(new URL("../mcp-server.mjs", import.meta.url));
+  const serverUrl = new URL("../mcp-server.mjs", import.meta.url).href;
+  assert.equal(isMainModule(serverPath, serverUrl), true);
+  assert.equal(isMainModule(undefined, serverUrl), false);
+  assert.equal(isMainModule("/nonexistent/other.mjs", serverUrl), false);
+
+  const dir = mkdtempSync(join(tmpdir(), "mcp-entry-"));
+  try {
+    const linkPath = join(dir, "mcp-server.mjs");
+    symlinkSync(serverPath, linkPath);
+    assert.equal(isMainModule(linkPath, serverUrl), true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("MCP entrypoint extracts bearer tokens for hosted HTTP mode", () => {

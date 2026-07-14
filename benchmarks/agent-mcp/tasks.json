@@ -1,0 +1,50 @@
+{
+  "tasks": [
+    {
+      "id": "count_runs",
+      "prompt": "Using the experiment-tracking tools available to you, find how many runs exist in the project named 'mcp-bench-cartpole'. Reply with just the number.",
+      "grader": { "type": "regex_all", "patterns": ["\\b30\\b"] }
+    },
+    {
+      "id": "count_failed",
+      "prompt": "Using the experiment-tracking tools available to you, find how many runs in the project 'mcp-bench-cartpole' have a failed status. Reply with just the number.",
+      "grader": { "type": "regex_all", "patterns": ["\\b3\\b"] }
+    },
+    {
+      "id": "best_run",
+      "prompt": "In the experiment-tracking project 'mcp-bench-cartpole', which run has the highest final (most recently logged) value of the metric 'eval/return_mean'? Reply with the run name and that final value.",
+      "grader": { "type": "regex_all", "patterns": ["ppo-adam-lr0\\.0003-bs128-s23", "463"] }
+    },
+    {
+      "id": "best_lr",
+      "prompt": "In the experiment-tracking project 'mcp-bench-cartpole', what learning rate (config field 'lr') was used by the run with the highest final value of 'eval/return_mean'? Reply with just the learning rate.",
+      "grader": { "type": "regex_all", "patterns": ["0\\.0003|3e-0?4"] }
+    },
+    {
+      "id": "top3",
+      "prompt": "List the names of the top 3 runs in the experiment-tracking project 'mcp-bench-cartpole' ranked by their final value of 'eval/return_mean', best first.",
+      "grader": {
+        "type": "ordered_names",
+        "names": ["ppo-adam-lr0.0003-bs128-s23", "ppo-adam-lr0.0003-bs64-s23", "ppo-adam-lr0.0003-bs32-s56"]
+      }
+    },
+    {
+      "id": "optimizer_avg",
+      "prompt": "Across the finished runs in the experiment-tracking project 'mcp-bench-cartpole', which optimizer ('adam' or 'sgd', see config field 'optimizer') achieves the higher average final value of 'eval/return_mean'? Reply with just the optimizer name.",
+      "grader": { "type": "regex_all", "patterns": ["adam"], "reject": ["\\bsgd\\b.{0,20}(higher|wins|better)"] }
+    },
+    {
+      "id": "loss_threshold_step",
+      "prompt": "In the experiment-tracking project 'mcp-bench-cartpole', for the run named 'ppo-adam-lr0.0003-bs128-s23', at which training step does the metric 'train/loss' first drop below 0.5? Reply with just the step number.",
+      "grader": { "type": "regex_all", "patterns": ["\\b40\\b"] }
+    },
+    {
+      "id": "config_diff",
+      "prompt": "Compare the runs 'ppo-adam-lr0.0003-bs128-s23' and 'ppo-sgd-lr0.0003-bs128-s50' in the experiment-tracking project 'mcp-bench-cartpole'. Which config fields differ between them, and what are the two values of each differing field?",
+      "grader": {
+        "type": "regex_all",
+        "patterns": ["optimizer", "adam", "\\bsgd\\b", "seed", "\\b23\\b", "\\b50\\b", "warmup", "\\b10\\b", "\\b20\\b"]
+      }
+    }
+  ]
+}
