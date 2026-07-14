@@ -1,0 +1,187 @@
+---
+title: "Experiment tracking"
+description: "Learn what experiment tracking is, what to record for every ML training run, and how to set up experiment tracking in Python with InstantML."
+---
+
+Experiment tracking is the practice of recording every machine learning
+training run — its metrics, hyperparameters, code context, and outputs — so
+you can search, chart, compare, and reproduce experiments instead of
+reconstructing them from memory, terminal scrollback, or filenames.
+
+This page explains what experiment tracking involves, what to record, how to
+add it to a Python training loop, and how to evaluate experiment tracking
+tools. If you already know the concepts and want to start logging, go straight
+to the [quickstart](/quickstart).
+
+## What is experiment tracking?
+
+An experiment is one execution of a training or evaluation script with a
+specific configuration. Experiment tracking captures each execution as a
+**run**: a named, timestamped record that stores the configuration you chose,
+the metric series the job produced, and references to the files it consumed or
+created.
+
+Ad-hoc alternatives break down quickly:
+
+- Spreadsheets and notes capture final numbers but not full metric curves,
+  and they depend on someone remembering to fill them in.
+- Log files and terminal scrollback disappear when the machine or tmux
+  session does.
+- Filename conventions like `model_final_v3_lr0.0003.pt` encode one or two
+  hyperparameters and nothing else.
+
+A tracker replaces those with a queryable history: every run your team has
+launched, searchable by name, tags, config, and metric summaries, with charts
+that overlay runs against each other.
+
+## What to track for every run
+
+A useful run record answers "what did we try, what happened, and can we get
+it back?" In InstantML those answers map to a small set of
+[core concepts](/concepts/core-concepts):
+
+- **Metrics** — loss, accuracy, reward, learning rate, and any other scalar
+  series, logged against a step so curves can be charted and compared.
+- **Config** — the hyperparameters and settings that make this run different
+  from the last one: model size, learning rate, dataset revision, seed.
+- **Tags and notes** — searchable labels (`baseline`, `ablation`) and
+  free-form context about why the run exists and how it went.
+- **Artifacts** — datasets, evaluation outputs, and other files the run
+  consumed or produced.
+- **Checkpoints** — model weights saved during training, so a promising run
+  can be resumed or forked instead of restarted.
+- **Logs and source metadata** — console output and the code context the run
+  started from, for debugging and reproducibility.
+- **Traces** — for RL and agent workloads, step-level rollout and eval traces
+  linked back to the run that produced them.
+
+Track all of it from the start of a project. The runs you most want to
+inspect are usually the ones from three weeks ago, before anyone expected the
+result to matter.
+
+## Set up experiment tracking in Python
+
+Experiment tracking should be a few lines around the training loop you
+already have. With the [InstantML SDK](/sdk/logging), a tracked run is:
+
+```python
+import instantml as im
+
+run = im.init(
+    project="mnist",
+    name="baseline-seed-42",
+    config={"seed": 42, "model": "tiny-mlp", "learning_rate": 3e-4},
+    tags=["baseline"],
+)
+
+for step, batch in enumerate(train_loader, start=1):
+    loss = train_step(batch)
+    run.log({"train/loss": loss}, step=step)
+
+run.finish()
+```
+
+`init` creates the run and records its config, `run.log` appends metric
+points, and `finish` marks the run complete. Install with
+`python -m pip install instantml` and authenticate once with
+`instantml login` — the [quickstart](/quickstart) walks through the full
+five-minute path.
+
+If you train with a framework, the [one-line adapters](/integrations/overview)
+for PyTorch Lightning, Hugging Face Transformers, and Keras log through the
+same run API without hand-written logging code.
+
+## Work with tracked experiments in the dashboard
+
+Recording runs is half of experiment tracking; the daily value comes from
+what you can do with the history:
+
+- [Search, sort, and filter runs](/dashboard/runs-workspace) by name, tags,
+  notes, config, and metric summaries.
+- [Chart metrics](/dashboard/metrics-charts) across runs with smoothing,
+  step or time x-axes, and zoom.
+- [Compare runs side by side](/dashboard/compare-runs) to see config diffs
+  next to metric outcomes.
+- [Inspect one run](/dashboard/run-detail) with its full config, metrics,
+  logs, artifacts, and checkpoints.
+- [Write reports](/dashboard/reports) that embed live panels when a result
+  needs to be shared beyond the dashboard.
+
+## How to choose an experiment tracking tool
+
+Evaluate trackers against the workflow your team runs every day, not a
+feature checklist:
+
+| Question | Why it matters |
+| --- | --- |
+| Does logging stay out of the training loop's way? | Tracking should never slow or crash a training job. |
+| Does the run table stay usable as history grows? | Teams accumulate far more runs than they expect. |
+| Can you find old runs by config, tags, or metrics? | A history you cannot search is write-only. |
+| Are artifacts and checkpoints first-class? | Reproducing a result needs more than metric curves. |
+| Can you import existing experiment history? | Evaluation should not require abandoning past runs. |
+| Can you export your data later? | Experiment history should stay portable, not locked in. |
+| Is pricing predictable before you scale? | Surprise usage bills punish exactly the teams that train the most. |
+
+InstantML publishes a [hosted benchmark](/benchmarks) against these workflow
+questions: a 50,000-run showcase project with 522,000,000 metric points where
+newest-page, metric-best sort, overview, and bounded chart reads stayed
+sub-second on the hosted ClickHouse path.
+
+## Compare experiment tracking tools
+
+If you are evaluating options or moving off an existing tracker:
+
+- [W&B alternative](/guides/wandb-alternative) — decide whether InstantML
+  fits as a Weights & Biases-style tracker for your team.
+- [InstantML vs MLflow](/guides/instantml-vs-mlflow) — hosted training
+  observability compared with the open-source MLflow stack.
+- [Imports](/guides/imports) — bring W&B, Neptune, MLflow, and TensorBoard
+  experiment history into InstantML with dry-run preview first, so an
+  evaluation never requires a risky cutover.
+
+## Experiment tracking FAQ
+
+### How is experiment tracking different from MLOps?
+
+Experiment tracking is the record-and-compare layer for training runs. MLOps
+platforms bundle that with deployment, orchestration, model registries, and
+serving. InstantML focuses on the tracking and training-observability loop
+and keeps data exportable, rather than pulling your whole workflow into one
+suite.
+
+### Do I still need a tracker if I use TensorBoard?
+
+TensorBoard visualizes event files from individual runs but does not give you
+a searchable team-wide history of every experiment with configs, tags,
+artifacts, and comparisons. Many teams use both during migration:
+`instantml sync tensorboard` [imports existing scalar event
+files](/guides/imports) so old runs land next to newly tracked ones.
+
+### Does experiment tracking cover RL rollouts and evals?
+
+Scalar metrics alone often cannot explain why an RL or agent run moved. Run
+metrics answer *what changed*; [run-linked traces](/dashboard/traces) capture
+the step-level rollouts, evals, and reward components that answer *why*.
+
+### Will my experiment data be portable?
+
+It should be. InstantML documents its schemas and supports
+[data export](/guides/export-usage-limits), so your run history remains
+yours to move, archive, or analyze outside the product.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the SDK, log a first run, and open its charts in five minutes.
+  </Card>
+  <Card title="Core concepts" icon="book-open" href="/concepts/core-concepts">
+    Learn the workspace, project, run, metric, and artifact model.
+  </Card>
+  <Card title="Framework integrations" icon="zap" href="/integrations/overview">
+    Track PyTorch Lightning, Transformers, and Keras runs with one line.
+  </Card>
+  <Card title="Imports" icon="download" href="/guides/imports">
+    Move W&B, Neptune, MLflow, or TensorBoard history into InstantML.
+  </Card>
+</CardGroup>
