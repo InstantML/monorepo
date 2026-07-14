@@ -92,6 +92,9 @@
   overflow: auto;
 }
 
+/* Trace rows and tree nodes are full-bleed list rows inside the panel shell,
+ * so they reset the global button radius — a rounded hover/active wash would
+ * pull away from the panel edges instead of meeting them square. */
 .trace-row {
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr) 72px 64px 72px;
@@ -101,6 +104,7 @@
   padding: var(--sp-2-5) var(--sp-3);
   border: 0;
   border-bottom: 1px solid var(--line);
+  border-radius: 0;
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -173,8 +177,11 @@
   color: var(--amber);
 }
 
-.trace-load-more {
-  margin: var(--sp-3);
+/* Scroll-driven pagination target: an IntersectionObserver watches this row
+ * at the bottom of the list scrollport and fetches the next cursor page as it
+ * nears the viewport. 1px tall — zero-height boxes never intersect. */
+.trace-scroll-sentinel {
+  height: 1px;
 }
 
 .trace-detail-grid {
@@ -199,6 +206,7 @@
   min-height: 36px;
   border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 0;
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -228,6 +236,7 @@
   padding: var(--sp-2) var(--sp-3);
   border: 0;
   border-bottom: 1px solid var(--line);
+  border-radius: 0;
   background: transparent;
   text-align: left;
 }
