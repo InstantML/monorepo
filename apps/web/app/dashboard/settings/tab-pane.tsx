@@ -243,7 +243,8 @@ export function SettingsTabPane({
   const storageTone = usageTone(storagePercent);
   const metricTone = usageTone(metricPercent);
   const apiRequestTone = usageTone(apiRequestsPercent);
-  const visibleInvitations = invitations.filter((invitation) => invitation.status !== "accepted");
+  const visibleSeats = seats.filter((seat) => seat.membership.status !== "revoked");
+  const visibleInvitations = invitations.filter((invitation) => !["accepted", "revoked"].includes(invitation.status ?? ""));
   const visibleApiKeys = canManageOrg ? apiKeys : [];
   const visibleNewApiKey = canManageOrg ? newApiKey : "";
   const checkoutRetryPlan = billingStatus?.access_state === "checkout_pending"
@@ -437,8 +438,8 @@ export function SettingsTabPane({
               </form>
             ) : null}
             <div className="admin-list">
-              {seats.map((seat) => (
-                <div className="api-row" key={seat.membership.id}>
+              {visibleSeats.map((seat) => (
+                <div className="api-row seat-row" key={seat.membership.id}>
                   <span>{seat.membership.status}</span>
                   <strong>{seat.user.primary_email}</strong>
                   <code>{roleLabel(seat.membership.role)}</code>
@@ -447,7 +448,7 @@ export function SettingsTabPane({
               {visibleInvitations.map((invitation) => {
                 const statusLabel = inviteStatusLabel(invitation);
                 return (
-                  <div className="api-row" key={invitation.id}>
+                  <div className="api-row seat-row" key={invitation.id}>
                     <span className={statusLabel === "send failed" ? "invite-status-failed" : undefined}>{statusLabel}</span>
                     <strong>
                       {invitation.email}
@@ -469,7 +470,7 @@ export function SettingsTabPane({
                   </div>
                 );
               })}
-              {!seats.length && !visibleInvitations.length ? <p className="empty">No seats loaded.</p> : null}
+              {!visibleSeats.length && !visibleInvitations.length ? <p className="empty">No seats loaded.</p> : null}
               {!canManageOrg ? <p className="empty">Seat management is available to workspace admins.</p> : null}
             </div>
           </div>

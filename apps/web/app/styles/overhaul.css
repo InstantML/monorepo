@@ -2607,6 +2607,16 @@ button.secondary.danger-action:hover:not(:disabled),
   font-family: var(--font-sans);
 }
 
+/* Seats rows need stable columns across members and pending invites: status,
+ * email, role, and optional invite actions. */
+.admin-list .api-row.seat-row {
+  grid-template-columns: 126px minmax(0, 1fr) 150px 124px;
+}
+
+.admin-list .api-row.seat-row code {
+  justify-self: start;
+}
+
 /* ── Settings: calm, well-segmented key/value lists ────────────────────────
  * The settings tab is a reference surface, not a telemetry wall. Render each
  * panel as one ruled list (sans label left, value right) instead of a stack of
