@@ -116,6 +116,9 @@ Node tests.
 - `guides/`: examples, imports, W&B/Neptune migration walkthroughs, export,
   usage, auth, billing, storage, observability, and evergreen comparison guides
   for buyer-intent queries such as W&B alternatives and InstantML vs MLflow.
+  `guides/experiment-tracking.mdx` is the pillar page for the head query
+  "experiment tracking"; keep it linked from the docs index, the comparison
+  guides, and the landing-page footer so it stays discoverable and indexed.
 - `api/`: practical API guides plus the generated OpenAPI reference tab,
   including short-lived read-only iframe run embeds.
 - `images/`: docs-local brand and product assets served by the Next `/docs`

@@ -669,6 +669,7 @@ export function LandingPage() {
                 ["How it works", "#how"],
                 ["Capabilities", "#capabilities"],
                 ["Developers", "#developers"],
+                ["Experiment tracking", "/docs/guides/experiment-tracking"],
                 ["Docs", "/docs"],
                 ["Pricing", "/pricing"],
               ]}
