@@ -193,8 +193,12 @@ button:focus-visible,
 
 /* 9b — Run-rail status chips match .pill casing: title-case mono (the
  * capitalize transform comes from dashboard-runs.css). Kept small (9px, tight
- * tracking) so the label doesn't read heavier than the metric value beside it. */
-.workspace-run-status {
+ * tracking) so the label doesn't read heavier than the metric value beside it.
+ * The rail's upload-health chip ("sync stalled", "incomplete · N rows") sits
+ * on the same line, so it gets the same type treatment; its casing stays as
+ * authored since the labels aren't title-case statuses. */
+.workspace-run-status,
+.workspace-run-evidence .upload-health-chip {
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;

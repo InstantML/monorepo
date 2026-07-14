@@ -3730,12 +3730,15 @@ button.crumb-project {
 .workspace-run-body strong { font-size: 12px; }
 .workspace-run-body small { font-size: var(--fs-label); }
 
-/* Evidence row: the status chip and the metric chip share one line. The metric
- * label stays (so a bare number isn't context-free) but yields first when space
- * is tight; the value is protected and uses tabular figures. */
+/* Evidence row: the status, metric, and upload-health chips share one line, so
+ * they share one chip geometry — without the health chip here it kept the
+ * larger dashboard-runs.css base size and read louder than the status beside
+ * it. The metric label stays (so a bare number isn't context-free) but yields
+ * first when space is tight; the value is protected and uses tabular figures. */
 .workspace-run-evidence { gap: 5px; margin-top: 1px; overflow: visible; }
 .workspace-run-status,
-.workspace-run-metric-chip { font-size: 10px; height: 18px; padding: 2px 6px; }
+.workspace-run-metric-chip,
+.workspace-run-evidence .upload-health-chip { font-size: 10px; height: 18px; padding: 2px 6px; }
 /* Center the status label within the chip (its line-height:1 otherwise sits
  * the glyphs high in the fixed-height pill). */
 .workspace-run-status {
@@ -3743,6 +3746,11 @@ button.crumb-project {
   align-items: center;
   line-height: 1;
 }
+/* The health chip stays a block — flex containers drop text-overflow, and its
+ * long labels ("incomplete · N rows pending") rely on the ellipsis. Centering
+ * comes from line-height filling the content box instead (18px height minus
+ * 2px padding and 1px border per side). */
+.workspace-run-evidence .upload-health-chip { line-height: 12px; }
 .workspace-run-metric-chip {
   flex: 0 1 auto;
   gap: 4px;
