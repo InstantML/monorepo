@@ -572,9 +572,22 @@ pub async fn authenticate_session(store: &Store, token: &str) -> AppResult<AuthS
     session_payload_from_data(&data, row)
 }
 
+/// Resolution of a verified external identity (e.g. a Clerk OAuth subject) to
+/// an InstantML tenant. The role mirrors the user's own membership so the
+/// OAuth grant never exceeds what the user could do in the dashboard.
+#[derive(Clone, Debug)]
+pub struct OAuthIdentityGrant {
+    pub org_id: Uuid,
+    pub user_id: Uuid,
+    pub role: String,
+    /// True when the resolved org is the shared demo workspace, which stays
+    /// read-only for OAuth exactly like browser sessions.
+    pub demo_read_only: bool,
+}
+
 /// Resolve a verified external identity (e.g. a Clerk OAuth subject) to an
 /// InstantML org and role using the in-memory control projection. Used by the
-/// MCP OAuth bridge; returns `(org_id, user_id, role)`.
+/// MCP OAuth bridge.
 ///
 /// The identity carries no InstantML org (InstantML orgs are not the IdP's
 /// orgs), so org selection is: exactly one active membership -> use it; more
@@ -583,7 +596,7 @@ pub async fn authenticate_oauth_identity(
     store: &Store,
     provider: &str,
     provider_subject: &str,
-) -> AppResult<(Uuid, Uuid, String)> {
+) -> AppResult<OAuthIdentityGrant> {
     authenticate_oauth_identity_for_org(store, provider, provider_subject, None).await
 }
 
@@ -595,7 +608,7 @@ pub async fn authenticate_oauth_identity_for_org(
     provider: &str,
     provider_subject: &str,
     requested_org_id: Option<Uuid>,
-) -> AppResult<(Uuid, Uuid, String)> {
+) -> AppResult<OAuthIdentityGrant> {
     let data = store.data.lock().await;
     resolve_oauth_identity(&data, provider, provider_subject, requested_org_id)
 }
@@ -605,7 +618,7 @@ fn resolve_oauth_identity(
     provider: &str,
     provider_subject: &str,
     requested_org_id: Option<Uuid>,
-) -> AppResult<(Uuid, Uuid, String)> {
+) -> AppResult<OAuthIdentityGrant> {
     let identity_key = (provider.to_string(), provider_subject.to_string());
     let user_id =
         data.identities.get(&identity_key).copied().ok_or_else(|| {
@@ -614,6 +627,15 @@ fn resolve_oauth_identity(
     if !data.users.contains_key(&user_id) {
         return Err(AppError::not_found("user not found"));
     }
+    let grant = |membership: &MembershipRow| OAuthIdentityGrant {
+        org_id: membership.org_id,
+        user_id,
+        role: membership.role.clone(),
+        demo_read_only: data
+            .organizations
+            .get(&membership.org_id)
+            .is_some_and(is_shared_demo_org),
+    };
     let active = data
         .memberships
         .values()
@@ -623,7 +645,7 @@ fn resolve_oauth_identity(
         return active
             .iter()
             .find(|membership| membership.org_id == org_id)
-            .map(|membership| (membership.org_id, user_id, membership.role.clone()))
+            .map(|membership| grant(membership))
             .ok_or_else(|| {
                 AppError::forbidden(
                     "OAuth user is not an active member of the requested organization",
@@ -634,7 +656,7 @@ fn resolve_oauth_identity(
         [] => Err(AppError::forbidden(
             "this account has no active organization membership",
         )),
-        [membership] => Ok((membership.org_id, user_id, membership.role.clone())),
+        [membership] => Ok(grant(membership)),
         _ => Err(AppError::forbidden(
             "this account belongs to multiple organizations; OAuth must name one",
         )),
@@ -1010,11 +1032,46 @@ mod tests {
             created_at: Utc::now(),
         });
 
-        let (resolved_org, resolved_user, role) =
-            resolve_oauth_identity(&data, "clerk", "user_oauth", None).unwrap();
-        assert_eq!(resolved_org, org_id);
-        assert_eq!(resolved_user, user.id);
-        assert_eq!(role, "admin");
+        let grant = resolve_oauth_identity(&data, "clerk", "user_oauth", None).unwrap();
+        assert_eq!(grant.org_id, org_id);
+        assert_eq!(grant.user_id, user.id);
+        assert_eq!(grant.role, "admin");
+        assert!(!grant.demo_read_only);
+    }
+
+    #[test]
+    fn oauth_identity_marks_shared_demo_org_read_only() {
+        let user = user_row(Uuid::new_v4(), "demo@example.com");
+        let org_id = Uuid::new_v4();
+        let mut data = StoreData::default();
+        data.insert_user(user.clone());
+        data.identities
+            .insert(("clerk".to_string(), "user_demo".to_string()), user.id);
+        data.insert_org(OrganizationRow {
+            id: org_id,
+            slug: slugify(SHARED_DEMO_NAME),
+            name: SHARED_DEMO_NAME.to_string(),
+            plan_tier: "free".to_string(),
+            account_type: "team".to_string(),
+            seat_limit: 2,
+            created_by_user_id: None,
+            created_at: Utc::now(),
+            tenant_routing_tier: "shared".to_string(),
+            storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+            storage_state: STORAGE_STATE_READY.to_string(),
+        });
+        data.insert_membership(MembershipRow {
+            id: Uuid::new_v4(),
+            org_id,
+            user_id: user.id,
+            role: "member".to_string(),
+            status: "active".to_string(),
+            created_at: Utc::now(),
+        });
+
+        let grant = resolve_oauth_identity(&data, "clerk", "user_demo", None).unwrap();
+        assert_eq!(grant.org_id, org_id);
+        assert!(grant.demo_read_only);
     }
 
     #[test]
@@ -1081,11 +1138,12 @@ mod tests {
             created_at: Utc::now(),
         });
 
-        let (resolved_org, resolved_user, role) =
+        let grant =
             resolve_oauth_identity(&data, "clerk", "user_multi", Some(selected_org)).unwrap();
-        assert_eq!(resolved_org, selected_org);
-        assert_eq!(resolved_user, user.id);
-        assert_eq!(role, "viewer");
+        assert_eq!(grant.org_id, selected_org);
+        assert_eq!(grant.user_id, user.id);
+        assert_eq!(grant.role, "viewer");
+        assert!(!grant.demo_read_only);
 
         assert!(resolve_oauth_identity(&data, "clerk", "user_multi", Some(inactive_org)).is_err());
         assert!(resolve_oauth_identity(&data, "clerk", "user_multi", Some(missing_org)).is_err());

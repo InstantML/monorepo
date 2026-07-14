@@ -1056,6 +1056,7 @@ mod tests {
                 user_id: Uuid::from_u128(3),
                 role: "member".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 

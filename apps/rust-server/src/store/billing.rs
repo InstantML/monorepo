@@ -1905,6 +1905,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -1980,6 +1981,7 @@ mod tests {
                 user_id: owner.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2089,6 +2091,7 @@ mod tests {
             user_id,
             role: "owner".to_string(),
             demo_read_only: false,
+            mcp_oauth: false,
         };
 
         let account = sync_retrieved_checkout_session(
@@ -2281,6 +2284,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2344,6 +2348,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2388,6 +2393,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2434,6 +2440,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2500,6 +2507,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
         let error = add_billing_seat(

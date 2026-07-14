@@ -93,6 +93,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             role: role.to_string(),
             demo_read_only,
+            mcp_oauth: false,
         }
     }
 
