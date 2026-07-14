@@ -13,6 +13,7 @@ import { formatDuration } from "../ui/duration";
 import { PageHead } from "../ui/page-head";
 import { relativeTime } from "../ui/relative-time";
 import { CustomSelect, type SelectOption } from "../ui/select";
+import { SkeletonTraceDetail, SkeletonTraceRows } from "../ui/skeleton";
 
 type TraceSummary = components["schemas"]["TraceSummaryItem"];
 type TraceListResponse = components["schemas"]["TraceListResponse"];
@@ -72,6 +73,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [listError, setListError] = useState("");
   const [selectedRunId, setSelectedRunId] = useState("");
   const [selectedTraceId, setSelectedTraceId] = useState("");
@@ -85,6 +87,12 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
   const [urlStateReady, setUrlStateReady] = useState(false);
   const listControllerRef = useRef<AbortController | null>(null);
   const listRequestRef = useRef(0);
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
+  const listSentinelRef = useRef<HTMLDivElement | null>(null);
+  // Mirrors listLoading synchronously (state lags a render) so the scroll
+  // sentinel can't fire a stale-cursor fetch in the window between a filter
+  // change kicking off a reload and that reload reaching state.
+  const listLoadingRef = useRef(false);
   const [detail, setDetail] = useState<TraceDetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -185,21 +193,27 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     listControllerRef.current?.abort();
     if (!urlStateReady) {
       listRequestRef.current += 1;
+      listLoadingRef.current = false;
       setListLoading(false);
+      setLoadingMore(false);
       return;
     }
     if (!project && !runFilter) {
       listRequestRef.current += 1;
+      listLoadingRef.current = false;
       setTraces([]);
       setNextCursor(null);
       setListError("");
       setListLoading(false);
+      setLoadingMore(false);
       return;
     }
     const controller = new AbortController();
     listControllerRef.current = controller;
     const requestId = ++listRequestRef.current;
+    listLoadingRef.current = true;
     setListLoading(true);
+    setLoadingMore(Boolean(cursor));
     setListError("");
     try {
       const payload = await retryTransientRequest(
@@ -229,7 +243,11 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
         setListError(error instanceof ApiError ? error.safeMessage : error instanceof Error ? error.message : "Unable to load traces.");
       }
     } finally {
-      if (requestId === listRequestRef.current) setListLoading(false);
+      if (requestId === listRequestRef.current) {
+        listLoadingRef.current = false;
+        setListLoading(false);
+        setLoadingMore(false);
+      }
       if (listControllerRef.current === controller) listControllerRef.current = null;
     }
   }, [api, debouncedQuery, kindFilter, project, runFilter, statusFilter, timeRange, urlStateReady]);
@@ -238,6 +256,23 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
     void loadTraces("");
     return () => listControllerRef.current?.abort();
   }, [loadTraces]);
+
+  // Cursor pagination is scroll-driven: a sentinel row at the bottom of the
+  // list scrollport fetches the next page as it comes within a screen of
+  // view. Paused while a page is in flight and after an error (the status
+  // strip reports it; refresh retries) so a failing endpoint can't loop.
+  useEffect(() => {
+    const sentinel = listSentinelRef.current;
+    if (!sentinel || !nextCursor || listLoading || listError) return;
+    const cursor = nextCursor;
+    const observer = new IntersectionObserver((entries) => {
+      if (listLoadingRef.current || !entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      void loadTraces(cursor);
+    }, { root: listScrollRef.current, rootMargin: "240px 0px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [listError, listLoading, loadTraces, nextCursor]);
 
   useEffect(() => {
     if (!selectedRunId || !selectedTraceId) {
@@ -559,7 +594,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
           </div>
           {listError ? <div className="status-strip">{listError}</div> : null}
           {!project && !runFilter ? <div className="empty">Select a project or run to browse traces.</div> : null}
-          <div className="trace-table" role="listbox" aria-label="Trace summaries">
+          <div className="trace-table" ref={listScrollRef} role="listbox" aria-label="Trace summaries">
             {traces.map((trace, index) => (
               <button
                 aria-selected={trace.trace_id === selectedTraceId && trace.run_id === selectedRunId}
@@ -581,10 +616,11 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
                 <span className="trace-row-meta" title={absoluteTimeTitle(trace.updated_at)}>{relativeTime(trace.updated_at)}</span>
               </button>
             ))}
+            {listLoading && !traces.length ? <SkeletonTraceRows rows={8} /> : null}
+            {loadingMore ? <SkeletonTraceRows rows={3} /> : null}
+            {nextCursor ? <div aria-hidden="true" className="trace-scroll-sentinel" ref={listSentinelRef} /> : null}
           </div>
-          {listLoading ? <div className="empty">Loading traces...</div> : null}
           {!listLoading && (project || runFilter) ? (!traces.length && !listError ? <div className="empty">No traces match the current filters.</div> : null) : null}
-          {nextCursor ? <button className="secondary-button trace-load-more" type="button" onClick={() => loadTraces(nextCursor)} disabled={listLoading}>Load more</button> : null}
         </section>
 
         <section className="panel traces-detail-panel">
@@ -596,7 +632,7 @@ export function TracesTabPane({ api, onSelectRun = () => {}, primaryRun, project
               </button>
             ) : null}
           </div>
-          {detailLoading ? <div className="empty">Loading trace detail...</div> : null}
+          {detailLoading ? <SkeletonTraceDetail /> : null}
           {detailError ? <div className="status-strip">{detailError}</div> : null}
           {selectedDetail ? (
             <div className="trace-detail-grid">

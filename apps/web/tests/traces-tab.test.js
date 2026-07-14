@@ -73,6 +73,35 @@ test("traces tab exposes tree, inspector, status, and responsive styles", () => 
   assert.doesNotMatch(styles, /font-size:\s*12px/);
 });
 
+test("trace list pages in on scroll and loading states render skeletons", () => {
+  // Cursor pagination is scroll-driven via a sentinel; no Load more button.
+  assert.match(paneSource, /new IntersectionObserver/);
+  assert.match(paneSource, /className="trace-scroll-sentinel" ref=\{listSentinelRef\}/);
+  assert.match(paneSource, /root: listScrollRef\.current/);
+  assert.doesNotMatch(paneSource, /trace-load-more/);
+  assert.doesNotMatch(paneSource, />Load more<\/button>/);
+  assert.match(styles, /\.trace-scroll-sentinel/);
+  assert.doesNotMatch(styles, /\.trace-load-more/);
+  // The observer pauses in-flight and after errors, and reads loading through
+  // a ref so a filter-change reload can't race a stale-cursor fetch.
+  assert.match(paneSource, /if \(!sentinel \|\| !nextCursor \|\| listLoading \|\| listError\) return;/);
+  assert.match(paneSource, /listLoadingRef\.current \|\| !entries\.some/);
+  // List and detail loading render shimmer skeletons instead of text.
+  assert.match(paneSource, /listLoading && !traces\.length \? <SkeletonTraceRows/);
+  assert.match(paneSource, /loadingMore \? <SkeletonTraceRows rows=\{3\}/);
+  assert.match(paneSource, /detailLoading \? <SkeletonTraceDetail \/>/);
+  assert.doesNotMatch(paneSource, /Loading traces\.\.\./);
+  assert.doesNotMatch(paneSource, /Loading trace detail\.\.\./);
+});
+
+test("trace rows and tree nodes are square-cornered full-bleed rows", () => {
+  // The global button rule rounds corners; these list rows reset it so the
+  // hover/active wash meets the panel edges square.
+  assert.match(styles, /\.trace-row \{[^}]*border-radius: 0;/);
+  assert.match(styles, /\.trace-node-button \{[^}]*border-radius: 0;/);
+  assert.match(styles, /\.trace-child-state \{[^}]*border-radius: 0;/);
+});
+
 test("run detail exposes recent traces lazily with exact deep links", () => {
   assert.match(detailSource, /id: "traces", label: "Traces"/);
   assert.match(detailSource, /runWorkspaceTab !== "traces"/);

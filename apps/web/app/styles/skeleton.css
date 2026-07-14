@@ -493,8 +493,8 @@
   height: 9px;
 }
 
-/* Traces: summary rows mirror .trace-row's grid; the tree indents like
- * .trace-node rows. */
+/* Traces: summary rows mirror .trace-row's grid; tree nodes mirror
+ * .trace-node-button's columns and indent per level like real spans. */
 .dash-skel-trace-list {
   display: grid;
   align-content: start;
@@ -520,11 +520,26 @@
   min-width: 0;
 }
 
+/* Stand-in for the .trace-status chip, at the chip's own footprint. */
+.dash-skel-trace-status {
+  width: 58px;
+  height: 21px;
+  border-radius: var(--radius-sm);
+}
+
 .dash-skel-trace-tree {
   display: grid;
-  gap: 13px;
   align-content: start;
-  padding: var(--sp-3);
+}
+
+.dash-skel-trace-node {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 88px 64px;
+  gap: var(--sp-2);
+  align-items: center;
+  min-height: 36px;
+  padding-right: var(--sp-2);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 /* Reports: content stacks inside the real .report-list__row frame. */

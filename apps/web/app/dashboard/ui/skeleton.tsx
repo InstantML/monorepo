@@ -270,6 +270,67 @@ export function DatasetsPageSkeleton() {
   );
 }
 
+// Trace summary rows mirroring .trace-row's grid (status chip, name over run,
+// then the spans/duration/age cells). Shared between the page skeleton and the
+// traces pane, which appends a short run while the list fetches.
+export function SkeletonTraceRows({ rows = 8 }: { rows?: number }) {
+  return (
+    <div aria-hidden="true" className="dash-skel-trace-list">
+      {Array.from({ length: rows }, (_, index) => (
+        <div className="dash-skel-trace-row" key={index}>
+          <Skeleton className="dash-skel-trace-status" />
+          <span className="dash-skel-trace-main">
+            <Skeleton className="dash-skel-line is-title" width={`${lineWidth(index)}%`} />
+            <Skeleton className="dash-skel-line" width={`${Math.round(lineWidth(index + 1) * 0.7)}%`} />
+          </span>
+          <Skeleton className="dash-skel-line" width="82%" />
+          <Skeleton className="dash-skel-line" width="72%" />
+          <Skeleton className="dash-skel-line" width="78%" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Indent levels for the faux span tree: a root, a couple of expanded rollout
+// children, and nested leaves — reads as a real trace rather than flat lines.
+const TRACE_TREE_DEPTHS = [1, 2, 2, 3, 3, 2, 3, 4, 2, 2];
+
+// Trace detail: the span tree beside the inspector, in the loaded pane's own
+// .trace-detail-grid boxes. Shown by the page skeleton and by the traces pane
+// while a selected trace's spans load.
+export function SkeletonTraceDetail() {
+  return (
+    <div aria-hidden="true" className="trace-detail-grid">
+      <div className="trace-tree dash-skel-trace-tree">
+        {TRACE_TREE_DEPTHS.map((depth, index) => (
+          <div className="dash-skel-trace-node" key={index} style={{ paddingLeft: depth * 14 }}>
+            <Skeleton className="dash-skel-trace-status" />
+            <Skeleton className="dash-skel-line is-title" width={`${Math.max(26, lineWidth(index) - depth * 8)}%`} />
+            <Skeleton className="dash-skel-line" width={54} />
+            <Skeleton className="dash-skel-line" width={34} />
+          </div>
+        ))}
+      </div>
+      <aside className="trace-inspector">
+        <div className="trace-inspector-head">
+          <Skeleton className="dash-skel-trace-status" />
+          <Skeleton className="dash-skel-line is-title" width="52%" />
+        </div>
+        <SkeletonKvRows rows={5} />
+        <div className="trace-preview">
+          <Skeleton className="dash-skel-line" width={48} />
+          <Skeleton className="dash-skel-block" height={72} />
+        </div>
+        <div className="trace-preview">
+          <Skeleton className="dash-skel-line" width={58} />
+          <Skeleton className="dash-skel-block" height={104} />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 // Traces: the summaries list panel (filter row over trace rows) beside the
 // trace tree panel (mirrors traces/tab-pane.tsx).
 export function TracesPageSkeleton() {
@@ -287,33 +348,11 @@ export function TracesPageSkeleton() {
               </div>
             ))}
           </div>
-          <div aria-hidden="true" className="dash-skel-trace-list">
-            {Array.from({ length: 8 }, (_, index) => (
-              <div className="dash-skel-trace-row" key={index}>
-                <Skeleton className="dash-skel-pill" width={58} />
-                <span className="dash-skel-trace-main">
-                  <Skeleton className="dash-skel-line is-title" width={`${lineWidth(index)}%`} />
-                  <Skeleton className="dash-skel-line" width={`${Math.round(lineWidth(index + 1) * 0.7)}%`} />
-                </span>
-                <Skeleton className="dash-skel-line" width="82%" />
-                <Skeleton className="dash-skel-line" width="72%" />
-                <Skeleton className="dash-skel-line" width="78%" />
-              </div>
-            ))}
-          </div>
+          <SkeletonTraceRows rows={8} />
         </section>
         <section className="panel traces-detail-panel">
           <div className="panel-head"><h2><GitBranch size={15} /> Trace tree</h2></div>
-          <div aria-hidden="true" className="dash-skel-trace-tree">
-            {[0, 1, 2, 2, 3, 2, 1, 2].map((depth, index) => (
-              <Skeleton
-                className="dash-skel-line"
-                key={index}
-                style={{ marginLeft: depth * 18 }}
-                width={`${Math.max(24, lineWidth(index) - depth * 8)}%`}
-              />
-            ))}
-          </div>
+          <SkeletonTraceDetail />
         </section>
       </div>
     </>
