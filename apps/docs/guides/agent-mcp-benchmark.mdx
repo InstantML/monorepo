@@ -1,0 +1,105 @@
+---
+title: "Agent MCP benchmark"
+description: "Measured task success for an MCP-connected coding agent answering experiment questions through InstantML versus the W&B MCP server on identical data."
+---
+
+More experiment-tracking reads now come from coding agents than from humans on
+many teams. This benchmark measures the part of that workflow you feel every
+day: whether an agent connected to your tracker's MCP server answers questions
+about your runs correctly, and how much work it takes to get there.
+
+The setup keeps everything identical except the server: the same deterministic
+dataset seeded to both trackers, the same agent (headless Claude Code,
+`claude-sonnet-5`), the same prompts, and the same graders. Each task runs as
+an isolated agent session that can see exactly one MCP server.
+
+## Result
+
+Latest run: July 13, 2026. Eight read/analysis tasks, three trials per side.
+
+| Metric | InstantML MCP | W&B MCP |
+| --- | ---: | ---: |
+| Correct answers | 24 / 24 | 21 / 24 |
+| Average task score | 1.00 | 0.90 |
+| Tool calls | 80 | 106 |
+| Failed tool calls | 0 | 1 |
+| Agent output tokens | 19,099 | 24,054 |
+
+Protocol: 30 seeded runs plus a distractor project, 4 metric series per run,
+computed ground truth (run counts, best run, top-3 ranking, config lookups,
+per-optimizer averages, a series threshold crossing, and a config diff),
+regex/order graders with no LLM judge, and full transcripts retained. The
+dataset generator, seeders, runner, and grader are committed under
+`benchmarks/agent-mcp/` in the InstantML repository.
+
+## Why the scores differ
+
+Every W&B miss was an in-context data processing error after a correct raw
+fetch — the W&B platform returned correct data, verified through the W&B
+public API after the runs:
+
+- Ranking the top 3 runs (missed in 1 of 3 trials): the agent fetched all 30
+  runs' summary blobs through W&B's general-purpose query tool and ranked them
+  itself, dropping the true #3.
+- Finding where `train/loss` first crossed a threshold (missed in 2 of 3
+  trials): the agent pulled the full 120-row history and misread the table,
+  answering 37 and 39 for a true 40.
+
+The InstantML agent answered the same questions from server-computed results:
+`tracker.list_runs` sorts by metric summaries server-side,
+`tracker.query_metrics` returns bounded series, and `tracker.compare_runs`
+returns computed diffs. When a task needed arithmetic across runs, the agent
+exported bounded JSON with `tracker.export_runs` and computed the answer in a
+script instead of estimating from a table in context.
+
+The difference is the tool contract, not the agent: when the server returns
+answers, the agent verifies; when the server returns raw data, the agent
+becomes the least reliable stage in the pipeline.
+
+## The honest headline
+
+- On identical data with identical prompts, the InstantML MCP server produced
+  a correct answer in every trial; the W&B MCP server missed 3 of 24
+  task-runs, all on in-context ranking or series reading.
+- The InstantML side also used 25% fewer tool calls and 21% fewer output
+  tokens per benchmark pass.
+- This does not support a blanket "InstantML's MCP is better for every agent
+  workflow" claim. W&B's server had essentially clean tool-call reliability,
+  and surfaces InstantML does not offer (Weave trace debugging, sweeps, a docs
+  search tool) were out of scope.
+
+## Not measured yet
+
+- Latency. The InstantML server ran locally while W&B's ran hosted, so wall
+  time is not comparable. A hosted-vs-hosted rerun is required before any
+  latency claim.
+- Write-path tasks such as report creation and editing, which need an
+  LLM-judged grader.
+- Other agent models, larger task sets, and more trials. Three trials of eight
+  tasks is directional evidence, not a statistical result.
+- W&B Weave traces, sweeps, artifacts, and registry workflows.
+
+## Fairness rules
+
+- Both sides are public, documented MCP servers used as shipped; no private
+  request shapes.
+- Identical dataset, prompts, model, turn limits, and graders on both sides;
+  only the MCP server differs.
+- Ground truth is computed from the generated dataset, and per-trial scores
+  are published, including InstantML-unfavorable details such as tool-call
+  counts that include retries.
+- Data correctness in the losing trials was verified against the vendor's own
+  API before attributing failures to the tool layer.
+
+## Reproduce it
+
+The harness lives in `benchmarks/agent-mcp/` with a README covering the exact
+commands: generate the dataset, seed both trackers, run each side with the
+`claude` CLI, and grade. Seeding W&B writes to an external SaaS, so use a
+scratch entity and review transcripts before sharing them.
+
+## Next steps
+
+- [Use InstantML with agents](/sdk/agent-mcp)
+- [Latency benchmarks](/benchmarks)
+- [InstantML as a W&B alternative](/guides/wandb-alternative)

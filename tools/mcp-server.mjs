@@ -54,8 +54,9 @@
  * Add to Claude Code's `mcpServers` config to enable agent calls.
  */
 
+import { realpathSync } from "node:fs";
 import http from "node:http";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -388,6 +389,18 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   await startStdio(options);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+export function isMainModule(argv1 = process.argv[1], moduleUrl = import.meta.url) {
+  if (!argv1) return false;
+  // Compare real paths: a URL-only check fails when the server is launched via
+  // a symlinked path (macOS /tmp -> /private/tmp), silently exiting so MCP
+  // clients report "Connection closed" instead of starting the server.
+  try {
+    return realpathSync(argv1) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return pathToFileURL(argv1).href === moduleUrl;
+  }
+}
+
+if (isMainModule()) {
   await main();
 }
