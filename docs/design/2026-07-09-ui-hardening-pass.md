@@ -62,6 +62,10 @@ billing return, pricing, docs, embed, share (`/r/<token>`).
   filtered via the existing `isInternalInstantMlMetric`. ▶ Residual: for runs
   without the selected metric the fallback shows best_step, not latest step —
   needs a summary-level last-user-step field (server change).
+  Follow-up (2026-07-13): the same leak survived in `lastMetricStep`
+  (`dashboard-models.ts`), so the failed-run triage panel's "Last metric
+  step" showed a unix timestamp; fixed with the same filter, and both sites
+  are now guarded by a contract test in `dashboard-select-contract.test.js`.
 - ✅ **Race probes clean**: rapid metric-key switching lands on the last key
   (no stale series); deep-link → run switch → popstate all correct after the
   primaryRunId fix (PR #357). HTML-injection probes render inert everywhere

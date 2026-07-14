@@ -126,3 +126,17 @@ test("metrics pane surfaces shared-fetch failures instead of posing as empty", (
   assert.match(shellSrc, /statusMessage=\{message\}\s*\n\s*statusTone=\{currentMessageTone\}/);
   assert.match(metricsSrc, /statusTone === "error" \? <div className="status-strip error" role="alert">\{statusMessage\}<\/div> : null/);
 });
+
+test("max-step fallbacks exclude time-keyed system/instantml telemetry", () => {
+  // The SDK posts upload-health metrics with step = unix seconds, so any
+  // max-over-all-aggregates step must filter internal keys or it renders a
+  // billions-scale "step" (seen in the failed-run triage panel).
+  const modelsSrc = read("app/dashboard-models.ts");
+  const lastStep = modelsSrc.match(/export function lastMetricStep[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(lastStep, /Object\.entries\(run\.metric_aggregates \?\? \{\}\)/);
+  assert.match(lastStep, /\.filter\(\(\[key\]\) => !isInternalInstantMlMetric\(key\)\)/);
+
+  const tableSrc = read("app/dashboard/runs/runs-table.tsx");
+  const latestStep = tableSrc.match(/function latestStep[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.match(latestStep, /\.filter\(\(\[key\]\) => !isInternalInstantMlMetric\(key\)\)/);
+});
