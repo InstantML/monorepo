@@ -90,12 +90,13 @@ remains the default and the current deployed shape.
 
 ## Auth Model
 
-There are three credential paths.
+There are four credential paths.
 
 | Credential | Transport | Main use |
 | --- | --- | --- |
 | Browser session | `instantml_session` HttpOnly cookie | Next dashboard after Clerk or local dev sign-in |
 | SDK API key | `Authorization: Bearer instantml_...` | SDK, uploader, import, export, and automation calls |
+| MCP OAuth token | `Authorization: Bearer <clerk oauth token>` (flag `INSTANTML_MCP_OAUTH_ENABLED`) | Hosted MCP browser sign-in; acts as the signed-in user with their own org role |
 | Bootstrap token | `X-InstantML-Bootstrap-Token: ...` | Operator-only user/org/API-key bootstrap routes and read-only admin routes |
 
 In `INSTANTML_AUTH_MODE=api-key`, tenant product routes require either a bearer
@@ -103,8 +104,11 @@ API key or a valid browser session cookie. Local mode allows unauthenticated
 compatibility calls against the fixed local development org.
 
 Cookie-authenticated mutating requests require an allowed `Origin`. Bearer-token
-SDK requests are not origin-gated. Shared demo browser sessions are read-only
-except for export reads.
+requests (SDK keys and MCP OAuth tokens) are not origin-gated because browsers
+never attach them ambiently. Shared demo sessions — browser or MCP OAuth — are
+read-only except for export reads. MCP OAuth permissions mirror the user's
+membership role in the resolved org (viewer reads; member/admin/owner writes per
+the session role matrix), never exceeding the user's own dashboard access.
 
 ## Common Shapes
 

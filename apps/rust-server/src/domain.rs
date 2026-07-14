@@ -196,6 +196,11 @@ pub struct SessionContext {
     pub user_id: Uuid,
     pub role: String,
     pub demo_read_only: bool,
+    /// True when this context came from a verified MCP OAuth bearer token
+    /// rather than a browser session cookie. Bearer tokens are never attached
+    /// ambiently by a browser, so these requests are exempt from the
+    /// cookie-CSRF origin gate on mutations.
+    pub mcp_oauth: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

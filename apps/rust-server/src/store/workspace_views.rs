@@ -1903,6 +1903,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 

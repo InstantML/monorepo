@@ -1686,6 +1686,7 @@ mod tests {
                 user_id: payload.user.id,
                 role: payload.membership.role,
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 

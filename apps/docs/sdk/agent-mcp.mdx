@@ -71,7 +71,7 @@ You do not need to deploy your own InstantML backend, clone the InstantML reposi
 ## Set up from the dashboard
 
 1. Open the InstantML dashboard and go to **Agent** in the nav rail.
-2. In the **Connect** panel, pick **Browser sign-in** (default, read-only) or **API key**. For a key, create an `Agent MCP key` in **Workspace settings → API** first — the snippet fills it in for you.
+2. In the **Connect** panel, pick **Browser sign-in** (default) or **API key**. For a key, create an `Agent MCP key` in **Workspace settings → API** first — the snippet fills it in for you.
 3. Copy the setup snippet for Claude Code, Codex, Cursor, VS Code, or a local bridge.
 4. Restart or reconnect the client, then ask it to list your latest InstantML runs. The panel's activity line confirms the first request.
 
@@ -90,7 +90,7 @@ On first connect the client discovers the InstantML authorization server, opens 
 Browser sign-in is scoped to the workspace selected in the dashboard when you copy the snippet. If you belong to multiple workspaces, add one MCP server per workspace rather than using one connection for all of them.
 
 <Note>
-Browser sign-in grants read-only access as the signed-in user. Use an API key when an agent needs write scopes such as report editing or SDK ingestion.
+Browser sign-in acts as the signed-in user with that user's workspace role: viewers get read-only access, while members and admins can also write (for example report editing). The agent never gets more access than you have yourself. Use an API key for automation that should not be tied to a person's account.
 </Note>
 
 ## Connect Claude Code
