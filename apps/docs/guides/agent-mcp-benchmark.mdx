@@ -29,8 +29,8 @@ Protocol: 30 seeded runs plus a distractor project, 4 metric series per run,
 computed ground truth (run counts, best run, top-3 ranking, config lookups,
 per-optimizer averages, a series threshold crossing, and a config diff),
 regex/order graders with no LLM judge, and full transcripts retained. The
-dataset generator, seeders, runner, and grader are committed under
-`benchmarks/agent-mcp/` in the InstantML repository.
+[protocol section](#reproduce-it) below carries the complete setup so the
+result can be reproduced independently.
 
 ## Why the scores differ
 
@@ -93,10 +93,44 @@ becomes the least reliable stage in the pipeline.
 
 ## Reproduce it
 
-The harness lives in `benchmarks/agent-mcp/` with a README covering the exact
-commands: generate the dataset, seed both trackers, run each side with the
-`claude` CLI, and grade. Seeding W&B writes to an external SaaS, so use a
-scratch entity and review transcripts before sharing them.
+The harness itself is part of InstantML's internal benchmark suite, so this
+section carries everything needed to rebuild the experiment independently.
+
+**Dataset.** Generate a synthetic sweep from a fixed random seed: 30 runs in
+one project (27 finished, 3 failed) plus 3 throwaway runs in a second project
+so project scoping matters. Each run has a config (`lr` from {1e-4, 3e-4,
+1e-3, 3e-3}, `batch_size` from {32, 64, 128}, `optimizer` adam or sgd, a seed,
+and warmup steps), two tags, notes, and four metric series over up to 120
+steps: a noisy decaying `train/loss` and per-step `lr` logged every step, and
+`eval/return_mean` / `eval/return_std` logged every 10 steps. Compute ground
+truth (counts, rankings, averages, threshold crossings, config diffs) directly
+from the generated values, then log the identical data to both trackers — for
+this run, an InstantML workspace and a scratch W&B entity, with W&B-side
+values spot-verified through the W&B public API afterward.
+
+**Agent.** Run each question as an isolated headless Claude Code session:
+`claude -p "<question>" --mcp-config <one-server-config> --strict-mcp-config
+--model claude-sonnet-5 --max-turns 30 --output-format stream-json`. The
+strict flag guarantees the agent sees exactly one MCP server per session. Use
+the same eight prompts verbatim on both sides, three trials per side, and
+keep every transcript.
+
+**The eight questions** (project name inlined verbatim): how many runs exist;
+how many runs failed; which run has the highest final `eval/return_mean` and
+what is that value; what learning rate that best run used; the top 3 runs by
+final `eval/return_mean` in order; whether adam or sgd has the higher average
+final `eval/return_mean` across finished runs; at which step a named run's
+`train/loss` first drops below 0.5; and which config fields differ between two
+named runs and their values.
+
+**Scoring.** Grade only the agent's final answer against the computed ground
+truth with mechanical checks — required patterns for values and names, order
+checks for the ranking task, no LLM judge. Count tool calls, failed tool
+calls, turns, and output tokens from the transcripts.
+
+Seeding W&B writes to an external SaaS: use a scratch entity, pace writes to
+respect rate limits, and review transcripts before sharing them, since they
+contain entity names.
 
 ## Next steps
 
