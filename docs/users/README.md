@@ -10,6 +10,9 @@ Rust/ClickHouse validation note: interviews should also test whether small teams
 
 Current docs:
 
+- `2026-06-24-first-20-leads.md`: sourced first 20 design-partner lead list,
+  fit scoring, outreach angles, and first-batch recommendation. No outreach
+  recorded.
 - `2026-05-09-validation-plan.md`: outreach plan, pricing validation questions, scorecard, and decision rules.
 - `checkpoint-forking-agent-guide.md`: agent playbook for checkpoint logging,
   same-project run forks, resume scripts, scopes, and docs pages that must stay
