@@ -225,6 +225,12 @@ PYTHONPATH=packages/python-sdk instantml local down
 before `~/.instantml/credentials` when training scripts run from that checkout.
 The `local` sentinel suppresses the Authorization header only for loopback API
 bases such as `http://127.0.0.1:8000`; hosted URLs still require a real API key.
+Because the `local` credential only works against a loopback API, `init`
+rejects a non-loopback `--api-host` (use `--no-credentials` to write config for
+a non-loopback host without the local credential). The Compose service is bound
+to `127.0.0.1` so the unauthenticated local API is never exposed to the LAN.
+The background async uploader inherits the same loopback resolution, so
+`upload_mode="async"` works with the `local` sentinel without a real key.
 
 This first local lifecycle slice adapts the repo-root `docker-compose.yml` and
 starts the `instantml` service. It does not yet package a standalone Compose

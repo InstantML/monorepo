@@ -420,7 +420,27 @@ def cmd_local(rest: list[str]) -> None:
         cmd_local_down(args)
 
 
+def _is_loopback_api_host(value: str | None) -> bool:
+    """True when the host resolves to loopback. The local workflow writes an
+    unauthenticated `local` credential that only resolves against a loopback
+    API, so a non-loopback host would silently fail closed at run time."""
+    if not value:
+        return False
+    try:
+        parsed = urllib.parse.urlparse(value)
+        host = parsed.hostname if parsed.scheme else urllib.parse.urlparse(f"//{value}").hostname
+    except Exception:
+        return False
+    return (host or "") in {"localhost", "127.0.0.1", "::1"}
+
+
 def cmd_local_init(args: argparse.Namespace) -> None:
+    if not args.no_credentials and not _is_loopback_api_host(args.api_host):
+        _die(
+            f"--api-host must be a loopback address (localhost, 127.0.0.1, or [::1]); got {args.api_host!r}. "
+            "The local workflow writes an unauthenticated 'local' credential that only works against a "
+            "loopback API. Use --no-credentials to write config for a non-loopback host."
+        )
     root = Path(args.root).expanduser().resolve()
     config_path = local_config_path(root)
     config_path.parent.mkdir(parents=True, exist_ok=True)

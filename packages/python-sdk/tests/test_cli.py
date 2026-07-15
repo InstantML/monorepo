@@ -164,6 +164,31 @@ def test_local_init_writes_config_and_project_credentials(tmp_path, monkeypatch,
     assert "instantml local up" in capsys.readouterr().out
 
 
+def test_local_init_rejects_non_loopback_api_host(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        cli_module.cmd_local(
+            ["init", "--root", str(tmp_path), "--api-host", "http://0.0.0.0:8000"]
+        )
+    # No local credentials should have been written for a non-loopback host.
+    assert not cli_module.local_credentials_path(tmp_path).exists()
+    assert "loopback" in capsys.readouterr().err
+
+
+def test_local_init_allows_non_loopback_host_without_credentials(tmp_path, capsys):
+    cli_module.cmd_local(
+        [
+            "init",
+            "--root",
+            str(tmp_path),
+            "--api-host",
+            "http://0.0.0.0:8000",
+            "--no-credentials",
+        ]
+    )
+    assert cli_module.local_config_path(tmp_path).exists()
+    assert not cli_module.local_credentials_path(tmp_path).exists()
+
+
 def test_local_credentials_take_precedence_over_global_login(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     global_path = tmp_path / "global-credentials"

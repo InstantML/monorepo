@@ -9,7 +9,9 @@ services:
       POSTGRES_PASSWORD: instantml
       POSTGRES_DB: control
     ports:
-      - "5432:5432"
+      # Bind to loopback only: this dev stack runs unauthenticated with known
+      # credentials and must not be reachable from the LAN.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U instantml -d control"]
       interval: 2s
@@ -43,7 +45,10 @@ services:
       clickhouse:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      # Loopback only: INSTANTML_AUTH_MODE=local serves an unauthenticated API,
+      # so it must not be published to the LAN (the `instantml local` workflow
+      # drives this service).
+      - "127.0.0.1:8000:8000"
     volumes:
       - instantml-artifacts:/data/artifacts
     environment:
@@ -63,7 +68,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     volumes:
       - instantml-artifacts:/data/artifacts
     environment:
@@ -90,7 +95,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8002:8000"
+      - "127.0.0.1:8002:8000"
     volumes:
       - instantml-artifacts:/data/artifacts
     environment:

@@ -2209,7 +2209,12 @@ class Run:
                             "from instantml.async_queue import run_async_uploader; "
                             "from instantml.credentials import _resolve_api_key; "
                             "args = json.loads(sys.argv[1]); "
-                            "args['api_key'] = _resolve_api_key(None); "
+                            # Pass base_url so the `local` loopback sentinel
+                            # resolves (to None) instead of raising when the
+                            # credential comes from the environment and only the
+                            # loopback base_url — not INSTANTML_API_BASE_URL —
+                            # identifies it as local.
+                            "args['api_key'] = _resolve_api_key(None, args.get('base_url')); "
                             "run_async_uploader(**args)"
                         ),
                         json.dumps(args, separators=(",", ":")),
