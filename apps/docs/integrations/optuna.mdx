@@ -29,9 +29,14 @@ The callback logs completed trial values at `trial.number`:
 | Source | InstantML key |
 | --- | --- |
 | `trial.value` | `optuna/value` |
+| `trial.values` (multi-objective) | `optuna/value_0`, `optuna/value_1`, ... |
 | `trial.intermediate_values` | `optuna/intermediate/<name>` |
 | `trial.user_attrs["metric/..."]` | `optuna/user_attrs/...` |
 | `trial.params` | `config/optuna/params/...` |
+
+For multi-objective studies, `trial.value` is unavailable, so the callback logs
+each objective from `trial.values` as `optuna/value_0`, `optuna/value_1`, and so
+on.
 
 Failed and pruned trials are skipped. Pass `metric_name=...`,
 `step_attr=...`, or `user_attr_metric_prefix=...` when your study uses a

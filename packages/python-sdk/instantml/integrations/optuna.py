@@ -63,6 +63,18 @@ class InstantMLCallback(OwnedRunMixin):
             key = sanitize_metric_key(self.metric_name)
             if key is not None:
                 metrics.update(collect_scalar_metrics({key: value}, warn_prefix="optuna"))
+        else:
+            # Multi-objective trials raise on `trial.value`; the objectives live
+            # on the plural `trial.values`. Log each as `<metric_name>_<i>`.
+            values = self._safe_trial_values(trial)
+            if isinstance(values, (list, tuple)):
+                multi: dict[str, Any] = {}
+                for index, objective in enumerate(values):
+                    key = sanitize_metric_key(f"{self.metric_name}_{index}")
+                    if key is not None:
+                        multi[key] = objective
+                if multi:
+                    metrics.update(collect_scalar_metrics(multi, warn_prefix="optuna"))
         intermediate = getattr(trial, "intermediate_values", None)
         if isinstance(intermediate, dict):
             metrics.update(
@@ -133,6 +145,13 @@ class InstantMLCallback(OwnedRunMixin):
     def _safe_trial_value(trial: Any) -> Any | None:
         try:
             return getattr(trial, "value", None)
+        except (RuntimeError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_trial_values(trial: Any) -> Any | None:
+        try:
+            return getattr(trial, "values", None)
         except (RuntimeError, ValueError):
             return None
 

@@ -242,6 +242,28 @@ def test_optuna_owned_run_finishes_only_from_study_complete(monkeypatch: pytest.
     assert run.finished == ["finished"]
 
 
+def test_optuna_multi_objective_values_are_logged(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_module(monkeypatch, "optuna")
+    run = FakeRun()
+    callback = optuna_module.InstantMLCallback(run=run)
+
+    class MultiObjectiveTrial:
+        number = 3
+        state = SimpleNamespace(name="COMPLETE")
+        params: dict[str, Any] = {}
+        intermediate_values: dict[int, float] = {}
+        user_attrs: dict[str, float] = {}
+        values = [0.42, 1.5]
+
+        @property
+        def value(self) -> float:
+            raise RuntimeError("multi-objective")
+
+    callback(SimpleNamespace(study_name="multi", direction=""), MultiObjectiveTrial())
+
+    assert run.logs == [({"optuna/value_0": 0.42, "optuna/value_1": 1.5}, 3)]
+
+
 def test_optuna_multi_objective_properties_do_not_abort_callback(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_module(monkeypatch, "optuna")
     run = FakeRun()
