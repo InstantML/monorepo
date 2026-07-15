@@ -25,7 +25,17 @@ pub async fn overview(
         .get("metric_key")
         .map(String::as_str)
         .unwrap_or("eval/return_mean");
-    if project_filter(query).is_none()
+    // The org/project fast paths compute `best_eval_return`/`metric_points`
+    // from raw ClickHouse aggregates that span every run, since lifecycle state
+    // does not live in ClickHouse. If the org has any archived or soft-deleted
+    // runs, those aggregates would leak hidden-run metrics, so fall through to
+    // the run-id-scoped slow path (built from lifecycle-filtered `filtered_runs`).
+    let has_hidden_lifecycle_runs = {
+        let data = store.data.lock().await;
+        org_has_hidden_lifecycle_runs(&data, ctx.org_id)
+    };
+    if !has_hidden_lifecycle_runs
+        && project_filter(query).is_none()
         && !has_text_search(query)
         && !has_status_filter(query)
         && !has_display_status_filter(query)
@@ -73,7 +83,8 @@ pub async fn overview(
         }));
     }
     if let Some(project) = project_filter(query) {
-        if !has_text_search(query)
+        if !has_hidden_lifecycle_runs
+            && !has_text_search(query)
             && !has_status_filter(query)
             && !has_display_status_filter(query)
             && ctx.auth.as_ref().and_then(|auth| auth.project_id).is_none()

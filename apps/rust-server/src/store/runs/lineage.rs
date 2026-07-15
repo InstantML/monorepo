@@ -459,7 +459,10 @@ pub async fn run_lineage(store: &Store, ctx: &RequestContext, run_id: Uuid) -> A
         let parent = run
             .parent_run_id
             .and_then(|parent_id| data.runs.get(&parent_id).cloned())
-            .filter(|candidate| ensure_run_access_in_data(ctx, candidate).is_ok());
+            .filter(|candidate| {
+                ensure_run_access_in_data(ctx, candidate).is_ok()
+                    && is_readable_run(&data, candidate)
+            });
         let mut children = Vec::new();
         let mut children_total = 0_usize;
         let range_start = (ctx.org_id, run.id, DateTime::<Utc>::MIN_UTC, Uuid::nil());
@@ -477,7 +480,7 @@ pub async fn run_lineage(store: &Store, ctx: &RequestContext, run_id: Uuid) -> A
             let Some(child) = data.runs.get(child_id).cloned() else {
                 continue;
             };
-            if ensure_run_access_in_data(ctx, &child).is_err() {
+            if ensure_run_access_in_data(ctx, &child).is_err() || !is_readable_run(&data, &child) {
                 continue;
             }
             children_total += 1;

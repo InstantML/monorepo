@@ -403,8 +403,8 @@ pub async fn workspace_view_data(
         let data = store.data.lock().await;
         run_ids
             .iter()
-            .map(|run_id| workspace_view_data_run_for_ctx(&data, ctx, *run_id))
-            .collect::<AppResult<Vec<_>>>()?
+            .filter_map(|run_id| workspace_view_data_run_for_ctx(&data, ctx, *run_id))
+            .collect::<Vec<_>>()
     };
     let summaries = summarize_runs_for_metric_keys(store, runs, &metric_key_vec).await?;
     let metric_point_limit = workspace_view_data_effective_point_limit(
@@ -572,18 +572,19 @@ fn workspace_view_for_user(
         .ok_or_else(|| AppError::not_found("workspace view not found"))
 }
 
+// Skip-or-mark resolution for workspace-view-data run ids. Archived runs stay
+// readable by exact id, so they render in a saved view; a soft-deleted,
+// missing, or inaccessible run is silently skipped instead of failing the whole
+// batch (a single archived run must not 404 the entire multi-run request, and
+// must not brick an embed whose stored run_ids include it).
 fn workspace_view_data_run_for_ctx(
     data: &StoreData,
     ctx: &RequestContext,
     run_id: Uuid,
-) -> AppResult<RunRow> {
-    let run = data
-        .runs
-        .get(&run_id)
-        .cloned()
-        .ok_or_else(|| AppError::not_found("run not found"))?;
-    if !is_visible_run(data, &run) || run.org_id != ctx.org_id {
-        return Err(AppError::not_found("run not found"));
+) -> Option<RunRow> {
+    let run = data.runs.get(&run_id).cloned()?;
+    if !is_readable_run(data, &run) || run.org_id != ctx.org_id {
+        return None;
     }
     if ctx
         .auth
@@ -592,9 +593,9 @@ fn workspace_view_data_run_for_ctx(
         .map(|project_id| project_id != run.project_id)
         .unwrap_or(false)
     {
-        return Err(AppError::not_found("run not found"));
+        return None;
     }
-    Ok(run)
+    Some(run)
 }
 
 fn ensure_workspace_view_create_capacity(
@@ -1659,6 +1660,8 @@ mod tests {
         let visible_run_id = Uuid::from_u128(34);
         let other_project_run_id = Uuid::from_u128(35);
         let other_org_run_id = Uuid::from_u128(36);
+        let archived_run_id = Uuid::from_u128(38);
+        let deleted_run_id = Uuid::from_u128(39);
         let mut data = StoreData::default();
         data.insert_run(test_run(visible_run_id, org_id, project_id, "visible"));
         data.insert_run(test_run(
@@ -1673,6 +1676,22 @@ mod tests {
             project_id,
             "other-org",
         ));
+        data.insert_run(test_run(archived_run_id, org_id, project_id, "archived"));
+        data.insert_run(test_run(deleted_run_id, org_id, project_id, "deleted"));
+        for (run_id, state) in [(archived_run_id, "archived"), (deleted_run_id, "deleted")] {
+            data.insert_run_lifecycle(RunLifecycleRow {
+                kind: "run_lifecycle".to_string(),
+                id: Uuid::new_v4(),
+                org_id,
+                run_id,
+                state: state.to_string(),
+                reason: None,
+                actor_id: None,
+                actor_type: "test".to_string(),
+                idempotency_key: None,
+                created_at: Utc::now(),
+            });
+        }
         let ctx = RequestContext {
             org_id,
             auth: Some(AuthContext {
@@ -1685,10 +1704,19 @@ mod tests {
             session: None,
         };
 
-        assert!(workspace_view_data_run_for_ctx(&data, &ctx, visible_run_id).is_ok());
-        for run_id in [other_project_run_id, other_org_run_id, Uuid::from_u128(37)] {
-            let error = workspace_view_data_run_for_ctx(&data, &ctx, run_id).unwrap_err();
-            assert_eq!(error.status(), axum::http::StatusCode::NOT_FOUND);
+        // Active and archived runs both resolve — archived stays readable by
+        // exact id so a saved view keeps rendering it.
+        assert!(workspace_view_data_run_for_ctx(&data, &ctx, visible_run_id).is_some());
+        assert!(workspace_view_data_run_for_ctx(&data, &ctx, archived_run_id).is_some());
+        // Deleted, cross-project, cross-org, and missing runs are skipped
+        // (None) rather than failing the whole batch.
+        for run_id in [
+            deleted_run_id,
+            other_project_run_id,
+            other_org_run_id,
+            Uuid::from_u128(37),
+        ] {
+            assert!(workspace_view_data_run_for_ctx(&data, &ctx, run_id).is_none());
         }
     }
 
