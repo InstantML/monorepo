@@ -10,6 +10,11 @@ Backend/product planning note: the accepted hosted product architecture is Rust 
 
 Current planning docs:
 
+- `2026-07-14-wandb-pain-point-roadmap.md`: proposed, dependency-ordered PR
+  roadmap for the remaining SDK reliability, offline/HPC, experiment-sprawl,
+  HPO integration, pricing/data-control, and artifact-lifecycle gaps identified
+  in the July 2026 W&B complaint research, with already-shipped InstantML work
+  explicitly excluded.
 - `2026-05-09-open-source-brand.md`: accepted open-source, brand, and compatibility-name policy.
 - `pricing-and-margins.md`: current Free/Pro/Premium packaging, competitive pricing notes, infrastructure COGS assumptions, margin targets, and launch guardrails.
 - `customer-owned-clickhouse-setup.md`: first-slice BYOC self-hosted GCP ClickHouse customer/operator setup guidance, egress allowlist expectations, SQL grants, and limitations.
