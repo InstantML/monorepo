@@ -213,15 +213,33 @@ def test_optuna_callback_owned_run_and_study_completion(monkeypatch: pytest.Monk
     assert run.finished == ["finished"]
 
 
-def test_optuna_study_incomplete_does_not_auto_finish(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_optuna_owned_run_finishes_only_from_study_complete(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_module(monkeypatch, "optuna")
     run = FakeRun()
-    callback = optuna_module.InstantMLCallback(run=run, finish_on_complete=True)
-    study = SimpleNamespace(trials=[SimpleNamespace(state=SimpleNamespace(name="COMPLETE"), value=None)])
+    monkeypatch.setattr(_common, "init", lambda **kwargs: run)
+    callback = optuna_module.InstantMLCallback(project="owned", finish_on_complete=True)
 
-    callback(study, SimpleNamespace(number="bad", state=None, value=None, params={}, intermediate_values={}, user_attrs={}))
+    # Sequential optimize() calls the callback once per completed trial. Every
+    # trial so far has a value, so a "study is complete" heuristic would finish
+    # the owned run after the FIRST trial. It must stay open until the explicit
+    # study_complete() call after optimize() returns.
+    study = SimpleNamespace(study_name="s", direction="minimize", best_value=0.1)
+    study.trials = []
+    for number in range(3):
+        trial = SimpleNamespace(
+            number=number,
+            state=SimpleNamespace(name="COMPLETE"),
+            value=float(number),
+            params={},
+            intermediate_values={},
+            user_attrs={},
+        )
+        study.trials.append(trial)
+        callback(study, trial)
+        assert run.finished == []
 
-    assert run.finished == []
+    callback.study_complete(study)
+    assert run.finished == ["finished"]
 
 
 def test_optuna_multi_objective_properties_do_not_abort_callback(monkeypatch: pytest.MonkeyPatch) -> None:

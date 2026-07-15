@@ -80,7 +80,14 @@ log_dvc_metadata(run, repo_path=".")
 
 Adapters passed an explicit `run=` do not finish it unless `finish_run=True` is
 set. Adapters that create their own run finish only through their documented
-training-end hook or explicit `finish()`/`close()`.
+training-end hook or explicit `finish()`/`close()`. Two framework specifics:
+
+- CatBoost's `after_iteration` info never reports the total round count, so pass
+  `CatBoostCallback(total_iterations=<iterations>)` for an owned run to
+  auto-finish, or call `callback.close()` when `fit` returns.
+- Optuna calls the callback after every trial, so an owned run is finished only
+  from `callback.study_complete(study)` (with `finish_on_complete=True`) after
+  `study.optimize(...)` returns — never mid-study.
 
 ## Testing
 

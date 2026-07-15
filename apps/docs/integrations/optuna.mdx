@@ -37,5 +37,7 @@ Failed and pruned trials are skipped. Pass `metric_name=...`,
 `step_attr=...`, or `user_attr_metric_prefix=...` when your study uses a
 different convention.
 
-If the callback creates the run itself, call `callback.finish()` when the study
-is complete. Passing `run=` keeps run ownership in your script.
+If the callback creates the run itself, pass `finish_on_complete=True` and call
+`callback.study_complete(study)` once `study.optimize(...)` returns — the owned
+run is finished only from that explicit call, never mid-study. Passing `run=`
+keeps run ownership in your script.

@@ -12,7 +12,14 @@ from ._common import (
 
 
 class InstantMLCallback(OwnedRunMixin):
-    """Optuna callback that logs completed trial metrics and parameters."""
+    """Optuna callback that logs completed trial metrics and parameters.
+
+    Optuna invokes the callback after every trial, so the callback cannot know
+    from ``study.trials`` alone whether ``optimize()`` has returned. An
+    adapter-owned run is therefore finished only from the explicit
+    :meth:`study_complete` call (make it after ``optimize()`` returns) when
+    ``finish_on_complete=True``.
+    """
 
     def __init__(
         self,
@@ -77,8 +84,6 @@ class InstantMLCallback(OwnedRunMixin):
         config = self._trial_config(study, trial)
         if config:
             run.log_config(config)
-        if self.finish_on_complete and self._owns_run and self._study_is_complete(study):
-            self.finish()
 
     def study_complete(self, study: Any | None = None) -> None:
         run = self._ensure_run()
@@ -123,15 +128,6 @@ class InstantMLCallback(OwnedRunMixin):
         state = getattr(trial, "state", None)
         name = str(getattr(state, "name", state)).lower()
         return "fail" in name or "prun" in name
-
-    def _study_is_complete(self, study: Any) -> bool:
-        trials = getattr(study, "trials", None)
-        if not trials:
-            return False
-        for trial in trials:
-            if not self._skip_trial(trial) and self._safe_trial_value(trial) is None:
-                return False
-        return True
 
     @staticmethod
     def _safe_trial_value(trial: Any) -> Any | None:
