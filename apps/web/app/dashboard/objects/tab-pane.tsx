@@ -1,7 +1,7 @@
 "use client";
 
 import { BarChart3, ChevronRight, Copy, FileText, Image, Music, RefreshCw, Search, Table2, Video } from "lucide-react";
-import { Fragment, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { isAbortError, queryString, retryTransientRequest } from "../../../src/api.js";
@@ -301,7 +301,10 @@ function ObjectPreview({
   return <small className="objects-empty-note">Preview unavailable for this object.</small>;
 }
 
-function ObjectResultButton({
+// Memoized so a keystroke in any filter input (or a selection change elsewhere)
+// only re-renders the rows whose `active` flag actually flips, not the entire
+// loaded result list — which can be hundreds of rows deep after "Load more".
+const ObjectResultButton = memo(function ObjectResultButton({
   active,
   object,
   onSelect,
@@ -331,7 +334,7 @@ function ObjectResultButton({
       <ChevronRight size={15} aria-hidden="true" />
     </button>
   );
-}
+});
 
 export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
   const [kind, setKind] = useState("");
@@ -353,20 +356,48 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
   const [error, setError] = useState("");
   const [tableRows, setTableRows] = useState<LoggedObjectRow[]>([]);
   const [tableLoading, setTableLoading] = useState(false);
+  // Bumped whenever the page-1 (filter) load starts. `loadMore` captures the
+  // current value and drops its response if the filters changed underneath it,
+  // so a late "load more" page can never append stale-filter rows to a freshly
+  // reloaded list. The in-flight load-more request is also aborted on filter
+  // change.
+  const filterEpochRef = useRef(0);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
 
   const selected = useMemo(
     () => objects.find((object) => object.object_id === selectedId) ?? objects[0] ?? null,
     [objects, selectedId],
   );
-  const histogramCount = objects.filter((object) => object.kind === "histogram").length;
-  const mediaCount = objects.filter((object) => ["image", "video", "audio"].includes(object.kind)).length;
-  const textCount = objects.filter((object) => object.kind === "text").length;
-  const evalCount = objects.filter((object) => object.kind === "classification_eval").length;
+  const handleSelectObject = useCallback(
+    (object: ObjectExplorerItem) => setSelectedId(object.object_id),
+    [],
+  );
+  // Single pass over the loaded objects instead of four separate `.filter()`
+  // scans per render.
+  const { mediaCount, textCount, histogramCount, evalCount } = useMemo(() => {
+    const counts = { mediaCount: 0, textCount: 0, histogramCount: 0, evalCount: 0 };
+    for (const object of objects) {
+      if (object.kind === "image" || object.kind === "video" || object.kind === "audio") counts.mediaCount += 1;
+      else if (object.kind === "text") counts.textCount += 1;
+      else if (object.kind === "histogram") counts.histogramCount += 1;
+      else if (object.kind === "classification_eval") counts.evalCount += 1;
+    }
+    return counts;
+  }, [objects]);
 
   useEffect(() => {
     if (!urlStateReady) return;
     replaceObjectUrl({ fromStep, key, kind, runQuery, toStep });
   }, [fromStep, key, kind, runQuery, toStep, urlStateReady]);
+
+  // Keep the active option visible when it moves via the keyboard, so
+  // ArrowDown/End selection never lands on a row scrolled out of the list.
+  useEffect(() => {
+    if (!selected) return;
+    document
+      .getElementById(`object-${selected.object_id}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
 
   useEffect(() => {
     function syncFromUrl() {
@@ -387,6 +418,9 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
     if (!urlStateReady) return;
     const controller = new AbortController();
     let cancelled = false;
+    // A fresh filter load invalidates any in-flight "load more" page.
+    filterEpochRef.current += 1;
+    loadMoreControllerRef.current?.abort();
     async function loadObjects() {
       setLoading(true);
       setError("");
@@ -451,25 +485,36 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
 
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
+    const epoch = filterEpochRef.current;
+    const controller = new AbortController();
+    loadMoreControllerRef.current = controller;
     setLoadingMore(true);
     setError("");
     try {
-      const payload = await api.get<ObjectExplorerEnvelope>(`/api/objects/explorer${queryString({
-        project,
-        q: deferredRunQuery,
-        kind,
-        key: deferredKey,
-        from_step: deferredFromStep,
-        to_step: deferredToStep,
-        limit: PAGE_LIMIT,
-        cursor: nextCursor,
-      })}`);
+      const payload = await retryTransientRequest(
+        () => api.get<ObjectExplorerEnvelope>(`/api/objects/explorer${queryString({
+          project,
+          q: deferredRunQuery,
+          kind,
+          key: deferredKey,
+          from_step: deferredFromStep,
+          to_step: deferredToStep,
+          limit: PAGE_LIMIT,
+          cursor: nextCursor,
+        })}`, { signal: controller.signal }),
+        { signal: controller.signal },
+      );
+      // Filters changed while this page was in flight — discard it so we never
+      // append rows from a previous filter set onto the reloaded list.
+      if (filterEpochRef.current !== epoch) return;
       const more: ObjectExplorerItem[] = Array.isArray(payload.objects) ? payload.objects : [];
       setObjects((current) => [...current, ...more]);
       setNextCursor(typeof payload.next_cursor === "string" ? payload.next_cursor : null);
     } catch (caught) {
+      if (isAbortError(caught) || filterEpochRef.current !== epoch) return;
       setError(caught instanceof Error ? caught.message : "Unable to load more objects.");
     } finally {
+      if (loadMoreControllerRef.current === controller) loadMoreControllerRef.current = null;
       setLoadingMore(false);
     }
   }
@@ -562,7 +607,7 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
                 active={selected?.object_id === object.object_id}
                 key={object.object_id}
                 object={object}
-                onSelect={(nextObject) => setSelectedId(nextObject.object_id)}
+                onSelect={handleSelectObject}
               />
             )) : null}
           </div>

@@ -682,7 +682,13 @@ pub(super) fn table_summary(mut summary: Value, rows: &[Value]) -> AppResult<Val
 pub(super) fn media_summary(mut summary: Value, artifact: &ArtifactRow) -> Value {
     if let Some(object) = summary.as_object_mut() {
         object.insert("artifact_name".to_string(), json!(artifact.name));
-        object.insert("artifact_uri".to_string(), json!(artifact.public_uri()));
+        // Store the internal redacted reference, never the raw (possibly signed,
+        // customer-managed) storage URI. Serialization also re-redacts, but
+        // keeping secrets out of the persisted summary is defense in depth.
+        object.insert(
+            "artifact_uri".to_string(),
+            json!(redacted_artifact_uri(artifact)),
+        );
         object.insert("mime_type".to_string(), json!(artifact.mime_type));
         object.insert("size_bytes".to_string(), json!(artifact.size_bytes));
     }
@@ -763,9 +769,9 @@ pub(super) fn object_value(data: &StoreData, row: &AttributeRow) -> Value {
         "key": row.path,
         "kind": kind,
         "step": row.step,
-        "value": row.value,
+        "value": redact_object_uris(row.value.clone(), row.artifact_id),
         "metadata": metadata,
-        "summary": row.summary,
+        "summary": redact_object_uris(row.summary.clone(), row.artifact_id),
         "artifact_id": row.artifact_id,
         "artifact": artifact,
         "created_at": row.created_at
@@ -774,6 +780,31 @@ pub(super) fn object_value(data: &StoreData, row: &AttributeRow) -> Value {
 
 pub(super) fn redacted_artifact_uri(artifact: &ArtifactRow) -> String {
     format!("instantml://artifacts/{}", artifact.id)
+}
+
+// Replace any raw storage URI baked into a persisted object `value`/`summary`
+// with the internal redacted reference. External (customer-managed) artifacts
+// can carry signed download URLs in `uri`/`artifact_uri`; those must never
+// leave the server. Applied at serialization time so rows persisted before
+// ingest-time redaction was added are covered too.
+pub(super) fn redact_object_uris(mut value: Value, artifact_id: Option<Uuid>) -> Value {
+    if let Some(object) = value.as_object_mut() {
+        let redacted = artifact_id.map(|id| format!("instantml://artifacts/{id}"));
+        for key in ["uri", "artifact_uri"] {
+            if !object.contains_key(key) {
+                continue;
+            }
+            match &redacted {
+                Some(uri) => {
+                    object.insert(key.to_string(), Value::String(uri.clone()));
+                }
+                None => {
+                    object.remove(key);
+                }
+            }
+        }
+    }
+    value
 }
 
 pub(super) fn json_time(value: &Value) -> String {
@@ -1345,6 +1376,64 @@ mod tests {
             value["artifact"]["uri"],
             json!(format!("instantml://artifacts/{artifact_id}"))
         );
+    }
+
+    #[test]
+    fn object_value_redacts_raw_artifact_uris_in_value_and_summary() {
+        let org_id = Uuid::from_u128(1);
+        let run_id = Uuid::from_u128(2);
+        let artifact_id = Uuid::from_u128(3);
+        let mut data = StoreData::default();
+        data.insert_artifact(ArtifactRow {
+            id: artifact_id,
+            org_id,
+            run_id,
+            kind: "file".to_string(),
+            name: "imported.png".to_string(),
+            uri: "s3://secret-bucket/frame.png?X-Amz-Signature=secret".to_string(),
+            step: Some(1.0),
+            size_bytes: Some(512),
+            sha256: None,
+            mime_type: Some("image/png".to_string()),
+            storage_backend: "external".to_string(),
+            storage_key: None,
+            storage_path: None,
+            metadata: json!({}),
+            created_at: epoch(),
+        });
+
+        // A row persisted before ingest-time redaction: the raw signed URL is
+        // baked into both value.uri and summary.artifact_uri.
+        let value = object_value(
+            &data,
+            &AttributeRow {
+                id: 9,
+                org_id,
+                run_id,
+                path: "samples/image".to_string(),
+                kind: "image".to_string(),
+                step: Some(1.0),
+                logged_at: Some(epoch()),
+                value: json!({
+                    "kind": "image",
+                    "uri": "s3://secret-bucket/frame.png?X-Amz-Signature=secret",
+                    "metadata": {}
+                }),
+                summary: json!({
+                    "artifact_name": "imported.png",
+                    "artifact_uri": "s3://secret-bucket/frame.png?X-Amz-Signature=secret"
+                }),
+                artifact_id: Some(artifact_id),
+                created_at: epoch(),
+            },
+        );
+
+        let expected = json!(format!("instantml://artifacts/{artifact_id}"));
+        assert_eq!(value["value"]["uri"], expected);
+        assert_eq!(value["summary"]["artifact_uri"], expected);
+        let serialized = serde_json::to_string(&value).unwrap();
+        assert!(!serialized.contains("secret-bucket"));
+        assert!(!serialized.contains("X-Amz-Signature"));
     }
 
     #[test]

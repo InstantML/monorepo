@@ -329,9 +329,12 @@ pub async fn list_objects(
                 .unwrap_or(true)
         })
         .filter(|row| {
-            key.as_ref()
-                .map(|value| row.path.contains(value))
-                .unwrap_or(true)
+            // Exact key match on the run-detail endpoint. Histogram-timeline
+            // panels (dashboard-shell histogramFramesFromObjects) fetch by exact
+            // object key and do no client-side key filtering, so a substring
+            // match would let `weights/layer1` pull in `weights/layer10` frames.
+            // Cross-run substring browsing lives on the explorer endpoint.
+            key.as_ref().map(|value| row.path == *value).unwrap_or(true)
         })
         .map(|row| object_value(&data, row))
         .collect::<Vec<_>>();
@@ -759,8 +762,9 @@ fn object_explorer_value(data: &StoreData, candidate: &ObjectExplorerCandidate) 
         .unwrap_or_else(|| json!({}));
     let (metadata, metadata_truncated) =
         object_explorer_bounded_json(&metadata_raw, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES);
+    let sanitized_summary = redact_object_uris(row.summary.clone(), row.artifact_id);
     let (summary, summary_truncated) =
-        object_explorer_bounded_json(&row.summary, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES);
+        object_explorer_bounded_json(&sanitized_summary, OBJECT_EXPLORER_TEXT_PREVIEW_BYTES);
     let artifact = row
         .artifact_id
         .and_then(|id| data.artifacts.get(&id))
@@ -1453,18 +1457,30 @@ mod tests {
         });
         let mut row = attribute(1, run.id, "image", Some(3.0), 1);
         row.artifact_id = Some(artifact_id);
+        // Simulate a row persisted before ingest-time redaction: the raw signed
+        // URL is baked into both the stored summary and value.
+        row.summary = json!({
+            "artifact_name": "imported.png",
+            "artifact_uri": "s3://secret-bucket/path/frame.png?X-Amz-Signature=secret"
+        });
+        row.value = json!({
+            "kind": "image",
+            "uri": "s3://secret-bucket/path/frame.png?X-Amz-Signature=secret",
+            "metadata": {}
+        });
         let value = object_explorer_value(&data, &candidate(row, &run));
 
         assert_eq!(
             value["artifact"]["uri"],
             json!(format!("instantml://artifacts/{artifact_id}"))
         );
-        assert!(!serde_json::to_string(&value)
-            .unwrap()
-            .contains("secret-bucket"));
-        assert!(!serde_json::to_string(&value)
-            .unwrap()
-            .contains("X-Amz-Signature"));
+        assert_eq!(
+            value["summary"]["artifact_uri"],
+            json!(format!("instantml://artifacts/{artifact_id}"))
+        );
+        let serialized = serde_json::to_string(&value).unwrap();
+        assert!(!serialized.contains("secret-bucket"));
+        assert!(!serialized.contains("X-Amz-Signature"));
     }
 
     #[test]
