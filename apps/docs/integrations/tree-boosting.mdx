@@ -75,3 +75,15 @@ CatBoost metrics log from `info.metrics` using keys like `learn/Logloss` and
 `validation/AUC`.
 
 Adapters passed `run=` do not finish the run unless `finish_run=True` is set.
+
+If you let the callback create its own run (omit `run=`), CatBoost never tells
+the callback how many rounds remain — its `after_iteration` info exposes only
+`iteration` and `metrics`. Pass `total_iterations` (the same value as the
+model's `iterations`) so the owned run finishes on the last round, or call
+`callback.close()` yourself when training ends:
+
+```python
+model = CatBoostClassifier(iterations=500)
+callback = InstantMLCallback(project="tree-boosting", total_iterations=500)
+model.fit(train_pool, eval_set=valid_pool, callbacks=[callback])
+```

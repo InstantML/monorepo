@@ -323,9 +323,10 @@ def test_catboost_callback_logs_metrics_and_respects_finish_run(monkeypatch: pyt
     _install_module(monkeypatch, "catboost")
     run = FakeRun()
     callback = catboost_module.InstantMLCallback(run=run, config={"depth": 6}, finish_run=True)
+    # Real CatBoost `after_iteration` info exposes only `iteration` (1-based)
+    # and `metrics` — never a total. Auto-finish relies on `total_iterations`.
     info = SimpleNamespace(
         iteration=5,
-        total_iterations=5,
         metrics={"learn": {"Logloss": [0.8, 0.6]}, "validation": {"AUC": [0.7, 0.9], "ignored": "text"}},
     )
 
@@ -337,15 +338,37 @@ def test_catboost_callback_logs_metrics_and_respects_finish_run(monkeypatch: pyt
     assert run.finished == ["finished"]
 
 
-def test_catboost_adapter_created_run_finishes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_catboost_adapter_created_run_finishes_at_total_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_module(monkeypatch, "catboost")
+    run = FakeRun()
+    monkeypatch.setattr(_common, "init", lambda **kwargs: run)
+    callback = catboost_module.InstantMLCallback(project="cat-owned", total_iterations=3)
+
+    # Realistic info (only iteration/metrics). The owned run must finish exactly
+    # once, when the 1-based iteration reaches total_iterations.
+    for iteration in (1, 2, 3):
+        callback.after_iteration(SimpleNamespace(iteration=iteration, metrics={"learn": {"loss": 1.0 / iteration}}))
+
+    assert run.logs == [
+        ({"learn/loss": 1.0}, 1),
+        ({"learn/loss": 0.5}, 2),
+        ({"learn/loss": 1.0 / 3}, 3),
+    ]
+    assert run.finished == ["finished"]
+
+
+def test_catboost_owned_run_without_total_does_not_auto_finish(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_module(monkeypatch, "catboost")
     run = FakeRun()
     monkeypatch.setattr(_common, "init", lambda **kwargs: run)
     callback = catboost_module.InstantMLCallback(project="cat-owned")
 
-    callback.after_iteration(SimpleNamespace(iteration=1, total_iterations=1, metrics={"learn": {"loss": 1.0}}))
+    # Without total_iterations and with realistic info, there is no signal for
+    # the last round; the run stays open until the user calls close()/finish().
+    callback.after_iteration(SimpleNamespace(iteration=1, metrics={"learn": {"loss": 1.0}}))
+    assert run.finished == []
 
-    assert run.logs == [({"learn/loss": 1.0}, 1)]
+    callback.close()
     assert run.finished == ["finished"]
 
 
