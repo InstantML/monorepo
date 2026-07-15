@@ -70,6 +70,25 @@ pub(super) fn fetch_run_in_data(
     Ok(run)
 }
 
+// Borrow-only visibility + access check for callers that don't need the run
+// itself. fetch_run_in_data clones the whole RunRow — including its config and
+// metadata JSON values — which is pure allocation churn in loops like the
+// 2,000-run metric-series access check.
+pub(super) fn ensure_run_visible_in_data(
+    data: &StoreData,
+    ctx: &RequestContext,
+    run_id: Uuid,
+) -> AppResult<()> {
+    let run = data
+        .runs
+        .get(&run_id)
+        .ok_or_else(|| AppError::not_found("run not found"))?;
+    if !is_visible_run(data, run) {
+        return Err(AppError::not_found("run not found"));
+    }
+    ensure_run_access_in_data(ctx, run)
+}
+
 pub(super) fn ensure_run_access_in_data(ctx: &RequestContext, run: &RunRow) -> AppResult<()> {
     if run.org_id != ctx.org_id {
         return Err(AppError::forbidden(

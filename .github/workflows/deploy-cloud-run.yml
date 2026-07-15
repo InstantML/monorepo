@@ -297,7 +297,7 @@ jobs:
 
           # Hosted-frontend origin (also used by Resend invite links).
           INSTANTML_FRONTEND_BASE_URL: ${{ steps.inputs.outputs.frontend_base_url }}
-          INSTANTML_EMAIL_FROM: "noreply@instantml.ai"
+          INSTANTML_EMAIL_FROM: "InstantML <invites@mail.instantml.ai>"
           INSTANTML_ALLOWED_FRONTEND_ORIGINS: ${{ steps.inputs.outputs.allowed_frontend_origins }}
 
           # Self-hosted ClickHouse VM topology — must be set explicitly or

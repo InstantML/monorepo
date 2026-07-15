@@ -1,5 +1,5 @@
 import { defaultDistributionFields, defaultScatterFields, parseCategoricalFieldId, parseFieldId } from "../src/dashboard-panels.js";
-import { bestMetric, durationLabel, formatNumber, metricGoal } from "../src/state.js";
+import { bestMetric, durationLabel, formatNumber, isInternalInstantMlMetric, metricGoal } from "../src/state.js";
 import { WORKSPACE_VIEW_PREFIX } from "./dashboard/state/storage-keys";
 
 import type {
@@ -92,8 +92,12 @@ export function runConfigSummary(run: RunSummary) {
 }
 
 export function lastMetricStep(run: RunSummary) {
-  const steps = Object.values(run.metric_aggregates ?? {})
-    .map((aggregate) => aggregate.best_step)
+  // SDK upload-health telemetry (system/instantml/*) is time-keyed: its
+  // best_step is a unix timestamp, which would render as a billions-scale
+  // "step" in the failed-run triage panel. Only user metrics participate.
+  const steps = Object.entries(run.metric_aggregates ?? {})
+    .filter(([key]) => !isInternalInstantMlMetric(key))
+    .map(([, aggregate]) => aggregate.best_step)
     .filter((step): step is number => typeof step === "number" && Number.isFinite(step));
   return steps.length ? formatNumber(Math.max(...steps), 0) : "-";
 }

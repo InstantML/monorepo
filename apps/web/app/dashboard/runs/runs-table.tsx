@@ -4,7 +4,7 @@ import { Square } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { memo, useMemo, useState } from "react";
 
-import { bestMetric, canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, metricGoal, visibleSelectionState } from "../../../src/state.js";
+import { bestMetric, canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, visibleSelectionState } from "../../../src/state.js";
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { formatRunTime, shortMetricName } from "../../dashboard-models";
 import type { MetricSeries, RunSummary, TableColumns } from "../../dashboard-types";
@@ -38,8 +38,12 @@ function lossValue(run: RunSummary) {
 function latestStep(run: RunSummary, points: MetricSeries["points"] | undefined) {
   const seriesStep = points?.length ? points[points.length - 1]?.step : null;
   if (typeof seriesStep === "number" && Number.isFinite(seriesStep)) return seriesStep;
-  const aggregateSteps = Object.values(run.metric_aggregates ?? {})
-    .map((aggregate) => aggregate?.best_step)
+  // SDK upload-health telemetry (system/instantml/*) is time-keyed: its
+  // best_step is a unix timestamp, which would render as a billions-scale
+  // "step". Only user metrics participate in the step fallback.
+  const aggregateSteps = Object.entries(run.metric_aggregates ?? {})
+    .filter(([key]) => !isInternalInstantMlMetric(key))
+    .map(([, aggregate]) => aggregate?.best_step)
     .filter((step): step is number => typeof step === "number" && Number.isFinite(step));
   return aggregateSteps.length ? Math.max(...aggregateSteps) : null;
 }
@@ -178,6 +182,7 @@ const RunsTableRow = memo(function RunsTableRow({
           aria-label={`Open ${run.name}`}
           className="run-name-button"
           onClick={() => { onInspectRun(run.id); onOpenRun(run.id); }}
+          title={run.name}
           type="button"
         >
           {run.name}

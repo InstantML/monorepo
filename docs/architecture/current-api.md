@@ -90,12 +90,13 @@ remains the default and the current deployed shape.
 
 ## Auth Model
 
-There are three credential paths.
+There are four credential paths.
 
 | Credential | Transport | Main use |
 | --- | --- | --- |
 | Browser session | `instantml_session` HttpOnly cookie | Next dashboard after Clerk or local dev sign-in |
 | SDK API key | `Authorization: Bearer instantml_...` | SDK, uploader, import, export, and automation calls |
+| MCP OAuth token | `Authorization: Bearer <clerk oauth token>` (flag `INSTANTML_MCP_OAUTH_ENABLED`) | Hosted MCP browser sign-in; acts as the signed-in user with their own org role |
 | Bootstrap token | `X-InstantML-Bootstrap-Token: ...` | Operator-only user/org/API-key bootstrap routes and read-only admin routes |
 
 In `INSTANTML_AUTH_MODE=api-key`, tenant product routes require either a bearer
@@ -103,8 +104,11 @@ API key or a valid browser session cookie. Local mode allows unauthenticated
 compatibility calls against the fixed local development org.
 
 Cookie-authenticated mutating requests require an allowed `Origin`. Bearer-token
-SDK requests are not origin-gated. Shared demo browser sessions are read-only
-except for export reads.
+requests (SDK keys and MCP OAuth tokens) are not origin-gated because browsers
+never attach them ambiently. Shared demo sessions — browser or MCP OAuth — are
+read-only except for export reads. MCP OAuth permissions mirror the user's
+membership role in the resolved org (viewer reads; member/admin/owner writes per
+the session role matrix), never exceeding the user's own dashboard access.
 
 ## Common Shapes
 
@@ -171,6 +175,11 @@ Validation limits that affect callers:
 | Console log lines per batch | 50 |
 | Console log message | 16 KiB |
 | Console log query limit | Default 250, max 1,000 |
+| Trace events per batch | 500 |
+| Trace list page | Default 50, max 200 |
+| Trace detail root/orphan span window | Default 500, max 1,000 |
+| Trace child page | Default 100, max 500 |
+| Trace previews | 4 KiB per preview field; only accepted with `content_policy: "preview"` |
 | Object page limit | Default 100, max 500 |
 | Object table row limit | Default 100, max 1,000 |
 | Artifact list limit | Max 1,000 |
@@ -1180,6 +1189,162 @@ the dashboard's Distributed tab without adding a cross-run rank query fan-out.
 When a key is supplied, the API skips full key discovery and returns `keys`
 containing the selected key only.
 
+## Traces
+
+Product traces are tenant data linked to existing runs. They store nested span
+events for RL rollouts, model/tool calls, retrieval, reward/evaluator steps,
+and custom pipeline work. Trace content capture is preview-only in this API
+slice; full prompt/response bodies are not accepted.
+
+### `POST /api/runs/:run_id/traces/events`
+
+Auth: `sdk:ingest` API key or owner/admin/member session.
+
+Required header: `Idempotency-Key`, max 200 bytes.
+
+Body:
+
+```json
+{
+  "events": [
+    {
+      "trace_id": "7bba9f33312b3dbb8b2c2c62bb7abe2d",
+      "span_id": "086e83747d0e381e",
+      "parent_span_id": null,
+      "event_id": "00000000-0000-4000-8000-000000000001",
+      "sequence": 1,
+      "event_kind": "finished",
+      "name": "rollout",
+      "kind": "rollout",
+      "status": "ok",
+      "step": 10,
+      "rank": 0,
+      "thread_id": "episode-42",
+      "rollout_id": "rollout-42",
+      "started_at": "2026-07-03T12:00:00Z",
+      "ended_at": "2026-07-03T12:00:01Z",
+      "metrics": { "reward.total": 1.0 },
+      "attributes": { "env": "cartpole" },
+      "links": [],
+      "content_policy": "off",
+      "redaction_state": "not_captured",
+      "truncated": false
+    }
+  ]
+}
+```
+
+Trace IDs are 32 lowercase hex characters; span IDs are 16 lowercase hex
+characters. `event_kind` is one of `started`, `updated`, `finished`,
+`exception`, or `interrupted`. `kind` is one of `rollout`, `env_step`, `model`,
+`tool`, `retrieval`, `reward`, `evaluator`, `dataset`, `preprocessing`,
+`postprocessing`, `checkpoint`, `artifact`, `system`, or `custom`. Status is
+`running`, `ok`, `error`, `cancelled`, or `interrupted`.
+
+Output:
+
+```json
+{
+  "inserted": 1,
+  "trace_ids": ["7bba9f33312b3dbb8b2c2c62bb7abe2d"],
+  "summary_updates": 1
+}
+```
+
+### `GET /api/traces`
+
+Auth: tenant read access.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `project_id` / `project` / `run_id` | Scope. `run_id` implies its project. Otherwise a project id/name or project-scoped API key is required. |
+| `status` | Optional status filter, or `all` |
+| `kind` | Optional span kind filter, or `all` |
+| `q` | Search root name, trace id prefix, rollout id, or thread id |
+| `from`, `to` | Optional RFC3339 `started_at` window. Project-scoped lists default to the last 7 days through now; `run_id` lists are unbounded unless a window is supplied. |
+| `min_step`, `max_step` | Optional inclusive filter on each trace's anchor (its `min_step`), matching how `/traces/steps` buckets count traces. Traces without a step and multi-step spanners whose anchor falls outside the range are excluded. `min_step <= max_step`; steps may be negative. |
+| `limit` | Default 50, max 200 |
+| `cursor` | Opaque cursor returned by the previous page |
+
+Output:
+
+```json
+{ "traces": [], "next_cursor": null, "limit": 50 }
+```
+
+### `GET /api/runs/:run_id/traces/steps`
+
+Auth: tenant read access.
+
+Returns bounded per-step trace aggregates for one run, anchored on each trace's
+canonical `min_step`. Traces without a step count into `stepless_trace_count`.
+Missing runs return 404; a run with no traces returns an empty response rather
+than 404.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `min_step`, `max_step` | Optional inclusive step-bucket range, `min_step <= max_step`. Steps may be negative. |
+
+Buckets are ordered by ascending step and capped at 2,000; `truncated` is `true`
+when the (range-filtered) result has more distinct steps than the cap, in which
+case the lowest
+2,000 steps are returned. `total_trace_count`, `stepless_trace_count`, and
+`total_error_trace_count` are always run-wide: they ignore `min_step`/`max_step`
+and include stepless and truncated-out traces, so under a filtered range the
+bucket sums can be smaller than the totals. `total_error_trace_count` is the
+run-wide count of errored traces and is not the sum of the per-bucket
+`error_trace_count` values. Only `steps` honors the range.
+
+Output:
+
+```json
+{ "steps": [], "stepless_trace_count": 0, "total_trace_count": 0, "total_error_trace_count": 0, "truncated": false }
+```
+
+### `GET /api/runs/:run_id/traces/:trace_id`
+
+Auth: tenant read access.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `span_limit` | Root/orphan span window, default 500, max 1,000 |
+
+Output includes `trace.total_span_count`, `trace.root_count`,
+`trace.orphan_count`, returned root/orphan `spans`, per-span `child_count`,
+`root_next_cursor` when more root spans are available, and
+`truncated.partial_tree` when child expansion is needed.
+
+### `GET /api/runs/:run_id/traces/:trace_id/spans`
+
+Auth: tenant read access.
+
+Query:
+
+| Parameter | Meaning |
+| --- | --- |
+| `parent_span_id` | Optional. Omit or pass an empty string to load roots. |
+| `limit` | Default 100, max 500 |
+| `cursor` | Opaque child cursor returned by the previous page |
+
+Output:
+
+```json
+{
+  "parent_span_id": "086e83747d0e381e",
+  "spans": [],
+  "next_cursor": null,
+  "child_count": 0,
+  "returned": 0,
+  "omitted": 0
+}
+```
+
 ### `POST /api/metrics/series`
 
 Auth: tenant read access.
@@ -1738,6 +1903,7 @@ Output:
       "projects": 2,
       "runs": 100,
       "metric_points": 1000000,
+      "trace_events": 100000,
       "api_requests": 500000,
       "api_request_overage_cents_per_million": null,
       "rate_limit_rps": 5,
@@ -1757,6 +1923,7 @@ Output:
     "projects": "blocked_at_limit",
     "runs": "blocked_at_limit",
     "metric_points": "blocked_at_limit",
+    "trace_events": "blocked_at_limit",
     "api_requests": "blocked_or_metered_overage",
     "storage": "blocked_at_limit",
     "artifacts": "visibility_only",
@@ -1787,6 +1954,7 @@ Output:
         "projects": 500,
         "runs": 1000000,
         "metric_points": 2000000000,
+        "trace_events": 500000000,
         "api_requests": 150000000
       },
       "usage": {
@@ -1796,6 +1964,8 @@ Output:
         "runs": 2,
         "metric_points": 6,
         "metric_points_current_period": 6,
+        "trace_events": 0,
+        "trace_events_current_period": 0,
         "api_requests": 42,
         "metric_points_retained_total": 18,
         "metric_series": 4,
@@ -1825,10 +1995,12 @@ Output:
 ```
 
 The response is guardrail/debug telemetry and exposes reportable overage
-fields, but Stripe remains the payment source of truth. Metric-point limits are
-evaluated against the current UTC calendar-month `usage_period`;
-`usage.metric_points` is the same value as `usage.metric_points_current_period`,
-while `usage.metric_points_retained_total` is retained history for debugging.
+fields, but Stripe remains the payment source of truth. Metric-point and
+trace-event limits are evaluated against the current UTC calendar-month
+`usage_period`; `usage.metric_points` is the same value as
+`usage.metric_points_current_period`, `usage.trace_events` is the same value as
+`usage.trace_events_current_period`, and
+`usage.metric_points_retained_total` is retained history for debugging.
 `usage.api_requests` is the current monthly data-plane request rollup. Free and
 non-billable orgs are blocked at the monthly API request allowance; paid
 Pro/Premium overage is reported to Stripe as exact request-unit deltas.
@@ -1851,8 +2023,9 @@ alias for clients that have not yet moved to the exact/guardrail split.
 for versioned artifacts it includes bytes reserved by pending upload sessions
 as well as active and pending-delete committed bytes.
 
-New project, run, scalar metric ingest, rank metric ingest, artifact-storage,
-import, and demo-reset writes that exceed blocked limits fail with:
+New project, run, scalar metric ingest, rank metric ingest, trace-event ingest,
+artifact-storage, import, and demo-reset writes that exceed blocked limits fail
+with:
 
 ```json
 {

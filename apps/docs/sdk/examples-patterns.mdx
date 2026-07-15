@@ -139,9 +139,27 @@ for global_step in range(0, 100_000, 1_000):
         step=global_step,
     )
 
+@run.trace_op(
+    name="reward.score",
+    kind="reward",
+    capture="preview",
+    attributes={"phase": "eval"},
+)
+def score_reward(observation, action, authorization):
+    return {"reward": reward_model(observation, action)}
+
+with run.trace("eval rollout", kind="rollout", step=100_000, capture="preview"):
+    action = policy(observation)
+    score_reward(observation, action, authorization="Bearer service-token")
+
 run.log_video("eval-rollout.mp4", "s3://bucket/rollouts/eval-rollout.mp4", step=100_000)
 run.finish()
 ```
+
+Use `eval/...` keys for periodic policy evaluation and `train/...` keys for
+noisy online learning signals. Use traces sparingly for representative
+rollouts, failures, or reward/evaluator calls where you need execution evidence
+beside the metrics.
 
 ## Spool long-running jobs
 

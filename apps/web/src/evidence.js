@@ -1,9 +1,12 @@
 /**
- * @param {{ artifacts?: any[], objects?: any[], search?: string }} input
+ * Build the unfiltered evidence sections. Split from the search filter so
+ * consumers can cache this per (artifacts, objects) — item construction
+ * JSON.stringifies every object's metadata for searchText, which is too
+ * expensive to redo on every search keystroke.
+ * @param {{ artifacts?: any[], objects?: any[] }} input
  */
-export function buildEvidenceSections({ artifacts = [], objects = [], search = "" } = {}) {
-  const query = String(search ?? "").trim().toLowerCase();
-  const sections = [
+export function buildEvidenceSectionItems({ artifacts = [], objects = [] } = {}) {
+  return [
     {
       id: "checkpoints",
       label: "Checkpoints",
@@ -29,11 +32,29 @@ export function buildEvidenceSections({ artifacts = [], objects = [], search = "
         .map((artifact) => artifactItem(artifact, "file")),
     },
   ];
+}
+
+/**
+ * Filter prebuilt sections by the search query without rebuilding the items.
+ * @template {{ items: { searchText: string }[] }} T
+ * @param {T[]} sections
+ * @param {string} [search]
+ * @returns {T[]}
+ */
+export function filterEvidenceSections(sections, search = "") {
+  const query = String(search ?? "").trim().toLowerCase();
   if (!query) return sections;
   return sections.map((section) => ({
     ...section,
     items: section.items.filter((item) => item.searchText.includes(query)),
   }));
+}
+
+/**
+ * @param {{ artifacts?: any[], objects?: any[], search?: string }} input
+ */
+export function buildEvidenceSections({ artifacts = [], objects = [], search = "" } = {}) {
+  return filterEvidenceSections(buildEvidenceSectionItems({ artifacts, objects }), search);
 }
 
 /**

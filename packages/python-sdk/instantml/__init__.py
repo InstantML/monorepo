@@ -32,6 +32,7 @@ from .client import (
     attach_run,
     init,
 )
+from .tracing import AttachedTraceContext, TraceContext, TraceSpan
 
 __all__ = [
     "Api",
@@ -57,6 +58,9 @@ __all__ = [
     "StopRequest",
     "Table",
     "Text",
+    "AttachedTraceContext",
+    "TraceContext",
+    "TraceSpan",
     "TransformersCallback",
     "Video",
     "VersionedArtifact",

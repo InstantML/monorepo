@@ -976,6 +976,7 @@ fn import_usage_delta_for_runs(runs: &[CanonicalRun], project_exists: bool) -> U
         projects: if project_exists { 0 } else { 1 },
         runs: run_count,
         metric_points,
+        trace_events: 0,
         storage_bytes: artifact_storage
             + run_count * RUN_METADATA_BYTES
             + if project_exists {

@@ -1627,6 +1627,7 @@ mod tests {
             tenant_loaded: Arc::new(Mutex::new(BTreeSet::new())),
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
+            trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(data)),
@@ -1904,6 +1905,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -1979,6 +1981,7 @@ mod tests {
                 user_id: owner.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2088,6 +2091,7 @@ mod tests {
             user_id,
             role: "owner".to_string(),
             demo_read_only: false,
+            mcp_oauth: false,
         };
 
         let account = sync_retrieved_checkout_session(
@@ -2280,6 +2284,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2343,6 +2348,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2387,6 +2393,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2433,6 +2440,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
 
@@ -2499,6 +2507,7 @@ mod tests {
                 user_id: user.id,
                 role: "owner".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
         let error = add_billing_seat(

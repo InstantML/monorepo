@@ -24,7 +24,21 @@
   color: var(--text);
   min-width: 0;
 }
-.pd-name { overflow: hidden; text-overflow: ellipsis; }
+/* Two-class specificity on purpose: the legacy .run-workspace-name rule in
+   overhaul.css sets flex: 0 0 auto on this same span, which forbids shrinking
+   and lets 100+ char run names overflow into the header actions. That rule's
+   19px/1 font shorthand also forces line-height 1, and combined with the
+   ellipsis overflow: hidden below it clips mono descenders (g, y, p) — Spline
+   Sans Mono ink spans ~1.25em, so keep line-height at 1.3 or above. */
+.pd-title .pd-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.3;
+}
+.pd-title .pd-chip { flex: none; }
 .pd-meta {
   margin-top: 4px;
   font: 500 10px/1.5 var(--font-mono);
@@ -159,6 +173,9 @@
 .pd-codewell {
   font: 500 11.5px/1.75 var(--font-mono);
   white-space: pre-wrap;
+  /* Unbroken tokens (base64 blobs, URLs, hash strings) must wrap in place —
+     without this a long config value forces a multi-screen sideways scroll. */
+  overflow-wrap: anywhere;
   background: var(--bg-soft);
   padding: 12px; overflow-x: auto;
   color: var(--text-2);
@@ -247,7 +264,7 @@
 .pd-chip {
   display: inline-flex; align-items: center; gap: 6px;
   height: 20px; padding: 0 8px; border-radius: var(--radius-pill);
-  font: 500 10px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+  font: 500 10px/1 var(--font-mono); letter-spacing: 0.04em;
   border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
 }
 .pd-chip--live { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }

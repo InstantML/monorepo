@@ -1,6 +1,6 @@
 ---
 title: "Run Detail"
-description: "Inspect one run's metrics, config, source context, logs, artifacts, and rich objects."
+description: "Inspect one run's summary, metrics, traces, logs, files, system metadata, and lineage."
 ---
 
 Open Run Detail — by clicking a run in the Runs workspace — when you need to
@@ -28,32 +28,69 @@ Cards appear only when the underlying signal exists:
 - **Throughput** and **GPU util** when system metrics are logged.
 - **ETA**, estimated from the recent step rate for running runs with a target.
 
-## Move between tabs
+## Move between sections
 
 Run Detail has its own tabs, separate from the global dashboard navigation. The
-Metrics and Artifacts tabs carry a count badge:
+Data and Files sections carry count badges when the run has logged metric rows
+or evidence.
 
 | Tab | Use |
 | --- | --- |
-| Overview | KPI cockpit, headline charts, config, checkpoints, alerts, and timeline |
-| Metrics | Metric curve chart and the metric summary table |
-| Artifacts | Artifact, checkpoint, media, table, histogram, and evaluation evidence |
+| Summary | KPI cockpit, headline charts, checkpoints, alerts, tags, notes, and timeline |
+| Data | Metric curve chart and the metric summary table |
+| Traces | Recent product traces for this run, linked into the full Traces workspace |
 | Logs | Stdout/stderr style logs for the selected run |
-| Config | Config plus source/system metadata captured by the SDK |
-| Lineage | Conditional relationship/evidence graph surfaces when graph data exists |
+| Files | Artifact, checkpoint, media, table, histogram, and evaluation evidence |
+| System | Config plus source/system metadata captured by the SDK |
+| Graph | Parent, checkpoint, and child-run lineage when graph data exists |
 
-Logs and object manifests load only when the relevant tab is opened.
-User-facing metric summaries cover logged training metrics; internal SDK
-telemetry (`system/instantml/*`) lives on the Config tab.
+Logs, traces, objects, and lineage load only when the relevant section is
+opened. User-facing metric summaries cover logged training metrics; internal SDK
+telemetry (`system/instantml/*`) lives on the System section.
+
+## Traces
+
+![Run Detail recent traces](/images/product/dashboard-run-detail-traces.png)
+
+The Traces section lists the latest traces for the selected run. It fetches
+`GET /api/traces?run_id=...&limit=20` only after you open the section, then
+links each trace to the full Traces workspace with the exact `run_id`,
+`trace_id`, and root `span_id`.
+
+Above the list, a **trace activity timeline** puts one run metric and per-step
+trace activity on a shared step axis, so you can see where a metric moved and
+where traces ran or failed in a single view:
+
+- The metric line at the top plots one key; pick it with the **Metric**
+  selector in the panel head.
+- The lane below the axis draws one marker per step bucket. Marker size scales
+  with the number of traces at that step, and color encodes health: normal,
+  running-only, or errored. A shaded danger band spans contiguous steps that
+  contain errored traces.
+- The panel head reports run-wide totals — total traces and errored traces
+  across the whole run, plus the covered step range.
+- Click a step to pin the list below to that step: a filter chip appears and the
+  list refetches only the traces anchored there. Click the chip to clear it.
+
+The totals in the panel head are always run-wide and include traces logged
+without a step, so they can be larger than the sum of the visible buckets — the
+lane only shows stepped traces, and the list under a pinned step shows only that
+step's traces. Runs that log no stepped traces skip the lane and note the
+stepless count instead. The lane is capped at the first 2,000 distinct steps
+(see [`GET /api/runs/:run_id/traces/steps`](/architecture/current-api));
+longer runs show a truncation note.
+
+Use this section when you are already inspecting one run and want to jump from a
+metric regression or failed checkpoint to the execution tree that produced it.
 
 ## Edit tags and notes
 
 Use the small editor to update tags and notes without leaving the run. These
 fields are searchable and appear in Compare.
 
-## Review artifacts and evaluation evidence
+## Review files and evaluation evidence
 
-The Artifacts tab previews checkpoints, uploaded files, media objects, tables,
+The Files section previews checkpoints, uploaded files, media objects, tables,
 histograms, and binary classification evaluation bundles through existing
 artifact and object routes. Classification eval previews render PR/ROC curves,
 a confusion matrix, per-class metrics, and optional prediction rows from typed

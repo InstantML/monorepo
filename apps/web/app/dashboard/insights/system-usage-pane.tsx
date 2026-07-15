@@ -102,7 +102,13 @@ export function SystemUsageInsightsPane({ api, project = "", selectedRunIds, sor
   const data = useMemo(() => normalizeSystemUsagePayload(payload) as SystemUsagePayload, [payload]);
   const state = systemUsageState(data);
   const attention = useMemo(() => sortedAttentionCards(data.attention) as AttentionCard[], [data.attention]);
-  const selectedLoaded = selectedRunIds.filter((id) => sortedRuns.some((run) => run.id === id)).length;
+  // Set lookup: the .some() scan made this O(selected × page) — ~200k
+  // comparisons per render at a 2,000-run selection.
+  const loadedRunIds = useMemo(() => new Set(sortedRuns.map((run) => run.id)), [sortedRuns]);
+  const selectedLoaded = useMemo(
+    () => selectedRunIds.reduce((count, id) => count + (loadedRunIds.has(id) ? 1 : 0), 0),
+    [loadedRunIds, selectedRunIds],
+  );
   const busy = loading && !payload;
   const hasInitialError = Boolean(error && !payload && !loading);
   const showContent = !busy && !hasInitialError && (state === "ready" || state === "partial");

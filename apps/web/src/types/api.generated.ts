@@ -1503,6 +1503,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/traces/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["log_trace_events"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/traces/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_trace_step_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/traces/{trace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_trace_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/traces/{trace_id}/spans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_trace_children"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/storage/clickhouse-connections": {
         parameters: {
             query?: never;
@@ -1561,6 +1625,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["validate_customer_clickhouse_connection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_traces"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2894,6 +2974,9 @@ export interface components {
             project?: string | null;
             tags?: string[] | null;
         };
+        CreateTraceEventsRequest: {
+            events: components["schemas"]["TraceEventInput"][];
+        };
         CreateUserRequest: {
             avatar_url?: string | null;
             display_name?: string | null;
@@ -4083,6 +4166,267 @@ export interface components {
             utilization_buckets: components["schemas"]["SystemUsageBucket"][];
             /** Format: double */
             utilized_gpu_hours: number;
+        };
+        TraceChildrenResponse: {
+            /** Format: int64 */
+            child_count: number;
+            next_cursor?: string | null;
+            /** Format: int64 */
+            omitted: number;
+            parent_span_id?: string | null;
+            returned: number;
+            spans: components["schemas"]["TraceSpanItem"][];
+        };
+        TraceDetailLimits: {
+            /** Format: int64 */
+            max_span_limit: number;
+            /** Format: int64 */
+            span_limit: number;
+        };
+        TraceDetailResponse: {
+            limits: components["schemas"]["TraceDetailLimits"];
+            root_next_cursor?: string | null;
+            spans: components["schemas"]["TraceSpanItem"][];
+            trace: components["schemas"]["TraceDetailSummary"];
+            truncated: components["schemas"]["TraceDetailTruncation"];
+        };
+        TraceDetailSummary: {
+            attributes: {
+                [key: string]: unknown;
+            };
+            content_available: boolean;
+            /** Format: double */
+            duration_ms?: number | null;
+            /** Format: date-time */
+            ended_at?: string | null;
+            /** Format: int64 */
+            error_count: number;
+            /** Format: int64 */
+            orphan_count: number;
+            payloads_truncated: boolean;
+            project: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: int64 */
+            root_count: number;
+            root_name: string;
+            root_span_id: string;
+            /** Format: uuid */
+            run_id: string;
+            run_name: string;
+            /** Format: int64 */
+            running_span_count: number;
+            /** Format: int64 */
+            span_count: number;
+            /** Format: date-time */
+            started_at: string;
+            status: string;
+            summary: {
+                [key: string]: unknown;
+            };
+            summary_metrics: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            total_span_count: number;
+            trace_id: string;
+        };
+        TraceDetailTruncation: {
+            partial_tree: boolean;
+            payloads: boolean;
+            spans: boolean;
+        };
+        TraceEventInput: {
+            attributes?: {
+                [key: string]: unknown;
+            } | null;
+            content_policy?: string | null;
+            /** Format: double */
+            duration_ms?: number | null;
+            ended_at?: string | null;
+            error_preview?: string | null;
+            error_type?: string | null;
+            /** Format: uuid */
+            event_id: string;
+            event_kind: string;
+            input_preview?: string | null;
+            kind: string;
+            links?: {
+                [key: string]: unknown;
+            } | {
+                [key: string]: unknown;
+            }[] | null;
+            metrics?: {
+                [key: string]: unknown;
+            } | null;
+            name: string;
+            output_preview?: string | null;
+            parent_span_id?: string | null;
+            /** Format: int32 */
+            rank?: number | null;
+            redaction_state?: string | null;
+            rollout_id?: string | null;
+            /** Format: int64 */
+            sequence: number;
+            span_id: string;
+            started_at: string;
+            status: string;
+            /** Format: double */
+            step?: number | null;
+            thread_id?: string | null;
+            trace_id: string;
+            truncated?: boolean | null;
+        };
+        TraceIngestResponse: {
+            inserted: number;
+            summary_updates: number;
+            trace_ids: string[];
+        };
+        TraceListResponse: {
+            /** Format: int64 */
+            limit: number;
+            next_cursor?: string | null;
+            traces: components["schemas"]["TraceSummaryItem"][];
+        };
+        TraceSpanItem: {
+            attributes: {
+                [key: string]: unknown;
+            };
+            /** Format: int64 */
+            child_count: number;
+            content_policy: string;
+            /** Format: double */
+            duration_ms?: number | null;
+            /** Format: date-time */
+            ended_at?: string | null;
+            error_preview: string;
+            error_type?: string | null;
+            input_preview: string;
+            kind: string;
+            links: {
+                [key: string]: unknown;
+            } | {
+                [key: string]: unknown;
+            }[] | null;
+            metrics: {
+                [key: string]: unknown;
+            };
+            name: string;
+            /** Format: int64 */
+            omitted_child_count: number;
+            output_preview: string;
+            parent_span_id?: string | null;
+            /** Format: int32 */
+            rank?: number | null;
+            redaction_state: string;
+            /** Format: int64 */
+            returned_child_count: number;
+            rollout_id?: string | null;
+            span_id: string;
+            /** Format: date-time */
+            started_at: string;
+            status: string;
+            /** Format: double */
+            step?: number | null;
+            thread_id?: string | null;
+            trace_id: string;
+            truncated: boolean;
+        };
+        TraceStepBucket: {
+            /** Format: double */
+            avg_duration_ms?: number | null;
+            /** Format: int64 */
+            error_span_count: number;
+            /** Format: int64 */
+            error_trace_count: number;
+            /** Format: date-time */
+            first_started_at: string;
+            /** Format: int64 */
+            input_tokens: number;
+            /** Format: date-time */
+            last_started_at: string;
+            /** Format: double */
+            max_duration_ms?: number | null;
+            /** Format: int64 */
+            output_tokens: number;
+            /** Format: int64 */
+            running_trace_count: number;
+            /** Format: int64 */
+            span_count: number;
+            /** Format: double */
+            step: number;
+            /** Format: int64 */
+            trace_count: number;
+        };
+        TraceStepSummaryResponse: {
+            /** Format: int64 */
+            stepless_trace_count: number;
+            steps: components["schemas"]["TraceStepBucket"][];
+            /**
+             * Format: int64
+             * @description Run-wide count of errored traces, including stepless traces and traces
+             *     dropped when the bucket list is truncated. Not the sum of per-bucket
+             *     `error_trace_count`.
+             */
+            total_error_trace_count: number;
+            /** Format: int64 */
+            total_trace_count: number;
+            truncated: boolean;
+        };
+        TraceSummaryItem: {
+            attributes: {
+                [key: string]: unknown;
+            };
+            content_available: boolean;
+            /** Format: double */
+            cost_usd?: number | null;
+            /** Format: double */
+            duration_ms?: number | null;
+            /** Format: date-time */
+            ended_at?: string | null;
+            /** Format: int32 */
+            error_count: number;
+            /** Format: int64 */
+            input_tokens: number;
+            kinds: string[];
+            /** Format: double */
+            max_step?: number | null;
+            /** Format: double */
+            min_step?: number | null;
+            /** Format: int32 */
+            model_call_count: number;
+            /** Format: int64 */
+            output_tokens: number;
+            project: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: int32 */
+            retrieval_count: number;
+            /** Format: int32 */
+            reward_count: number;
+            rollout_id?: string | null;
+            root_name: string;
+            root_span_id: string;
+            /** Format: uuid */
+            run_id: string;
+            run_name: string;
+            /** Format: int32 */
+            running_span_count: number;
+            /** Format: int32 */
+            span_count: number;
+            /** Format: date-time */
+            started_at: string;
+            status: string;
+            summary_metrics: {
+                [key: string]: unknown;
+            };
+            thread_id?: string | null;
+            /** Format: int32 */
+            tool_call_count: number;
+            trace_id: string;
+            truncated: boolean;
+            /** Format: date-time */
+            updated_at: string;
         };
         UpdateArtifactRetentionRequest: {
             confirm?: string | null;
@@ -8879,6 +9223,286 @@ export interface operations {
             };
         };
     };
+    log_trace_events: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Stable client key used to deduplicate trace ingest retries */
+                "Idempotency-Key": string;
+            };
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTraceEventsRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted trace span events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceIngestResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Plan or payment limit prevents writing trace events */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_trace_step_summary: {
+        parameters: {
+            query?: {
+                /** @description Minimum step bucket to include */
+                min_step?: number;
+                /** @description Maximum step bucket to include */
+                max_step?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-step trace aggregates (capped at 2000 step buckets) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceStepSummaryResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_trace_detail: {
+        parameters: {
+            query?: {
+                /** @description Maximum spans returned in the initial tree window */
+                span_limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+                /** @description 32-character trace id */
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trace tree window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceDetailResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run or trace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_trace_children: {
+        parameters: {
+            query?: {
+                /** @description Parent span id. Omit or pass an empty string to load roots. */
+                parent_span_id?: string;
+                /** @description Maximum child spans returned */
+                limit?: number;
+                /** @description Opaque child pagination cursor */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+                /** @description 32-character trace id */
+                trace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Child span window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceChildrenResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run or trace not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     create_customer_clickhouse_connection: {
         parameters: {
             query?: never;
@@ -9106,6 +9730,87 @@ export interface operations {
             };
             /** @description ClickHouse endpoint unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_traces: {
+        parameters: {
+            query?: {
+                /** @description Project UUID. Required unless run_id or project is present. */
+                project_id?: string;
+                /** @description Project name fallback for local/dashboard callers */
+                project?: string;
+                /** @description Exact run UUID */
+                run_id?: string;
+                /** @description Trace status */
+                status?: string;
+                /** @description Trace span kind */
+                kind?: string;
+                /** @description Search root name, trace id prefix, rollout id, or thread id */
+                q?: string;
+                /** @description RFC3339 lower bound over started_at. Project-scoped lists default to a recent window; run_id lists are unbounded unless from/to is supplied. */
+                from?: string;
+                /** @description RFC3339 upper bound over started_at. Project-scoped lists default to now; run_id lists are unbounded unless from/to is supplied. */
+                to?: string;
+                /** @description Minimum trace step overlap */
+                min_step?: number;
+                /** @description Maximum trace step overlap */
+                max_step?: number;
+                /** @description Page size */
+                limit?: number;
+                /** @description Opaque pagination cursor */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Trace summaries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TraceListResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Project or run not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

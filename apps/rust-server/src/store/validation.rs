@@ -790,6 +790,23 @@ pub(super) fn validate_query_step(raw: &str, field: &str) -> AppResult<f64> {
     }
 }
 
+/// Trace step filters accept any finite step, including negatives, because trace
+/// ingest accepts any finite step and renders negative-step buckets. Only NaN
+/// and infinities are rejected. Ordering (`min_step <= max_step`) is enforced by
+/// the caller.
+pub(super) fn validate_trace_query_step(raw: &str, field: &str) -> AppResult<f64> {
+    let value = raw
+        .parse::<f64>()
+        .map_err(|_| AppError::validation(format!("{field} must be a finite number")))?;
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(AppError::validation(format!(
+            "{field} must be a finite number"
+        )))
+    }
+}
+
 pub(super) fn datetime_from_micros(micros: i64) -> DateTime<Utc> {
     let secs = micros.div_euclid(1_000_000);
     let nanos = (micros.rem_euclid(1_000_000) as u32) * 1_000;
@@ -1491,5 +1508,30 @@ mod tests {
         assert!(ensure_run_access_in_data(&restricted, &run).is_ok());
         assert!(ensure_run_access_in_data(&wrong_project, &run).is_err());
         assert!(ensure_unrestricted_org_key(&restricted).is_err());
+    }
+
+    #[test]
+    fn validate_query_step_rejects_negatives() {
+        assert_eq!(validate_query_step("2.5", "min_step").unwrap(), 2.5);
+        assert_eq!(validate_query_step("0", "min_step").unwrap(), 0.0);
+        assert!(validate_query_step("-1", "min_step").is_err());
+        assert!(validate_query_step("nan", "min_step").is_err());
+        assert!(validate_query_step("inf", "min_step").is_err());
+        assert!(validate_query_step("oops", "min_step").is_err());
+    }
+
+    #[test]
+    fn validate_trace_query_step_allows_finite_negatives() {
+        assert_eq!(validate_trace_query_step("-3", "min_step").unwrap(), -3.0);
+        assert_eq!(validate_trace_query_step("0", "min_step").unwrap(), 0.0);
+        assert_eq!(validate_trace_query_step("4.5", "max_step").unwrap(), 4.5);
+    }
+
+    #[test]
+    fn validate_trace_query_step_rejects_non_finite() {
+        assert!(validate_trace_query_step("nan", "min_step").is_err());
+        assert!(validate_trace_query_step("inf", "min_step").is_err());
+        assert!(validate_trace_query_step("-inf", "max_step").is_err());
+        assert!(validate_trace_query_step("oops", "min_step").is_err());
     }
 }

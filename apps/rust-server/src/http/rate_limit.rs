@@ -365,6 +365,7 @@ fn is_ingest_route(method: &Method, path: &str) -> bool {
             && (path.ends_with("/metrics")
                 || path.ends_with("/metrics/batch")
                 || path.ends_with("/rank-metrics")
+                || path.ends_with("/traces/events")
                 || path.ends_with("/logs")
                 || path.ends_with("/attributes")
                 || path.ends_with("/objects")
@@ -629,6 +630,13 @@ mod tests {
                 .class,
             RequestClass::Ingest,
             "batched metric ingest must share the ingest limiter class"
+        );
+        assert_eq!(
+            classify_route(&Method::POST, "/api/runs/run-1/traces/events")
+                .expect("policy")
+                .class,
+            RequestClass::Ingest,
+            "trace event ingest must share the ingest limiter class"
         );
         assert_eq!(
             classify_route(&Method::POST, "/api/imports/wandb")

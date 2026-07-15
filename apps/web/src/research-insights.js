@@ -198,9 +198,12 @@ export function groupedRunReducers(runs, metricKey) {
   }).sort((a, b) => b.count - a.count || a.group.localeCompare(b.group));
 }
 
-export function numericFieldRows(runs, metricKey) {
+// Shared flatten/bucket pass for numericFieldRows and chooseGroupField: each
+// run's config is flattened exactly once, and the per-run flattened maps are
+// kept so row construction doesn't repeat the recursive walk.
+function collectNumericFields(runs, metricKey) {
   const fields = new Map();
-  for (const run of runs) {
+  const flattenedRuns = runs.map((run) => {
     const flattened = flattenNumericObject(run.config ?? {}, "config");
     for (const [key, value] of Object.entries(run.latest_metrics ?? {})) {
       // The focus metric is added once below as its goal-aware "best"; skip its
@@ -216,13 +219,22 @@ export function numericFieldRows(runs, metricKey) {
       bucket.push({ run, value });
       fields.set(field, bucket);
     }
-  }
+    return { run, flattened };
+  });
   const usable = [...fields.entries()]
     .filter(([, values]) => values.length >= Math.min(2, runs.length))
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  return { fieldNames: usable.map(([field]) => field), flattenedRuns };
+}
+
+export function numericFieldRows(runs, metricKey) {
+  const { fieldNames, flattenedRuns } = collectNumericFields(runs, metricKey);
   return {
-    fields: usable.map(([field]) => field),
-    rows: runs.map((run) => ({ run, values: rowValues(run, usable.map(([field]) => field), metricKey) })),
+    fields: fieldNames,
+    rows: flattenedRuns.map(({ run, flattened }) => ({
+      run,
+      values: Object.fromEntries(fieldNames.map((field) => [field, flattened[field]])),
+    })),
   };
 }
 
@@ -251,10 +263,21 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12, displayA
   let assignments = new Array(normalized.length).fill(0);
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     assignments = normalized.map((vector) => nearestCentroid(vector, centroids));
+    // Single accumulation pass per iteration. The filter-per-cluster form
+    // allocated k member arrays and rescanned every vector k times per
+    // iteration (k × iterations full scans). Sums accumulate in index order,
+    // so the means match the previous reduce bit-for-bit.
+    const sums = centroids.map((centroid) => new Array(centroid.length).fill(0));
+    const counts = new Array(centroids.length).fill(0);
+    for (let index = 0; index < normalized.length; index += 1) {
+      const vector = normalized[index];
+      const sum = sums[assignments[index]];
+      counts[assignments[index]] += 1;
+      for (let dimension = 0; dimension < vector.length; dimension += 1) sum[dimension] += vector[dimension];
+    }
     centroids = centroids.map((centroid, cluster) => {
-      const members = normalized.filter((_, index) => assignments[index] === cluster);
-      if (!members.length) return centroid;
-      return centroid.map((_, dimension) => members.reduce((sum, item) => sum + item[dimension], 0) / members.length);
+      if (!counts[cluster]) return centroid;
+      return sums[cluster].map((total) => total / counts[cluster]);
     });
   }
   const clusters = centroids.map((centroid, cluster) => {
@@ -290,12 +313,25 @@ export function kMeansClusters(runs, metricKey, k = 3, iterations = 12, displayA
 }
 
 export function evaluationCards(runs) {
-  const keys = [...new Set(runs.flatMap((run) => Object.keys(run.latest_metrics ?? {})))];
+  // Accumulate the key set directly — flatMap materialized a runs×keys
+  // intermediate array (≈100k entries at 2,000 runs) just to feed a Set.
+  const keySet = new Set();
+  for (const run of runs) {
+    for (const key of Object.keys(run.latest_metrics ?? {})) keySet.add(key);
+  }
+  const keys = [...keySet];
   return EVAL_KEY_PATTERNS.map((definition) => {
     const key = keys.find((candidate) => definition.patterns.some((pattern) => pattern.test(candidate)));
     if (!key) return { ...definition, key: null, count: 0, latest: null, best: null, missing: runs.length };
-    const values = runs.map((run) => metricAggregate(run, key, "latest")).filter(isFiniteNumber);
-    const bestValues = runs.map((run) => metricGoalValue(run, key)).filter(isFiniteNumber);
+    // One pass per matched key instead of two full runs.map scans.
+    const values = [];
+    const bestValues = [];
+    for (const run of runs) {
+      const latest = metricAggregate(run, key, "latest");
+      if (isFiniteNumber(latest)) values.push(latest);
+      const best = metricGoalValue(run, key);
+      if (isFiniteNumber(best)) bestValues.push(best);
+    }
     return {
       ...definition,
       key,
@@ -310,7 +346,9 @@ export function evaluationCards(runs) {
 function chooseGroupField(runs) {
   if (runs.some((run) => run.config?.seed !== undefined)) return "config.seed";
   if (runs.some((run) => run.tags?.length)) return "tag";
-  const numeric = numericFieldRows(runs, "").fields.find((field) => field.startsWith("config."));
+  // Field names only — building the full row matrix here doubled the flatten
+  // cost of every insights recompute for sweeps without seeds/tags.
+  const numeric = collectNumericFields(runs, "").fieldNames.find((field) => field.startsWith("config."));
   return numeric ?? "all";
 }
 
@@ -326,15 +364,6 @@ function groupValue(run, field) {
   return "all";
 }
 
-function rowValues(run, fields, metricKey) {
-  const flattened = flattenNumericObject(run.config ?? {}, "config");
-  for (const [key, value] of Object.entries(run.latest_metrics ?? {})) {
-    if (isFiniteNumber(value)) flattened[`metric.latest.${key}`] = Number(value);
-  }
-  const best = metricGoalValue(run, metricKey);
-  if (isFiniteNumber(best)) flattened[`metric.best.${metricKey}`] = Number(best);
-  return Object.fromEntries(fields.map((field) => [field, flattened[field]]));
-}
 
 function flattenNumericObject(value, prefix, out = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return out;

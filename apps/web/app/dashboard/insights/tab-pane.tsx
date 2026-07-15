@@ -166,8 +166,14 @@ function RunAnalysisInsightsPane({
   const scatterFields = resolveAxisPair(numeric.fields, scatterDefaults, scatterX, scatterY);
   const clusterAxisFields = resolveAxisPair(clusterDefaults.fields, clusterDefaults.axes, clusterX, clusterY);
   const clusters = useMemo(
-    () => kMeansClusters(universe.runs, metricKey, 3, 12, clusterAxisFields),
-    [clusterAxisFields[0], clusterAxisFields[1], metricKey, universe.runs],
+    // Reuse the default clustering when the axes match it — k-means is
+    // deterministic here (position-seeded centroids), so passing the default
+    // axes back in reproduces clusterDefaults exactly, and recomputing it
+    // doubled the insights clustering cost on every recompute.
+    () => (clusterAxisFields[0] === clusterDefaults.axes[0] && clusterAxisFields[1] === clusterDefaults.axes[1]
+      ? clusterDefaults
+      : kMeansClusters(universe.runs, metricKey, 3, 12, clusterAxisFields)),
+    [clusterAxisFields[0], clusterAxisFields[1], clusterDefaults, metricKey, universe.runs],
   );
   const parallelFields = resolveParallelFields(numeric.fields, numeric.fields.slice(0, 5), parallelAxes);
   const scope = insightsScopeLabel(universe);
@@ -332,19 +338,24 @@ function ScatterCard({
   const shellRef = useRef<HTMLDivElement | null>(null);
   const { frameRef, width } = useChartFrameWidth(SCATTER_FRAME_WIDTH);
 
-  const points = rows
-    .map((row) => ({ run: row.run, x: row.values[fields[0]], y: row.values[fields[1]] }))
-    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+  // Memoized so per-point hover (setActiveRunId/setTip re-renders) reuses the
+  // projected geometry instead of re-filtering and re-scaling every run.
+  const points = useMemo(
+    () => rows
+      .map((row) => ({ run: row.run, x: row.values[fields[0]], y: row.values[fields[1]] }))
+      .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)),
+    [fields, rows],
+  );
   // Auto-default a learning-rate-like axis to log; respect an explicit override.
   const xScale = xScaleOverride ?? (looksLogarithmicField(fields[0]) ? "log" : "linear");
   const yScale = yScaleOverride ?? (looksLogarithmicField(fields[1]) ? "log" : "linear");
-  const geometry = scatterGeometry(points, { xScale, yScale, width });
+  const geometry = useMemo(() => scatterGeometry(points, { xScale, yScale, width }), [points, width, xScale, yScale]);
   const plotted = geometry && !geometry.empty ? geometry.points : [];
   const visiblePoints = plotted.slice(0, SCATTER_MAX_DRAWN);
   // The table is the accessible alternative and shows every run with both
   // fields, independent of any log-axis drop, so a screen-reader user never
   // loses rows a visual log scale can't place.
-  const summaryRows = scatterSummaryRows(points);
+  const summaryRows = useMemo(() => scatterSummaryRows(points), [points]);
   const activePoint = activeRunId ? plotted.find((point) => point.run.id === activeRunId) : null;
   const missingCount = Math.max(0, rows.length - points.length);
   const droppedCount = geometry?.dropped ?? 0;
@@ -681,6 +692,26 @@ function ParallelCoordinatesCard({
   const shellRef = useRef<HTMLDivElement | null>(null);
   const { frameRef, width } = useChartFrameWidth(PARALLEL_FRAME_WIDTH);
 
+  // Cap drawn lines so a 1000-run universe doesn't paint 1000 SVG polylines, and
+  // disclose the cap honestly (the prior silent slice(0, 80) read as "80 runs").
+  // Memoized (with the axis domains and ranked summary rows below) so hover
+  // tooltips — a setTip per mousemove — reuse the derived data instead of
+  // recomputing it per event. Hooks sit above the fields-count early return.
+  const drawnRows = useMemo(() => rows.slice(0, PARALLEL_MAX_DRAWN), [rows]);
+  const domains = useMemo(() => parallelAxisDomains(drawnRows, fields), [drawnRows, fields]);
+  // Pick the best run by the metric's own goal direction (max for accuracy/auc,
+  // min for loss). Sorting ascending unconditionally would highlight the worst
+  // run for maximize metrics.
+  const minimize = metricGoal(metricKey) === "minimize";
+  const bestRunId: string | undefined = useMemo(
+    () => drawnRows
+      .map((row) => ({ id: row.run.id, value: metricGoalValue(row.run, metricKey) }))
+      .filter((row) => Number.isFinite(row.value))
+      .sort((a, b) => minimize ? (a.value ?? 0) - (b.value ?? 0) : (b.value ?? 0) - (a.value ?? 0))[0]?.id,
+    [drawnRows, metricKey, minimize],
+  );
+  const summaryRows = useMemo(() => parallelSummaryRows(drawnRows, fields, bestRunId), [bestRunId, drawnRows, fields]);
+
   if (fields.length < 2) {
     return (
       <AnalysisCard title="Parallel coordinates" help={parallelHelp}>
@@ -689,11 +720,7 @@ function ParallelCoordinatesCard({
       </AnalysisCard>
     );
   }
-  // Cap drawn lines so a 1000-run universe doesn't paint 1000 SVG polylines, and
-  // disclose the cap honestly (the prior silent slice(0, 80) read as "80 runs").
-  const drawnRows = rows.slice(0, PARALLEL_MAX_DRAWN);
   const truncated = rows.length > drawnRows.length;
-  const domains = parallelAxisDomains(drawnRows, fields);
   const xFor = (index: number) => 50 + (index / Math.max(1, fields.length - 1)) * (width - 80);
   const yFor = (value: number, index: number) => {
     const domain = domains[index];
@@ -704,15 +731,6 @@ function ParallelCoordinatesCard({
     const span = Math.max(1e-9, domain.max - domain.min);
     return PARALLEL_AXIS_BOTTOM - ((value - domain.min) / span) * 180;
   };
-  // Pick the best run by the metric's own goal direction (max for accuracy/auc,
-  // min for loss). Sorting ascending unconditionally would highlight the worst
-  // run for maximize metrics.
-  const minimize = metricGoal(metricKey) === "minimize";
-  const bestRunId: string | undefined = drawnRows
-    .map((row) => ({ id: row.run.id, value: metricGoalValue(row.run, metricKey) }))
-    .filter((row) => Number.isFinite(row.value))
-    .sort((a, b) => minimize ? (a.value ?? 0) - (b.value ?? 0) : (b.value ?? 0) - (a.value ?? 0))[0]?.id;
-  const summaryRows = parallelSummaryRows(drawnRows, fields, bestRunId);
   const coverageNote = `${truncated ? `${formatNumber(drawnRows.length, 0)} shown of ${formatNumber(rows.length, 0)}` : formatNumber(rows.length, 0)} run${rows.length === 1 ? "" : "s"} · best for ${metricTitle(metricKey)} highlighted`;
   const tipRun = tip ? drawnRows.find((row) => row.run.id === tip.runId) : null;
   const chartAriaLabel = `Parallel coordinate chart with axes ${fields.map((field) => shortLabel(field)).join(", ")} for ${truncated ? `${drawnRows.length} of ${rows.length}` : drawnRows.length} runs. Activate to read the best run.`;

@@ -5,6 +5,7 @@ import {
   Bot,
   Database,
   FileBarChart,
+  GitBranch,
   Network,
   Package,
   Settings,
@@ -29,6 +30,7 @@ export const navGroups = [
       { id: "runs", label: "Runs", icon: Activity },
       { id: "metrics", label: "Metrics", icon: BarChart3 },
       { id: "distributed", label: "Distributed", icon: Network },
+      { id: "traces", label: "Traces", icon: GitBranch },
     ],
   },
   {

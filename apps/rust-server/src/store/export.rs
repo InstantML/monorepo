@@ -258,6 +258,16 @@ async fn build_side_by_side(
             .await?
         }
     };
+    // Group series/attribute rows by run once — the per-run .filter() scans
+    // made this O(runs x rows) (up to 50 x 5000 iterations per request).
+    let mut series_by_run: HashMap<Uuid, Vec<&MetricSeriesRow>> = HashMap::new();
+    for item in &series {
+        series_by_run.entry(item.run_id).or_default().push(item);
+    }
+    let mut attributes_by_run: HashMap<Uuid, Vec<&AttributeRow>> = HashMap::new();
+    for item in &attributes {
+        attributes_by_run.entry(item.run_id).or_default().push(item);
+    }
     let mut values_by_run: HashMap<Uuid, BTreeMap<String, Value>> = HashMap::new();
     for run in &runs {
         let mut values = BTreeMap::new();
@@ -274,12 +284,12 @@ async fn build_side_by_side(
         for tag in &run.tags {
             values.insert(format!("tag/{tag}"), json!(true));
         }
-        for item in series.iter().filter(|item| item.run_id == run.id) {
+        for item in series_by_run.get(&run.id).into_iter().flatten() {
             values.insert(format!("metric/{}/latest", item.key), json!(item.latest));
             values.insert(format!("metric/{}/max", item.key), json!(item.max));
             values.insert(format!("metric/{}/mean", item.key), json!(item.mean));
         }
-        for attribute in attributes.iter().filter(|item| item.run_id == run.id) {
+        for attribute in attributes_by_run.get(&run.id).into_iter().flatten() {
             values.insert(
                 format!("attribute/{}", attribute.path),
                 attribute.value.clone(),
@@ -301,12 +311,15 @@ async fn build_side_by_side(
                     values_by_run[&run.id].get(&path).cloned().unwrap_or(Value::Null),
                 );
             }
-            let different = values
-                .values()
-                .map(|value| serde_json::to_string(value).unwrap_or_default())
-                .collect::<BTreeSet<_>>()
-                .len()
-                > 1;
+            // Value equality is canonical here (serde_json without
+            // preserve_order keeps object keys sorted), so comparing against
+            // the first cell replaces a JSON re-serialization of every cell.
+            let mut cells = values.values();
+            let first = cells.next();
+            let different = match first {
+                Some(first) => cells.any(|value| value != first),
+                None => false,
+            };
             if diff_only && !different {
                 return None;
             }

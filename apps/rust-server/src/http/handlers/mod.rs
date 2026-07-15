@@ -13,6 +13,7 @@ pub mod orgs;
 pub mod platform;
 pub mod reports;
 pub mod runs;
+pub mod traces;
 pub mod usage;
 
 pub(super) use admin::{admin_change_plan, admin_data_cells, admin_overview};
@@ -72,6 +73,9 @@ pub(super) use runs::{
     log_rank_metrics, overview, rank_metrics_summary, runs_summary, side_by_side, stop_ack,
     stop_run, stop_runs, stop_signal, update_run,
 };
+pub(super) use traces::{
+    get_trace_children, get_trace_detail, get_trace_step_summary, list_traces, log_trace_events,
+};
 pub(super) use usage::{export_data, reset_demo, usage_export, usage_summary};
 
 #[cfg(test)]
@@ -89,6 +93,7 @@ mod tests {
             user_id: Uuid::new_v4(),
             role: role.to_string(),
             demo_read_only,
+            mcp_oauth: false,
         }
     }
 
@@ -279,6 +284,10 @@ mod tests {
             "/runs/{run_id}",
             "/runs/{run_id}/metrics",
             "/runs/{run_id}/rank-metrics",
+            "/api/runs/{run_id}/traces/events",
+            "/api/traces",
+            "/api/runs/{run_id}/traces/{trace_id}",
+            "/api/runs/{run_id}/traces/{trace_id}/spans",
             "/api/runs/{run_id}/forks",
             "/api/runs/{run_id}/lineage",
             "/api/runs/{run_id}/logs",

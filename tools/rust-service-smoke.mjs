@@ -19,6 +19,8 @@ const clickhouseInterserverPort = await freePort();
 const apiPort = await freePort();
 let server = null;
 let clickhouse = null;
+let serverLog = null;
+let failed = false;
 
 try {
   const clickhouseUrl = `http://default:@127.0.0.1:${clickhouseHttpPort}/instantml`;
@@ -34,7 +36,7 @@ try {
   const baseUrl = `http://127.0.0.1:${apiPort}`;
   const authMode = mode === "contract" ? "api-key" : "local";
   const bootstrapToken = "rust-smoke-bootstrap";
-  const serverLog = path.join(tempDir, "server.log");
+  serverLog = path.join(tempDir, "server.log");
   const output = fs.openSync(serverLog, "w");
   const mockBilling = mode === "ui" && process.env.INSTANTML_UI_SMOKE_FULL_WORKSPACE === "1";
   server = spawn("cargo", ["run", "--manifest-path", "apps/rust-server/Cargo.toml", "--", "serve"], {
@@ -83,7 +85,13 @@ try {
       },
     });
   }
+} catch (error) {
+  failed = true;
+  throw error;
 } finally {
+  if (failed && serverLog && fs.existsSync(serverLog)) {
+    console.error(`\nRust server log tail (${serverLog}):\n${tailFile(serverLog, 120)}`);
+  }
   if (server) {
     server.kill();
     await onceClose(server);
@@ -186,6 +194,12 @@ async function waitForHttp(url, child, logPath) {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`Timed out waiting for ${url}. Log:\n${fs.readFileSync(logPath, "utf8")}`);
+}
+
+function tailFile(filePath, maxLines) {
+  const contents = fs.readFileSync(filePath, "utf8");
+  const lines = contents.split(/\r?\n/);
+  return lines.slice(-maxLines).join("\n");
 }
 
 function onceClose(child) {

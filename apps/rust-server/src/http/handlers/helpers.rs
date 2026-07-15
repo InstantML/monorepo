@@ -136,27 +136,26 @@ pub async fn context(
                 .strip_prefix("Bearer ")
                 .or_else(|| header.strip_prefix("bearer "))
                 .ok_or_else(|| AppError::unauthorized("authorization must use bearer token"))?;
-            // Third bearer tier (flag-gated, review-pending): a Clerk OAuth
-            // access token from the hosted MCP browser sign-in. Off by default,
-            // so the API-key path below is byte-identical in production. An
-            // InstantML API key always starts with `instantml_`, so a token
-            // without that prefix is the OAuth case. v1 is read-only.
+            // Third bearer tier (flag-gated): a Clerk OAuth access token from
+            // the hosted MCP browser sign-in. Off by default, so the API-key
+            // path below is byte-identical when disabled. An InstantML API key
+            // always starts with `instantml_`, so a token without that prefix
+            // is the OAuth case. Permissions mirror the user's own org role
+            // (the reviewed follow-up to the read-only v1), so the grant never
+            // exceeds what the user could do in the dashboard.
             // See docs/design/2026-06-30-mcp-oauth.md.
             if mcp_oauth_enabled() && !token.starts_with("instantml_") {
                 let requested_org_id = mcp_oauth_requested_org_id(headers)?;
-                let (org_id, user_id, role) =
-                    authenticate_mcp_oauth(state, token, requested_org_id).await?;
+                let grant = authenticate_mcp_oauth(state, token, requested_org_id).await?;
                 RequestContext {
-                    org_id,
+                    org_id: grant.org_id,
                     auth: None,
                     session: Some(SessionContext {
                         session_id: Uuid::nil(),
-                        user_id,
-                        role,
-                        // v1 is read-only: reusing demo_read_only makes
-                        // require_session_scope allow only export:read. A
-                        // dedicated read_only flag + message is the follow-up.
-                        demo_read_only: true,
+                        user_id: grant.user_id,
+                        role: grant.role,
+                        demo_read_only: grant.demo_read_only,
+                        mcp_oauth: true,
                     }),
                 }
             } else {
@@ -184,6 +183,7 @@ pub async fn context(
                     user_id: payload.user.id,
                     role: payload.membership.role,
                     demo_read_only: store::is_shared_demo_org(&payload.organization),
+                    mcp_oauth: false,
                 }),
             }
         }
@@ -280,24 +280,23 @@ fn mcp_oauth_requested_org_id(headers: &HeaderMap) -> AppResult<Option<Uuid>> {
 }
 
 /// Authenticate a Clerk OAuth access token (hosted MCP browser sign-in) and
-/// resolve it to `(org_id, user_id, role)` for a read-only request context.
-///
-/// Gated behind `INSTANTML_MCP_OAUTH_ENABLED` (off by default) and pending a
-/// fresh auth review before production enablement (docs/design/2026-06-30-mcp-oauth.md).
-/// The Clerk verify endpoint and response shape are confirmed against Clerk's
-/// SDK; still outstanding before enabling are a live end-to-end sign-in test and
-/// caching verification off the per-request hot path.
+/// resolve it to an org-scoped grant that mirrors the user's own role
+/// (docs/design/2026-06-30-mcp-oauth.md).
 ///
 /// 1. Verify the token via the Clerk Backend API using the configured Clerk
 ///    secret key.
 /// 2. Map the Clerk user (`provider = "clerk"`, `provider_subject = subject`) to
 ///    the internal user and resolve the org/role from active memberships
 ///    (named org when present; otherwise single membership only).
+///
+/// Clerk cannot issue custom scopes, so `principal.scopes` is intentionally
+/// unused: authorization is the mirrored role enforced server-side by
+/// `require_session_scope` and the store-level role checks.
 async fn authenticate_mcp_oauth(
     state: &AppState,
     token: &str,
     requested_org_id: Option<Uuid>,
-) -> AppResult<(Uuid, Uuid, String)> {
+) -> AppResult<store::OAuthIdentityGrant> {
     let secret_key = state
         .config
         .clerk_secret_key
@@ -309,9 +308,6 @@ async fn authenticate_mcp_oauth(
         token,
     )
     .await?;
-    // v1 grants read-only regardless of the granted `principal.scopes`; the
-    // caller sets demo_read_only so only export:read passes. Mirror-role is the
-    // reviewed follow-up.
     store::authenticate_oauth_identity_for_org(
         &state.store,
         "clerk",
@@ -465,10 +461,20 @@ pub fn validate_session_mutation_origin(
     headers: &HeaderMap,
     ctx: &RequestContext,
 ) -> AppResult<()> {
-    if ctx.session.is_some() {
+    if session_requires_mutation_origin(ctx) {
         validate_mutation_origin(state, headers)?;
     }
     Ok(())
+}
+
+/// The origin gate is CSRF protection for cookie-authenticated browser
+/// sessions. An MCP OAuth context authenticates with an explicit bearer token
+/// that browsers never attach ambiently, and the MCP bridge sends no Origin
+/// header, so those requests skip the gate.
+fn session_requires_mutation_origin(ctx: &RequestContext) -> bool {
+    ctx.session
+        .as_ref()
+        .is_some_and(|session| !session.mcp_oauth)
 }
 
 pub fn validate_mutation_origin_inner(
@@ -544,7 +550,10 @@ pub fn read_json_with_raw<T: DeserializeOwned>(
     max_bytes: usize,
 ) -> AppResult<(T, Value)> {
     let raw = read_json_value(headers, bytes, max_bytes)?;
-    let typed = serde_json::from_value::<T>(raw.clone())
+    // Deserialize by reference: from_value(raw.clone()) deep-cloned the whole
+    // parsed tree (2x peak allocation for multi-MB metric/trace batches) just
+    // to keep `raw` alive for idempotency hashing.
+    let typed = T::deserialize(&raw)
         .map_err(|_| AppError::validation("request body must be valid JSON"))?;
     Ok((typed, raw))
 }
@@ -603,5 +612,29 @@ mod tests {
 
         headers.insert(MCP_OAUTH_ORG_HEADER, HeaderValue::from_static("not-an-org"));
         assert!(mcp_oauth_requested_org_id(&headers).is_err());
+    }
+
+    #[test]
+    fn mutation_origin_gate_applies_to_cookie_sessions_not_mcp_oauth() {
+        let session = |mcp_oauth: bool| {
+            Some(SessionContext {
+                session_id: Uuid::nil(),
+                user_id: Uuid::nil(),
+                role: "member".to_string(),
+                demo_read_only: false,
+                mcp_oauth,
+            })
+        };
+        let ctx = |session| RequestContext {
+            org_id: Uuid::nil(),
+            auth: None,
+            session,
+        };
+        // Cookie-authenticated browser sessions stay behind the CSRF origin
+        // gate; bearer-authenticated MCP OAuth contexts (no ambient
+        // credentials, no Origin header from the bridge) are exempt.
+        assert!(session_requires_mutation_origin(&ctx(session(false))));
+        assert!(!session_requires_mutation_origin(&ctx(session(true))));
+        assert!(!session_requires_mutation_origin(&ctx(None)));
     }
 }

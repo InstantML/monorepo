@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
+import { averageGroupedSeries, axisTicks, chartDomain, chartSummary, chartSummaryModel, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, nearestPoint, normalizeSeries, smoothSeries, svgPointFromClient } from "../src/charts.js";
 import { adaptiveMetricSeriesLimit, adaptiveMetricSeriesPatchSize, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, categoricalValueForRun, chartPointCount, chunkRunIds, defaultDistributionFields, defaultParallelFields, distributionSummaryForRuns, fieldLabel, fieldValueForRun, histogramBins, histogramFramesFromObjects, indexedAxisTicks, latestMetricValues, mergeMetricSeriesPatches, metricFieldId, objectFieldId, parallelCoordinatesForRuns, parseCategoricalFieldId, parseFieldId, preferredScatterXField, runCategoricalFieldId, scatterPointsForRuns, shouldUseDenseChart } from "../src/dashboard-panels.js";
 import { buildEvidenceSections, firstEvidenceItem } from "../src/evidence.js";
 import {
@@ -199,14 +199,18 @@ test("chart summary rows rank plotted series and describe trends", () => {
 });
 
 test("chart summary takeaway is deterministic and goal-aware", () => {
-  const takeaway = chartSummaryTakeaway([
+  const series = [
     { id: "a", name: "Run A", normalizedPoints: [{ step: 0, value: 0.5, xValue: 0 }, { step: 1, value: 0.2, xValue: 1 }] },
     { id: "b", name: "Run B", normalizedPoints: [{ step: 0, value: 0.4, xValue: 0 }, { step: 1, value: 0.3, xValue: 1 }] },
-  ], "train/loss");
+  ];
+  const model = chartSummaryModel(series, "train/loss");
+  const takeaway = chartSummaryTakeaway(series, "train/loss");
   assert.match(takeaway, /train\/loss across 2 plotted series/);
   assert.match(takeaway, /Lower is better/);
   assert.match(takeaway, /Run A has the best final value at 0\.2/);
   assert.match(takeaway, /Run A is improving overall/);
+  assert.equal(model.takeaway, takeaway);
+  assert.deepEqual(model.rows, chartSummaryRows(series, "train/loss"));
   assert.equal(chartSummaryTakeaway([], "eval/accuracy"), "eval/accuracy has no plotted series.");
 });
 
@@ -1090,6 +1094,8 @@ test("api client handles query strings and malformed responses", async (t) => {
   await assert.rejects(() => new ApiClient().get("/html-error"), /Server is unavailable/);
   globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "validation_error", request_id: "req_1" }) });
   await assert.rejects(() => new ApiClient().get("/bad-request"), /Request was invalid.+req_1/);
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({ code: "invalid_email", error: "email must be a valid email address", field: "email" }) });
+  await assert.rejects(() => new ApiClient().post("/api/orgs/org-1/invitations", { email: "user@berkeley" }), /Enter a valid email address/);
   globalThis.fetch = async () => ({
     ok: false,
     status: 403,

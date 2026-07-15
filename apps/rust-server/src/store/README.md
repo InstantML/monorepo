@@ -19,6 +19,12 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
 - `runs.rs`: project/run creation, run filtering, the run-search query
   language, summaries, scalar metric writes, rank metric writes/summaries, and
   metric point/series reads.
+- `traces.rs`: run-scoped product trace ingest/read service logic, including
+  batch validation, idempotency, billing/usage admission, accepted-batch
+  visibility, summary projection, list/detail response shaping, lazy child
+  span expansion, and trace-list window semantics. Project-scoped lists default
+  to the recent lookback; run-scoped lists are unbounded unless callers pass
+  `from`/`to`.
 - `objects.rs`: typed attributes, rich objects, table rows, raw artifact metadata, and raw upload metadata writes.
 - `artifact_versions.rs`: versioned artifact collections, immutable manifests,
   upload sessions, aliases, retention/delete state, run input/output lineage,
@@ -27,9 +33,9 @@ The store module owns the Rust API's ClickHouse-backed operational index and the
 - `export.rs`: side-by-side comparison, selected-run export selection, bounded
   JSON export response assembly, and normalized CSV export serialization with
   formula-cell protection and public artifact rows.
-- `usage.rs`: usage summaries, daily snapshots, versioned-artifact active,
-  pending-delete, and reserved byte accounting, idempotency cleanup, and
-  session cleanup.
+- `usage.rs`: usage summaries, daily snapshots, trace-event monthly usage,
+  versioned-artifact active, pending-delete, and reserved byte accounting,
+  idempotency cleanup, and session cleanup.
 - `demo.rs`: synthetic demo project reset data.
 - `access.rs`: shared project/run/session access checks and auth-adjacent row helpers.
 - `summaries.rs`: run summaries, artifact counts, metric-series conversion, and export metric reads.

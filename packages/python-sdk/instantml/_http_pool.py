@@ -19,6 +19,7 @@ from __future__ import annotations
 import gzip
 import http.client
 import io
+import ssl
 import threading
 import urllib.error
 import urllib.parse
@@ -159,7 +160,10 @@ class _ConnectionPool:
     def _open(self, key: tuple[str, str, int], timeout: float) -> http.client.HTTPConnection:
         scheme, host, port = key
         if scheme == "https":
-            return http.client.HTTPSConnection(host, port, timeout=timeout)
+            # Shared context: HTTPSConnection without context= builds a fresh
+            # default context per connection, reloading the system trust store
+            # (tens of ms of CA parsing) and defeating TLS session resumption.
+            return http.client.HTTPSConnection(host, port, timeout=timeout, context=_default_ssl_context())
         return http.client.HTTPConnection(host, port, timeout=timeout)
 
     def _release(self, key: tuple[str, str, int], connection: http.client.HTTPConnection) -> None:
@@ -178,12 +182,30 @@ class _ConnectionPool:
             connection.close()
 
 
+_SSL_CONTEXT_LOCK = threading.Lock()
+_SSL_CONTEXT: ssl.SSLContext | None = None
+
+
+def _default_ssl_context() -> ssl.SSLContext:
+    global _SSL_CONTEXT
+    context = _SSL_CONTEXT
+    if context is None:
+        with _SSL_CONTEXT_LOCK:
+            context = _SSL_CONTEXT
+            if context is None:
+                context = ssl.create_default_context()
+                _SSL_CONTEXT = context
+    return context
+
+
 def _maybe_compress(body: bytes | None, headers: dict[str, str]) -> tuple[bytes | None, dict[str, str]]:
     if _gzip_disabled or body is None or len(body) <= GZIP_MIN_BYTES:
         return body, headers
     if not _is_json_content(headers) or _header_lookup(headers, "Content-Encoding") is not None:
         return body, headers
-    compressed = gzip.compress(body, compresslevel=6)
+    # Level 3: telemetry JSON is highly redundant, so higher levels buy little
+    # size for materially more uploader-thread CPU per batch.
+    compressed = gzip.compress(body, compresslevel=3)
     updated = dict(headers)
     updated["Content-Encoding"] = "gzip"
     return compressed, updated

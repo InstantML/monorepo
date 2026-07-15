@@ -217,8 +217,7 @@ a.report-pane__action:hover {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   font-weight: 600;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--accent-strong);
 }
 
@@ -1113,8 +1112,7 @@ pre.report-render__markdown {
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   font-weight: 600;
-  letter-spacing: var(--tracking-eyebrow);
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--callout-accent);
   margin: 0 0 4px;
 }
@@ -1357,7 +1355,6 @@ pre.report-render__markdown {
 .report-block__run-result-pinned {
   color: var(--muted);
   font-size: 10.5px;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -1673,7 +1670,6 @@ pre.report-render__markdown {
   border-radius: var(--radius-pill);
   font: 700 10.5px/1.4 var(--font-sans);
   letter-spacing: 0.04em;
-  text-transform: uppercase;
   background: var(--surface);
   border: 1px solid var(--line);
   color: var(--muted);
@@ -1897,8 +1893,7 @@ pre.report-render__markdown {
   top: 8px;
   right: 8px;
   font: 700 9.5px/1 var(--font-sans);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--line);

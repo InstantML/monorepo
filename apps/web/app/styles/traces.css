@@ -1,0 +1,366 @@
+.traces-workspace {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.4fr);
+  gap: var(--sp-3-5);
+  min-height: 0;
+}
+
+.traces-list-panel,
+.traces-detail-panel {
+  min-width: 0;
+}
+
+/* Status strips and empty states render as full-bleed rows directly inside the
+ * panel shell (these panels have no padded .panel-body), so the shared island
+ * chrome — borders on all sides plus rounded corners — collides with the
+ * panel's own border. Only the shell keeps a radius; inside it they are flat
+ * rows whose sole divider is a straight edge. */
+.traces-list-panel > .status-strip,
+.traces-detail-panel > .status-strip {
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+
+.traces-list-panel > .empty,
+.traces-detail-panel > .empty,
+.trace-inspector.empty {
+  border: 0;
+  border-radius: 0;
+}
+
+.trace-filter-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 120px 140px 136px minmax(180px, 1.2fr);
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.trace-filter-row label,
+.trace-filter-control {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.trace-filter-row input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-transform: none;
+}
+
+.trace-filter-row .custom-select-control {
+  min-width: 0;
+}
+
+.trace-search > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1-5);
+  min-width: 0;
+  height: 34px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+}
+
+.trace-search input {
+  height: auto;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+}
+
+.trace-table {
+  display: grid;
+  max-height: min(60vh, 720px);
+  overflow: auto;
+}
+
+/* Trace rows and tree nodes are full-bleed list rows inside the panel shell,
+ * so they reset the global button radius — a rounded hover/active wash would
+ * pull away from the panel edges instead of meeting them square. */
+.trace-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) 72px 64px 72px;
+  gap: var(--sp-2);
+  align-items: center;
+  width: 100%;
+  padding: var(--sp-2-5) var(--sp-3);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace-row:hover,
+.trace-row.active {
+  background: var(--surface-hover);
+}
+
+.trace-row-main {
+  display: grid;
+  gap: var(--sp-0-5);
+  min-width: 0;
+}
+
+.trace-row-main strong,
+.trace-row-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-row-main small,
+.trace-row-meta,
+.trace-node-kind,
+.trace-node-duration,
+.trace-child-state,
+.trace-truncation {
+  color: var(--muted);
+  font-size: var(--fs-data);
+}
+
+.trace-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  height: 21px;
+  padding: var(--sp-1) var(--sp-1-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: 650 var(--fs-label)/1 var(--font-mono);
+  letter-spacing: 0;
+}
+
+.trace-status.ok {
+  color: var(--muted);
+}
+
+.trace-status.error {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.trace-status.running {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.trace-status.cancelled,
+.trace-status.interrupted {
+  border-color: color-mix(in srgb, var(--amber) 34%, var(--line));
+  background: color-mix(in srgb, var(--amber) 12%, transparent);
+  color: var(--amber);
+}
+
+/* Scroll-driven pagination target: an IntersectionObserver watches this row
+ * at the bottom of the list scrollport and fetches the next cursor page as it
+ * nears the viewport. 1px tall — zero-height boxes never intersect. */
+.trace-scroll-sentinel {
+  height: 1px;
+}
+
+.trace-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(280px, 0.9fr);
+  min-height: 520px;
+}
+
+.trace-tree {
+  min-width: 0;
+  max-height: min(68vh, 780px);
+  overflow: auto;
+  border-right: 1px solid var(--line);
+}
+
+.trace-node-button {
+  display: grid;
+  grid-template-columns: 16px 70px minmax(0, 1fr) 88px 64px;
+  gap: var(--sp-2);
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.trace-node-button:hover,
+.trace-node-button.active {
+  background: var(--surface-hover);
+}
+
+.trace-node-spacer {
+  width: 14px;
+}
+
+.trace-node-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.trace-child-state {
+  display: block;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.trace-child-state.error {
+  color: var(--danger);
+}
+
+.trace-load-children {
+  cursor: pointer;
+}
+
+.trace-truncation {
+  padding: var(--sp-2-5) var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+
+.trace-inspector {
+  display: grid;
+  align-content: start;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-3-5);
+  overflow: auto;
+}
+
+.trace-inspector.empty {
+  color: var(--muted);
+}
+
+.trace-inspector-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-2);
+  align-items: center;
+}
+
+.trace-inspector-head strong,
+.trace-inspector-head small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-inspector-head small {
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.trace-kv {
+  display: grid;
+  gap: var(--sp-1-5);
+  margin: 0;
+}
+
+.trace-kv > div {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: var(--sp-2);
+}
+
+.trace-kv dt {
+  color: var(--muted);
+  font-size: var(--fs-data);
+}
+
+.trace-kv dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-preview {
+  display: grid;
+  gap: var(--sp-1-5);
+  min-width: 0;
+}
+
+.trace-preview strong {
+  color: var(--muted);
+  font-size: var(--fs-data);
+}
+
+.trace-preview pre {
+  max-height: 180px;
+  margin: 0;
+  overflow: auto;
+  padding: var(--sp-2-5);
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-data);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.trace-preview.bad pre {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+
+@media (max-width: 1040px) {
+  .traces-workspace,
+  .trace-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trace-tree {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 720px) {
+  .trace-filter-row,
+  .trace-row,
+  .trace-node-button {
+    grid-template-columns: 1fr;
+  }
+
+  .trace-status {
+    justify-self: start;
+  }
+}

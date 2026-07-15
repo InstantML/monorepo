@@ -35,8 +35,10 @@ Data plane:
   ClickHouse table operational_records
   -> tenant product metadata and low-volume state
 
-  ClickHouse tables metric_points, rank_metric_points, console_log_lines, metric_series
-  -> high-volume scalar metrics, per-rank metrics, console logs, and maintained summaries
+  ClickHouse tables metric_points, rank_metric_points, console_log_lines,
+  metric_series, trace_span_events, trace_span_index, trace_summaries,
+  trace_ingest_batches
+  -> high-volume scalar metrics, per-rank metrics, console logs, trace events, and maintained summaries
 ```
 
 In local/non-hosted mode, `operational_records` may contain both bootstrap
@@ -1161,6 +1163,81 @@ SETTINGS index_granularity = 8192;
 | `message` | `String` | Log line text. |
 | `logged_at` | `DateTime64(6, 'UTC')` | Client-supplied or server-normalized line time. |
 | `created_at` | `DateTime64(6, 'UTC')` | Server insert time. |
+
+### Trace Tables
+
+Owner: `apps/rust-server/clickhouse/0001_initial.sql`,
+`apps/rust-server/src/trace_store.rs`, and
+`apps/rust-server/src/store/traces.rs`.
+
+Purpose: append-only product trace storage for run-linked nested span events.
+Trace rows are physically written before a final accepted batch marker, so read
+queries only surface rows whose `(run_id, idempotency_key)` appears in
+`trace_ingest_batches` with `status = 'accepted'`. Pending rows support retry
+after a partial write without making unaccepted span data visible or billable.
+
+`trace_span_events` stores canonical span event snapshots:
+
+```sql
+CREATE TABLE IF NOT EXISTS trace_span_events (
+    org_id UUID,
+    project_id UUID,
+    run_id UUID,
+    trace_id String,
+    span_id String,
+    parent_span_id String,
+    idempotency_key String,
+    event_id UUID,
+    sequence UInt64,
+    event_kind LowCardinality(String),
+    name String,
+    kind LowCardinality(String),
+    status LowCardinality(String),
+    step Nullable(Float64),
+    rank Nullable(UInt32),
+    thread_id String,
+    rollout_id String,
+    started_at DateTime64(6, 'UTC'),
+    ended_at Nullable(DateTime64(6, 'UTC')),
+    duration_ms Nullable(Float64),
+    input_preview String,
+    output_preview String,
+    error_type LowCardinality(String),
+    error_preview String,
+    attributes_json String,
+    metrics_json String,
+    links_json String,
+    content_policy LowCardinality(String),
+    redaction_state LowCardinality(String),
+    truncated UInt8,
+    created_at DateTime64(6, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(created_at)
+ORDER BY (org_id, project_id, run_id, trace_id, span_id, idempotency_key, sequence, created_at, event_id);
+```
+
+`trace_span_index` stores topology/read-window rows keyed by parent span. It is
+append-only and may contain multiple rows for a span; read queries group by
+`span_id` before applying child cursors.
+
+`trace_summaries` stores append-only trace summary snapshots. List reads select
+the latest summary per `(project_id, run_id, trace_id)` first, then apply time,
+status, kind, search, step, and cursor filters.
+
+`trace_ingest_batches` stores idempotency and usage state:
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `idempotency_key` | `String` | Required client retry key scoped to `(org_id, project_id, run_id)`. |
+| `status` | `LowCardinality(String)` | `pending` reservation or final `accepted` batch marker. |
+| `body_hash` | `String` | Stable hash of the run id and raw request body. |
+| `response_json` | `String` | Stored response for accepted replay. Empty for pending rows. |
+| `trace_ids` | `Array(String)` | Trace ids touched by the request. |
+| `event_ids` | `Array(String)` | Event ids touched by the request. |
+| `usage_event_count` | `UInt32` | Accepted unique event count for monthly `trace_events` usage. Pending rows use `0`. |
+| `billing_period` | `String` | UTC `YYYY-MM` usage period. |
+| `accepted_at` | `DateTime64(6, 'UTC')` | Append time for pending or accepted state. |
 
 ### `metric_series`
 

@@ -9,6 +9,11 @@ substantial code changes.
 - Keep the Rust backend boring, explicit, and small. Prefer direct functions,
   typed structs, and narrow modules over framework magic or broad shared
   abstractions.
+- Keep documentation current in the same branch as code. Any Rust API, schema,
+  storage, SDK-facing route, dashboard-visible behavior, setup, or operational
+  change must update the nearest README plus relevant public docs in
+  `apps/docs`, internal design docs in `docs/design`, and architecture/ops docs
+  when applicable.
 - New product API, storage, auth, importer, artifact, deployment, or
   cross-component behavior needs a design doc in `docs/design/` before code.
 - Preserve the accepted backend direction: frontend and SDK talk to the Rust
@@ -127,6 +132,10 @@ but they are not yet required repo scripts.
   control-plane storage, ClickHouse schema, and query behavior.
 - `apps/rust-server/README.md` for commands, config, testing, and operational
   warnings.
+- `apps/docs/` public Mintlify docs and `apps/docs/docs.json` navigation when a
+  Rust-backed API or dashboard-visible workflow is user-facing.
+- `apps/docs/images/product/` screenshots when a documented UI surface changes
+  materially.
 - `docs/architecture/current-api.md` for public API inputs, parameters,
   outputs, auth, and limits.
 - Relevant `docs/design/YYYY-MM-DD-*.md` files whenever implementation changes

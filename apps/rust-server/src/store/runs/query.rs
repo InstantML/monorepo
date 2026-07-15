@@ -919,6 +919,7 @@ mod tests {
                 user_id: Uuid::from_u128(21),
                 role: "viewer".to_string(),
                 demo_read_only: false,
+                mcp_oauth: false,
             }),
         };
         let mut data = StoreData::default();

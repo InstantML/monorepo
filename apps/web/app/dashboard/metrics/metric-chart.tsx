@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, 
 import { createPortal } from "react-dom";
 import type { CSSProperties, MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
-import { axisTicks, chartSummaryRows, chartSummaryTakeaway, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
+import { axisTicks, chartDomain, chartSummaryModel, formatAxisTick, formatAxisValue, formatMetricValue, logAxisTicks, nearestPoint, nearestPointByX, normalizeSeries, sanitizeYAxisRange, svgPointFromClient, yMapper } from "../../../src/charts.js";
 import { CHART_PALETTE, chartCanvasDashArray, chartColor, chartLineStyleClass, chartStyleIndexesForItems, stableChartIndex } from "../../../src/chart-colors.js";
 import { chartExportBlockedReason, chartSeriesToCsv, chartSeriesToSvg, downloadTextFile, safeExportFilename } from "../../../src/chart-export.js";
 import { shouldUseDenseChart } from "../../../src/dashboard-panels.js";
@@ -34,6 +34,7 @@ const TOOLTIP_ROW_LIMIT = 8;
 // Series this sparse render per-point markers — a 1–2 point polyline is
 // invisible or ambiguous without them.
 const SPARSE_POINT_THRESHOLD = 2;
+const MINI_RANGE_SERIES_LIMIT = 5;
 
 type ChartView = "chart" | "summary";
 
@@ -101,43 +102,51 @@ function ChartSummaryTable({
   );
 }
 
-function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, xMode: string, useLineStyles: boolean, activeRunId?: string) {
-  const rows = normalizedSeries.map((item, index) => {
-    const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
-    const points = item.normalizedPoints ?? [];
-    const nearest = points.reduce((best: any, point: any) => {
-      if (!best) return point;
-      return Math.abs(point.xValue - xValue) < Math.abs(best.xValue - xValue) ? point : best;
-    }, null);
+function tooltipRows(normalizedSeries: any[], styleIndexes: number[], xValue: number, useLineStyles: boolean, activeRunId?: string) {
+  // Two-phase build: rank every series with lean rows first, then resolve
+  // display fields for only the sliced top rows. Anything Intl-backed here
+  // (formatNumber → toLocaleString) costs tens of milliseconds per hover at
+  // 2,000 series when computed for rows the slice below throws away.
+  const ranked = normalizedSeries.map((item, index) => {
+    const nearest = nearestPointByX(item, xValue);
+    const smoothedValue = item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : null;
     return {
-      id: item.id,
-      index,
       active: item.id === activeRunId,
-      name: item.identifier ?? item.name,
-      value: nearest?.value ?? null,
-      smoothedValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : null,
-      rankValue: item.smoothed && Number.isFinite(nearest?.smoothedValue) ? nearest.smoothedValue : nearest?.value ?? null,
-      label: xMode === "time" ? formatAxisValue(nearest?.xValue, xMode) : `Step ${formatNumber(nearest?.step, 0)}`,
-      point: nearest,
-      colorIndex,
-      lineStyleClass: chartLineStyleClass(useLineStyles ? colorIndex : 0),
+      index,
+      item,
+      nearest,
+      rankValue: smoothedValue ?? nearest?.value ?? null,
+      smoothedValue,
     };
   });
   // Rank by value at the hovered x (descending) like wandb/neptune, but keep the
   // actively-hovered run pinned to the top so it stays easy to read.
-  rows.sort((a, b) => {
+  ranked.sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     const av = a.rankValue ?? Number.NEGATIVE_INFINITY;
     const bv = b.rankValue ?? Number.NEGATIVE_INFINITY;
     return bv - av;
   });
-  return rows.slice(0, TOOLTIP_ROW_LIMIT);
+  return ranked.slice(0, TOOLTIP_ROW_LIMIT).map((row) => {
+    const colorIndex = styleIndexes[row.index] ?? chartSeriesColorIndex(row.item, row.index);
+    return {
+      id: row.item.id,
+      active: row.active,
+      name: row.item.identifier ?? row.item.name,
+      value: row.nearest?.value ?? null,
+      smoothedValue: row.smoothedValue,
+      colorIndex,
+      lineStyleClass: chartLineStyleClass(useLineStyles ? colorIndex : 0),
+    };
+  });
 }
 
 const MiniRange = memo(function MiniRange({
   domain,
   normalizedSeries,
   onZoomRangeChange,
+  styleIndexes,
+  useLineStyles,
   width,
   xMode,
   zoomRange,
@@ -145,6 +154,8 @@ const MiniRange = memo(function MiniRange({
   domain: any;
   normalizedSeries: any[];
   onZoomRangeChange?: (range: ChartZoomRange) => void;
+  styleIndexes: number[];
+  useLineStyles: boolean;
   width: number;
   xMode: string;
   zoomRange?: ChartZoomRange;
@@ -165,14 +176,12 @@ const MiniRange = memo(function MiniRange({
   const activeRange = sanitizeRange(draftRange ?? zoomRange, domain);
   const activeMinX = activeRange ? miniX(activeRange.min) : 0;
   const activeMaxX = activeRange ? miniX(activeRange.max) : 0;
-  const rangeStyleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
-  const useLineStyles = normalizedSeries.length > CHART_PALETTE.length;
   // Per-series SVG point strings are O(points) to build — memoize them so
   // drag-to-zoom re-renders (and any parent-driven re-render) reuse the
   // geometry instead of restringifying every polyline (perf audit A3).
   const rangePolylines = useMemo(
-    () => normalizedSeries.slice(0, 5).map((item, index) => {
-      const colorIndex = rangeStyleIndexes[index] ?? chartSeriesColorIndex(item, index);
+    () => normalizedSeries.slice(0, MINI_RANGE_SERIES_LIMIT).map((item, index) => {
+      const colorIndex = styleIndexes[index] ?? chartSeriesColorIndex(item, index);
       return {
         className: `range-series series-${colorIndex % 5} ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`,
         id: item.id,
@@ -180,7 +189,7 @@ const MiniRange = memo(function MiniRange({
         stroke: chartColor(colorIndex),
       };
     }),
-    [miniX, miniY, normalizedSeries, rangeStyleIndexes, useLineStyles],
+    [miniX, miniY, normalizedSeries, styleIndexes, useLineStyles],
   );
 
   function valueFromClient(target: SVGSVGElement, clientX: number, clientY: number) {
@@ -395,12 +404,26 @@ export const MetricChart = memo(function MetricChart({
     () => normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, zoomRange, yAxisOptions),
     [frameHeight, metricKey, pad, series, width, xMode, yAxisOptions, zoomRange],
   );
-  const rangeNormalizedSeries: any[] = useMemo(
-    () => (showRange ? normalizeSeries(series, width, frameHeight, pad, xMode, metricKey, null, yAxisOptions) : normalizedSeries),
-    [frameHeight, metricKey, normalizedSeries, pad, series, showRange, width, xMode, yAxisOptions],
+  // Overview work is keyed on whether a zoom window exists — not the zoomRange
+  // object — because the unzoomed overview series and full domain are invariant
+  // across zoom-window values. Keying on the object identity re-ran both (an
+  // O(total points) domain scan plus the five-series normalization) for an
+  // identical result on every drag-to-zoom gesture.
+  const rangeActive = showRange && Boolean(zoomRange);
+  const overviewNormalizedSeries: any[] | null = useMemo(
+    () => (rangeActive
+      ? normalizeSeries(series.slice(0, MINI_RANGE_SERIES_LIMIT), width, frameHeight, pad, xMode, metricKey, null, yAxisOptions)
+      : null),
+    [frameHeight, metricKey, pad, rangeActive, series, width, xMode, yAxisOptions],
   );
-  const domain = normalizedSeries.find((item) => item.domain)?.domain ?? null;
-  const fullDomain = rangeNormalizedSeries.find((item) => item.domain)?.domain ?? domain;
+  const rangeNormalizedSeries: any[] = overviewNormalizedSeries ?? normalizedSeries;
+  // Every normalized item shares one domain object; the first carries it.
+  const domain = normalizedSeries[0]?.domain ?? null;
+  const unzoomedDomain = useMemo(
+    () => (rangeActive ? chartDomain(series, xMode, metricKey, null, yAxisOptions) : null),
+    [metricKey, rangeActive, series, xMode, yAxisOptions],
+  );
+  const fullDomain = unzoomedDomain ?? domain;
 
   const [hover, setHover] = useState<HoverPoint>(null);
   const denseChart = shouldUseDenseChart(normalizedSeries);
@@ -420,7 +443,10 @@ export const MetricChart = memo(function MetricChart({
     "--series-muted-opacity": seriesMutedOpacity,
     "--series-hover-canvas-opacity": seriesHoverCanvasOpacity,
   } as CSSProperties;
-  const styleIndexes = useMemo(() => chartStyleIndexesForItems(normalizedSeries), [normalizedSeries]);
+  // Style slots hash only series identity (id/identifier/name), so key on the
+  // raw series: zoom-window renormalizations then reuse the same array and the
+  // memos downstream (MiniRange polylines, canvas dash setup) stay warm.
+  const styleIndexes = useMemo(() => chartStyleIndexesForItems(series), [series]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [tooltipPlacement, setTooltipPlacement] = useState<TooltipPlacement | null>(null);
@@ -582,13 +608,17 @@ export const MetricChart = memo(function MetricChart({
   const displaySmoothing = smoothingValue;
   const plotClipId = `chart-plot-clip-${chartInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const hiddenLogPoints = yScale === "log" ? normalizedSeries.reduce((sum, item) => sum + (item.hiddenNonPositive ?? 0), 0) : 0;
-  const summaryRows = useMemo(() => chartSummaryRows(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
-  const summaryTakeaway = useMemo(() => chartSummaryTakeaway(normalizedSeries, metricKey), [metricKey, normalizedSeries]);
+  const summaryModel = useMemo(
+    () => (chartView === "summary" ? chartSummaryModel(normalizedSeries, metricKey) : null),
+    [chartView, metricKey, normalizedSeries],
+  );
+  const summaryRows = summaryModel?.rows ?? [];
+  const summaryTakeaway = summaryModel?.takeaway ?? "";
   // Memoized so non-hover state changes (tooltip placement, legend hover,
   // menu toggles) don't re-rank every series against the hovered x (A3).
   const hoverRows = useMemo(
-    () => (hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, xMode, useLineStyles, hover.runId) : []),
-    [hover, normalizedSeries, styleIndexes, useLineStyles, xMode],
+    () => (hover ? tooltipRows(normalizedSeries, styleIndexes, hover.point.xValue, useLineStyles, hover.runId) : []),
+    [hover, normalizedSeries, styleIndexes, useLineStyles],
   );
   const hiddenHoverRows = hover ? Math.max(0, normalizedSeries.length - hoverRows.length) : 0;
   const smoothedHoverRows = hoverRows.some((row) => row.smoothedValue !== null);
@@ -953,7 +983,7 @@ export const MetricChart = memo(function MetricChart({
               onMouseLeave={() => setLegendHoverId((current) => (current === item.id ? null : current))}
               tabIndex={0}
               title={item.identifier ?? item.name}
-            ><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> {item.identifier ?? item.name}</span>
+            ><i className={`legend-line ${chartLineStyleClass(useLineStyles ? colorIndex : 0)}`} style={{ backgroundColor: chartColor(colorIndex), color: chartColor(colorIndex) }} /> <span className="legend-chip-label">{item.identifier ?? item.name}</span></span>
           );
         })}
         {legendExpandable ? (
@@ -1097,9 +1127,11 @@ export const MetricChart = memo(function MetricChart({
       {showRange ? (
         <div className="chart-range-row">
           <MiniRange
-            domain={fullDomain ?? domain}
+            domain={fullDomain}
             normalizedSeries={rangeNormalizedSeries}
             onZoomRangeChange={onZoomRangeChange}
+            styleIndexes={styleIndexes}
+            useLineStyles={useLineStyles}
             width={width}
             xMode={xMode}
             zoomRange={zoomRange}

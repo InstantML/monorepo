@@ -178,13 +178,19 @@ pub(super) fn artifact_counts_for_runs(
             ]),
         );
     }
-    for artifact in data
-        .artifacts
-        .values()
-        .filter(|artifact| selected.contains(&artifact.run_id))
-    {
-        let entry = counts.entry(artifact.run_id).or_insert_with(BTreeMap::new);
-        *entry.entry(artifact.kind.clone()).or_insert(0) += 1;
+    // Walk the per-run artifact index instead of every artifact in the org:
+    // this sits on every runs/summary/overview page, and the full scan cost
+    // scaled with total org artifacts rather than the page's runs.
+    for run_id in &selected {
+        let Some(artifact_ids) = data.artifacts_by_run.get(run_id) else {
+            continue;
+        };
+        let entry = counts.entry(*run_id).or_insert_with(BTreeMap::new);
+        for artifact_id in artifact_ids {
+            if let Some(artifact) = data.artifacts.get(artifact_id) {
+                *entry.entry(artifact.kind.clone()).or_insert(0) += 1;
+            }
+        }
     }
     counts
 }

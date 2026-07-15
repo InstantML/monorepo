@@ -38,6 +38,27 @@ test("run rail identity dots use the shared chart palette", () => {
   assert.doesNotMatch(chartsCss, /\.dot-0/);
 });
 
+test("run rail upload-health chip matches the status chip type treatment", () => {
+  // The status, metric, and upload-health chips share the rail's evidence row.
+  // Without these selectors the health chip falls back to the dashboard-runs.css
+  // base (650 11.5px, 21px tall) and "sync stalled" / "incomplete · N rows"
+  // reads louder and larger than the status chip beside it.
+  const overhaulCss = read("app/styles/overhaul.css");
+  assert.match(
+    overhaulCss,
+    /\.workspace-run-status,\s*\.workspace-run-metric-chip,\s*\.workspace-run-evidence \.upload-health-chip \{ font-size: 10px; height: 18px; padding: 2px 6px; \}/,
+  );
+  // The health chip keeps block display so text-overflow can ellipsize its
+  // long labels; line-height (not inline-flex) centers the glyphs.
+  assert.match(overhaulCss, /\.workspace-run-evidence \.upload-health-chip \{ line-height: 12px; \}/);
+
+  const instrumentCss = read("app/styles/instrument.css");
+  assert.match(
+    instrumentCss,
+    /\.workspace-run-status,\s*\.workspace-run-evidence \.upload-health-chip \{[^}]*font-size: 9px/,
+  );
+});
+
 test("workspace charts render at measured CSS-pixel size (no stretch) with dark-mode marker outlines", () => {
   const panelsCss = read("app/styles/panels.css");
   const chartsCss = read("app/styles/charts.css");

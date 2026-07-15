@@ -8,6 +8,33 @@ only for surfaces where the benchmark evidence supports it, and preserve
 caveats for historical W&B runs, partial W&B seeds, mirrored W&B fields, and
 sampled versus exact-history chart APIs.
 
+## Chart Render Hot-Path Benchmark
+
+Use the local helper and real-browser chart benchmarks after changing shared
+normalization, dense rendering, hover, range zoom, or summary-table logic:
+
+```bash
+npm run benchmark:charts
+npm run benchmark:charts:browser
+```
+
+`benchmark:charts` compares frozen legacy helpers with the current path at
+100, 1,000, and 2,000 series, including retained Node heap, one-pass
+no-regression variants, point/segment hit testing, tooltip-row construction,
+and zoom-overview work. `benchmark:charts:browser` bundles the real React
+`MetricChart` into a backend-independent Chromium fixture and checks 2,000 × 60
+first paint, dense canvas DOM bounds, pointer-to-tooltip latency, zoom/reset
+long tasks, summary switching, and console errors.
+
+The latest result is
+`benchmarks/2026-07-10-chart-render-hot-path-results.md`: at 2,000 × 60,
+unzoomed normalization was 1.98× faster with retained normalized heap reduced
+from 67.90 MB to 33.95 MB, combined hover work was 4.52× faster, and zoom
+overview preparation was 7.05× faster. The real-browser fixture measured
+208.6 ms first committed paint, 71.54 ms hover p95, and no zoom/reset long task
+over 50 ms. These are local M1 measurements, not hosted or universal browser
+SLOs.
+
 ## Hosted ClickHouse Query Benchmark
 
 Use the hosted demo script from the repo root:

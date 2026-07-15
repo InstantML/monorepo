@@ -77,6 +77,10 @@ export const publicOpenApiPaths = [
   "/api/workspace-views/import",
   "/api/workspace-views/{view_id}",
   "/api/workspace-views/{view_id}/export",
+  "/api/traces",
+  "/api/runs/{run_id}/traces/events",
+  "/api/runs/{run_id}/traces/{trace_id}",
+  "/api/runs/{run_id}/traces/{trace_id}/spans",
 ];
 
 const defaultServers = [

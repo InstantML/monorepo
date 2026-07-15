@@ -284,7 +284,13 @@ def _send_event(client: Client, event: dict[str, Any]) -> None:
     body = request.get("body")
     if not isinstance(method, str) or not isinstance(path, str) or not isinstance(body, dict):
         raise InstantMLError("process spool request must include method, path, and body")
-    _request_with_optional_idempotency(client, method, path, _prepare_body(path, body), event.get("event_id"))
+    _request_with_optional_idempotency(
+        client,
+        method,
+        path,
+        _prepare_body(path, body),
+        request.get("idempotency_key") or event.get("event_id"),
+    )
 
 
 def _prepare_body(path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -309,7 +315,10 @@ def _request_with_optional_idempotency(
     event_id: Any,
 ) -> None:
     if isinstance(event_id, str) and (
-        path.endswith("/metrics") or path.endswith("/rank-metrics") or path.endswith("/logs")
+        path.endswith("/metrics")
+        or path.endswith("/rank-metrics")
+        or path.endswith("/logs")
+        or path.endswith("/traces/events")
     ):
         try:
             client._request(method, path, body, idempotency_key=event_id)

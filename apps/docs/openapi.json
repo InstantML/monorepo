@@ -6059,6 +6059,519 @@
           }
         ]
       }
+    },
+    "/api/traces": {
+      "get": {
+        "tags": [
+          "traces"
+        ],
+        "operationId": "list_traces",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "description": "Project UUID. Required unless run_id or project is present.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Project name fallback for local/dashboard callers",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Exact run UUID",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Trace status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Trace span kind",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Search root name, trace id prefix, rollout id, or thread id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "RFC3339 lower bound over started_at. Project-scoped lists default to a recent window; run_id lists are unbounded unless from/to is supplied.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "RFC3339 upper bound over started_at. Project-scoped lists default to now; run_id lists are unbounded unless from/to is supplied.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "min_step",
+            "in": "query",
+            "description": "Minimum trace step overlap",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "max_step",
+            "in": "query",
+            "description": "Maximum trace step overlap",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trace summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope or project access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project or run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/traces/events": {
+      "post": {
+        "tags": [
+          "traces"
+        ],
+        "operationId": "log_trace_events",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate trace ingest retries",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTraceEventsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted trace span events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceIngestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Plan or payment limit prevents writing trace events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope or project access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/traces/{trace_id}": {
+      "get": {
+        "tags": [
+          "traces"
+        ],
+        "operationId": "get_trace_detail",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trace_id",
+            "in": "path",
+            "description": "32-character trace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "span_limit",
+            "in": "query",
+            "description": "Maximum spans returned in the initial tree window",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trace tree window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope or project access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run or trace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
+    },
+    "/api/runs/{run_id}/traces/{trace_id}/spans": {
+      "get": {
+        "tags": [
+          "traces"
+        ],
+        "operationId": "get_trace_children",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "description": "Run UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "trace_id",
+            "in": "path",
+            "description": "32-character trace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "parent_span_id",
+            "in": "query",
+            "description": "Parent span id. Omit or pass an empty string to load roots.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum child spans returned",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque child pagination cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Child span window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceChildrenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope or project access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Run or trace not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerApiKey": []
+          },
+          {
+            "browserSession": []
+          }
+        ]
+      }
     }
   },
   "tags": [
@@ -8187,6 +8700,144 @@
           }
         }
       },
+      "TraceListResponse": {
+        "type": "object",
+        "required": [
+          "traces",
+          "limit"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "traces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceSummaryItem"
+            }
+          }
+        }
+      },
+      "CreateTraceEventsRequest": {
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceEventInput"
+            }
+          }
+        }
+      },
+      "TraceIngestResponse": {
+        "type": "object",
+        "required": [
+          "inserted",
+          "trace_ids",
+          "summary_updates"
+        ],
+        "properties": {
+          "inserted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "summary_updates": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "trace_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TraceDetailResponse": {
+        "type": "object",
+        "required": [
+          "trace",
+          "spans",
+          "limits",
+          "truncated"
+        ],
+        "properties": {
+          "limits": {
+            "$ref": "#/components/schemas/TraceDetailLimits"
+          },
+          "root_next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceSpanItem"
+            }
+          },
+          "trace": {
+            "$ref": "#/components/schemas/TraceDetailSummary"
+          },
+          "truncated": {
+            "$ref": "#/components/schemas/TraceDetailTruncation"
+          }
+        }
+      },
+      "TraceChildrenResponse": {
+        "type": "object",
+        "required": [
+          "spans",
+          "child_count",
+          "returned",
+          "omitted"
+        ],
+        "properties": {
+          "child_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "omitted": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "parent_span_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "returned": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TraceSpanItem"
+            }
+          }
+        }
+      },
       "WriterLeaseReadinessResponse": {
         "type": "object",
         "required": [
@@ -10297,6 +10948,660 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TraceSummaryItem": {
+        "type": "object",
+        "required": [
+          "trace_id",
+          "run_id",
+          "project_id",
+          "project",
+          "run_name",
+          "root_span_id",
+          "root_name",
+          "status",
+          "kinds",
+          "started_at",
+          "span_count",
+          "running_span_count",
+          "error_count",
+          "model_call_count",
+          "tool_call_count",
+          "retrieval_count",
+          "reward_count",
+          "input_tokens",
+          "output_tokens",
+          "summary_metrics",
+          "attributes",
+          "content_available",
+          "truncated",
+          "updated_at"
+        ],
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "content_available": {
+            "type": "boolean"
+          },
+          "cost_usd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "min_step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "model_call_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "project": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retrieval_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "reward_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rollout_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "root_span_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_name": {
+            "type": "string"
+          },
+          "running_span_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "span_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary_metrics": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tool_call_count": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TraceEventInput": {
+        "type": "object",
+        "required": [
+          "trace_id",
+          "span_id",
+          "event_id",
+          "sequence",
+          "event_kind",
+          "name",
+          "kind",
+          "status",
+          "started_at"
+        ],
+        "properties": {
+          "attributes": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "content_policy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_preview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_kind": {
+            "type": "string"
+          },
+          "input_preview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "links": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metrics": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "output_preview": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_span_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "redaction_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rollout_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sequence": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "span_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "TraceDetailLimits": {
+        "type": "object",
+        "required": [
+          "span_limit",
+          "max_span_limit"
+        ],
+        "properties": {
+          "max_span_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "span_limit": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TraceSpanItem": {
+        "type": "object",
+        "required": [
+          "trace_id",
+          "span_id",
+          "name",
+          "kind",
+          "status",
+          "started_at",
+          "attributes",
+          "metrics",
+          "links",
+          "input_preview",
+          "output_preview",
+          "error_preview",
+          "content_policy",
+          "redaction_state",
+          "truncated",
+          "child_count",
+          "returned_child_count",
+          "omitted_child_count"
+        ],
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "child_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "content_policy": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error_preview": {
+            "type": "string"
+          },
+          "error_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input_preview": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "links": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "metrics": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "name": {
+            "type": "string"
+          },
+          "omitted_child_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "output_preview": {
+            "type": "string"
+          },
+          "parent_span_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rank": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "redaction_state": {
+            "type": "string"
+          },
+          "returned_child_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "rollout_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "span_id": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "step": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "thread_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trace_id": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TraceDetailSummary": {
+        "type": "object",
+        "required": [
+          "trace_id",
+          "run_id",
+          "project_id",
+          "project",
+          "run_name",
+          "root_span_id",
+          "root_name",
+          "status",
+          "started_at",
+          "span_count",
+          "running_span_count",
+          "error_count",
+          "content_available",
+          "payloads_truncated",
+          "summary_metrics",
+          "attributes",
+          "summary",
+          "total_span_count",
+          "root_count",
+          "orphan_count"
+        ],
+        "properties": {
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "content_available": {
+            "type": "boolean"
+          },
+          "duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "error_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "orphan_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "payloads_truncated": {
+            "type": "boolean"
+          },
+          "project": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "root_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "root_name": {
+            "type": "string"
+          },
+          "root_span_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "run_name": {
+            "type": "string"
+          },
+          "running_span_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "span_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "summary_metrics": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "total_span_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "trace_id": {
+            "type": "string"
+          }
+        }
+      },
+      "TraceDetailTruncation": {
+        "type": "object",
+        "required": [
+          "spans",
+          "payloads",
+          "partial_tree"
+        ],
+        "properties": {
+          "partial_tree": {
+            "type": "boolean"
+          },
+          "payloads": {
+            "type": "boolean"
+          },
+          "spans": {
+            "type": "boolean"
           }
         }
       },

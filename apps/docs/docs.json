@@ -42,6 +42,7 @@
               "index",
               "quickstart",
               "concepts/core-concepts",
+              "guides/experiment-tracking",
               "pricing",
               "benchmarks",
               "guides/examples",
@@ -58,6 +59,7 @@
             "pages": [
               "sdk/installation-auth",
               "sdk/logging",
+              "sdk/tracing",
               "sdk/metrics-steps",
               "sdk/config-tags-notes",
               "sdk/artifacts-checkpoints",
@@ -99,6 +101,7 @@
               "dashboard/runs-workspace",
               "dashboard/metrics-charts",
               "dashboard/run-detail",
+              "dashboard/traces",
               "dashboard/compare-runs",
               "dashboard/research-dashboards",
               "dashboard/artifacts-files",

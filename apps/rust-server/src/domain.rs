@@ -47,6 +47,33 @@ fn json_object_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schem
         .into()
 }
 
+fn json_required_object_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::schema::{AdditionalProperties, ObjectBuilder, Type};
+
+    ObjectBuilder::new()
+        .schema_type(Type::Object)
+        .additional_properties(Some(AdditionalProperties::FreeForm(true)))
+        .into()
+}
+
+fn json_object_or_array_schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+    use utoipa::openapi::schema::{
+        AdditionalProperties, ArrayBuilder, ObjectBuilder, OneOfBuilder, SchemaType, Type,
+    };
+
+    let freeform_object = || {
+        ObjectBuilder::new()
+            .schema_type(Type::Object)
+            .additional_properties(Some(AdditionalProperties::FreeForm(true)))
+    };
+    OneOfBuilder::new()
+        .schema_type(SchemaType::AnyValue)
+        .item(freeform_object())
+        .item(ArrayBuilder::new().items(freeform_object()))
+        .item(ObjectBuilder::new().schema_type(Type::Null))
+        .into()
+}
+
 pub const MAX_TEXT_BYTES: usize = 512;
 pub const MAX_METRICS_PER_BATCH: usize = 1_000;
 pub const MAX_METRIC_BATCH_POINTS: usize = 500;
@@ -64,6 +91,19 @@ pub const DEFAULT_CONSOLE_LOG_LIMIT: i64 = 250;
 pub const MAX_CONSOLE_LOG_LIMIT: i64 = 1_000;
 pub const MAX_CONSOLE_LOG_LINES_PER_BATCH: usize = 50;
 pub const MAX_CONSOLE_LOG_MESSAGE_BYTES: usize = 16 * 1024;
+pub const MAX_TRACE_EVENTS_PER_BATCH: usize = 500;
+pub const DEFAULT_TRACE_LIST_LIMIT: i64 = 50;
+pub const MAX_TRACE_LIST_LIMIT: i64 = 200;
+pub const DEFAULT_TRACE_SPAN_LIMIT: i64 = 500;
+pub const MAX_TRACE_SPAN_LIMIT: i64 = 1_000;
+pub const DEFAULT_TRACE_CHILD_LIMIT: i64 = 100;
+pub const MAX_TRACE_CHILD_LIMIT: i64 = 500;
+pub const MAX_TRACE_NAME_BYTES: usize = 512;
+pub const MAX_TRACE_FIELD_BYTES: usize = 512;
+pub const MAX_TRACE_ATTRIBUTES_BYTES: usize = 32 * 1024;
+pub const MAX_TRACE_METRICS_BYTES: usize = 16 * 1024;
+pub const MAX_TRACE_LINKS_BYTES: usize = 16 * 1024;
+pub const MAX_TRACE_PREVIEW_BYTES: usize = 4 * 1024;
 pub const GIB_BYTES: i64 = 1024 * 1024 * 1024;
 
 pub const STORAGE_CHOICE_HOSTED: &str = "instantml-hosted";
@@ -83,6 +123,7 @@ pub struct PlanTier {
     pub projects: i64,
     pub runs: i64,
     pub metric_points: i64,
+    pub trace_events: i64,
     pub api_requests: i64,
     pub api_request_overage_cents_per_million: Option<i64>,
     pub rate_limit_rps: u32,
@@ -103,6 +144,7 @@ pub const PLAN_FREE: PlanTier = PlanTier {
     projects: 2,
     runs: 100,
     metric_points: 1_000_000,
+    trace_events: 100_000,
     api_requests: 500_000,
     api_request_overage_cents_per_million: None,
     rate_limit_rps: 5,
@@ -123,6 +165,7 @@ pub const PLAN_PRO: PlanTier = PlanTier {
     projects: 100,
     runs: 100_000,
     metric_points: 250_000_000,
+    trace_events: 50_000_000,
     api_requests: 25_000_000,
     api_request_overage_cents_per_million: Some(200),
     rate_limit_rps: 50,
@@ -143,6 +186,7 @@ pub const PLAN_PREMIUM: PlanTier = PlanTier {
     projects: 500,
     runs: 1_000_000,
     metric_points: 2_000_000_000,
+    trace_events: 500_000_000,
     api_requests: 150_000_000,
     api_request_overage_cents_per_million: Some(100),
     rate_limit_rps: 200,
@@ -196,6 +240,11 @@ pub struct SessionContext {
     pub user_id: Uuid,
     pub role: String,
     pub demo_read_only: bool,
+    /// True when this context came from a verified MCP OAuth bearer token
+    /// rather than a browser session cookie. Bearer tokens are never attached
+    /// ambiently by a browser, so these requests are exempt from the
+    /// cookie-CSRF origin gate on mutations.
+    pub mcp_oauth: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1654,6 +1703,217 @@ pub struct ConsoleLogLine {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateTraceEventsRequest {
+    pub events: Vec<TraceEventInput>,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct TraceEventInput {
+    pub trace_id: String,
+    pub span_id: String,
+    pub parent_span_id: Option<String>,
+    pub event_id: Uuid,
+    pub sequence: u64,
+    pub event_kind: String,
+    pub name: String,
+    pub kind: String,
+    pub status: String,
+    pub step: Option<f64>,
+    pub rank: Option<u32>,
+    pub thread_id: Option<String>,
+    pub rollout_id: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub duration_ms: Option<f64>,
+    pub input_preview: Option<String>,
+    pub output_preview: Option<String>,
+    pub error_type: Option<String>,
+    pub error_preview: Option<String>,
+    #[schema(schema_with = json_object_schema)]
+    pub attributes: Option<Value>,
+    #[schema(schema_with = json_object_schema)]
+    pub metrics: Option<Value>,
+    #[schema(schema_with = json_object_or_array_schema)]
+    pub links: Option<Value>,
+    pub content_policy: Option<String>,
+    pub redaction_state: Option<String>,
+    pub truncated: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct TraceIngestResponse {
+    pub inserted: usize,
+    pub trace_ids: Vec<String>,
+    pub summary_updates: usize,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceSummaryItem {
+    pub trace_id: String,
+    pub run_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub run_name: String,
+    pub root_span_id: String,
+    pub root_name: String,
+    pub status: String,
+    pub kinds: Vec<String>,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<f64>,
+    pub span_count: u32,
+    pub running_span_count: u32,
+    pub error_count: u32,
+    pub model_call_count: u32,
+    pub tool_call_count: u32,
+    pub retrieval_count: u32,
+    pub reward_count: u32,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cost_usd: Option<f64>,
+    pub min_step: Option<f64>,
+    pub max_step: Option<f64>,
+    pub thread_id: Option<String>,
+    pub rollout_id: Option<String>,
+    #[schema(schema_with = json_required_object_schema)]
+    pub summary_metrics: Value,
+    #[schema(schema_with = json_required_object_schema)]
+    pub attributes: Value,
+    pub content_available: bool,
+    pub truncated: bool,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceListResponse {
+    pub traces: Vec<TraceSummaryItem>,
+    pub next_cursor: Option<String>,
+    pub limit: i64,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceStepBucket {
+    pub step: f64,
+    pub trace_count: u64,
+    pub error_trace_count: u64,
+    pub running_trace_count: u64,
+    pub span_count: u64,
+    pub error_span_count: u64,
+    pub avg_duration_ms: Option<f64>,
+    pub max_duration_ms: Option<f64>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub first_started_at: DateTime<Utc>,
+    pub last_started_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceStepSummaryResponse {
+    pub steps: Vec<TraceStepBucket>,
+    pub stepless_trace_count: u64,
+    pub total_trace_count: u64,
+    /// Run-wide count of errored traces, including stepless traces and traces
+    /// dropped when the bucket list is truncated. Not the sum of per-bucket
+    /// `error_trace_count`.
+    pub total_error_trace_count: u64,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceDetailSummary {
+    pub trace_id: String,
+    pub run_id: Uuid,
+    pub project_id: Uuid,
+    pub project: String,
+    pub run_name: String,
+    pub root_span_id: String,
+    pub root_name: String,
+    pub status: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<f64>,
+    pub span_count: u64,
+    pub running_span_count: u64,
+    pub error_count: u64,
+    pub content_available: bool,
+    pub payloads_truncated: bool,
+    #[schema(schema_with = json_required_object_schema)]
+    pub summary_metrics: Value,
+    #[schema(schema_with = json_required_object_schema)]
+    pub attributes: Value,
+    #[schema(schema_with = json_required_object_schema)]
+    pub summary: Value,
+    pub total_span_count: u64,
+    pub root_count: u64,
+    pub orphan_count: u64,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceSpanItem {
+    pub trace_id: String,
+    pub span_id: String,
+    pub parent_span_id: Option<String>,
+    pub name: String,
+    pub kind: String,
+    pub status: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<f64>,
+    pub step: Option<f64>,
+    pub rank: Option<u32>,
+    pub thread_id: Option<String>,
+    pub rollout_id: Option<String>,
+    #[schema(schema_with = json_required_object_schema)]
+    pub attributes: Value,
+    #[schema(schema_with = json_required_object_schema)]
+    pub metrics: Value,
+    #[schema(schema_with = json_object_or_array_schema)]
+    pub links: Value,
+    pub input_preview: String,
+    pub output_preview: String,
+    pub error_type: Option<String>,
+    pub error_preview: String,
+    pub content_policy: String,
+    pub redaction_state: String,
+    pub truncated: bool,
+    pub child_count: u64,
+    pub returned_child_count: u64,
+    pub omitted_child_count: u64,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceDetailLimits {
+    pub span_limit: i64,
+    pub max_span_limit: i64,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceDetailTruncation {
+    pub spans: bool,
+    pub payloads: bool,
+    pub partial_tree: bool,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceDetailResponse {
+    pub trace: TraceDetailSummary,
+    pub spans: Vec<TraceSpanItem>,
+    pub limits: TraceDetailLimits,
+    pub truncated: TraceDetailTruncation,
+    pub root_next_cursor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone, ToSchema)]
+pub struct TraceChildrenResponse {
+    pub parent_span_id: Option<String>,
+    pub spans: Vec<TraceSpanItem>,
+    pub next_cursor: Option<String>,
+    pub child_count: u64,
+    pub returned: usize,
+    pub omitted: u64,
+}
+
 #[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct MetricPointRow {
     pub key: String,
@@ -2241,7 +2501,13 @@ pub fn validate_optional_name(value: Option<&str>, field: &str) -> AppResult<Opt
 pub fn validate_email(value: Option<&str>) -> AppResult<String> {
     let email = validate_name(value, "email")?.to_ascii_lowercase();
     if !email.contains('@') || !email.contains('.') || email.contains(' ') {
-        return Err(AppError::validation("email must be a valid email address"));
+        return Err(AppError::with_field_code(
+            axum::http::StatusCode::BAD_REQUEST,
+            "invalid_email",
+            "email",
+            None,
+            "email must be a valid email address",
+        ));
     }
     Ok(email)
 }
@@ -2418,6 +2684,19 @@ mod tests {
                 .expect("public uri")
                 .contains("bucket/runs"));
         }
+    }
+
+    #[test]
+    fn validate_email_tags_invalid_addresses_with_code_and_field() {
+        let error = validate_email(Some("user@berkeley")).expect_err("missing dot must fail");
+        assert_eq!(error.status(), axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(error.code(), Some("invalid_email"));
+        assert_eq!(error.field(), Some("email"));
+
+        assert_eq!(
+            validate_email(Some("User@Berkeley.EDU")).expect("valid email"),
+            "user@berkeley.edu"
+        );
     }
 
     #[test]

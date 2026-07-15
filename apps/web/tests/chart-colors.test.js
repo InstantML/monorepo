@@ -59,6 +59,17 @@ test("chart style indexes use dash cycles after the palette is exhausted", () =>
   assert.ok(styleIndexes.some((index) => chartLineStyleClass(index) !== "line-style-0"));
 });
 
+test("dense range previews preserve full-list color and dash assignments", () => {
+  const items = Array.from({ length: CHART_PALETTE.length + 1 }, (_, index) => ({ id: `run-${index}` }));
+  const fullListIndexes = chartStyleIndexesForItems(items);
+  const slicedIndexes = chartStyleIndexesForItems(items.slice(0, 5));
+  assert.notDeepEqual(fullListIndexes.slice(0, 5), slicedIndexes, "fixture must exercise preferred-slot collisions");
+  assert.ok(fullListIndexes.slice(0, 5).some((index) => chartLineStyleClass(index) !== "line-style-0"));
+  // MiniRange receives this full-list prefix rather than recomputing from the
+  // five normalized overview series, so its colors/dashes match the main plot.
+  assert.deepEqual(fullListIndexes.slice(0, 5), chartStyleIndexesForItems(items).slice(0, 5));
+});
+
 test("line style helpers expose matching css, canvas, and svg dash patterns", () => {
   assert.equal(chartLineStyleClass(0), "line-style-0");
   assert.equal(chartLineStyleClass(CHART_PALETTE.length), "line-style-1");

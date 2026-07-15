@@ -117,7 +117,7 @@ pub async fn verify_clerk_session_token(
 }
 
 async fn fetch_clerk_jwks(secret_key: &str, api_base: &str) -> AppResult<JwkSet> {
-    let response = reqwest::Client::new()
+    let response = crate::artifact_store::shared_http_client()
         .get(format!("{}/v1/jwks", api_base.trim_end_matches('/')))
         .bearer_auth(secret_key)
         .send()
@@ -133,7 +133,7 @@ async fn fetch_clerk_jwks(secret_key: &str, api_base: &str) -> AppResult<JwkSet>
 }
 
 async fn fetch_clerk_user(secret_key: &str, api_base: &str, user_id: &str) -> AppResult<ClerkUser> {
-    let response = reqwest::Client::new()
+    let response = crate::artifact_store::shared_http_client()
         .get(format!(
             "{}/v1/users/{}",
             api_base.trim_end_matches('/'),
@@ -408,7 +408,7 @@ pub async fn verify_clerk_oauth_token(
         }
     }
 
-    let response = reqwest::Client::new()
+    let response = crate::artifact_store::shared_http_client()
         .post(format!(
             "{}/v1/oauth_applications/access_tokens/verify",
             api_base.trim_end_matches('/')

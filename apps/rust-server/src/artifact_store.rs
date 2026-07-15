@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use axum::http::StatusCode;
@@ -523,11 +524,19 @@ impl LocalArtifactStore {
     }
 }
 
+/// Process-wide HTTP client. `reqwest::Client` is an Arc'd connection pool;
+/// constructing one per store/request discarded keep-alive connections and
+/// forced a fresh TLS handshake on every artifact or Clerk auth round-trip.
+pub fn shared_http_client() -> reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new).clone()
+}
+
 impl R2ArtifactStore {
     pub fn new(config: R2ArtifactConfig) -> Self {
         Self {
             config,
-            client: reqwest::Client::new(),
+            client: shared_http_client(),
         }
     }
 

@@ -25,11 +25,24 @@ import { DetailTabPane } from "./detail/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { RunFilterBar } from "./runs/run-filter-bar";
-import { AnalysisSkeleton } from "./ui/skeleton";
+import {
+  AgentPageSkeleton,
+  ArtifactsPageSkeleton,
+  CompareEmbedSkeleton,
+  DatasetsPageSkeleton,
+  DistributedPageSkeleton,
+  InsightsPageSkeleton,
+  ReportsPageSkeleton,
+  RunHealthPageSkeleton,
+  SettingsModalSkeleton,
+  TracesPageSkeleton,
+} from "./ui/skeleton";
 import { QuickSearchModal } from "./chrome/quick-search";
 import { ShortcutHelpModal } from "./chrome/shortcut-help";
 import { clearRunsetCaches } from "./reports/runset-cache";
+import { ToastStack, useToasts } from "./ui/toasts";
 import { useFocusTrap } from "./ui/use-focus-trap";
+import { useStableHandler } from "./ui/use-stable-handler";
 import { isTabId, shellTabFromPath, tabs } from "../dashboard-config";
 import type { ShellTabId } from "../dashboard-config";
 import {
@@ -65,18 +78,28 @@ import type { components } from "../../src/types/api.generated";
 // B3): each rarely-hit pane loads on demand instead of shipping in the
 // dashboard's first-load chunk. All panes are named exports, hence the
 // `.then((mod) => mod.X)` mapping. ssr is off — the shell is a client-only
-// tree — and the shared skeleton keeps the swap-in visually consistent with
-// the panes' own loading states. The options must stay inline object
-// literals; Next's compiler rejects a shared helper here.
-const AgentTabPane = dynamic(() => import("./agent/tab-pane").then((mod) => mod.AgentTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading agent" /> });
-const AlertsTabPane = dynamic(() => import("./alerts/tab-pane").then((mod) => mod.AlertsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading run health" /> });
-const ArtifactsTabPane = dynamic(() => import("./artifacts/tab-pane").then((mod) => mod.ArtifactsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading artifacts" /> });
-const CompareView = dynamic(() => import("./compare/tab-pane").then((mod) => mod.CompareView), { ssr: false, loading: () => <AnalysisSkeleton label="Loading comparison" /> });
-const DatasetsTabPane = dynamic(() => import("./datasets/tab-pane").then((mod) => mod.DatasetsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading datasets" /> });
-const DistributedTabPane = dynamic(() => import("./distributed/tab-pane").then((mod) => mod.DistributedTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading rank reducers" /> });
-const InsightsTabPane = dynamic(() => import("./insights/tab-pane").then((mod) => mod.InsightsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading insights" /> });
-const ReportsTabPane = dynamic(() => import("./reports/reports-tab-pane").then((mod) => mod.ReportsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading reports" /> });
-const SettingsTabPane = dynamic(() => import("./settings/tab-pane").then((mod) => mod.SettingsTabPane), { ssr: false, loading: () => <AnalysisSkeleton label="Loading settings" /> });
+// tree. Each pane's loading fallback is that page's own skeleton
+// (ui/skeleton.tsx): the page's real chrome with shimmering data regions, so
+// the module load reads as the page drawing itself in rather than a generic
+// placeholder swapping out. The options must stay inline object literals;
+// Next's compiler rejects a shared helper here.
+// Stable empties for tab-gated memos: off-tab polls reuse these identities
+// instead of allocating fresh arrays (and re-running the builders).
+const EMPTY_METRIC_CATALOG_ROWS: never[] = [];
+const EMPTY_ALERT_ROWS: never[] = [];
+const EMPTY_DATASET_ROWS: never[] = [];
+const EMPTY_QUICK_SEARCH_ITEMS: never[] = [];
+
+const AgentTabPane = dynamic(() => import("./agent/tab-pane").then((mod) => mod.AgentTabPane), { ssr: false, loading: () => <AgentPageSkeleton /> });
+const AlertsTabPane = dynamic(() => import("./alerts/tab-pane").then((mod) => mod.AlertsTabPane), { ssr: false, loading: () => <RunHealthPageSkeleton /> });
+const ArtifactsTabPane = dynamic(() => import("./artifacts/tab-pane").then((mod) => mod.ArtifactsTabPane), { ssr: false, loading: () => <ArtifactsPageSkeleton /> });
+const CompareView = dynamic(() => import("./compare/tab-pane").then((mod) => mod.CompareView), { ssr: false, loading: () => <CompareEmbedSkeleton /> });
+const DatasetsTabPane = dynamic(() => import("./datasets/tab-pane").then((mod) => mod.DatasetsTabPane), { ssr: false, loading: () => <DatasetsPageSkeleton /> });
+const DistributedTabPane = dynamic(() => import("./distributed/tab-pane").then((mod) => mod.DistributedTabPane), { ssr: false, loading: () => <DistributedPageSkeleton /> });
+const InsightsTabPane = dynamic(() => import("./insights/tab-pane").then((mod) => mod.InsightsTabPane), { ssr: false, loading: () => <InsightsPageSkeleton /> });
+const ReportsTabPane = dynamic(() => import("./reports/reports-tab-pane").then((mod) => mod.ReportsTabPane), { ssr: false, loading: () => <ReportsPageSkeleton /> });
+const SettingsTabPane = dynamic(() => import("./settings/tab-pane").then((mod) => mod.SettingsTabPane), { ssr: false, loading: () => <SettingsModalSkeleton /> });
+const TracesTabPane = dynamic(() => import("./traces/tab-pane").then((mod) => mod.TracesTabPane), { ssr: false, loading: () => <TracesPageSkeleton /> });
 
 // Bridge types from the utoipa-generated OpenAPI spec. All API request /
 // response shapes that have a matching Rust ToSchema struct flow through
@@ -237,7 +260,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts"]);
+const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts", "traces"]);
 
 const EMPTY_OVERVIEW: Overview = { total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 };
 // The Overview cockpit lives at a static route segment while every other tab is
@@ -748,7 +771,12 @@ export function DashboardShell({
     typeof window === "undefined" ? [] : runSelectionFromSearch(window.location.search));
   const [exportSelectedBusy, setExportSelectedBusy] = useState(false);
   const [selectedRunDetails, setSelectedRunDetails] = useState<Record<string, RunSummary>>({});
-  const [primaryRunId, setPrimaryRunId] = useState("");
+  // Deep links must anchor the run workspace to the linked run, so the primary
+  // run seeds from ?runs=… too; otherwise the first summary load would default
+  // it to the newest run in the project and /dashboard/detail?runs=<id> links
+  // would open the wrong run.
+  const [primaryRunId, setPrimaryRunId] = useState<string>(() =>
+    typeof window === "undefined" ? "" : runSelectionFromSearch(window.location.search)[0] ?? "");
   const [series, setSeries] = useState<MetricSeries[]>([]);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [liveSeriesTick, setLiveSeriesTick] = useState(0);
@@ -824,6 +852,9 @@ export function DashboardShell({
   const [newApiKey, setNewApiKey] = useState("");
   const [apiAdminMessage, setApiAdminMessage] = useState("");
   const [apiAdminTone, setApiAdminTone] = useState<"status" | "error">("status");
+  // Action feedback (invites, billing, API keys) renders as app-root toasts
+  // that stay visible over modals; passive load errors stay inline.
+  const { toasts, notify, dismissToast } = useToasts();
   const [adminBusy, setAdminBusy] = useState(false);
 
   const hasSeriesRef = useRef(false);
@@ -1003,7 +1034,14 @@ export function DashboardShell({
     () => (selectedRunIds.length ? selectedRunIds : sortedRuns.map((run) => run.id)),
     [selectedRunIds, sortedRuns],
   );
-  const metricCatalogRows = useMemo(() => buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds), [metricCatalogSelectionIds, metricOptions, sortedRuns]);
+  const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
+  // Tab-gated derived data: these memos key on sortedRuns, which gets a new
+  // identity on every poll while any run is training. Their consumers mount
+  // only on their own tab, so off-tab recomputation was pure per-poll waste.
+  const metricCatalogRows = useMemo(
+    () => (visibleTab === "metrics" ? buildMetricCatalogRows(sortedRuns, metricOptions, metricCatalogSelectionIds) : EMPTY_METRIC_CATALOG_ROWS),
+    [metricCatalogSelectionIds, metricOptions, sortedRuns, visibleTab],
+  );
   const visibleMetricCatalogRows = useMemo(() => metricCatalogRows.slice(0, MAX_METRIC_CATALOG_ROWS), [metricCatalogRows]);
   const activeMetricCatalogRow = useMemo(() => metricCatalogRows.find((row) => row.key === metricKey) ?? null, [metricCatalogRows, metricKey]);
   const primaryDisplaySeries = useMemo(() => {
@@ -1034,8 +1072,14 @@ export function DashboardShell({
       })
   ), [groupAverage, groupBy, identifierMode, metricKey, panelSeries, pinnedChartZoomRanges, pinnedMetrics, resolveRunSummary, smoothing]);
   const inspectedPoint = hover;
-  const alertRows = useMemo(() => buildAlertRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
-  const datasetRows = useMemo(() => buildDatasetRows(sortedRuns, metricKey), [metricKey, sortedRuns]);
+  const alertRows = useMemo(
+    () => (visibleTab === "alerts" ? buildAlertRows(sortedRuns, metricKey) : EMPTY_ALERT_ROWS),
+    [metricKey, sortedRuns, visibleTab],
+  );
+  const datasetRows = useMemo(
+    () => (visibleTab === "datasets" ? buildDatasetRows(sortedRuns, metricKey) : EMPTY_DATASET_ROWS),
+    [metricKey, sortedRuns, visibleTab],
+  );
   const runMetricRows = useMemo(() => buildRunMetricRows(primaryRun), [primaryRun]);
   const runTimelineRows = useMemo(() => buildRunTimelineRows(primaryRun, visibleArtifacts, metricKey), [metricKey, primaryRun, visibleArtifacts]);
   const activeOrgId = sessionPayload?.organization?.id ?? "";
@@ -1316,6 +1360,10 @@ export function DashboardShell({
     "#stop-reason",
   );
   const quickSearchItems = useMemo<QuickSearchItem[]>(() => {
+    // The palette is closed almost always; building ~200 items (each with a
+    // fresh onSelect closure) on every poll-driven sortedRuns change was
+    // wasted work for a hidden modal.
+    if (!quickSearchOpen) return EMPTY_QUICK_SEARCH_ITEMS;
     const items: QuickSearchItem[] = [
       ...tabs.map((tab) => ({
         id: `tab:${tab.id}`,
@@ -1387,7 +1435,7 @@ export function DashboardShell({
       },
     ];
     return items;
-  }, [allMetricOptions, changeMetricKey, changeProject, projects, runsRailCollapsed, savedViews, sortedRuns, theme, visibleArtifacts]);
+  }, [allMetricOptions, changeMetricKey, changeProject, projects, quickSearchOpen, runsRailCollapsed, savedViews, sortedRuns, theme, visibleArtifacts]);
   const filteredQuickSearchItems = useMemo(() => {
     const queryParts = quickSearchInput.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const filtered = queryParts.length
@@ -1414,7 +1462,9 @@ export function DashboardShell({
         )
         : Promise.resolve(null);
       const projectPayload = await retryTransientRequest(() => api.get("/projects", options), retryOptions);
-      const names = (projectPayload.projects ?? []).map((item: { name: string }) => item.name);
+      // Project filtering is by name, so same-named rows (e.g. from direct
+      // storage seeders) collapse to one selectable option.
+      const names = [...new Set<string>((projectPayload.projects ?? []).map((item: { name: string }) => item.name))];
       setProjects(names);
       setProject((current) => current && !names.includes(current) ? "" : current);
       if (shouldLoadPreference) {
@@ -1873,6 +1923,7 @@ export function DashboardShell({
         selectionUrlSyncRef.current = true;
         applyingUrlSelectionRef.current = true;
         setSelectedRunIds(urlRunIds);
+        setPrimaryRunId(urlRunIds[0]);
       }
       const label = tabs.find((tab) => tab.id === nextTab)?.label ?? nextTab;
       const summaryTotal = summaryTotalRef.current;
@@ -2817,14 +2868,19 @@ export function DashboardShell({
   async function inviteSeat() {
     if (!activeOrgId || !inviteEmail.trim()) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      notify("Seat management is available to workspace admins.", "error");
+      return;
+    }
+    const email = inviteEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      notify("Enter a valid email address (like name@example.com).", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Sending invitation...");
+    const progressId = notify("Sending invitation...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/invitations`, {
-        email: inviteEmail.trim(),
+        email,
         role: inviteRole,
       });
       setInviteEmail("");
@@ -2834,11 +2890,16 @@ export function DashboardShell({
       if (previewLink && invitationId) {
         setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
       }
-      setMessage(deliveryError ? `Invitation created, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link ready." : "Invitation sent.");
+      if (deliveryError) {
+        notify(`Invitation created, but the email could not be delivered: ${deliveryError}. Retry from the seats list.`, "error");
+      } else {
+        notify(previewLink ? "Invitation link ready." : `Invitation sent to ${email}.`);
+      }
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to send invitation.");
+      notify(error instanceof Error ? error.message : "Unable to send invitation.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -2846,11 +2907,11 @@ export function DashboardShell({
   async function resendInvitation(invitationId: string) {
     if (!activeOrgId) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      notify("Seat management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Resending invitation...");
+    const progressId = notify("Resending invitation...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/resend`, {});
       const deliveryError = typeof payload.delivery_error === "string" ? payload.delivery_error : "";
@@ -2858,11 +2919,16 @@ export function DashboardShell({
       if (previewLink) {
         setInvitationLinks((current) => ({ ...current, [invitationId]: previewLink }));
       }
-      setMessage(deliveryError ? `Invitation updated, but email delivery failed: ${deliveryError}` : previewLink ? "Invitation link updated." : "Invitation resent.");
+      if (deliveryError) {
+        notify(`Invitation updated, but the email could not be delivered: ${deliveryError}.`, "error");
+      } else {
+        notify(previewLink ? "Invitation link updated." : "Invitation resent.");
+      }
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to resend invitation.");
+      notify(error instanceof Error ? error.message : "Unable to resend invitation.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -2870,11 +2936,11 @@ export function DashboardShell({
   async function revokeInvitation(invitationId: string) {
     if (!activeOrgId) return;
     if (!canManageOrg) {
-      setMessage("Seat management is available to workspace admins.");
+      notify("Seat management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Revoking invitation...");
+    const progressId = notify("Revoking invitation...");
     try {
       await api.post(`/api/orgs/${activeOrgId}/invitations/${invitationId}/revoke`, {});
       setInvitationLinks((current) => {
@@ -2882,11 +2948,12 @@ export function DashboardShell({
         delete next[invitationId];
         return next;
       });
-      setMessage("Invitation revoked.");
+      notify("Invitation revoked.");
       void loadOrgSettings();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to revoke invitation.");
+      notify(error instanceof Error ? error.message : "Unable to revoke invitation.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -2896,14 +2963,14 @@ export function DashboardShell({
     if (!link) return;
     const safeLink = safeSameOriginInviteUrl(link);
     if (!safeLink) {
-      setMessage("Invitation link was not a valid InstantML invite URL.");
+      notify("Invitation link was not a valid InstantML invite URL.", "error");
       return;
     }
     try {
       if (!await copyTextToClipboard(safeLink)) throw new Error("copy failed");
-      setMessage("Invitation link copied.");
+      notify("Invitation link copied.");
     } catch {
-      setMessage("Copy failed. Select and copy the invitation link manually.");
+      notify("Copy failed. Select and copy the invitation link manually.", "error");
     }
   }
 
@@ -2912,7 +2979,7 @@ export function DashboardShell({
     if (!link) return;
     const safeLink = safeSameOriginInviteUrl(link);
     if (!safeLink) {
-      setMessage("Invitation link was not a valid InstantML invite URL.");
+      notify("Invitation link was not a valid InstantML invite URL.", "error");
       return;
     }
     window.open(safeLink, "_blank", "noopener,noreferrer");
@@ -2920,29 +2987,30 @@ export function DashboardShell({
 
   async function openBillingPortal() {
     if (!canManageOrg) {
-      setMessage("Billing management is available to workspace admins.");
+      notify("Billing management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Opening billing portal...");
+    const progressId = notify("Opening billing portal...");
     try {
       const payload = await api.post("/api/billing/portal", {});
       const url = safeCheckoutRedirectUrl(payload.url);
       if (!url) throw new Error("Billing portal URL was not trusted.");
       window.location.assign(url);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to open billing portal.");
+      dismissToast(progressId);
+      notify(error instanceof Error ? error.message : "Unable to open billing portal.", "error");
       setAdminBusy(false);
     }
   }
 
   async function changeBillingPlan(plan: "free" | "pro" | "premium") {
     if (!canManageOrg) {
-      setMessage("Billing management is available to workspace admins.");
+      notify("Billing management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage(`Changing billing plan to ${planDisplayName(plan)}...`);
+    const progressId = notify(`Changing billing plan to ${planDisplayName(plan)}...`);
     try {
       const payload = await api.post("/api/billing/change-plan", { plan_tier: plan });
       const checkoutUrl = safeCheckoutRedirectUrl(payload?.checkout?.url);
@@ -2953,88 +3021,78 @@ export function DashboardShell({
       if (payload?.checkout?.url) throw new Error("Billing checkout URL was not trusted.");
       if (payload?.checkout) {
         await loadOrgSettings();
-        setMessage("Checkout could not be opened. Retry from billing settings.");
+        notify("Checkout could not be opened. Retry from billing settings.", "error");
         return;
       }
       await loadOrgSettings();
-      setMessage("Billing plan updated.");
+      notify("Billing plan updated.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to change billing plan.");
+      notify(error instanceof Error ? error.message : "Unable to change billing plan.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
 
   async function cancelBilling() {
     if (!canManageOrg) {
-      setMessage("Billing management is available to workspace admins.");
+      notify("Billing management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
-    setMessage("Scheduling cancellation...");
+    const progressId = notify("Scheduling cancellation...");
     try {
       await api.post("/api/billing/cancel", { at_period_end: true });
       await loadOrgSettings();
-      setMessage("Cancellation recorded.");
+      notify("Cancellation recorded.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to cancel billing.");
+      notify(error instanceof Error ? error.message : "Unable to cancel billing.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
 
   async function createDashboardApiKey() {
     if (!activeOrgId || !canManageOrg) {
-      setMessage("API key management is available to workspace admins.");
+      notify("API key management is available to workspace admins.", "error");
       return;
     }
     setAdminBusy(true);
     setNewApiKey("");
-    setApiAdminTone("status");
-    setApiAdminMessage("Creating API key...");
-    setMessage("Creating API key...");
+    const progressId = notify("Creating API key...");
     try {
       const payload = await api.post(`/api/orgs/${activeOrgId}/api-keys`, {
         name: apiKeyName.trim() || "Dashboard SDK key",
       });
       if (typeof payload.api_key === "string") setNewApiKey(payload.api_key);
       await loadApiKeys();
-      setApiAdminTone("status");
-      setApiAdminMessage("API key created. Copy it now; the secret will not be shown again.");
-      setMessage("API key created.");
+      notify("API key created. Copy it now; the secret will not be shown again.");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unable to create API key.";
-      setApiAdminTone("error");
-      setApiAdminMessage(detail);
-      setMessage(detail);
+      notify(error instanceof Error ? error.message : "Unable to create API key.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
 
   async function revokeDashboardApiKey(keyId: string) {
     if (!activeOrgId || !keyId || !canManageOrg) {
-      setMessage("API key management is available to workspace admins.");
+      notify("API key management is available to workspace admins.", "error");
       return;
     }
     // Irreversible for any SDK still using the key — always confirm.
     if (!window.confirm("Revoke this API key? SDK clients using it stop authenticating immediately. This cannot be undone.")) return;
     setAdminBusy(true);
-    setApiAdminTone("status");
-    setApiAdminMessage("Revoking API key...");
-    setMessage("Revoking API key...");
+    const progressId = notify("Revoking API key...");
     try {
       await api.post(`/api/orgs/${activeOrgId}/api-keys/${keyId}/revoke`, {});
       await loadApiKeys();
-      setApiAdminTone("status");
-      setApiAdminMessage("API key revoked.");
-      setMessage("API key revoked.");
+      notify("API key revoked.");
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unable to revoke API key.";
-      setApiAdminTone("error");
-      setApiAdminMessage(detail);
-      setMessage(detail);
+      notify(error instanceof Error ? error.message : "Unable to revoke API key.", "error");
     } finally {
+      dismissToast(progressId);
       setAdminBusy(false);
     }
   }
@@ -3043,13 +3101,9 @@ export function DashboardShell({
     if (!newApiKey) return;
     try {
       if (!await copyTextToClipboard(newApiKey)) throw new Error("copy failed");
-      setApiAdminTone("status");
-      setApiAdminMessage("API key copied.");
-      setMessage("API key copied.");
+      notify("API key copied.");
     } catch {
-      setApiAdminTone("error");
-      setApiAdminMessage("Copy failed. Select the key above and copy it manually.");
-      setMessage("Copy failed. Select the key above and copy it manually.");
+      notify("Copy failed. Select the key above and copy it manually.", "error");
     }
   }
 
@@ -4444,7 +4498,24 @@ function dismissTopOverlay() {
   const stopDialogSkippedSummary = stopDialogSkipRows.length
     ? stopDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
     : "";
-  const visibleTab = activeTab === "settings" ? preSettingsTabRef.current : activeTab;
+
+  // Stable identities for handlers that flow into memo()'d children (workspace
+  // panel cards, runs-table rows). The function declarations above are
+  // recreated on every shell render; passed raw, they defeat those memo
+  // boundaries so every keystroke/selection re-rendered every panel chart and
+  // table row. Placed above the session early returns to keep hook order fixed.
+  const stableToggleRun = useStableHandler(toggleRun);
+  const stableToggleWorkspaceSection = useStableHandler(toggleWorkspaceSection);
+  const stableDuplicateWorkspacePanel = useStableHandler(duplicateWorkspacePanel);
+  const stableRemoveWorkspacePanel = useStableHandler(removeWorkspacePanel);
+  const stableMoveWorkspacePanel = useStableHandler(moveWorkspacePanel);
+  const stableResizeWorkspacePanel = useStableHandler(resizeWorkspacePanel);
+  const stableSetWorkspacePanelSmoothing = useStableHandler(setWorkspacePanelSmoothing);
+  const stableTogglePinnedMetric = useStableHandler(togglePinnedMetric);
+  const stableEditPanel = useStableHandler((sectionId: string, panelId: string) => setEditingPanelRef({ sectionId, panelId }));
+  const stableFullscreenPanel = useStableHandler((sectionId: string, panelId: string) => setFullscreenPanelRef({ sectionId, panelId }));
+  const stableOpenRun = useStableHandler((id: string) => { setPrimaryRunId(id); selectTab("detail"); });
+  const stableRequestStopRuns = useStableHandler((runIds: string[]) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single"));
 
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
   if (!dashboardAuthorized) {
@@ -4667,27 +4738,27 @@ function dismissTopOverlay() {
               onCloseEditingPanel={() => setEditingPanelRef(null)}
               onColumnsOpen={setColumnsOpen}
               onColumnMetricFilter={setColumnMetricFilter}
-              onDuplicatePanel={duplicateWorkspacePanel}
-              onEditPanel={(sectionId, panelId) => setEditingPanelRef({ sectionId, panelId })}
+              onDuplicatePanel={stableDuplicateWorkspacePanel}
+              onEditPanel={stableEditPanel}
               onExportSelectedRuns={exportSelectedRunsCsv}
-              onFullscreenPanel={(sectionId, panelId) => setFullscreenPanelRef({ sectionId, panelId })}
+              onFullscreenPanel={stableFullscreenPanel}
               onFullscreenPanelClose={() => setFullscreenPanelRef(null)}
               onFullscreenPanelMove={moveFullscreenPanel}
               onInspectRun={setPrimaryRunId}
-              onMovePanel={moveWorkspacePanel}
+              onMovePanel={stableMoveWorkspacePanel}
               onGoToPage={goToRunPage}
               onNextPage={goToNextRunPage}
-              onOpenRun={(id) => { setPrimaryRunId(id); selectTab("detail"); }}
+              onOpenRun={stableOpenRun}
               onPageSize={changeRunPageSize}
               onPanelSearch={setPanelSearch}
-              onPinnedMetric={togglePinnedMetric}
+              onPinnedMetric={stableTogglePinnedMetric}
               onPreviousPage={goToPreviousRunPage}
               onRefresh={loadDashboard}
-              onRemovePanel={removeWorkspacePanel}
-              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
+              onRemovePanel={stableRemoveWorkspacePanel}
+              onRequestStop={stableRequestStopRuns}
               onResetWorkspace={resetWorkspaceLayout}
-              onResizePanel={resizeWorkspacePanel}
-              onPanelSmoothing={setWorkspacePanelSmoothing}
+              onResizePanel={stableResizeWorkspacePanel}
+              onPanelSmoothing={stableSetWorkspacePanelSmoothing}
               onRunRailCollapsed={(collapsed) => {
                 setRunsRailCollapsed(collapsed);
                 setMessage(collapsed ? "Runs selector collapsed." : "Runs selector restored.");
@@ -4703,8 +4774,8 @@ function dismissTopOverlay() {
               onSetAddPanelSection={setAddPanelSectionId}
               onSwitchOrganization={switchOrganization}
               onTableColumns={setTableColumns}
-              onToggleRun={toggleRun}
-              onToggleSection={toggleWorkspaceSection}
+              onToggleRun={stableToggleRun}
+              onToggleSection={stableToggleWorkspaceSection}
               onUpdateEditingPanel={updateEditingPanel}
               orgMemberships={orgMemberships}
               orgName={sessionPayload?.organization?.name ?? ""}
@@ -4760,7 +4831,7 @@ function dismissTopOverlay() {
               onMetricFilter={setMetricFilter}
               onMetricKey={changeMetricKey}
               onChartLeave={() => setHover(null)}
-              onPinnedMetric={togglePinnedMetric}
+              onPinnedMetric={stableTogglePinnedMetric}
               onPointHoverChange={(point, key) => { setHoverMetricKey(key); setHover(point); }}
               onPinnedChartZoomRangeChange={(metric, range) => setPinnedChartZoomRanges((current) => ({ ...current, [metric]: range }))}
               onSmoothing={setSmoothing}
@@ -4773,6 +4844,8 @@ function dismissTopOverlay() {
               selectedRuns={metricSeriesRuns}
               series={displaySeries}
               seriesLoading={seriesLoading}
+              statusMessage={message}
+              statusTone={currentMessageTone}
               smoothing={smoothing}
               sortedRuns={sortedRuns}
               visibleMetricCatalogRows={visibleMetricCatalogRows}
@@ -4822,7 +4895,7 @@ function dismissTopOverlay() {
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
-              onRequestStop={(runIds) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single")}
+              onRequestStop={stableRequestStopRuns}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}
               primarySeries={primaryDisplaySeries}
@@ -4848,6 +4921,18 @@ function dismissTopOverlay() {
         <section className={`tab-pane ${visibleTab === "datasets" ? "active" : ""}`} aria-label="Datasets">
           {visibleTab === "datasets" ? (
             <DatasetsTabPane datasetRows={datasetRows} metricKey={metricKey} />
+          ) : null}
+        </section>
+
+        <section className={`tab-pane ${visibleTab === "traces" ? "active" : ""}`} aria-label="Traces">
+          {visibleTab === "traces" ? (
+            <TracesTabPane
+              api={api}
+              onSelectRun={setPrimaryRunId}
+              primaryRun={primaryRun}
+              project={project}
+              sortedRuns={sortedRuns}
+            />
           ) : null}
         </section>
 
@@ -5004,6 +5089,7 @@ function dismissTopOverlay() {
           updatedAt={deleteViewTarget.updatedAt ?? ""}
         />
       ) : null}
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </main>
   );
 }

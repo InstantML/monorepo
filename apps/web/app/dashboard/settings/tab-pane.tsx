@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ComponentType } from "react";
-import { AlertTriangle, BookOpen, Copy, CreditCard, ExternalLink, Gauge, KeyRound, Plus, RefreshCw, Settings, SlidersHorizontal, UserPlus, X } from "lucide-react";
+import { AlertTriangle, BookOpen, Copy, CreditCard, ExternalLink, KeyRound, Plus, RefreshCw, UserPlus, X } from "lucide-react";
 
 import { CustomSelect } from "../ui/select";
 import { useFocusTrap } from "../ui/use-focus-trap";
+import { SETTINGS_SECTIONS } from "./sections";
+import type { SectionId } from "./sections";
 import { SettingRow } from "./setting-row";
 import { formatNumber } from "../../../src/state.js";
 import { roleLabel } from "../../../src/roles.js";
@@ -56,8 +57,8 @@ function formatInviteDate(value: string) {
 }
 
 function inviteStatusLabel(invitation: InvitationRow) {
-  if (invitation.status === "pending") return invitation.delivery_status === "sent" ? "sent" : invitation.delivery_status || "pending";
   if (invitation.delivery_status === "send_failed" && !["accepted", "expired", "revoked"].includes(invitation.status ?? "")) return "send failed";
+  if (invitation.status === "pending") return invitation.delivery_status === "sent" ? "sent" : invitation.delivery_status || "pending";
   return invitation.status;
 }
 
@@ -68,16 +69,9 @@ function planDisplayName(value?: string) {
   return "Free";
 }
 
-type SectionId = "usage" | "billing" | "seats" | "workspace" | "api" | "defaults";
-
-const SECTIONS: { id: SectionId; label: string; Icon: ComponentType<{ size?: number }> }[] = [
-  { id: "usage", label: "Plan Usage", Icon: Gauge },
-  { id: "billing", label: "Billing", Icon: CreditCard },
-  { id: "seats", label: "Seats", Icon: UserPlus },
-  { id: "workspace", label: "Workspace", Icon: Settings },
-  { id: "api", label: "API", Icon: KeyRound },
-  { id: "defaults", label: "Defaults", Icon: SlidersHorizontal },
-];
+// Section ids/labels/icons live in ./sections so the loading skeleton in
+// ui/skeleton.tsx renders the same nav without importing this module.
+const SECTIONS = SETTINGS_SECTIONS;
 
 type Props = {
   accountUser: { display_name?: string | null; primary_email?: string | null } | null;
@@ -243,7 +237,8 @@ export function SettingsTabPane({
   const storageTone = usageTone(storagePercent);
   const metricTone = usageTone(metricPercent);
   const apiRequestTone = usageTone(apiRequestsPercent);
-  const visibleInvitations = invitations.filter((invitation) => invitation.status !== "accepted");
+  const visibleSeats = seats.filter((seat) => seat.membership.status !== "revoked");
+  const visibleInvitations = invitations.filter((invitation) => !["accepted", "revoked"].includes(invitation.status ?? ""));
   const visibleApiKeys = canManageOrg ? apiKeys : [];
   const visibleNewApiKey = canManageOrg ? newApiKey : "";
   const checkoutRetryPlan = billingStatus?.access_state === "checkout_pending"
@@ -437,36 +432,39 @@ export function SettingsTabPane({
               </form>
             ) : null}
             <div className="admin-list">
-              {seats.map((seat) => (
-                <div className="api-row" key={seat.membership.id}>
+              {visibleSeats.map((seat) => (
+                <div className="api-row seat-row" key={seat.membership.id}>
                   <span>{seat.membership.status}</span>
                   <strong>{seat.user.primary_email}</strong>
                   <code>{roleLabel(seat.membership.role)}</code>
                 </div>
               ))}
-              {visibleInvitations.map((invitation) => (
-                <div className="api-row" key={invitation.id}>
-                  <span>{inviteStatusLabel(invitation)}</span>
-                  <strong>
-                    {invitation.email}
-                    <small>Expires {formatInviteDate(invitation.expires_at)}</small>
-                  </strong>
-                  <code>{roleLabel(invitation.role)}</code>
-                  {canManageOrg && invitation.status === "pending" ? (
-                    <>
-                      {invitationLinks[invitation.id] ? (
-                        <>
-                          <button aria-label="Copy invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onCopyInvitationLink(invitation.id)} title="Copy invitation link" type="button"><Copy size={14} /></button>
-                          <button aria-label="Open invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onOpenInvitationLink(invitation.id)} title="Open invitation link" type="button"><ExternalLink size={14} /></button>
-                        </>
-                      ) : null}
-                      <button aria-label="Resend invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onResendInvitation(invitation.id)} title="Resend invitation" type="button"><RefreshCw size={14} /></button>
-                      <button aria-label="Revoke invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onRevokeInvitation(invitation.id)} title="Revoke invitation" type="button"><X size={14} /></button>
-                    </>
-                  ) : null}
-                </div>
-              ))}
-              {!seats.length && !visibleInvitations.length ? <p className="empty">No seats loaded.</p> : null}
+              {visibleInvitations.map((invitation) => {
+                const statusLabel = inviteStatusLabel(invitation);
+                return (
+                  <div className="api-row seat-row" key={invitation.id}>
+                    <span className={statusLabel === "send failed" ? "invite-status-failed" : undefined}>{statusLabel}</span>
+                    <strong>
+                      {invitation.email}
+                      <small>Expires {formatInviteDate(invitation.expires_at)}</small>
+                    </strong>
+                    <code>{roleLabel(invitation.role)}</code>
+                    {canManageOrg && invitation.status === "pending" ? (
+                      <div className="invite-actions">
+                        {invitationLinks[invitation.id] ? (
+                          <>
+                            <button aria-label="Copy invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onCopyInvitationLink(invitation.id)} title="Copy invitation link" type="button"><Copy size={14} /></button>
+                            <button aria-label="Open invitation link" className="ghost icon-only" disabled={adminBusy} onClick={() => onOpenInvitationLink(invitation.id)} title="Open invitation link" type="button"><ExternalLink size={14} /></button>
+                          </>
+                        ) : null}
+                        <button aria-label="Resend invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onResendInvitation(invitation.id)} title="Resend invitation" type="button"><RefreshCw size={14} /></button>
+                        <button aria-label="Revoke invitation" className="ghost icon-only" disabled={adminBusy} onClick={() => onRevokeInvitation(invitation.id)} title="Revoke invitation" type="button"><X size={14} /></button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {!visibleSeats.length && !visibleInvitations.length ? <p className="empty">No seats loaded.</p> : null}
               {!canManageOrg ? <p className="empty">Seat management is available to workspace admins.</p> : null}
             </div>
           </div>
