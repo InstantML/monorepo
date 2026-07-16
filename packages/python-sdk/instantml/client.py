@@ -2009,6 +2009,12 @@ class Run:
             self._init_done.set()
 
     def _set_run_id(self, value: str) -> None:
+        if self.mode == "offline":
+            # Offline run identity is fixed at init (it names the local run
+            # directory and seeds the deterministic session/keys); changing it
+            # mid-run would orphan the directory. Defensive no-op.
+            _LOGGER.debug("ignoring _set_run_id(%r) for offline run %s", value, self._run_id)
+            return
         self._run_id = value
         if value and value != _PENDING_RUN_ID:
             if self.upload_mode == "spool":
@@ -3344,6 +3350,10 @@ class Run:
             self._spool_writer.finalize()
 
     def replay_offline(self) -> int:
+        if self.mode == "offline":
+            # Offline runs are replayed by `instantml sync` (PR-04), never by
+            # the legacy failed-request replay, which would need a server.
+            return 0
         if not self.client.offline_dir:
             return 0
         path = _offline_path(self.client.offline_dir, self.run_id)
@@ -3479,6 +3489,8 @@ class Run:
         self._lock = threading.RLock()
         self._async_process_lock = threading.RLock()
         self._async_process = None
+        if self._offline is not None:
+            self._offline._reset_after_fork()
         if self._async_queue is not None:
             self._async_queue._reset_after_fork()
         if self._async_buffer is not None:
@@ -4882,6 +4894,34 @@ class _SpoolSegmentWriter:
     def finalize(self) -> None:
         self._rotate()
 
+    def abandon(self) -> None:
+        """Drop the active segment without flushing or finalizing (fork child).
+
+        A forked child inherits the parent's open segment file description;
+        flushing, closing, or finalizing it from the child would interleave the
+        child's copy of buffered lines into (or rename) the parent's active
+        partial. Repointing the child's descriptor at ``os.devnull`` makes any
+        later flush/close from this process harmless while leaving the parent's
+        descriptor and file untouched.
+        """
+        handle = self._handle
+        self._handle = None
+        self._active_path = None
+        self._final_path = None
+        self._events_since_fsync = 0
+        self._events_in_segment = 0
+        if handle is None:
+            return
+        try:
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            try:
+                os.dup2(devnull, handle.fileno())
+            finally:
+                os.close(devnull)
+        except (OSError, ValueError):
+            # Already-closed handle or exotic platform: nothing to redirect.
+            pass
+
     def _open_segment(self) -> None:
         self._run_dir.mkdir(parents=True, exist_ok=True)
         self._segment_index += 1
@@ -5013,6 +5053,14 @@ class _OfflineRunDirectory:
     event, bumps the per-class ``dropped`` counter, and rate-limits a warning so
     the training loop never sees the exception. Per-class counters are in-memory
     and checkpointed into ``run.json`` at segment rotation and finish only.
+
+    Producer-identity caveat: two concurrent producers on the same machine that
+    share a run_id, data root, producer kind, and rank derive the SAME
+    deterministic session and would mint colliding idempotency keys. Sequential
+    restarts are safe (sequences are recovered from segments); first-class rank
+    identity for concurrent shared-run producers lands in PR-10. Forked children
+    are handled today: ``_reset_after_fork`` gives the child its own session and
+    segment files.
     """
 
     def __init__(
@@ -5063,13 +5111,28 @@ class _OfflineRunDirectory:
         The persisted key in each segment line is the source of truth; on a
         restart against an existing offline dir the writer must continue from the
         last persisted sequence per class so it never re-mints a key for an
-        already-persisted event. Scanning also seeds queued/attempted from the
-        real persisted line count; ``dropped`` is best-effort recovered from the
-        previous run.json checkpoint (drops are never written to segments).
+        already-persisted event. That includes crash-left ACTIVE partials
+        (``.<name>.jsonl.pid-<pid>.tmp`` dotfiles, plus stale legacy
+        ``.<name>.jsonl.tmp``): they are fsynced and therefore durable after a
+        hard kill. Dead-writer partials are first promoted to visible segments
+        (reusing the uploader's promotion logic) so sync sees them; any partial
+        that remains (live writer PID) is still scanned for sequences and
+        counts. ``dropped`` is best-effort recovered from the previous run.json
+        checkpoint (drops are never written to segments), as is a prior finish
+        signature so a bare re-init never erases it.
         """
+        # Lazy import: uploader imports client at module level.
+        from .uploader import _promote_recoverable_segments
+
+        _promote_recoverable_segments(self.segments_dir)
+        durable_paths = sorted(self.segments_dir.glob("*.jsonl"))
+        # Partials that promotion skipped (live writer PID, fresh legacy file)
+        # are durable too — their sequences must never be re-minted.
+        durable_paths += sorted(self.segments_dir.glob(".*.jsonl.pid-*.tmp"))
+        durable_paths += sorted(self.segments_dir.glob(".*.jsonl.tmp"))
         persisted_per_class: dict[str, int] = {}
         max_seq_per_class: dict[str, int] = {}
-        for segment in sorted(self.segments_dir.glob("*.jsonl")):
+        for segment in durable_paths:
             try:
                 lines = segment.read_text(encoding="utf-8").splitlines()
             except OSError:
@@ -5098,6 +5161,11 @@ class _OfflineRunDirectory:
             if isinstance(prior, dict):
                 if isinstance(prior.get("created_at"), str):
                     prior_created_at = prior["created_at"]
+                # A bare re-init of a finished offline directory must not erase
+                # the finish signature; an explicit new log call clears it
+                # (reopening the run for append) in record().
+                if isinstance(prior.get("finish"), dict):
+                    self._finish = prior["finish"]
                 counts = prior.get("counts")
                 if isinstance(counts, dict):
                     for event_class, class_counts in counts.items():
@@ -5132,6 +5200,11 @@ class _OfflineRunDirectory:
         with self._lock:
             if self._closed:
                 return
+            if self._finish is not None:
+                # New events after re-init of a finished directory reopen the
+                # run for append; the restored finish signature no longer
+                # describes the directory's end state.
+                self._finish = None
             sequence = self._sequences.get(event_class, 0) + 1
             self._sequences[event_class] = sequence
             counts = self._counts.setdefault(event_class, {"attempted": 0, "queued": 0, "dropped": 0})
@@ -5166,7 +5239,10 @@ class _OfflineRunDirectory:
         staged = self.files_dir / f"{stats.sha256}-{_safe_path_segment(source.name)}"
         if not staged.exists():
             tmp = staged.with_name(staged.name + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
-            shutil.copyfile(source, tmp)
+            with source.open("rb") as src, tmp.open("wb") as dst:
+                shutil.copyfileobj(src, dst)
+                dst.flush()
+                os.fsync(dst.fileno())
             _chmod_quietly(tmp, 0o600)
             os.replace(tmp, staged)
             _fsync_dir(self.files_dir)
@@ -5189,6 +5265,30 @@ class _OfflineRunDirectory:
     def counts_snapshot(self) -> dict[str, dict[str, int]]:
         with self._lock:
             return {event_class: dict(values) for event_class, values in self._counts.items()}
+
+    def _reset_after_fork(self) -> None:
+        """Give a forked child its own writer and producer session.
+
+        The child must not write through the inherited segment handle
+        (interleaved buffered lines in the parent's active partial) and must
+        not mint keys under the parent's session (duplicate idempotency keys).
+        The parent's session stays deterministic and stable across restarts;
+        the child derives a distinct session from a fork-specific producer
+        identity (kind ``sdk-fork`` + its own PID) and starts fresh per-class
+        sequences in its own segment files. Inherited per-class counts are kept
+        as the run-level checkpoint baseline; ``run.json`` checkpoints from
+        parent and child are last-writer-wins (segments stay the source of
+        truth).
+        """
+        self._lock = threading.RLock()
+        inherited_writer = self._writer
+        self._writer = _SpoolSegmentWriter(self.segments_dir, rotate_callback=self._checkpoint)
+        if inherited_writer is not None:
+            inherited_writer.abandon()
+        self.producer = {**self.producer, "kind": "sdk-fork", "rank": os.getpid()}
+        self.session_id = deterministic_session_id(self.run_id, "sdk-fork", os.getpid(), self.data_root)
+        self._sequences = {}
+        self._last_drop_warning_at = 0.0
 
     def flush(self) -> None:
         """Finalize (rotate) the active segment so its events become visible."""

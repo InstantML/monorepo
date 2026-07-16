@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import socket
+import subprocess
+import sys
 import uuid
 import warnings
 from pathlib import Path
@@ -54,6 +56,32 @@ def _segments(run_dir: Path) -> list[dict]:
             if line.strip():
                 events.append(json.loads(line))
     return events
+
+
+def _all_durable_events(run_dir: Path) -> list[dict]:
+    """All persisted events: rotated segments AND fsynced active partials."""
+    events = _segments(run_dir)
+    seg_dir = run_dir / "segments"
+    partials = sorted(seg_dir.glob(".*.jsonl.pid-*.tmp")) + sorted(seg_dir.glob(".*.jsonl.tmp"))
+    for path in partials:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                events.append(json.loads(line))
+    return events
+
+
+def _abandon_without_finish(run) -> None:
+    """Simulate a hard-killed producer: no flush, no finalize, no finish()."""
+    run._offline._closed = True  # block any late checkpoint from this object
+    run._finished = True  # block the session-end atexit flush
+    client_module._unregister_active_run(run)
+
+
+def _dead_pid() -> int:
+    """A PID guaranteed to belong to no running process."""
+    reaper = subprocess.Popen([sys.executable, "-c", "pass"])
+    reaper.wait()
+    return reaper.pid
 
 
 def _offline_init(tmp_path, **kwargs):
@@ -384,6 +412,152 @@ def test_offline_checkpoint_tmp_cleanup_failure_is_swallowed(tmp_path, no_networ
     monkeypatch.setattr(Path, "unlink", failing_unlink)
     with pytest.warns(RuntimeWarning):
         run.finish()  # both the checkpoint and its temp cleanup fail, swallowed
+
+
+def test_offline_hard_kill_partial_promoted_and_sequences_continue(tmp_path, no_network):
+    """Faithful hard-kill (SIGKILL) resume: no flush/finalize/finish ever ran.
+
+    The active segment is a fsynced ``.pid-*.tmp`` dotfile. Resume must promote
+    the dead writer's partial to a visible segment and continue sequences from
+    it — never re-mint keys for new events (reviewer repro: 6 events with only
+    3 distinct keys before the fix).
+    """
+    rid = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeffff"
+    run1 = _offline_init(tmp_path, run_id=rid)
+    for step in range(3):
+        run1.log_metrics({"loss": step}, step=step)
+    run1._offline._writer._fsync()  # durable, but NOT rotated
+    seg_dir = run1._offline.segments_dir
+    partials = list(seg_dir.glob(".*.jsonl.pid-*.tmp"))
+    assert len(partials) == 1
+    assert list(seg_dir.glob("*.jsonl")) == []  # nothing was ever rotated
+    # Simulate the writer process being dead: re-own the partial to a reaped PID.
+    dead_name = partials[0].name.replace(f".pid-{os.getpid()}.", f".pid-{_dead_pid()}.")
+    dead_path = partials[0].rename(partials[0].with_name(dead_name))
+    _abandon_without_finish(run1)
+
+    run2 = _offline_init(tmp_path, run_id=rid)
+    # The dead partial was promoted to a visible segment for sync...
+    assert not dead_path.exists()
+    assert len(list(seg_dir.glob("*.jsonl"))) == 1
+    # ...and recovery seeded counts and sequences from it.
+    assert run2._offline.counts_snapshot()["metrics"]["queued"] == 3
+    for step in range(3, 6):
+        run2.log_metrics({"loss": step}, step=step)
+    run2.finish()
+
+    metric_events = [e for e in _all_durable_events(run2._offline.run_dir) if e["class"] == "metrics"]
+    assert sorted(e["sequence"] for e in metric_events) == [1, 2, 3, 4, 5, 6]
+    keys = [e["requests"][0]["idempotency_key"] for e in metric_events]
+    assert len(set(keys)) == 6
+
+
+def test_offline_live_pid_partial_seeds_sequences_without_promotion(tmp_path, no_network):
+    """A partial owned by a live PID is not promoted, but its sequences and
+    counts must still seed recovery so keys are never reused."""
+    rid = "bbbbbbbb-cccc-4ddd-8eee-ffffffff0000"
+    run1 = _offline_init(tmp_path, run_id=rid)
+    run1.log_metrics({"loss": 0.0}, step=0)
+    run1._offline._writer._fsync()
+    seg_dir = run1._offline.segments_dir
+    partial = next(iter(seg_dir.glob(".*.jsonl.pid-*.tmp")))
+    _abandon_without_finish(run1)  # writer PID (this process) is still alive
+
+    run2 = _offline_init(tmp_path, run_id=rid)
+    assert partial.exists()  # promotion skipped: owner PID is running
+    assert run2._offline.counts_snapshot()["metrics"]["queued"] == 1
+    run2.log_metrics({"loss": 1.0}, step=1)
+    run2.finish()
+
+    metric_events = [e for e in _all_durable_events(run2._offline.run_dir) if e["class"] == "metrics"]
+    assert sorted(e["sequence"] for e in metric_events) == [1, 2]
+    keys = {e["requests"][0]["idempotency_key"] for e in metric_events}
+    assert len(keys) == 2
+
+
+def test_offline_reset_after_fork_child_gets_new_session_and_segments(tmp_path, no_network):
+    """What the os.register_at_fork child hook invokes: the child must not touch
+    the parent's active partial and must mint keys under its own session."""
+    rid = "cccccccc-dddd-4eee-8fff-000011112222"
+    run = _offline_init(tmp_path, run_id=rid)
+    run.log_metrics({"loss": 0.0}, step=0)
+    run._offline._writer._fsync()
+    parent_session = run._offline.session_id
+    seg_dir = run._offline.segments_dir
+    parent_partial = next(iter(seg_dir.glob(".*.jsonl.pid-*.tmp")))
+    parent_bytes = parent_partial.read_bytes()
+
+    run._reset_after_fork()
+
+    assert run._offline.session_id != parent_session
+    assert run._offline.producer["kind"] == "sdk-fork"
+    run.log_metrics({"loss": 1.0}, step=1)
+    run._offline._writer._fsync()
+
+    # Parent's partial is untouched by the child's writes.
+    assert parent_partial.read_bytes() == parent_bytes
+    child_partials = [p for p in seg_dir.glob(".*.jsonl.pid-*.tmp") if p != parent_partial]
+    assert len(child_partials) == 1
+    child_event = json.loads(child_partials[0].read_text(encoding="utf-8").splitlines()[0])
+    assert child_event["session_id"] == run._offline.session_id
+    assert run._offline.session_id[:8] in child_event["requests"][0]["idempotency_key"]
+    # Child sequences restart at 1 under the NEW session: keys still distinct.
+    parent_event = json.loads(parent_bytes.decode("utf-8").splitlines()[0])
+    assert child_event["sequence"] == 1
+    assert child_event["requests"][0]["idempotency_key"] != parent_event["requests"][0]["idempotency_key"]
+
+    run.finish()  # finalizes only the child's segment
+    assert parent_partial.exists()
+    assert parent_partial.read_bytes() == parent_bytes
+
+
+def test_spool_writer_abandon_handles_missing_and_closed_handle(tmp_path):
+    writer = client_module._SpoolSegmentWriter(tmp_path)
+    writer.abandon()  # no active handle: early return
+    writer.append({"a": 1}, '{"a": 1}')
+    writer._handle.close()
+    writer.abandon()  # fileno() on a closed handle raises ValueError: swallowed
+    assert writer._handle is None
+
+
+def test_offline_bare_reinit_preserves_finish_then_log_reopens(tmp_path, no_network):
+    rid = "dddddddd-eeee-4fff-8000-111122223333"
+    run1 = _offline_init(tmp_path, run_id=rid)
+    run1.log_metrics({"loss": 1.0}, step=0)
+    run1.finish("finished")
+    run_json = run1._offline.run_json_path
+
+    # A bare re-init (e.g. `--status`-style inspection tooling constructing a
+    # Run) must not erase the finish signature.
+    run2 = _offline_init(tmp_path, run_id=rid)
+    manifest = json.loads(run_json.read_text())
+    assert manifest["finish"]["status"] == "finished"
+    assert manifest["finish"]["clean"] is True
+
+    # An explicit new log call reopens the run for append and clears it.
+    run2.log_metrics({"loss": 2.0}, step=1)
+    run2.flush()  # rotation checkpoint rewrites run.json
+    manifest = json.loads(run_json.read_text())
+    assert manifest["finish"] is None
+
+    run2.finish("failed")
+    manifest = json.loads(run_json.read_text())
+    assert manifest["finish"]["status"] == "failed"
+
+
+def test_replay_offline_is_noop_in_offline_mode(tmp_path, no_network):
+    run = _offline_init(tmp_path, offline_dir=str(tmp_path / "legacy-spool"))
+    assert run.replay_offline() == 0  # guarded: never needs a server
+    run.finish()
+
+
+def test_offline_set_run_id_is_noop(tmp_path, no_network):
+    run = _offline_init(tmp_path)
+    original = run.run_id
+    run.run_id = "99999999-8888-4777-8666-555555555555"
+    assert run.run_id == original
+    assert run._offline.run_id == original
+    run.finish()
 
 
 # --------------------------------------------------------------------------- #
