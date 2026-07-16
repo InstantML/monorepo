@@ -46,8 +46,9 @@ Primary W&B references reviewed:
 - [x] Add the first searchable run identity slice for name, tags, config text, and explicit note fields.
   - Design: `docs/design/2026-05-10-run-tags-notes-editing.md`
   - Remaining: group, job type, source metadata, artifact names, and metric-summary-derived labels.
-- [ ] Add API behavior for idempotent client-generated run creation and explicit resume modes without weakening org/project authorization.
-  - Fork idempotency shipped: `/api/runs/{run_id}/forks` dedupes on `Idempotency-Key` (`src/http/handlers/runs.rs`, `store::fork_run`). Remaining: client-generated run IDs and explicit resume modes. Tracked in `docs/product/2026-07-14-wandb-pain-point-roadmap.md` (PR-02).
+- [x] Add API behavior for idempotent client-generated run creation and explicit resume modes without weakening org/project authorization.
+  - Fork idempotency shipped: `/api/runs/{run_id}/forks` dedupes on `Idempotency-Key` (`src/http/handlers/runs.rs`, `store::fork_run`).
+  - Client-generated run IDs + `create`/`resume`/`auto` modes shipped in PR-02: `POST /runs` accepts optional `id`/`mode`, persists `create_request_hash` for TTL-independent replay, reopens terminals only via `resume` (bounded `lifecycle` history, `run_control` reset), and skips capacity/billing on replay/attach/resume (`src/store/runs/lifecycle.rs`, `store::create_run`). Idempotency-Key added to `POST /api/runs/:run_id/objects` and `.../artifacts/upload`. Design: `docs/design/2026-07-15-offline-lifecycle-upload-completeness.md` (§1-3). Remaining PR-03+ (offline mode, sync, session accounting) still open.
 - [ ] Add summary policy support for `last`, `min`, `max`, and `best` metrics, including design for custom x-axis or step metric behavior.
   - Server already computes `min`/`max`/`best`/`best_step`/`last` in `src/store/summaries.rs`. Remaining: user-selectable summary policy and custom x-axis/step metric behavior.
 - [ ] Add bounded history pagination routes that can return sampled and unsampled scalar metric data without scanning all metric history.

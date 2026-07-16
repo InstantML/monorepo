@@ -1128,6 +1128,15 @@ pub struct CreateRunRequest {
     pub tags: Option<Vec<String>>,
     #[schema(schema_with = json_object_schema)]
     pub metadata: Option<Value>,
+    /// Optional client-generated run identity. Must be a canonical RFC 4122
+    /// UUID (lowercased on the server). Enables offline-first identity and
+    /// idempotent creation. Invalid strings are rejected with
+    /// `400 invalid_run_id`.
+    pub id: Option<String>,
+    /// Creation mode: `create` (default), `resume`, or `auto`. `resume`
+    /// requires `id`. `create` replays idempotently, `auto` attaches without
+    /// reopening, and `resume` explicitly reopens a terminal run.
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -1544,6 +1553,28 @@ pub struct RunControlRow {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A single server-managed lifecycle transition recorded on a run. Currently
+/// only `resume` reopens append entries here; the list is bounded to the most
+/// recent [`RUN_LIFECYCLE_HISTORY_LIMIT`] transitions.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct LifecycleTransition {
+    /// Status the run transitioned from (e.g. `finished`).
+    pub status_from: String,
+    /// Status the run transitioned to (e.g. `running`).
+    pub status_to: String,
+    /// When the transition was recorded.
+    pub at: DateTime<Utc>,
+    /// What triggered the transition (e.g. `resume`).
+    pub kind: String,
+}
+
+/// Maximum number of [`LifecycleTransition`] entries retained per run.
+pub const RUN_LIFECYCLE_HISTORY_LIMIT: usize = 20;
+
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct RunRow {
     pub id: Uuid,
@@ -1566,6 +1597,20 @@ pub struct RunRow {
     pub forked_from_step: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forked_from_artifact_id: Option<Uuid>,
+    /// Number of times this run was explicitly reopened via `mode="resume"`.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub resume_count: u32,
+    /// Timestamp of the most recent resume, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumed_at: Option<DateTime<Utc>>,
+    /// Normalized create-request hash, persisted so `mode="create"` replay is
+    /// recognizable beyond the idempotency-record TTL. Harmless metadata; kept
+    /// serialized so round-trip replay of the operational record preserves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub create_request_hash: Option<String>,
+    /// Bounded, server-managed lifecycle history (most recent transitions).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifecycle: Vec<LifecycleTransition>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

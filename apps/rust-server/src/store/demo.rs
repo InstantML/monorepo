@@ -55,6 +55,10 @@ pub async fn reset_demo(store: &Store, ctx: &RequestContext) -> AppResult<Value>
             parent_run_id: None,
             forked_from_step: None,
             forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
         };
         store
             .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)

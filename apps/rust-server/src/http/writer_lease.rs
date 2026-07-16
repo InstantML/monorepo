@@ -140,6 +140,16 @@ mod tests {
             &Method::PATCH,
             "/runs/00000000-0000-0000-0000-000000000001"
         ));
+        // Client-run-id creation and the Idempotency-Key-carrying object /
+        // artifact-upload routes must all be fenced by the writer lease.
+        assert!(requires_data_plane_write_guard(
+            &Method::POST,
+            "/api/runs/00000000-0000-0000-0000-000000000001/objects"
+        ));
+        assert!(requires_data_plane_write_guard(
+            &Method::POST,
+            "/api/runs/00000000-0000-0000-0000-000000000001/artifacts/upload"
+        ));
         assert!(requires_data_plane_write_guard(
             &Method::POST,
             "/api/artifact-uploads/00000000-0000-0000-0000-000000000001/complete"

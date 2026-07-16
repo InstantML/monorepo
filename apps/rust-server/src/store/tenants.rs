@@ -2165,6 +2165,7 @@ mod tests {
             }),
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
+            project_create_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(data)),

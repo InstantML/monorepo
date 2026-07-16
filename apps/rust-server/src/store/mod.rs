@@ -97,8 +97,8 @@ use crate::{
         EmbedRunsDataRequest, EmbedSessionOptions, EmbedSessionRow, ImportWorkspaceViewRequest,
         InitialInvitationCreateResult, InitialOrganizationInvitation,
         InitiateArtifactUploadRequest, InvitationPreviewPayload, InvitationTokenRequest,
-        LogMetricsBatchPoint, LogMetricsBatchRequest, LogMetricsRequest, LogRankMetricsRequest,
-        MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
+        LifecycleTransition, LogMetricsBatchPoint, LogMetricsBatchRequest, LogMetricsRequest,
+        LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
         OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
         ProvisioningStatusPayload, PublicApiKeyRow, PublicEmbedSession, PublicInvitationRow,
         RankCoveragePoint, RankHeatmapPoint, RankMetricLimits, RankMetricTruncation,
@@ -127,8 +127,9 @@ use crate::{
         MAX_TRACE_EVENTS_PER_BATCH, MAX_TRACE_FIELD_BYTES, MAX_TRACE_LINKS_BYTES,
         MAX_TRACE_LIST_LIMIT, MAX_TRACE_METRICS_BYTES, MAX_TRACE_NAME_BYTES,
         MAX_TRACE_PREVIEW_BYTES, MAX_TRACE_SPAN_LIMIT, PLAN_FREE, PLAN_PREMIUM, PLAN_PRO,
-        STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED, STORAGE_STATE_LOCKED,
-        STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED, STORAGE_STATE_VALIDATING,
+        RUN_LIFECYCLE_HISTORY_LIMIT, STORAGE_CHOICE_CUSTOMER_CLICKHOUSE, STORAGE_CHOICE_HOSTED,
+        STORAGE_STATE_LOCKED, STORAGE_STATE_READY, STORAGE_STATE_UNCONFIGURED,
+        STORAGE_STATE_VALIDATING,
     },
     errors::{AppError, AppResult},
     metric_store::{
@@ -217,6 +218,7 @@ pub struct Store {
     shared_cell_metric_store: Option<MetricStore>,
     inflight_idempotency: Arc<Mutex<BTreeSet<(Uuid, String)>>>,
     trace_ingest_capacity_locks: Arc<Mutex<HashMap<Uuid, Arc<Mutex<()>>>>>,
+    project_create_locks: Arc<Mutex<HashMap<Uuid, Arc<Mutex<()>>>>>,
     artifact_upload_capacity_lock: Arc<Mutex<()>>,
     /// Short-TTL per-org usage cache for the plan-capacity write gate so
     /// steady-state ingest does not run ClickHouse aggregates per request.
@@ -436,6 +438,7 @@ impl Store {
             shared_cell_metric_store,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
+            project_create_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
@@ -1326,6 +1329,17 @@ impl Store {
 
     pub(super) async fn trace_ingest_capacity_lock(&self, org_id: Uuid) -> Arc<Mutex<()>> {
         let mut locks = self.trace_ingest_capacity_locks.lock().await;
+        locks
+            .entry(org_id)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// Serializes rare project auto-creation per org so the StoreData lock is
+    /// never held across the project persist and two concurrent creates
+    /// cannot mint duplicate (org, name) projects.
+    pub(super) async fn project_create_lock(&self, org_id: Uuid) -> Arc<Mutex<()>> {
+        let mut locks = self.project_create_locks.lock().await;
         locks
             .entry(org_id)
             .or_insert_with(|| Arc::new(Mutex::new(())))
@@ -2694,6 +2708,7 @@ mod tests {
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
+            project_create_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(StoreData::default())),
@@ -3311,6 +3326,10 @@ mod tests {
             parent_run_id: None,
             forked_from_step: None,
             forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
         }
     }
 
@@ -4228,6 +4247,774 @@ mod tests {
                 .stop_state,
             "requested"
         );
+    }
+
+    // ---- PR-02 client run IDs / create-resume-auto matrix -------------------
+
+    fn create_run_request(
+        id: Option<&str>,
+        mode: Option<&str>,
+        project: Option<&str>,
+        config: Value,
+    ) -> CreateRunRequest {
+        CreateRunRequest {
+            project: project.map(str::to_string),
+            name: None,
+            config: Some(config),
+            tags: None,
+            metadata: None,
+            id: id.map(str::to_string),
+            mode: mode.map(str::to_string),
+        }
+    }
+
+    const CLIENT_RUN_ID: &str = "11111111-2222-4333-8444-555555555555";
+
+    #[tokio::test]
+    async fn create_run_no_id_keeps_legacy_behavior() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        super::usage::prime_write_gate_cache_for_tests(&store, ctx.org_id, "free", 0).await;
+
+        let created = create_run(
+            &store,
+            &ctx,
+            create_run_request(None, None, None, json!({})),
+        )
+        .await
+        .unwrap();
+        assert!(created.created);
+        assert_eq!(created.run.status, "running");
+        assert!(created.run.create_request_hash.is_none());
+        assert_eq!(created.run.resume_count, 0);
+    }
+
+    #[tokio::test]
+    async fn create_run_with_client_id_persists_hash_and_replays() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        super::usage::prime_write_gate_cache_for_tests(&store, ctx.org_id, "free", 0).await;
+
+        let created = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 1}),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(created.created);
+        assert_eq!(created.run.id.hyphenated().to_string(), CLIENT_RUN_ID);
+        assert!(created.run.create_request_hash.is_some());
+
+        // Idempotent replay within the record window.
+        let replay = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 1}),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(!replay.created);
+        assert_eq!(replay.run.id, created.run.id);
+        // No second run was created.
+        assert_eq!(store.data.lock().await.runs.len(), 1);
+
+        // Simulate >7-day TTL by deleting the idempotency record: replay must
+        // still succeed via the persisted create_request_hash.
+        {
+            let mut data = store.data.lock().await;
+            data.idempotency.clear();
+        }
+        let ttl_replay = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 1}),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(!ttl_replay.created);
+        assert_eq!(ttl_replay.run.id, created.run.id);
+        assert_eq!(store.data.lock().await.runs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn create_run_conflicts_on_different_payload_and_project() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        super::usage::prime_write_gate_cache_for_tests(&store, ctx.org_id, "free", 0).await;
+
+        create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 1}),
+            ),
+        )
+        .await
+        .unwrap();
+
+        // Different config -> different hash -> conflict.
+        let payload_conflict = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 2}),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(payload_conflict.status(), axum::http::StatusCode::CONFLICT);
+        assert_eq!(payload_conflict.code(), Some("run_id_conflict"));
+
+        // Different project -> different hash -> conflict.
+        let project_conflict = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("other"),
+                json!({"lr": 1}),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(project_conflict.code(), Some("run_id_conflict"));
+    }
+
+    #[tokio::test]
+    async fn create_run_cross_org_id_returns_not_found() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let other_org = Uuid::from_u128(9_999);
+        let run_id = Uuid::parse_str(CLIENT_RUN_ID).unwrap();
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(other_org, run_id, "running"));
+        }
+        for mode in ["create", "auto", "resume"] {
+            let error = create_run(
+                &store,
+                &ctx,
+                create_run_request(Some(CLIENT_RUN_ID), Some(mode), None, json!({})),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.status(), axum::http::StatusCode::NOT_FOUND);
+            assert_eq!(error.code(), Some("run_not_found"));
+        }
+        // The other org's run is never mutated.
+        assert_eq!(
+            store.data.lock().await.runs.get(&run_id).unwrap().org_id,
+            other_org
+        );
+    }
+
+    #[tokio::test]
+    async fn create_run_project_scoped_key_cannot_see_other_project_id() {
+        let store = store_without_control_db();
+        let org_id = Uuid::from_u128(1);
+        let allowed_project = Uuid::from_u128(100);
+        let other_project = Uuid::from_u128(101);
+        let run_id = Uuid::parse_str(CLIENT_RUN_ID).unwrap();
+        let scoped_ctx = RequestContext {
+            org_id,
+            auth: Some(AuthContext {
+                org_id,
+                api_key_id: Uuid::from_u128(200),
+                service_account_id: Uuid::from_u128(201),
+                project_id: Some(allowed_project),
+                scopes: vec!["sdk:ingest".to_string()],
+            }),
+            session: None,
+        };
+        {
+            let mut data = store.data.lock().await;
+            let mut run = replay_run(org_id, run_id, "running");
+            run.project_id = other_project;
+            data.insert_run(run);
+        }
+        let error = create_run(
+            &store,
+            &scoped_ctx,
+            create_run_request(Some(CLIENT_RUN_ID), Some("auto"), None, json!({})),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::NOT_FOUND);
+
+        // Fast-path regression: an unexpired run-create idempotency record
+        // with a different hash must not leak the hidden run's existence as a
+        // 409 to a caller that cannot see it.
+        {
+            let mut data = store.data.lock().await;
+            data.idempotency.insert(
+                (org_id, format!("run-create:{run_id}")),
+                IdempotencyRecord {
+                    org_id,
+                    key: format!("run-create:{run_id}"),
+                    request_hash: vec![0xAB; 32],
+                    response_json: json!({}),
+                    expires_at: Utc::now() + chrono::Duration::days(1),
+                },
+            );
+        }
+        let record_error = create_run(
+            &store,
+            &scoped_ctx,
+            create_run_request(Some(CLIENT_RUN_ID), Some("create"), None, json!({})),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(record_error.status(), axum::http::StatusCode::NOT_FOUND);
+        assert_eq!(record_error.code(), Some("run_not_found"));
+    }
+
+    #[tokio::test]
+    async fn auto_attaches_without_mutation_and_creates_when_missing() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        super::usage::prime_write_gate_cache_for_tests(&store, org_id, "free", 0).await;
+        let running_id = Uuid::from_u128(10);
+        let terminal_id = Uuid::from_u128(11);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, running_id, "running"));
+            let mut terminal = replay_run(org_id, terminal_id, "finished");
+            terminal.finished_at = Some(epoch());
+            data.insert_run(terminal);
+        }
+
+        for (id, status) in [(running_id, "running"), (terminal_id, "finished")] {
+            let attached = create_run(
+                &store,
+                &ctx,
+                create_run_request(Some(&id.to_string()), Some("auto"), None, json!({})),
+            )
+            .await
+            .unwrap();
+            assert!(!attached.created);
+            assert_eq!(attached.run.status, status, "auto must not reopen");
+            assert_eq!(attached.run.resume_count, 0);
+        }
+
+        // Unused id -> auto creates.
+        let created = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(CLIENT_RUN_ID), Some("auto"), None, json!({})),
+        )
+        .await
+        .unwrap();
+        assert!(created.created);
+        assert_eq!(created.run.id.hyphenated().to_string(), CLIENT_RUN_ID);
+    }
+
+    #[tokio::test]
+    async fn resume_reopens_terminal_run_with_side_effects() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(10);
+        let created_at = epoch();
+        let started_at = epoch() + ChronoDuration::seconds(5);
+        {
+            let mut data = store.data.lock().await;
+            let mut run = replay_run(org_id, run_id, "finished");
+            run.created_at = created_at;
+            run.started_at = started_at;
+            run.finished_at = Some(epoch() + ChronoDuration::seconds(60));
+            data.insert_run(run);
+            data.insert_run_control(replay_run_control(org_id, run_id, "requested"));
+        }
+
+        let resumed = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(&run_id.to_string()), Some("resume"), None, json!({})),
+        )
+        .await
+        .unwrap();
+        assert!(!resumed.created);
+        assert_eq!(resumed.run.status, "running");
+        assert!(resumed.run.finished_at.is_none());
+        assert_eq!(resumed.run.started_at, started_at, "started_at preserved");
+        assert_eq!(resumed.run.created_at, created_at, "created_at preserved");
+        assert_eq!(resumed.run.resume_count, 1);
+        assert!(resumed.run.resumed_at.is_some());
+        assert_eq!(resumed.run.lifecycle.len(), 1);
+        assert_eq!(resumed.run.lifecycle[0].status_from, "finished");
+        assert_eq!(resumed.run.lifecycle[0].status_to, "running");
+        assert_eq!(resumed.run.lifecycle[0].kind, "resume");
+
+        // run_control was reset to none via a resume-actor control row.
+        let control = store
+            .data
+            .lock()
+            .await
+            .run_controls
+            .get(&run_id)
+            .cloned()
+            .unwrap();
+        assert_eq!(control.stop_state, "none");
+        assert_eq!(control.actor.as_deref(), Some("resume"));
+    }
+
+    #[tokio::test]
+    async fn resume_bounds_lifecycle_history_at_twenty() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(10);
+        {
+            let mut data = store.data.lock().await;
+            let mut run = replay_run(org_id, run_id, "finished");
+            run.finished_at = Some(epoch());
+            run.lifecycle = (0..RUN_LIFECYCLE_HISTORY_LIMIT)
+                .map(|index| LifecycleTransition {
+                    status_from: "running".to_string(),
+                    status_to: "finished".to_string(),
+                    at: epoch() + ChronoDuration::seconds(index as i64),
+                    kind: "seed".to_string(),
+                })
+                .collect();
+            data.insert_run(run);
+        }
+
+        let resumed = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(&run_id.to_string()), Some("resume"), None, json!({})),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resumed.run.lifecycle.len(), RUN_LIFECYCLE_HISTORY_LIMIT);
+        // Oldest seed entry dropped, newest is the resume transition.
+        assert_eq!(resumed.run.lifecycle.last().unwrap().kind, "resume");
+        assert_eq!(resumed.run.lifecycle[0].kind, "seed");
+    }
+
+    #[tokio::test]
+    async fn resume_running_run_is_plain_attach() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(10);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+        let attached = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(&run_id.to_string()), Some("resume"), None, json!({})),
+        )
+        .await
+        .unwrap();
+        assert!(!attached.created);
+        assert_eq!(attached.run.status, "running");
+        assert_eq!(attached.run.resume_count, 0, "plain attach does not mutate");
+        assert!(attached.run.lifecycle.is_empty());
+    }
+
+    #[tokio::test]
+    async fn resume_project_mismatch_conflicts() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(10);
+        {
+            let mut data = store.data.lock().await;
+            let mut run = replay_run(org_id, run_id, "finished");
+            run.project = "real".to_string();
+            run.finished_at = Some(epoch());
+            data.insert_run(run);
+        }
+        let error = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(&run_id.to_string()),
+                Some("resume"),
+                Some("wrong"),
+                json!({}),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::CONFLICT);
+        assert_eq!(error.code(), Some("resume_project_mismatch"));
+        // Unmutated.
+        assert_eq!(
+            store.data.lock().await.runs.get(&run_id).unwrap().status,
+            "finished"
+        );
+    }
+
+    #[tokio::test]
+    async fn create_run_input_validation_errors() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+
+        // resume without id -> 400
+        let no_id = create_run(
+            &store,
+            &ctx,
+            create_run_request(None, Some("resume"), None, json!({})),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(no_id.status(), axum::http::StatusCode::BAD_REQUEST);
+
+        // invalid uuid -> 400 invalid_run_id
+        let bad_id = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some("not-a-uuid"), Some("create"), None, json!({})),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(bad_id.code(), Some("invalid_run_id"));
+
+        // non-canonical (hyphen-free) uuid -> 400 invalid_run_id
+        let non_canonical = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some("11111111222243338444555555555555"),
+                Some("create"),
+                None,
+                json!({}),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(non_canonical.code(), Some("invalid_run_id"));
+
+        // invalid mode -> 400 invalid_run_mode
+        let bad_mode = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(CLIENT_RUN_ID), Some("reopen"), None, json!({})),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(bad_mode.code(), Some("invalid_run_mode"));
+    }
+
+    #[tokio::test]
+    async fn resume_missing_id_returns_not_found() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let error = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(CLIENT_RUN_ID), Some("resume"), None, json!({})),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status(), axum::http::StatusCode::NOT_FOUND);
+        assert_eq!(error.code(), Some("run_not_found"));
+    }
+
+    #[tokio::test]
+    async fn capacity_and_billing_skipped_on_replay_attach_resume() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        super::usage::prime_write_gate_cache_for_tests(&store, org_id, "free", 0).await;
+
+        // Create the run before any billing block so its persisted create hash
+        // is populated for later replay.
+        let created = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 1}),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(created.created);
+        let run_id = created.run.id;
+
+        // A checkout-pending billing account now blocks any *new* run creation.
+        {
+            let mut data = store.data.lock().await;
+            data.insert_billing_account(BillingAccountProjection {
+                schema_version: 1,
+                org_id,
+                access_state: BILLING_CHECKOUT_PENDING.to_string(),
+                plan_tier: "pro".to_string(),
+                effective_plan_tier: "free".to_string(),
+                requested_plan_tier: Some("pro".to_string()),
+                paid_extra_seats: 0,
+                stripe_customer_id: None,
+                stripe_subscription_id: None,
+                subscription_status: None,
+                current_period_start: None,
+                current_period_end: None,
+                cancel_at_period_end: false,
+                grace_until: None,
+                pending_intent_id: None,
+                message: Some("checkout pending".to_string()),
+                updated_at: Utc::now(),
+            });
+        }
+
+        // Genuine new creation (a fresh id) is blocked by the billing gate.
+        let blocked = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some("99999999-8888-4777-8666-555555555555"),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 9}),
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(blocked.status(), axum::http::StatusCode::PAYMENT_REQUIRED);
+
+        // Replay (matching hash) succeeds despite the billing block.
+        let replay = create_run(
+            &store,
+            &ctx,
+            create_run_request(
+                Some(CLIENT_RUN_ID),
+                Some("create"),
+                Some("p"),
+                json!({"lr": 1}),
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(!replay.created);
+
+        // Auto attach succeeds despite the billing block.
+        let attached = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(CLIENT_RUN_ID), Some("auto"), None, json!({})),
+        )
+        .await
+        .unwrap();
+        assert!(!attached.created);
+
+        // Mark the run terminal, then resume reopens despite the billing block.
+        {
+            let mut data = store.data.lock().await;
+            let mut run = data.runs.get(&run_id).cloned().unwrap();
+            run.status = "finished".to_string();
+            run.finished_at = Some(Utc::now());
+            data.insert_run(run);
+        }
+        let resumed = create_run(
+            &store,
+            &ctx,
+            create_run_request(Some(CLIENT_RUN_ID), Some("resume"), Some("p"), json!({})),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resumed.run.status, "running");
+        assert_eq!(resumed.run.resume_count, 1);
+    }
+
+    #[tokio::test]
+    async fn create_object_idempotent_replay_and_conflict() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        let run_id = Uuid::from_u128(10);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+        let raw = json!({"key": "confusion", "kind": "histogram",
+            "value": {"kind": "histogram", "bins": [0.0, 1.0], "counts": [1.0]}});
+        let input =
+            || serde_json::from_value::<crate::domain::CreateObjectRequest>(raw.clone()).unwrap();
+
+        let first = create_object(
+            &store,
+            &ctx,
+            run_id,
+            raw.clone(),
+            input(),
+            Some("obj-key".to_string()),
+        )
+        .await
+        .unwrap();
+        let replay = create_object(
+            &store,
+            &ctx,
+            run_id,
+            raw.clone(),
+            input(),
+            Some("obj-key".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first, replay);
+        // Only one attribute row was written.
+        assert_eq!(store.data.lock().await.attributes.len(), 1);
+
+        // Same key, different body -> 409.
+        let other_raw = json!({"key": "confusion2", "kind": "histogram",
+            "value": {"kind": "histogram", "bins": [0.0, 1.0], "counts": [2.0]}});
+        let conflict = create_object(
+            &store,
+            &ctx,
+            run_id,
+            other_raw.clone(),
+            serde_json::from_value(other_raw).unwrap(),
+            Some("obj-key".to_string()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(conflict.status(), axum::http::StatusCode::CONFLICT);
+    }
+
+    #[tokio::test]
+    async fn upload_artifact_idempotent_replay_and_conflict() {
+        let store = store_without_control_db();
+        let ctx = RequestContext::local();
+        let org_id = ctx.org_id;
+        super::usage::prime_write_gate_cache_for_tests(&store, org_id, "free", 0).await;
+        let run_id = Uuid::from_u128(10);
+        {
+            let mut data = store.data.lock().await;
+            data.insert_run(replay_run(org_id, run_id, "running"));
+        }
+        let tmp = std::env::temp_dir().join(format!("instantml-artifact-test-{}", Uuid::new_v4()));
+        let mut config = upload_test_config();
+        config.artifact_root = tmp.clone();
+
+        let raw = json!({"name": "weights.bin", "kind": "file",
+            "content_base64": "aGVsbG8="});
+        let input = || serde_json::from_value::<UploadArtifactRequest>(raw.clone()).unwrap();
+
+        let first = upload_artifact(
+            &store,
+            &config,
+            &ctx,
+            run_id,
+            raw.clone(),
+            input(),
+            Some("art-key".to_string()),
+        )
+        .await
+        .unwrap();
+        let replay = upload_artifact(
+            &store,
+            &config,
+            &ctx,
+            run_id,
+            raw.clone(),
+            input(),
+            Some("art-key".to_string()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.id, replay.id);
+        assert_eq!(store.data.lock().await.artifacts.len(), 1);
+
+        let other_raw = json!({"name": "other.bin", "kind": "file",
+            "content_base64": "d29ybGQ="});
+        let conflict = upload_artifact(
+            &store,
+            &config,
+            &ctx,
+            run_id,
+            other_raw.clone(),
+            serde_json::from_value(other_raw).unwrap(),
+            Some("art-key".to_string()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(conflict.status(), axum::http::StatusCode::CONFLICT);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn upload_test_config() -> crate::config::AppConfig {
+        crate::config::AppConfig {
+            clickhouse_url: "http://default:@127.0.0.1:8123/instantml".to_string(),
+            bind_addr: "127.0.0.1:0".parse().unwrap(),
+            service_plane: crate::config::ServicePlaneRole::Combined,
+            max_body_bytes: 1_000_000,
+            max_upload_body_bytes: 50_000_000,
+            artifact_root: ".instantml/rust-artifacts".into(),
+            bootstrap_token: String::new(),
+            auth_mode: crate::config::AuthMode::Local,
+            dev_auth_enabled: true,
+            disable_rate_limit: false,
+            managed_clerk_enabled: false,
+            clerk_secret_key: None,
+            clerk_api_base: "https://api.clerk.com".to_string(),
+            clerk_jwt_issuer: None,
+            clerk_session_max_token_age: StdDuration::from_secs(600),
+            artifact_backend: crate::config::ArtifactBackend::Local,
+            r2_artifacts: None,
+            artifact_uploads_enabled: true,
+            allowed_frontend_origins: Vec::new(),
+            request_timeout: StdDuration::from_secs(30),
+            slow_request_threshold: StdDuration::from_millis(1000),
+            log_format: crate::config::LogFormat::Pretty,
+            hosted_clickhouse: None,
+            cell_routing: crate::config::CellRoutingConfig {
+                environment: "test".to_string(),
+                placement_data_cell_id: None,
+                heartbeat_data_cell_id: None,
+            },
+            control_database_url: None,
+            byoc_clickhouse: crate::config::ByocClickHouseConfig {
+                egress_cidrs: Vec::new(),
+                egress_set_version: "local-dev".to_string(),
+                allow_private_endpoints: false,
+                credential_store: crate::config::ByocCredentialStoreConfig::Disabled,
+            },
+            billing: crate::config::BillingConfig::disabled(Some("http://localhost:3000")),
+            email: crate::config::EmailConfig {
+                provider: crate::config::EmailProvider::Log,
+                from: "InstantML <invites@instantml.ai>".to_string(),
+                reply_to: None,
+                frontend_base_url: "http://localhost:3000".to_string(),
+                resend_api_key: None,
+            },
+            frontend_base_url: Some("http://localhost:3000".to_string()),
+            embed: crate::config::EmbedConfig {
+                enabled: false,
+                frame_enabled: false,
+                org_allowlist: Vec::new(),
+                token_hmac_secret: None,
+            },
+        }
     }
 
     #[test]

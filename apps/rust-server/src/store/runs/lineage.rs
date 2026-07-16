@@ -293,6 +293,10 @@ fn prepare_fork(
         parent_run_id: Some(source.id),
         forked_from_step,
         forked_from_artifact_id: checkpoint.as_ref().map(|artifact| artifact.id),
+        resume_count: 0,
+        resumed_at: None,
+        create_request_hash: None,
+        lifecycle: Vec::new(),
     };
     validate_final_fork_size(&run, max_body_bytes)?;
     Ok(PreparedFork {
@@ -543,6 +547,10 @@ mod tests {
             parent_run_id: None,
             forked_from_step: None,
             forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
         }
     }
 
