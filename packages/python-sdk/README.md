@@ -789,7 +789,33 @@ Disk-full / write-failure is bounded: on `OSError` the offline writer drops the 
 
 `mode="disabled"` returns a `Run` whose complete logging surface is present but every method is an inert no-op (`upload_status()` returns `{"mode": "disabled"}`). It performs no network and no disk I/O, does not install signal/atexit/fork lifecycle handlers, is never added to the active-run set, works as a context manager, and generates a local run id for API-shape parity.
 
-Uploading offline directories with `instantml sync` ships in a follow-up release; this release writes the directory.
+### Uploading offline directories with `instantml sync`
+
+`instantml sync` replays an offline run directory (or an offline root containing several `offline/<run_id>/` directories) to the server. `sync tensorboard …` remains a named subcommand; any other first token is treated as a path.
+
+```bash
+instantml sync .instantml/offline/<run_id>            # one run directory
+instantml sync .instantml                             # offline root: sync every run under offline/
+instantml sync <run_dir> --status                     # local-only report, no network
+instantml sync <run_dir> --dry-run                    # + server validation (auth, would-create vs would-attach); no writes
+instantml sync <run_dir> --json                       # machine-readable report
+instantml sync <run_dir> --base-url http://127.0.0.1:8000
+```
+
+Credentials resolve as everywhere else: `INSTANTML_API_KEY`, then `~/.instantml/credentials` from `instantml login`.
+
+How a sync works, per run directory:
+
+1. Validates the directory (`run.json` schema, readable segments) — invalid directories exit `5`.
+2. Promotes crash-left partial segments (dead writer PID) to visible segments, so a hard-killed run's fsynced tail is delivered too.
+3. Issues the stored create request with `{"id": <run_id>, "mode": "auto"}` — idempotent attach-or-create that **never reopens** a terminal run. A `409 run_id_conflict` is a permanent failure (exit `4`).
+4. Loads pending segment events into a throwaway per-sync SQLite queue (preserving each event's **persisted** idempotency key — keys are never recomputed) and drains it through the same delivery loop as the async uploader, inheriting retry classification and `Retry-After` handling. Burst rate limits (429) are waited out in-process within a bounded budget (~90 s) before falling back to exit `3`. Idempotency keys are attached for every event class, including run_meta/attributes/objects/files. Staged `files/` bytes are read and base64-encoded at delivery time.
+5. Journals a per-segment cursor into `sync-state.json` at deterministic chunk boundaries (a chunk is a consecutive metric run capped at 500 points, or one non-metric event). An interrupted sync resumes from the cursor; at worst one boundary chunk is re-sent with identical batch membership, so the server's batch idempotency key matches and dedupes it. Delivery is fail-stop: a non-retryably rejected event (for example a missing `artifacts:write` scope on the API key) halts delivery at that event with exit `4`, so nothing past it is delivered out of order — fix the cause and rerun, and the remainder uploads exactly once.
+6. After a full drain, applies the finish status recorded in the directory (a hard-killed run with no finish signature leaves the server run as-is and reports the unclean shutdown), PUTs the final session manifest (`state: "final"`, per-class counts) under the run's original producer session — gracefully skipped with a notice if the server predates the session route — and writes a `synced` marker into `sync-state.json`. A subsequent sync of a synced directory is a pure local no-op with zero requests.
+
+Exit codes: `0` synced and complete; `3` partial — retryable remainder, rerun the same command to continue; `4` permanent failures (auth, validation, `run_id_conflict`); `5` invalid or unreadable run directory. argparse usage errors exit `2`; unexpected errors exit `1`. Syncing an offline root aggregates the worst exit code across its runs.
+
+Resume semantics are at-least-once with honest reporting: re-sync after the server's 7-day idempotency-record TTL can duplicate append-style events (documented behavior, not hidden). Privacy: request payloads carry run/event data only — local absolute paths, hostnames, and environment values never leave the machine, and the session manifest reuses the `run.json` producer descriptor (hashed host, no raw identifiers).
 
 Process-isolated upload mode:
 

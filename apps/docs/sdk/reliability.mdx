@@ -152,8 +152,7 @@ compatible server can safely accept retries.
 
 `mode="offline"` never touches the network — not even at `init()` — and does not
 require credentials. It reserves the run identity locally and writes a
-self-describing run directory that `instantml sync` uploads later (sync ships in
-a follow-up release).
+self-describing run directory that `instantml sync` uploads later.
 
 ```python
 run = im.init(project="hpc-job", name="seed-42", mode="offline")
@@ -187,6 +186,50 @@ and counted in `run.json` instead of crashing the training loop; drops force an
 `incomplete` state at sync time rather than silent loss. A clean `finish()`
 writes `{"clean": true}`; a SIGTERM/SIGINT interruption writes `{"clean": false}`;
 a hard kill leaves `finish` null.
+
+### Upload the directory with instantml sync
+
+After the job (for example from a login node with network access), replay the
+directory with `instantml sync`. It accepts a single run directory or an
+offline root containing several runs, and resolves credentials from
+`INSTANTML_API_KEY` or `instantml login`:
+
+```bash
+instantml sync .instantml/offline/<run_id>     # one run
+instantml sync .instantml                      # every run under offline/
+instantml sync <run_dir> --status              # local report only, no network
+instantml sync <run_dir> --dry-run             # + server validation, no writes
+instantml sync <run_dir> --json                # machine-readable output
+```
+
+Sync is resumable and idempotent:
+
+- It first issues the stored create request with `mode="auto"` — attach-or-create
+  that never reopens a finished run. Repeated syncs converge to exactly one
+  hosted run.
+- Events replay with their persisted idempotency keys, and metric batching is
+  deterministic within each segment, so an interrupted sync that is re-run
+  re-sends at most one boundary batch — which the server deduplicates.
+- Progress is journaled in `sync-state.json` after every delivered chunk;
+  killing the sync mid-way and re-running the same command continues from the
+  cursor.
+- Burst rate limits (HTTP 429) are waited out in-process within a bounded
+  budget, so a single invocation normally completes even when the server
+  throttles.
+- A permanently rejected event (for example a missing API-key scope) stops
+  delivery at that event with exit code `4` — nothing after it is sent out of
+  order. Fix the cause and rerun; the remainder uploads exactly once.
+- A hard-killed training run (no finish signature) is uploaded in full but the
+  server run status is left as-is, and the unclean shutdown is reported.
+- Once everything is delivered the directory is marked synced; further syncs
+  are local no-ops.
+
+Exit codes: `0` synced and complete, `3` partial with a retryable remainder
+(rerun to continue), `4` permanent failure (auth, validation, run-id conflict),
+`5` invalid or unreadable run directory.
+
+Privacy: request payloads contain run and event data only. Local absolute
+paths, hostnames, and environment values never leave the machine.
 
 ### Modes and environment variables
 
