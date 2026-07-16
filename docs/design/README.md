@@ -137,6 +137,12 @@ Current draft designs:
   slice — unzoomed normalization reuse, lazy summary modeling,
   binary-search-bounded hover with exact fallback semantics, five-series zoom
   overview preparation, and helper plus real-browser 2,000-run benchmarks.
+- `2026-07-15-offline-lifecycle-upload-completeness.md`: accepted contract for
+  client-generated run IDs with create/attach/resume modes, true offline and
+  disabled SDK modes over the spool segment format, resumable `instantml
+  sync`, producer/session upload accounting with a final manifest, and the
+  derived `uploading`/`complete`/`incomplete`/`unknown` run data-state
+  (roadmap PR-01; implemented by PR-02 through PR-08).
 
 Use `PRODUCT_STRATEGY.md` as the strategic source of truth. The current strategy positions the product as InstantML: a general training-loop observability product and W&B-style competitor. If a design doc conflicts with it, update the design doc or create a superseding design before implementation.
 
