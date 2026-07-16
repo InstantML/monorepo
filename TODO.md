@@ -143,7 +143,8 @@ Goal: keep the UI as the product moat while the backend changes underneath it.
 - [x] Add inline MP3/MP4 artifact playback in Run Detail and Compare when artifacts are safe to stream, with download-only fallback for unsupported or external-reference files.
 - [x] Add an organization selector and clear empty/no-access/error states for hosted mode; the first single-org onboarding/dashboard redirect is implemented.
 - [x] Add first-slice API-key creation and copy-once UX during onboarding.
-- [ ] Add usage summary UI for seats, projects, runs, metric points, artifact bytes, active API keys, and warning thresholds.
+- [x] Add usage summary UI for seats, projects, runs, metric points, artifact bytes, active API keys, and warning thresholds.
+  - Shipped: Settings usage section in `apps/web/app/dashboard/settings/tab-pane.tsx` over Rust `/api/usage`.
 - [ ] Add import dry-run/import summary UI for Neptune, W&B, and MLflow paths.
 - [ ] Keep local unauthenticated Node development flow working while hosted auth is added.
 - [ ] Expand Playwright coverage for auth errors, org switching, usage, import dry-run, artifact download, and Rust-backed smoke.
@@ -153,23 +154,28 @@ Goal: keep the UI as the product moat while the backend changes underneath it.
 
 Goal: make the training-loop hot path trustworthy against Rust/ClickHouse.
 
+Remaining offline, lifecycle, and summary-policy items below are tracked in `docs/product/2026-07-14-wandb-pain-point-roadmap.md` (PR-01..PR-08).
+
 - [ ] Add SDK integration tests that run against Rust for sync mode, buffered mode, offline replay, process spool, uploader retry, and file upload.
 - [ ] Confirm `INSTANTML_API_KEY` and explicit `api_key` work against Rust API-key auth.
 - [ ] Add optional org/project/entity context only after hosted route shape is final.
 - [ ] Design SDK lifecycle parity before implementation: run ID, notes, group, job type, resume modes, reinit behavior, offline/disabled modes, env var defaults, and settings.
 - [ ] Add true offline run creation and later sync after the design is accepted; keep the current post-run-create replay limitation documented until then.
 - [ ] Add `define_metric` or equivalent summary policy support for last/min/max/best and custom step axes once server summaries can represent it.
-- [ ] Add a compact post-hoc query client after Rust exposes stable public query routes for runs, history, artifacts, files, and exports.
+- [x] Add a compact post-hoc query client after Rust exposes stable public query routes for runs, history, artifacts, files, and exports.
+  - Shipped: `packages/python-sdk/instantml/client.py` `class Api` (`runs`, `query_runs`, `iter_runs`, `query_metrics`, `query_objects`, `object_rows`, `download_artifact`, `artifact`). Remaining accessor/export helpers tracked in the SDK TODO P4.
 - [ ] Keep metric logging independent from artifact upload work.
 - [ ] Add larger process-spool replay tests for uploader crash/retry and idempotency conflicts.
 - [ ] Document exact offline limitation: `init()` still requires a reachable server until offline run creation is designed.
-- [ ] Add W&B dual-logging adapter only after import usefulness is validated with real teams.
+- [x] Add W&B dual-logging adapter only after import usefulness is validated with real teams.
+  - Shipped: `packages/python-sdk/instantml/shadow.py` `ShadowWandb` via `init(shadow_wandb=...)`. MLflow dual logging is still open (see SDK TODO P5).
 
 ## P7 - Deployment And Operations
 
 Goal: make a beta deployment boring enough to trust.
 
-- [ ] Add complete Docker Compose path for ClickHouse, Rust API, worker, Next web, and local artifact volume.
+- [x] Add complete Docker Compose path for ClickHouse, Rust API, worker, Next web, and local artifact volume.
+  - Shipped: `docker-compose.yml` runs postgres, clickhouse, the all-in-one `instantml` service, split `instantml-control`/`instantml-data` services, and an `instantml-artifacts` volume.
 - [ ] Add health, readiness, migration, and seed/bootstrap commands for local hosted-mode testing.
 - [ ] Prepare first hosted beta deployment on the preferred stack: Cloud Run, managed ClickHouse, Cloudflare R2, and Clerk or equivalent managed auth.
 - [ ] Add secret management guidance for database URLs, API-key pepper if used, auth provider keys, object storage credentials, and bootstrap tokens.
