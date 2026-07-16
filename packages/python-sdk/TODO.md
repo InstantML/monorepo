@@ -21,6 +21,8 @@ Primary W&B references reviewed:
 
 ## P0 - Run Lifecycle And Settings
 
+Remaining lifecycle/offline items below are tracked in `docs/product/2026-07-14-wandb-pain-point-roadmap.md` (PR-01..PR-08).
+
 - [ ] Design SDK lifecycle parity: `id`, `name`, `notes`, `tags`, `group`, `job_type`, `mode`, `resume`, `resume_from`, `fork_from`, `reinit`, `dir`, settings, and environment-variable defaults.
 - [x] Make tags and notes first-class in the public API, examples, and docs so users naturally label runs in ways the web search and compare surfaces can use.
 - [x] Add ergonomic helpers for replacing tags and updating notes after run creation once Rust exposes safe post-hoc mutation routes.
@@ -78,9 +80,12 @@ Primary W&B references reviewed:
 - [ ] Design a full `Artifact` class with `add_file`, `add_dir`, `add_reference`, metadata, tags, aliases, TTL, and manifest behavior.
   - Implemented first wrapper: `File(...)`/`Artifact(...)` upload a single local path through the existing upload route.
 - [ ] Add `run.log_artifact`, `run.use_artifact`, `artifact.download`, partial file download, and local cache semantics after Rust artifact versions exist.
-- [ ] Add artifact alias/version support including `latest`, `vN`, and custom aliases.
+  - Shipped: `Run.log_artifact`, `Run.use_artifact`, `LoggedArtifact.download`, and partial file download in `instantml/client.py`. Remaining: local content-addressed cache. Tracked in `docs/product/2026-07-14-wandb-pain-point-roadmap.md` (PR-29).
+- [x] Add artifact alias/version support including `latest`, `vN`, and custom aliases.
+  - Shipped: `Api.artifact(ref)` resolves `:latest`/`:best`/`:vN` via `/api/artifact-versions/resolve`; `LoggedArtifact.promote` sets custom aliases.
 - [ ] Add external reference artifact support for object stores, HTTP, and filesystem paths where bytes are not uploaded.
 - [ ] Add resumable or uploader-backed large file support before encouraging checkpoint-heavy workflows.
+  - Tracked in `docs/product/2026-07-14-wandb-pain-point-roadmap.md` (PR-31).
 - [ ] Add file upload/download helpers for finished runs through the post-hoc API.
 - [ ] Add media artifact helpers for MP3/MP4 files that set MIME type, step, captions/notes, duration if available, and safe metadata for web playback.
 
@@ -90,19 +95,24 @@ Primary W&B references reviewed:
 - [x] Add raw read-only `Api.runs()` for `/api/runs/summary` with cursor pagination parameters.
 - [ ] Design the broader `Api` client for post-hoc reads and safe updates.
 - [ ] Add `Api.run()`, paginated `Run.history()`, run summary/config/metadata access, file listing, artifact lookup, and export helpers.
+  - Shipped: `Api.query_runs`/`iter_runs`, `Api.query_metrics`, `Api.query_objects`/`object_rows`, and `Api.artifact` lookup in `instantml/client.py`. Remaining: an `Api.run()` accessor, paginated `Run.history()`, and export helpers.
 - [ ] Add filter syntax that maps directly to Rust server filters and fails clearly when unsupported.
 - [ ] Add artifact and file download helpers with cache directory configuration.
+  - `Api.download_artifact` is shipped. Remaining: cache-directory configuration. Tracked in `docs/product/2026-07-14-wandb-pain-point-roadmap.md` (PR-29).
 - [ ] Add tests against a fake server and Rust integration tests against the real API.
 
 ## P5 - Sweeps And Integrations
 
 - [ ] Design minimal `sweep()` and `agent()` APIs after Rust sweep routes are accepted.
+  - Tracked in `docs/product/2026-07-14-wandb-pain-point-roadmap.md` (PR-19..PR-22).
 - [ ] Add random/grid sweep agent support before any smarter optimizer.
 - [ ] Add broader framework integrations after customer validation picks priority.
   - Implemented first slice: `Run.watch(...)`, `TransformersCallback`, and `LightningLogger`.
-  - Remaining: Keras callbacks, TensorBoard sync, Gym/RL video helpers, and deeper framework-specific behavior.
+  - Shipped follow-up: TensorBoard sync via `instantml/importers.py` `tensorboard_logdir_payload` and the `instantml sync tensorboard` CLI command.
+  - Remaining: Keras callbacks, Gym/RL video helpers, and deeper framework-specific behavior.
 - [ ] Add a generic logger protocol so third-party libraries can integrate without depending on private SDK internals.
 - [ ] Keep dual logging to W&B or MLflow optional and behind explicit configuration.
+  - W&B dual logging shipped: `instantml/shadow.py` `ShadowWandb` via `init(shadow_wandb=...)`. Remaining: MLflow dual logging.
 
 ## Quality Gates
 

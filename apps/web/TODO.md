@@ -48,7 +48,7 @@ Major differences from W&B app and SDK/API parity:
 - Fullscreen panel state is not URL-addressable/restorable.
 - The active/focused panel model is implicit; there is no persistent selected panel target for panel action shortcuts.
 - No media-panel fullscreen controls.
-- No report editor, report panel-grid selection, Markdown block insertion, or report deletion shortcuts.
+- The report editor ships with block editing, live panel grids, slash-command Markdown insertion, autosave, and share links; report panel-grid selection ring and Delete/Backspace deletion shortcut remain.
 - Tags and notes are now visible in the run rail/table and editable from Run Detail and Compare, but tag filters, notes-presence sorting, read-only hosted states, and large-project query-plan proof remain open.
 - No first-class table, image, video, audio, histogram, plot, or 3D panels backed by typed logged-object schemas.
 - No artifact version, alias, lineage, external-reference, TTL, or registry UI.
@@ -56,7 +56,7 @@ Major differences from W&B app and SDK/API parity:
 - Compare now supports row and column layouts, run filtering, notes/tag editing, and metric-aware comparison. Remaining work is hosted persistence, larger-project query-plan proof, stronger row/column sorting, and richer artifact/media attachment.
 - No sweep dashboard, agent status, best-run view, or sweep result comparison.
 - No automation/webhook builder for metric thresholds or artifact events.
-- No multi-org selector, usage summary, import workflow, managed Google provider, or rich auth/no-access states in the main UI. First-slice local onboarding and copy-once API-key creation are implemented.
+- Import workflow UI and richer auth/no-access states are still missing in the main UI. Multi-org selector, usage summary, managed provider (Clerk) auth, first-slice local onboarding, and copy-once API-key creation are implemented.
 - No UI for SDK lifecycle concepts such as resume/fork/offline mode, system metrics, console logs, code snapshots, or integration setup status.
 - No LEET-like terminal exploration UI; this may remain out of web-app scope unless the product adds an in-app terminal/command palette bridge.
 
@@ -361,46 +361,46 @@ These items came from the full frontend audit for issues like fixed minimum grid
 
 ## P1: Report Shortcuts And Editor
 
-- [ ] Build an actual report editor.
+- [x] Build an actual report editor.
   - W&B shortcut surface includes report grid deletion, Markdown insertion, editor Escape, and Tab navigation.
-  - Current app: Reports tab lists local saved views only.
+  - Shipped: `app/dashboard/reports/report-editor.tsx` with typed blocks (`block-types/*`), live panel grids, autosave, slash-command insertion, and `/r/[share_token]` share pages.
   - Build: report documents with title, sections, panel grid blocks, Markdown blocks, and selected workspace panel imports.
   - Rust follow-up: report persistence tables/API after org/user auth and workspace-view persistence.
   - Tests: create local draft, add panel block, edit title, add markdown block.
 
 - [ ] Add report panel-grid selection.
   - W&B shortcut: Delete/Backspace removes the selected panel grid from a report.
-  - Current app: no report grid.
+  - Current app: report grid blocks render and are focusable `role="group"` regions, but there is no dedicated selected-block model with a selection ring.
   - Build: selectable report blocks with clear focus/selection ring.
   - Tests: select block with mouse and keyboard.
 
 - [ ] Implement Delete/Backspace to remove selected report panel grid.
-  - Current app: no report editor deletion shortcut.
+  - Current app: block removal is available via the per-block Delete button; the Delete/Backspace key binding on a selected panel grid remains.
   - Build: confirm only if deletion would remove persisted/shared report content; local draft deletion can support undo instead.
   - Tests: Delete removes selected draft grid and can be undone once undo exists for reports.
 
-- [ ] Implement `/mark` then Enter to insert Markdown block.
+- [x] Implement `/mark` then Enter to insert Markdown block.
   - W&B shortcut: Enter inserts Markdown block after typing `/mark`.
-  - Current app: no slash command editor.
+  - Shipped: typing `/` opens the slash menu (`slash-command-core.js`) whose Markdown option inserts a Markdown block on Enter (`report-editor.tsx`).
   - Build: simple slash-command input within report editor; start with `/mark`.
   - Tests: type `/mark`, press Enter, Markdown block appears and focus moves into it.
 
-- [ ] Implement Escape to exit report editor.
-  - Current app: no editor mode.
+- [x] Implement Escape to exit report editor.
+  - Shipped: `report-editor.tsx` `onBlockKeyDown` blurs the active block field on Escape, following overlay stack order.
   - Build: Escape exits text block/editor mode before closing parent report editor, following overlay stack order.
   - Tests: Escape from Markdown field exits editing; second Escape closes editor/drawer if applicable.
 
-- [ ] Ensure Tab navigation inside reports is intentional.
+- [x] Ensure Tab navigation inside reports is intentional.
   - W&B shortcut: Tab navigates interactive report elements.
-  - Current app: native Tab exists but no report structure.
+  - Shipped: report blocks are ordered `role="group"` regions with editable fields and per-block action controls in a logical tab order (`report-editor.tsx`).
   - Build: logical tab order for report toolbar, blocks, block actions, editor fields.
   - Tests: keyboard-only creation and block deletion smoke.
 
 ## P1: Workspace And Panel Parity Beyond The Shortcut Page
 
-- [ ] Persist workspace views in Rust/ClickHouse.
+- [x] Persist workspace views in Rust/ClickHouse.
   - W&B difference: workspace state is a product object; local-only views are not enough for team parity.
-  - Current app: saved views and Runs workspace layouts are localStorage-only.
+  - Shipped: workspace views persist through the Rust `/api/workspace-views*` routes (`apps/rust-server/src/store/workspace_views.rs`), with localStorage kept only as a fallback per `apps/web/README.md`.
   - Build: implement the `workspace_views` API from `docs/design/2026-05-10-runs-workspace-panels.md` after human user/org context lands.
   - Tests: create/update/delete/default workspace views scoped by org/user/project.
 
@@ -432,7 +432,7 @@ These items came from the full frontend audit for issues like fixed minimum grid
 
 - [ ] Add an organization selector and hosted auth state shell.
   - Global alignment: root P5 needs organization selection plus empty/no-access/error states.
-  - Current app: first-time users see `/`, local dev auth creates a single signed-in org, and dashboard entry checks the session; multi-org switching and hosted provider states are not selectable yet.
+  - Current app: multi-org switching is shipped (topbar org switcher in `app/dashboard/chrome/topbar.tsx` over `/api/auth/switch-organization`). Remaining: no-access empty state, expired/revoked-key messaging, and richer error states.
   - Build: compact org selector, local-mode indicator, no-access empty state, expired/revoked-key messaging, and safe retry affordances.
   - Tests: local mode still works, auth error renders without stack traces, selected org scopes visible state.
 
@@ -442,9 +442,9 @@ These items came from the full frontend audit for issues like fixed minimum grid
   - Remaining: API tab management flow with scope choices, optional project restriction, expiry, prefix list, revocation, and dismissed-plaintext behavior.
   - Tests: smoke covers onboarding key creation; add scope/revocation UI tests when management lands.
 
-- [ ] Add usage summary UI.
+- [x] Add usage summary UI.
   - Global alignment: root P5/P7 tracks usage guardrails before billing truth.
-  - Current app: no admin usage view.
+  - Shipped: the Settings usage section (`app/dashboard/settings/tab-pane.tsx`) shows seats, storage/metric usage, API-key counts, and warning copy over Rust `/api/usage`.
   - Build: seats, projects, runs, metric points, metric series, artifacts, artifact bytes, active API keys, plan thresholds, and warning copy.
   - Tests: unknown artifact bytes are visible, warning states render, no invoice-truth language appears.
 
