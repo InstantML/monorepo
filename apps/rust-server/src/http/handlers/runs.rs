@@ -96,9 +96,13 @@ pub async fn list_projects(
     request_body = crate::domain::CreateRunRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),
     responses(
-        (status = 200, description = "Created run", body = crate::http::openapi::RunEnvelope),
-        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 200, description = "Created or attached run. `created` is false for idempotent replay, `mode=auto` attach, or `mode=resume`.", body = crate::http::openapi::RunCreatedEnvelope),
+        (status = 400, description = "Validation error, invalid_run_id, invalid_run_mode, or resume without id", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
+        (status = 402, description = "Plan or payment limit prevents creating another run", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Insufficient scope or project access", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "run_not_found (resume/auto/create for a missing or cross-org id)", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "run_id_conflict or resume_project_mismatch", body = crate::http::openapi::ErrorResponse),
     ),
 )]
 pub async fn create_run(
@@ -114,13 +118,15 @@ pub async fn create_run(
     observability::run_mutation_outcome(
         ctx.org_id,
         "create_run",
-        result.as_ref().ok().map(|run| run.project_id),
-        result.as_ref().ok().map(|run| run.id),
+        result.as_ref().ok().map(|created| created.run.project_id),
+        result.as_ref().ok().map(|created| created.run.id),
         false,
         result.as_ref().err(),
     );
-    let run = result?;
-    Ok(Json(json!({ "run": run })))
+    let created = result?;
+    Ok(Json(
+        json!({ "run": created.run, "created": created.created }),
+    ))
 }
 
 #[utoipa::path(
@@ -947,6 +953,7 @@ pub async fn list_attributes(
     tag = "runs",
     params(
         ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate object retries"),
     ),
     request_body = crate::domain::CreateObjectRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),
@@ -955,6 +962,7 @@ pub async fn list_attributes(
         (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Idempotency conflict", body = crate::http::openapi::ErrorResponse),
     ),
 )]
 pub async fn create_object(
@@ -967,13 +975,14 @@ pub async fn create_object(
     validate_session_mutation_origin(&state, &headers, &ctx)?;
     require_scope(&ctx, "sdk:ingest", &state)?;
     let run_id = parse_uuid(&run_id, "run not found")?;
-    let input = read_json::<crate::domain::CreateObjectRequest>(
+    let (input, raw) = read_json_with_raw::<crate::domain::CreateObjectRequest>(
         &headers,
         bytes,
         state.config.max_body_bytes,
     )?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
     Ok(Json(json!({
-        "object": store::create_object(&state.store, &ctx, run_id, input).await?
+        "object": store::create_object(&state.store, &ctx, run_id, raw, input, idempotency_key).await?
     })))
 }
 

@@ -541,6 +541,31 @@ authoritative `parent_run_id`, `forked_from_step`, and
 `forked_from_artifact_id` fields on the child run, and support
 `Idempotency-Key` to avoid duplicate retry children.
 
+`POST /runs` accepts an optional client-generated `id` (canonical RFC 4122
+UUID, lowercased; invalid returns `400 invalid_run_id`) and `mode` of `create`
+(default), `resume`, or `auto` (unknown returns `400 invalid_run_mode`;
+`resume` without `id` returns `400`). All lookups stay scoped to the caller's
+org/project. `create` persists a normalized create-request hash on the run so
+idempotent replay is recognizable beyond the 7-day idempotency-record TTL and
+returns the existing run with `created: false`; a different payload/project for
+an existing id returns `409 run_id_conflict`, and an id in another org/project
+the caller cannot see returns `404 run_not_found` (no existence leak). `auto`
+attaches without any status mutation (a terminal run stays terminal) or creates
+when unused. `resume` is the only explicit reopen: it returns a terminal run to
+`running`, clears `finished_at`, preserves `started_at`/`created_at`,
+increments `resume_count`, sets `resumed_at`, appends the prior transition to a
+bounded `lifecycle` history (last 20), and resets any `run_control` stop state
+to `none`; a missing id returns `404 run_not_found` and a project mismatch
+returns `409 resume_project_mismatch`. Plan capacity and billing gates run only
+on genuine new creation, never on replay/attach/resume. The response adds a
+top-level `created` boolean alongside the existing `run` envelope. Concurrent
+same-id requests are serialized by the in-flight idempotency guard
+(`run-create:<run_id>`) plus, in split hosted deployments, the data-plane
+writer lease. `POST /api/runs/:run_id/objects` and
+`POST /api/runs/:run_id/artifacts/upload` now also honor `Idempotency-Key`
+(reserve guard + request-hash + cached response) so retried object and artifact
+uploads deduplicate.
+
 Dashboard preference and workspace-view routes are browser-session control
 state. Hosted SDK/API keys cannot read or mutate them; owner/admin/member
 browser sessions may save views, viewers may read preferences/views, and shared

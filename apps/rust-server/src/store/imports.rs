@@ -526,6 +526,10 @@ pub async fn import_payload(
             parent_run_id: None,
             forked_from_step: None,
             forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
         };
         store
             .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)
@@ -830,6 +834,10 @@ async fn commit_canonical_import(
             parent_run_id: None,
             forked_from_step: None,
             forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
         };
         store
             .persist_locked("run", ctx.org_id, &run.id.to_string(), &run)
@@ -3594,6 +3602,10 @@ mod tests {
             parent_run_id: None,
             forked_from_step: None,
             forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
         };
         let artifacts = vec![ArtifactRow {
             id: Uuid::new_v4(),

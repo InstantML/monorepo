@@ -824,6 +824,10 @@ mod tests {
             parent_run_id: None,
             forked_from_step: None,
             forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
         }
     }
 

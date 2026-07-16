@@ -256,6 +256,70 @@ pub async fn invalidate_write_gate_usage(store: &Store, org_id: Uuid) {
     store.write_gate_usage.lock().await.remove(&org_id);
 }
 
+/// Seed the per-process write-gate cache with a fresh, controllable count so
+/// capacity-gated store tests do not require a live ClickHouse read. `runs`
+/// sets the current run count for the org; other counters are zeroed.
+#[cfg(test)]
+pub(super) async fn prime_write_gate_cache_for_tests(
+    store: &Store,
+    org_id: Uuid,
+    plan: &str,
+    runs: i64,
+) {
+    let plan_tier_value = plan_tier(plan);
+    let org = OrganizationRow {
+        id: org_id,
+        slug: format!("org-{org_id}"),
+        name: "Write Gate Test".to_string(),
+        plan_tier: plan.to_string(),
+        account_type: "business".to_string(),
+        tenant_routing_tier: "dedicated".to_string(),
+        seat_limit: plan_tier_value.included_seats,
+        created_by_user_id: None,
+        created_at: Utc::now(),
+        storage_choice: STORAGE_CHOICE_HOSTED.to_string(),
+        storage_state: STORAGE_STATE_READY.to_string(),
+    };
+    let counts = UsageCounts {
+        org,
+        plan: plan_tier_value,
+        seats: 0,
+        projects: 0,
+        runs,
+        metric_points: 0,
+        metric_points_retained_total: 0,
+        trace_events: 0,
+        metric_series: 0,
+        artifacts: 0,
+        raw_artifacts: 0,
+        artifact_collections: 0,
+        artifact_versions_active: 0,
+        artifact_versions_pending_delete: 0,
+        api_keys: 0,
+        api_requests: 0,
+        artifact_bytes_exact: 0,
+        external_artifact_bytes_declared: 0,
+        artifact_bytes_unknown_count: 0,
+        versioned_artifact_bytes_active: 0,
+        versioned_artifact_bytes_pending_delete: 0,
+        versioned_artifact_bytes_reserved: 0,
+        estimated_metadata_bytes: 0,
+        warehouse_storage_bytes_exact: None,
+        storage_bytes_for_warnings: 0,
+        storage_bytes_for_write_gate: 0,
+        estimated_storage_bytes_for_warnings: 0,
+        api_request_overage_mode: ApiRequestOverageMode::Blocked,
+        period: current_usage_period(Utc::now()),
+    };
+    store.write_gate_usage.lock().await.insert(
+        org_id,
+        CachedWriteGateCounts {
+            refreshed_at: Instant::now(),
+            counts,
+        },
+    );
+}
+
 fn near_any_write_gate_limit(counts: &UsageCounts, delta: UsageDelta) -> bool {
     near_write_gate_limit(counts.projects, delta.projects, counts.plan.projects)
         || near_write_gate_limit(counts.runs, delta.runs, counts.plan.runs)
@@ -1088,6 +1152,7 @@ mod tests {
             shared_cell_metric_store: None,
             inflight_idempotency: Arc::new(Mutex::new(BTreeSet::new())),
             trace_ingest_capacity_locks: Arc::new(Mutex::new(HashMap::new())),
+            project_create_locks: Arc::new(Mutex::new(HashMap::new())),
             artifact_upload_capacity_lock: Arc::new(Mutex::new(())),
             write_gate_usage: Arc::new(Mutex::new(HashMap::new())),
             data: Arc::new(Mutex::new(Default::default())),

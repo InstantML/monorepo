@@ -827,6 +827,8 @@ Body:
 
 ```json
 {
+  "id": "11111111-2222-4333-8444-555555555555",
+  "mode": "create",
   "project": "cartpole",
   "name": "seed-7",
   "config": { "seed": 7 },
@@ -835,13 +837,45 @@ Body:
 }
 ```
 
+`id` and `mode` are optional and additive. `id` is a client-generated
+canonical RFC 4122 UUID (lowercased); invalid strings return `400`
+`invalid_run_id`. `mode` is `create` (default), `resume`, or `auto`; an
+unknown value returns `400 invalid_run_mode`, and `resume` without `id`
+returns `400`.
+
+All lookups are scoped to the caller's authorized org and project, so a
+client-supplied `id` never bypasses org/project authorization.
+
+- `mode="create"` with a new `id` creates the run and persists a normalized
+  create-request hash so replay is recognizable beyond the idempotency-record
+  TTL. Replaying the same `id` and payload returns the existing run with
+  `created: false` and no mutation. A different payload, project, or org for an
+  existing `id` returns `409 run_id_conflict`, and an `id` the caller cannot
+  see (another org/project) returns `404 run_not_found` (no existence leak).
+- `mode="auto"` attaches to an existing `id` (`created: false`, **no status
+  mutation** — a terminal run stays terminal) or creates it when unused. Late
+  or duplicate `auto` calls never reopen a completed run.
+- `mode="resume"` is the only explicit reopen. A `running` run is a plain
+  attach; a terminal run returns to `running`, clears `finished_at`, preserves
+  `started_at`/`created_at`, increments `resume_count`, sets `resumed_at`,
+  appends the previous terminal transition to a bounded `lifecycle` history
+  (last 20), and resets any `run_control` stop state to `none`. Missing `id`
+  returns `404 run_not_found`; a project mismatch returns
+  `409 resume_project_mismatch`.
+
+Plan capacity and billing gates run only on genuine new creation, never on
+replay, `auto` attach, or `resume`. Concurrent requests for the same `id` are
+serialized by the in-flight idempotency guard (`run-create:<run_id>`) and, in
+split hosted deployments, the data-plane writer lease.
+
 The project is created automatically unless the caller uses a project-scoped
 API key for a different project.
 
-Output:
+Output (additive `created` flag; `false` for replay, `auto` attach, or
+`resume`):
 
 ```json
-{ "run": {} }
+{ "run": {}, "created": true }
 ```
 
 ### `GET /runs`
@@ -1646,6 +1680,9 @@ Supported rich object kinds are `table`, `image`, `video`, `audio`, and
 `histogram_series`. Media objects require an `artifact_id` from the same run.
 Tables accept up to 1,000 rows per create request.
 
+Optional header: `Idempotency-Key`. Reusing the same key and body returns the
+cached object; the same key with a different body returns `409`.
+
 Output:
 
 ```json
@@ -1752,6 +1789,10 @@ artifact row with `storage_backend: "r2"`, exact `size_bytes`, `sha256`, and
 `instantml://artifacts/<artifact_id>` URI for stored local/R2 bytes and omit
 internal bucket keys and storage paths. Hosted uploads remain disabled only when
 no durable artifact backend is configured.
+
+Optional header: `Idempotency-Key`. Reusing the same key and body returns the
+cached artifact without re-storing bytes; the same key with a different body
+returns `409`.
 
 Output:
 

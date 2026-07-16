@@ -69,6 +69,7 @@ pub async fn create_artifact(
     tag = "runs",
     params(
         ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate artifact upload retries"),
     ),
     request_body = crate::domain::UploadArtifactRequest,
     security(("bearerApiKey" = []), ("browserSession" = [])),
@@ -78,6 +79,7 @@ pub async fn create_artifact(
         (status = 401, description = "Authentication required", body = crate::http::openapi::ErrorResponse),
         (status = 403, description = "Artifact write scope required or artifact byte uploads disabled by server configuration", body = crate::http::openapi::ErrorResponse),
         (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Idempotency conflict", body = crate::http::openapi::ErrorResponse),
     ),
 )]
 pub async fn upload_artifact(
@@ -95,9 +97,22 @@ pub async fn upload_artifact(
         ));
     }
     let run_id = parse_uuid(&run_id, "run not found")?;
-    let input =
-        read_json::<UploadArtifactRequest>(&headers, bytes, state.config.max_upload_body_bytes)?;
-    let result = store::upload_artifact(&state.store, &state.config, &ctx, run_id, input).await;
+    let (input, raw) = read_json_with_raw::<UploadArtifactRequest>(
+        &headers,
+        bytes,
+        state.config.max_upload_body_bytes,
+    )?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    let result = store::upload_artifact(
+        &state.store,
+        &state.config,
+        &ctx,
+        run_id,
+        raw,
+        input,
+        idempotency_key,
+    )
+    .await;
     match &result {
         Ok(artifact) => observability::artifact_upload(
             ctx.org_id,

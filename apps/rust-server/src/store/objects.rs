@@ -89,6 +89,61 @@ pub async fn create_object(
     store: &Store,
     ctx: &RequestContext,
     run_id: Uuid,
+    raw: Value,
+    input: CreateObjectRequest,
+    idempotency_key: Option<String>,
+) -> AppResult<Value> {
+    let request_hash = hash_idempotency(run_id, &raw)?;
+    if let Some(key) = idempotency_key {
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            {
+                let data = store.data.lock().await;
+                if let Some(existing) = data
+                    .idempotency
+                    .get(&(ctx.org_id, key.clone()))
+                    .filter(|record| record.expires_at > Utc::now())
+                {
+                    if existing.request_hash == request_hash {
+                        // Re-check run access before returning the cached body.
+                        ensure_run_visible_in_data(&data, ctx, run_id)?;
+                        return Ok(existing.response_json.clone());
+                    }
+                    return Err(AppError::conflict(
+                        "idempotency key was already used with a different request body",
+                    ));
+                }
+            }
+            let object = create_object_inner(store, ctx, run_id, input).await?;
+            let record = IdempotencyRecord {
+                org_id: ctx.org_id,
+                key: key.clone(),
+                request_hash,
+                response_json: object.clone(),
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            };
+            store
+                .persist_locked("idempotency", ctx.org_id, &key, &record)
+                .await?;
+            store
+                .data
+                .lock()
+                .await
+                .idempotency
+                .insert((ctx.org_id, key.clone()), record);
+            Ok(object)
+        }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
+    create_object_inner(store, ctx, run_id, input).await
+}
+
+async fn create_object_inner(
+    store: &Store,
+    ctx: &RequestContext,
+    run_id: Uuid,
     input: CreateObjectRequest,
 ) -> AppResult<Value> {
     ensure_billing_write_allowed(store, ctx.org_id, "create objects").await?;
@@ -314,7 +369,68 @@ pub async fn create_artifact(
     Ok(artifact)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn upload_artifact(
+    store: &Store,
+    config: &AppConfig,
+    ctx: &RequestContext,
+    run_id: Uuid,
+    raw: Value,
+    input: UploadArtifactRequest,
+    idempotency_key: Option<String>,
+) -> AppResult<ArtifactRow> {
+    let request_hash = hash_idempotency(run_id, &raw)?;
+    if let Some(key) = idempotency_key {
+        store.reserve_idempotency_key(ctx.org_id, &key).await?;
+        let result = async {
+            {
+                let data = store.data.lock().await;
+                if let Some(existing) = data
+                    .idempotency
+                    .get(&(ctx.org_id, key.clone()))
+                    .filter(|record| record.expires_at > Utc::now())
+                {
+                    if existing.request_hash == request_hash {
+                        // Re-check run access before returning the cached body.
+                        ensure_run_visible_in_data(&data, ctx, run_id)?;
+                        return serde_json::from_value::<ArtifactRow>(
+                            existing.response_json.clone(),
+                        )
+                        .map_err(|_| AppError::internal("stored idempotency response is invalid"));
+                    }
+                    return Err(AppError::conflict(
+                        "idempotency key was already used with a different request body",
+                    ));
+                }
+            }
+            let artifact = upload_artifact_inner(store, config, ctx, run_id, input).await?;
+            let record = IdempotencyRecord {
+                org_id: ctx.org_id,
+                key: key.clone(),
+                request_hash,
+                response_json: serde_json::to_value(&artifact)
+                    .map_err(|_| AppError::internal("artifact response serialization failed"))?,
+                expires_at: Utc::now() + ChronoDuration::days(7),
+            };
+            store
+                .persist_locked("idempotency", ctx.org_id, &key, &record)
+                .await?;
+            store
+                .data
+                .lock()
+                .await
+                .idempotency
+                .insert((ctx.org_id, key.clone()), record);
+            Ok(artifact)
+        }
+        .await;
+        store.release_idempotency_key(ctx.org_id, &key).await;
+        return result;
+    }
+    upload_artifact_inner(store, config, ctx, run_id, input).await
+}
+
+async fn upload_artifact_inner(
     store: &Store,
     config: &AppConfig,
     ctx: &RequestContext,

@@ -60,10 +60,10 @@ use crate::domain::{
     EmbedCurrentSessionResponse, EmbedFramePolicy, EmbedFramePolicyResponse, EmbedRunsDataRequest,
     EmbedSessionOptions, ImportWorkspaceViewRequest, InitialInvitationCreateResult,
     InitialOrganizationInvitation, InitiateArtifactUploadRequest, InvitationPreviewPayload,
-    InvitationTokenRequest, LogMetricsBatchPoint, LogMetricsBatchRequest, LogMetricsRequest,
-    LogRankMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow, OnboardingApiKey,
-    OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow, ProjectRow,
-    ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactCollectionRow,
+    InvitationTokenRequest, LifecycleTransition, LogMetricsBatchPoint, LogMetricsBatchRequest,
+    LogMetricsRequest, LogRankMetricsRequest, MembershipRow, MetricPointRow, MetricSeriesRow,
+    OnboardingApiKey, OrganizationMembershipSummary, OrganizationRoleCapabilities, OrganizationRow,
+    ProjectRow, ProvisioningStatusPayload, PublicApiKeyRow, PublicArtifactCollectionRow,
     PublicArtifactManifestEntryRow, PublicArtifactRow, PublicArtifactVersionRow,
     PublicEmbedSession, PublicInvitationRow, RankCoveragePoint, RankHeatmapPoint, RankMetricLimits,
     RankMetricTruncation, RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint,
@@ -134,6 +134,14 @@ pub struct ProjectsEnvelope {
 #[derive(Serialize, ToSchema)]
 pub struct RunEnvelope {
     pub run: RunRow,
+}
+
+/// Response for `POST /runs`. `created` is `false` for idempotent replay,
+/// `mode="auto"` attach, or `mode="resume"`.
+#[derive(Serialize, ToSchema)]
+pub struct RunCreatedEnvelope {
+    pub run: RunRow,
+    pub created: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -1145,6 +1153,7 @@ impl Modify for SecurityAddon {
         ProjectEnvelope,
         ProjectsEnvelope,
         RunEnvelope,
+        RunCreatedEnvelope,
         RunsEnvelope,
         RunSummaryEnvelope,
         RunSummariesEnvelope,
@@ -1373,6 +1382,7 @@ impl Modify for SecurityAddon {
         RankReducerPoint,
         ReportRow,
         ReportSummary,
+        LifecycleTransition,
         RunRow,
         SaveWorkspaceViewRequest,
         SeatRow,

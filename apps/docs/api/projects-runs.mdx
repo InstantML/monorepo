@@ -47,6 +47,8 @@ Authorization: Bearer instantml_...
 Content-Type: application/json
 
 {
+  "id": "11111111-2222-4333-8444-555555555555",
+  "mode": "create",
   "project": "cartpole",
   "name": "ppo-seed-42",
   "config": { "seed": 42, "algorithm": "ppo" },
@@ -58,6 +60,24 @@ Content-Type: application/json
 Requires `sdk:ingest` or a writable browser session. The project is created
 automatically unless the caller uses a project-scoped key for a different
 project.
+
+`id` and `mode` are optional. Supply a client-generated canonical UUID as `id`
+to own run identity (for offline-first or resumable jobs); an invalid string
+returns `400 invalid_run_id`. `mode` selects creation behavior and is one of:
+
+- `create` (default) — create the run, or, when the same `id` and payload are
+  replayed, return the existing run idempotently. A different payload or
+  project for an existing `id` returns `409 run_id_conflict`; an `id` you
+  cannot see returns `404 run_not_found`.
+- `auto` — attach to an existing run without changing its status (a finished
+  run stays finished), or create it when the `id` is unused. Safe for retries.
+- `resume` — explicitly reopen a terminal run back to `running` (clearing
+  `finished_at`, preserving `started_at`, and incrementing `resume_count`), or
+  plainly attach to a still-running run. A missing `id` returns
+  `404 run_not_found`; `resume` without an `id` returns `400`.
+
+The response is `{ "run": { … }, "created": true }`, where `created` is `false`
+for idempotent replay, `auto` attach, or `resume`.
 
 ## List runs
 

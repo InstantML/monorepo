@@ -5812,6 +5812,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate artifact upload retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "requestBody": {
@@ -5867,6 +5879,16 @@
           },
           "404": {
             "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -6523,6 +6545,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Stable client key used to deduplicate object retries",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "requestBody": {
@@ -6568,6 +6602,16 @@
           },
           "404": {
             "description": "Run not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Idempotency conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -8831,17 +8875,17 @@
         },
         "responses": {
           "200": {
-            "description": "Created run",
+            "description": "Created or attached run. `created` is false for idempotent replay, `mode=auto` attach, or `mode=resume`.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunEnvelope"
+                  "$ref": "#/components/schemas/RunCreatedEnvelope"
                 }
               }
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "Validation error, invalid_run_id, invalid_run_mode, or resume without id",
             "content": {
               "application/json": {
                 "schema": {
@@ -8852,6 +8896,46 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Plan or payment limit prevents creating another run",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient scope or project access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "run_not_found (resume/auto/create for a missing or cross-org id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "run_id_conflict or resume_project_mismatch",
             "content": {
               "application/json": {
                 "schema": {
@@ -13436,12 +13520,26 @@
             ],
             "additionalProperties": true
           },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional client-generated run identity. Must be a canonical RFC 4122\nUUID (lowercased on the server). Enables offline-first identity and\nidempotent creation. Invalid strings are rejected with\n`400 invalid_run_id`."
+          },
           "metadata": {
             "type": [
               "object",
               "null"
             ],
             "additionalProperties": true
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Creation mode: `create` (default), `resume`, or `auto`. `resume`\nrequires `id`. `create` replays idempotently, `auto` attaches without\nreopening, and `resume` explicitly reopens a terminal run."
           },
           "name": {
             "type": [
@@ -14625,6 +14723,35 @@
         "properties": {
           "data": {
             "type": "object"
+          }
+        }
+      },
+      "LifecycleTransition": {
+        "type": "object",
+        "description": "A single server-managed lifecycle transition recorded on a run. Currently\nonly `resume` reopens append entries here; the list is bounded to the most\nrecent [`RUN_LIFECYCLE_HISTORY_LIMIT`] transitions.",
+        "required": [
+          "status_from",
+          "status_to",
+          "at",
+          "kind"
+        ],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the transition was recorded."
+          },
+          "kind": {
+            "type": "string",
+            "description": "What triggered the transition (e.g. `resume`)."
+          },
+          "status_from": {
+            "type": "string",
+            "description": "Status the run transitioned from (e.g. `finished`)."
+          },
+          "status_to": {
+            "type": "string",
+            "description": "Status the run transitioned to (e.g. `running`)."
           }
         }
       },
@@ -16443,6 +16570,22 @@
           }
         }
       },
+      "RunCreatedEnvelope": {
+        "type": "object",
+        "description": "Response for `POST /runs`. `created` is `false` for idempotent replay,\n`mode=\"auto\"` attach, or `mode=\"resume\"`.",
+        "required": [
+          "run",
+          "created"
+        ],
+        "properties": {
+          "created": {
+            "type": "boolean"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunRow"
+          }
+        }
+      },
       "RunEnvelope": {
         "type": "object",
         "required": [
@@ -16624,6 +16767,13 @@
           "config": {
             "type": "object"
           },
+          "create_request_hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Normalized create-request hash, persisted so `mode=\"create\"` replay is\nrecognizable beyond the idempotency-record TTL. Harmless metadata; kept\nserialized so round-trip replay of the operational record preserves it."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -16653,6 +16803,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "lifecycle": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LifecycleTransition"
+            },
+            "description": "Bounded, server-managed lifecycle history (most recent transitions)."
+          },
           "metadata": {
             "type": "object"
           },
@@ -16676,6 +16833,20 @@
           "project_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "resume_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of times this run was explicitly reopened via `mode=\"resume\"`.",
+            "minimum": 0
+          },
+          "resumed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Timestamp of the most recent resume, if any."
           },
           "started_at": {
             "type": "string",

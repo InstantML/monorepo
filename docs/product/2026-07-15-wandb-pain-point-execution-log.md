@@ -10,8 +10,8 @@ that advances the roadmap. Status values: `pending`, `in progress`,
 | Roadmap item | Status | PR | Notes |
 | --- | --- | --- | --- |
 | PR-00 TODO reconciliation | merged | #372 | 20+ checked-off claims re-verified against code |
-| PR-01 offline lifecycle design | in review | – | Two fresh reviews returned Accept-with-edits; all blockers/should-fixes incorporated; doc accepted |
-| PR-02 client run IDs + resume | pending | – | Blocked on PR-01 acceptance |
+| PR-01 offline lifecycle design | merged | #373 | Two fresh reviews (Accept-with-edits); all blockers/should-fixes incorporated |
+| PR-02 client run IDs + resume | in review | – | Implemented + live E2E matrix verified (create/replay/conflict/auto-no-reopen/resume side effects/404 leak rules); fresh review fixes applied (fast-path visibility check, per-org project-create lock) |
 | PR-03 offline/disabled SDK modes | pending | – | Blocked on PR-02 |
 | PR-04 resumable `instantml sync` | pending | – | Blocked on PR-03 |
 | PR-05 upload completeness persistence | pending | – | Blocked on PR-01/PR-02 |

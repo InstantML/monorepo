@@ -2967,9 +2967,18 @@ export interface components {
             config?: {
                 [key: string]: unknown;
             } | null;
+            /** @description Optional client-generated run identity. Must be a canonical RFC 4122
+             *     UUID (lowercased on the server). Enables offline-first identity and
+             *     idempotent creation. Invalid strings are rejected with
+             *     `400 invalid_run_id`. */
+            id?: string | null;
             metadata?: {
                 [key: string]: unknown;
             } | null;
+            /** @description Creation mode: `create` (default), `resume`, or `auto`. `resume`
+             *     requires `id`. `create` replays idempotently, `auto` attaches without
+             *     reopening, and `resume` explicitly reopens a terminal run. */
+            mode?: string | null;
             name?: string | null;
             project?: string | null;
             tags?: string[] | null;
@@ -3261,6 +3270,22 @@ export interface components {
          *     duplicating the dynamic structure here. */
         JsonObjectResponse: {
             data: Record<string, never>;
+        };
+        /** @description A single server-managed lifecycle transition recorded on a run. Currently
+         *     only `resume` reopens append entries here; the list is bounded to the most
+         *     recent [`RUN_LIFECYCLE_HISTORY_LIMIT`] transitions. */
+        LifecycleTransition: {
+            /**
+             * Format: date-time
+             * @description When the transition was recorded.
+             */
+            at: string;
+            /** @description What triggered the transition (e.g. `resume`). */
+            kind: string;
+            /** @description Status the run transitioned from (e.g. `finished`). */
+            status_from: string;
+            /** @description Status the run transitioned to (e.g. `running`). */
+            status_to: string;
         };
         LogMetricsBatchPoint: {
             metrics: Record<string, never>;
@@ -3803,6 +3828,12 @@ export interface components {
             /** Format: date-time */
             updated_at?: string | null;
         };
+        /** @description Response for `POST /runs`. `created` is `false` for idempotent replay,
+         *     `mode="auto"` attach, or `mode="resume"`. */
+        RunCreatedEnvelope: {
+            created: boolean;
+            run: components["schemas"]["RunRow"];
+        };
         RunEnvelope: {
             run: components["schemas"]["RunRow"];
         };
@@ -3846,6 +3877,10 @@ export interface components {
         };
         RunRow: {
             config: Record<string, never>;
+            /** @description Normalized create-request hash, persisted so `mode="create"` replay is
+             *     recognizable beyond the idempotency-record TTL. Harmless metadata; kept
+             *     serialized so round-trip replay of the operational record preserves it. */
+            create_request_hash?: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -3856,6 +3891,8 @@ export interface components {
             forked_from_step?: number | null;
             /** Format: uuid */
             id: string;
+            /** @description Bounded, server-managed lifecycle history (most recent transitions). */
+            lifecycle?: components["schemas"]["LifecycleTransition"][];
             metadata: Record<string, never>;
             name: string;
             /** Format: uuid */
@@ -3865,6 +3902,16 @@ export interface components {
             project: string;
             /** Format: uuid */
             project_id: string;
+            /**
+             * Format: int32
+             * @description Number of times this run was explicitly reopened via `mode="resume"`.
+             */
+            resume_count?: number;
+            /**
+             * Format: date-time
+             * @description Timestamp of the most recent resume, if any.
+             */
+            resumed_at?: string | null;
             /** Format: date-time */
             started_at: string;
             status: string;
@@ -8495,7 +8542,10 @@ export interface operations {
     upload_artifact: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate artifact upload retries */
+                "Idempotency-Key"?: string | null;
+            };
             path: {
                 /** @description Run UUID */
                 run_id: string;
@@ -8546,6 +8596,15 @@ export interface operations {
             };
             /** @description Run not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8934,7 +8993,10 @@ export interface operations {
     create_object: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate object retries */
+                "Idempotency-Key"?: string | null;
+            };
             path: {
                 /** @description Run UUID */
                 run_id: string;
@@ -8976,6 +9038,15 @@ export interface operations {
             };
             /** @description Run not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10531,16 +10602,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created run */
+            /** @description Created or attached run. `created` is false for idempotent replay, `mode=auto` attach, or `mode=resume`. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunEnvelope"];
+                    "application/json": components["schemas"]["RunCreatedEnvelope"];
                 };
             };
-            /** @description Validation error */
+            /** @description Validation error, invalid_run_id, invalid_run_mode, or resume without id */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -10551,6 +10622,42 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Plan or payment limit prevents creating another run */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Insufficient scope or project access */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description run_not_found (resume/auto/create for a missing or cross-org id) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description run_id_conflict or resume_project_mismatch */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

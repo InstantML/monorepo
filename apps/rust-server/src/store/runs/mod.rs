@@ -18,7 +18,7 @@ use search::{compile_run_search, run_matches_search, CompiledRunSearch};
 
 pub use control::{acknowledge_run_stop, request_bulk_run_stop, request_run_stop, run_stop_signal};
 pub use helpers::numeric_desc;
-pub use lifecycle::{create_run, get_run, update_run};
+pub use lifecycle::{create_run, get_run, update_run, CreatedRun};
 pub use lineage::{fork_run, run_lineage};
 pub use metrics::{get_metrics, log_metrics, log_metrics_batch, metrics_series_batched};
 pub use projects::{create_project, list_projects};
