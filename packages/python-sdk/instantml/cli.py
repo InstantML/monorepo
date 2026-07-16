@@ -618,10 +618,11 @@ Usage:
   instantml sync tensorboard LOGDIR --project NAME [--watch]
       Import or continuously sync scalar TensorBoard events from a local log directory.
 
-  instantml sync RUN_DIR | OFFLINE_ROOT [--status] [--dry-run] [--json]
+  instantml sync RUN_DIR | OFFLINE_ROOT [--status] [--dry-run] [--json] [--assume-dead]
       Replay an offline run directory (mode="offline") to the server. Resumable:
       an interrupted sync re-run continues from a per-segment cursor. Exit codes:
       0 synced+complete, 3 partial (rerun), 4 permanent failure, 5 invalid dir.
+      A directory literally named "tensorboard" must be passed as ./tensorboard.
 
   instantml --help
       Show this message.

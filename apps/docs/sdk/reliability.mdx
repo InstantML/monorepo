@@ -200,7 +200,11 @@ instantml sync .instantml                      # every run under offline/
 instantml sync <run_dir> --status              # local report only, no network
 instantml sync <run_dir> --dry-run             # + server validation, no writes
 instantml sync <run_dir> --json                # machine-readable output
+instantml sync <run_dir> --assume-dead         # promote leftover partials (producer known dead)
 ```
+
+`sync tensorboard …` remains the TensorBoard subcommand; a directory literally
+named `tensorboard` must be passed as `./tensorboard`.
 
 Sync is resumable and idempotent:
 
@@ -219,6 +223,14 @@ Sync is resumable and idempotent:
 - A permanently rejected event (for example a missing API-key scope) stops
   delivery at that event with exit code `4` — nothing after it is sent out of
   order. Fix the cause and rerun; the remainder uploads exactly once.
+- If an active partial segment remains (the training process still runs, or
+  the run is synced from another host where writer liveness cannot be checked),
+  sync delivers what is visible but refuses to mark the directory synced and
+  exits `3`. When the producer is known dead, `--assume-dead` promotes the
+  leftover partial so its tail uploads too.
+- On partial or failed outcomes sync still posts its session progress to the
+  server, so the run's data-state reads `uploading`/`incomplete` honestly
+  instead of `unknown`.
 - A hard-killed training run (no finish signature) is uploaded in full but the
   server run status is left as-is, and the unclean shutdown is reported.
 - Once everything is delivered the directory is marked synced; further syncs

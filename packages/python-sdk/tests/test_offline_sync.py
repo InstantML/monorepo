@@ -650,7 +650,202 @@ def test_sync_reports_local_drops(tmp_path, server, monkeypatch, capsys):
     run.finish()
     assert _sync(str(run_dir), "--base-url", "http://x.test") == 0
     out = capsys.readouterr().out
-    assert "dropped locally" in out
+    assert "1 dropped event(s) reported as incomplete" in out
+
+
+# --------------------------------------------------------------------------- #
+# Oversized events (review finding 1: never silently skipped)
+# --------------------------------------------------------------------------- #
+
+
+def test_oversized_single_event_is_permanent_failure_not_skip(tmp_path, server, monkeypatch, capsys):
+    run = _make_offline_run(tmp_path)
+    run.log_config({"a": 1})  # attributes event — will exceed the patched cap
+    run.log_metrics({"loss": 1.0}, step=0)
+    run_dir = run._offline.run_dir
+    run.finish()
+
+    monkeypatch.setattr(osync, "_SYNC_MAX_EVENT_BYTES", 10)
+    code = osync.run_offline_sync([str(run_dir), "--base-url", "http://x.test", "--json"])
+    assert code == 4
+    payload = json.loads(capsys.readouterr().out)
+    run_report = payload["runs"][0]
+    assert run_report["classes"]["attributes"]["failed"] == 1
+    # Fail-stop: nothing was delivered past the refused event, cursor never
+    # advanced, directory NOT marked synced.
+    assert server.metric_steps == []
+    assert run_report["synced"] is False
+    state = json.loads((run_dir / "sync-state.json").read_text())
+    assert state["delivered"] == {}
+    assert "could not be staged" in state["last_error"]
+
+
+def test_oversized_event_inside_metric_chunk_fail_stops(tmp_path, server, monkeypatch, capsys):
+    run = _make_offline_run(tmp_path)
+    run.log_metrics({"loss": 1.0}, step=0)
+    run.log_metrics({"loss": 2.0}, step=1)
+    # A visibly larger metric event in the middle of the chunk.
+    run.log_metrics({f"metric/{i}": float(i) for i in range(40)}, step=2)
+    run.log_metrics({"loss": 3.0}, step=3)
+    run_dir = run._offline.run_dir
+    run.finish()
+
+    # Cap between the small (~150 B) and big (~900 B) event sizes.
+    monkeypatch.setattr(osync, "_SYNC_MAX_EVENT_BYTES", 400)
+    code = osync.run_offline_sync([str(run_dir), "--base-url", "http://x.test", "--json"])
+    assert code == 4
+    payload = json.loads(capsys.readouterr().out)
+    run_report = payload["runs"][0]
+    assert run_report["classes"]["metrics"]["failed"] == 1
+    # The whole chunk fail-stops before enqueue: no partial chunk delivery, no
+    # cursor advance past the refused event → no silent loss on a rerun.
+    assert server.metric_steps == []
+    state = json.loads((run_dir / "sync-state.json").read_text())
+    assert state["delivered"] == {}
+
+
+def test_enqueue_refusal_is_permanent_failure(tmp_path, server, monkeypatch):
+    # Disk-space refusal at enqueue (inserted < prepared) must also fail-stop.
+    run = _make_offline_run(tmp_path)
+    run.log_metrics({"loss": 1.0}, step=0)
+    run_dir = run._offline.run_dir
+    run.finish()
+
+    monkeypatch.setattr(async_queue.AsyncQueueRepository, "_has_disk_space", lambda self: False)
+    assert _sync(str(run_dir), "--base-url", "http://x.test") == 4
+    assert server.metric_steps == []
+    state = json.loads((run_dir / "sync-state.json").read_text())
+    assert state["delivered"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# Live/unpromotable partials (review finding 2: never mark synced past them)
+# --------------------------------------------------------------------------- #
+
+
+def _abandon_with_live_partial(run):
+    """Leave a durable active partial owned by a LIVE pid (this process)."""
+    run._offline._writer._fsync()
+    run._offline._closed = True
+    run._finished = True
+    client_module._unregister_active_run(run)
+
+
+def test_live_pid_partial_blocks_synced_marker(tmp_path, server, capsys):
+    run = _make_offline_run(tmp_path)
+    run.log_metrics({"loss": 1.0}, step=0)
+    run_dir = run._offline.run_dir
+    _abandon_with_live_partial(run)  # partial owned by this (live) process
+
+    server.session_status = 200
+    code = _sync(str(run_dir), "--base-url", "http://x.test")
+    assert code == 3
+    out = capsys.readouterr().out
+    assert "partial segment remains" in out
+    assert "--assume-dead" in out
+    # No synced marker; the partial's events are not stranded.
+    state = json.loads((run_dir / "sync-state.json").read_text()) if (run_dir / "sync-state.json").exists() else {}
+    assert not state.get("synced")
+    # Honest session manifest: still uploading, not final.
+    assert server.session_bodies[-1]["state"] == "active"
+
+
+def test_assume_dead_promotes_and_converges(tmp_path, server, capsys):
+    run = _make_offline_run(tmp_path)
+    for step in range(3):
+        run.log_metrics({"loss": step}, step=step)
+    run_dir = run._offline.run_dir
+    _abandon_with_live_partial(run)
+
+    code = _sync(str(run_dir), "--assume-dead", "--base-url", "http://x.test")
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "force-promoted 1 partial segment(s)" in out
+    assert sorted(server.metric_steps) == [0, 1, 2]
+    state = json.loads((run_dir / "sync-state.json").read_text())
+    assert state["synced"]["completed_at"]
+    # No partial dotfiles remain.
+    assert osync._remaining_partials(run_dir / "segments") == []
+
+
+def test_force_promote_handles_unparseable_and_legacy_names(tmp_path):
+    seg = tmp_path / "segments"
+    seg.mkdir()
+    # Matches the pid glob but the pid token is not decimal: left alone.
+    (seg / ".foo.jsonl.pid-abc.tmp").write_text("")
+    # Legacy (pid-less) active partial: promoted.
+    (seg / ".bar.jsonl.tmp").write_text("")
+    assert osync._force_promote_partials(seg) == 1
+    assert (seg / "bar.jsonl").exists()
+    assert (seg / ".foo.jsonl.pid-abc.tmp").exists()
+
+
+# --------------------------------------------------------------------------- #
+# Session manifests on failure paths (review finding 3: honesty over unknown)
+# --------------------------------------------------------------------------- #
+
+
+def test_exit_4_posts_final_manifest_with_failed_counts(tmp_path, server):
+    server.session_status = 200
+    server.metric_http_error = (400, "invalid_metric", "bad payload")
+    run = _make_offline_run(tmp_path)
+    run.log_metrics({"loss": 1.0}, step=0)
+    run_dir = run._offline.run_dir
+    run.finish()
+
+    assert _sync(str(run_dir), "--base-url", "http://x.test") == 4
+    manifest = server.session_bodies[-1]
+    assert manifest["state"] == "final"
+    counts = manifest["counts"]["metrics"]
+    assert counts["failed"] == 1
+    assert counts["acknowledged"] == 0
+    # Server invariants hold.
+    for entry in manifest["counts"].values():
+        assert entry["attempted"] == entry["queued"] + entry["dropped"]
+        assert entry["acknowledged"] + entry["failed"] <= entry["queued"]
+
+
+def test_exit_3_posts_active_manifest(tmp_path, server):
+    server.session_status = 200
+    server.metric_http_error = (503, "unavailable", "busy")
+    run = _make_offline_run(tmp_path)
+    run.log_metrics({"loss": 1.0}, step=0)
+    run_dir = run._offline.run_dir
+    run.finish()
+
+    assert _sync(str(run_dir), "--base-url", "http://x.test") == 3
+    manifest = server.session_bodies[-1]
+    assert manifest["state"] == "active"
+    counts = manifest["counts"]["metrics"]
+    assert counts["failed"] == 0 and counts["acknowledged"] == 0 and counts["queued"] == 1
+
+
+def test_finish_patch_failures_post_manifests(tmp_path, server):
+    server.session_status = 200
+    server.finish_error = (400, "bad_status", "nope")
+    run = _make_offline_run(tmp_path)
+    run.log_metrics({"loss": 1.0}, step=0)
+    run_dir = run._offline.run_dir
+    run.finish()
+    assert _sync(str(run_dir), "--base-url", "http://x.test") == 4
+    assert server.session_bodies[-1]["state"] == "final"
+
+    server2 = FakeServer()
+    server2.session_status = 200
+    server2.finish_url_error = True
+    run2 = _make_offline_run(tmp_path)
+    run2.log_metrics({"loss": 1.0}, step=0)
+    run_dir2 = run2._offline.run_dir
+    run2.finish()
+    import instantml._http_pool as pool
+
+    original = pool.urlopen
+    try:
+        pool.urlopen = server2
+        assert _sync(str(run_dir2), "--base-url", "http://x.test") == 3
+    finally:
+        pool.urlopen = original
+    assert server2.session_bodies[-1]["state"] == "active"
 
 
 # --------------------------------------------------------------------------- #

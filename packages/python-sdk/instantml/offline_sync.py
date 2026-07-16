@@ -46,7 +46,13 @@ from .async_queue import (
 )
 from .client import _default_base_url
 from .credentials import _resolve_api_key
-from .uploader import _prepare_body, _promote_recoverable_segments
+from .uploader import (
+    _legacy_segment_final_path,
+    _pid_segment_final_path,
+    _prepare_body,
+    _promote_recoverable_segments,
+    _promote_segment,
+)
 
 
 # Exit codes (design §5). argparse usage errors exit 2 on its own.
@@ -71,6 +77,11 @@ _NO_PRUNE_RETENTION = 2**31
 # blocking forever.
 _RETRY_WAIT_CAP_SECONDS = 90.0
 _RETRY_POLL_SECONDS = 0.25
+# Per-event size cap for the throwaway sync queue. These bodies were already
+# durably accepted into segments, so the cap is far above the online queue's
+# 1 MiB default — anything the queue still refuses is a reported permanent
+# failure (exit 4), never a skipped cursor advance.
+_SYNC_MAX_EVENT_BYTES = 64 * 1024 * 1024
 
 _EXIT_REASON = {
     EXIT_OK: "synced and complete",
@@ -142,6 +153,15 @@ def run_offline_sync(argv: list[str]) -> int:
     )
     parser.add_argument("--json", dest="as_json", action="store_true", help="Emit a machine-readable JSON report.")
     parser.add_argument("--base-url", default=None, help="Override the API base URL.")
+    parser.add_argument(
+        "--assume-dead",
+        action="store_true",
+        help=(
+            "Force-promote remaining active partial segments before delivery. Only safe when the "
+            "producing training process is known dead (for example syncing a compute-node run from a "
+            "login node); a still-running producer could lose its buffered tail."
+        ),
+    )
     parser.add_argument("--timeout", type=float, default=10.0, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
@@ -206,7 +226,15 @@ def _sync_one_run(run_dir: Path, base_url: str, api_key: str | None, args: argpa
         elif args.dry_run:
             _run_dry_run(run_dir, manifest, report, base_url, api_key, args.timeout)
         else:
-            _run_sync(run_dir, manifest, report, base_url, api_key, args.timeout)
+            _run_sync(
+                run_dir,
+                manifest,
+                report,
+                base_url,
+                api_key,
+                args.timeout,
+                assume_dead=getattr(args, "assume_dead", False),
+            )
     except Exception as exc:  # noqa: BLE001 — surface as a generic CLI error, keep other runs going
         report.exit_code = EXIT_GENERIC
         report.notes.append(f"unexpected error: {exc}")
@@ -438,6 +466,7 @@ def _run_sync(
     base_url: str,
     api_key: str | None,
     timeout: float,
+    assume_dead: bool = False,
 ) -> None:
     state = _read_sync_state(run_dir)
     if _is_synced(state):
@@ -459,8 +488,17 @@ def _run_sync(
     segments_dir = run_dir / "segments"
 
     # Promote crash-left partials so a hard-killed run's active segment is
-    # delivered too, then scan only the durable rotated segments.
+    # delivered too, then scan only the durable rotated segments. Partials whose
+    # writer PID still runs on THIS host are not promoted (the PID check is
+    # meaningless cross-host — a login-node sync of a compute-node run can
+    # coincidentally match a live local PID); --assume-dead force-promotes them
+    # when the producer is known dead.
     _promote_recoverable_segments(segments_dir)
+    if assume_dead:
+        promoted = _force_promote_partials(segments_dir)
+        if promoted:
+            report.notes.append(f"--assume-dead: force-promoted {promoted} partial segment(s)")
+    leftover_partials = _remaining_partials(segments_dir)
     segments = _scan_segments(segments_dir, include_partials=False)
     classes = _local_counts(segments, manifest)
     report.classes = classes
@@ -507,12 +545,33 @@ def _run_sync(
     if totals["failed_total"]:
         report.exit_code = EXIT_PERMANENT
         report.notes.append(f"{totals['failed_total']} event(s) permanently failed (non-retryable); will not retry")
+        # Honesty: tell the server this producer session is done and admits
+        # failures, so the derived data-state reads incomplete, not unknown.
+        _post_session_manifest(
+            run_dir, manifest, segments, base_url, api_key, timeout, report,
+            state_value="final", failed_by_class=totals["failed"],
+        )
         return
     if totals["pending_total"]:
         report.exit_code = EXIT_PARTIAL
         report.notes.append(
             f"{totals['pending_total']} event(s) awaiting retry; rerun `instantml sync {run_dir}` to continue"
         )
+        # A retryable remainder is still uploading: post an active manifest so
+        # the server reads uploading/incomplete rather than unknown.
+        _post_session_manifest(run_dir, manifest, segments, base_url, api_key, timeout, report, state_value="active")
+        return
+
+    if leftover_partials:
+        # A live (or unpromotable) active partial remains: everything visible
+        # was delivered, but marking the directory synced would strand the
+        # partial's events forever. Report and let the operator decide.
+        report.exit_code = EXIT_PARTIAL
+        report.notes.append(
+            "active or unpromotable partial segment remains — if the producing process is dead, "
+            "rerun sync on the producing host or pass --assume-dead to promote"
+        )
+        _post_session_manifest(run_dir, manifest, segments, base_url, api_key, timeout, report, state_value="active")
         return
 
     # 3) All segment events delivered — apply finish, then the session manifest.
@@ -533,9 +592,15 @@ def _run_sync(
                 if patch.retryable:
                     report.exit_code = EXIT_PARTIAL
                     report.notes.append(f"finish status not delivered ({patch.message}); rerun to complete")
+                    _post_session_manifest(
+                        run_dir, manifest, segments, base_url, api_key, timeout, report, state_value="active"
+                    )
                 else:
                     report.exit_code = EXIT_PERMANENT
                     report.notes.append(f"finish status failed: {patch.message}")
+                    _post_session_manifest(
+                        run_dir, manifest, segments, base_url, api_key, timeout, report, state_value="final"
+                    )
                 return
             report.notes.append(f"run status set to {finish['status']!r}")
     elif finish is None:
@@ -551,8 +616,39 @@ def _run_sync(
     _write_sync_state(run_dir, state)
     report.synced = True
     report.exit_code = EXIT_OK
-    if any(entry["dropped"] for entry in classes.values()):
-        report.notes.append("some events were dropped locally (disk/write failures) — server data-state will be incomplete")
+    total_dropped = sum(entry["dropped"] for entry in classes.values())
+    if total_dropped:
+        report.notes.append(
+            f"synced; {total_dropped} dropped event(s) reported as incomplete (local disk/write failures)"
+        )
+
+
+def _remaining_partials(segments_dir: Path) -> list[Path]:
+    """Active/unpromoted partial segment dotfiles still present after promotion."""
+    return sorted(segments_dir.glob(".*.jsonl.pid-*.tmp")) + sorted(segments_dir.glob(".*.jsonl.tmp"))
+
+
+def _force_promote_partials(segments_dir: Path) -> int:
+    """Promote every remaining partial segment regardless of writer liveness.
+
+    Only safe when the producing process is known dead: the PID-liveness check
+    is meaningless across hosts, so ``--assume-dead`` lets a login-node sync
+    promote a dead compute-node writer's fsynced tail.
+    """
+    promoted = 0
+    for tmp_path in sorted(segments_dir.glob(".*.jsonl.pid-*.tmp")):
+        parsed = _pid_segment_final_path(tmp_path)
+        if parsed is None:
+            continue
+        _promote_segment(tmp_path, parsed[0])
+        promoted += 1
+    for tmp_path in sorted(segments_dir.glob(".*.jsonl.tmp")):
+        final_path = _legacy_segment_final_path(tmp_path)
+        if final_path is None:  # pragma: no cover — the glob guarantees a parseable legacy name
+            continue
+        _promote_segment(tmp_path, final_path)
+        promoted += 1
+    return promoted
 
 
 def _deliver_segments(
@@ -668,22 +764,44 @@ def _deliver_one_segment(
     wait_budget: dict[str, float],
 ) -> tuple[int, int]:
     """Deliver one segment chunk by chunk. Returns ``(failed, pending)``."""
-    repository = AsyncQueueRepository(queue_path, producer=False, processed_retention=_NO_PRUNE_RETENTION)
+    repository = AsyncQueueRepository(
+        queue_path,
+        producer=False,
+        processed_retention=_NO_PRUNE_RETENTION,
+        # Segment events were already durably accepted locally; the sync queue
+        # must not silently filter them like the 1 MiB online default would.
+        max_event_bytes=_SYNC_MAX_EVENT_BYTES,
+    )
     repository.init_db()
     try:
         chunks = _chunk_pending(pending, DEFAULT_MAX_BATCH_POINTS)
         delivered_upto = 0  # events (from `pending`) covered by completed chunks
         for chunk in chunks:
             prepared = []
+            refused: _SegmentEvent | None = None
             for event in chunk:
                 body = _prepare_body(event.path, event.body)  # base64-encode staged files at delivery time
-                prepared.append(
-                    repository.prepare_event(event.method, event.path, body, idempotency_key=event.idempotency_key)
+                candidate = repository.prepare_event(event.method, event.path, body, idempotency_key=event.idempotency_key)
+                if candidate.body_size_bytes > _SYNC_MAX_EVENT_BYTES:
+                    refused = event
+                    break
+                prepared.append(candidate)
+            if refused is None:
+                result = repository.enqueue_many_prepared(prepared)
+                if result.inserted < len(prepared):
+                    # Disk-space / queue-byte refusal: never advance the cursor
+                    # past an event that was not enqueued (silent-loss guard).
+                    refused = chunk[result.inserted]
+            if refused is not None:
+                failed_by_class[refused.event_class] = failed_by_class.get(refused.event_class, 0) + 1
+                state["last_error"] = (
+                    f"a {refused.event_class} event could not be staged for delivery "
+                    f"(exceeds the sync size cap or the local queue refused it)"
                 )
-            result = repository.enqueue_many_prepared(prepared)
+                _write_sync_state(run_dir, state)
+                return 1, len(pending) - delivered_upto - 1
             first_seq = result.first_sequence_id
-            if first_seq is None:  # pragma: no cover — defensive; prepared is non-empty here
-                return 0, len(pending) - delivered_upto
+            assert first_seq is not None  # inserted == len(prepared) >= 1
             failed, pending_left = _drain_chunk(repository, first_seq, len(chunk), base_url, api_key, timeout, wait_budget)
             if failed:
                 _attribute_failed(repository, first_seq, chunk, failed_by_class)
@@ -724,6 +842,7 @@ def _drain_chunk(
             base_url=base_url,
             api_key=api_key,
             timeout=timeout,
+            max_event_bytes=_SYNC_MAX_EVENT_BYTES,
             max_batch_points=DEFAULT_MAX_BATCH_POINTS,
         )
         if processed:
@@ -791,7 +910,19 @@ def _post_session_manifest(
     api_key: str | None,
     timeout: float,
     report: _RunReport,
+    state_value: str = "final",
+    failed_by_class: dict[str, int] | None = None,
 ) -> None:
+    """PUT the session progress manifest (PR-05 route; tolerant of its absence).
+
+    Posted on every outcome after the run exists — success (``final``),
+    permanent failure (``final`` with failed counts), and retryable remainder
+    (``active``) — so the server derives an honest ``incomplete``/``uploading``
+    data-state instead of ``unknown``. Counts respect the server invariants:
+    ``attempted = queued + dropped`` and ``acknowledged + failed <= queued``
+    (acknowledged comes from journaled cursors, an intentional undercount, and
+    failed is clamped to the unacknowledged remainder).
+    """
     run_id = manifest["run_id"]
     session_id = manifest["session_id"]
     state = _read_sync_state(run_dir)
@@ -807,6 +938,9 @@ def _post_session_manifest(
             if event.line_index <= cursor:
                 entry["acknowledged"] += 1
                 last_sequences[event.event_class] = max(last_sequences.get(event.event_class, 0), event.sequence)
+    for event_class, failed in (failed_by_class or {}).items():
+        entry = counts.setdefault(event_class, {"attempted": 0, "queued": 0, "acknowledged": 0, "failed": 0, "dropped": 0})
+        entry["failed"] = min(failed, max(0, entry["queued"] - entry["acknowledged"]))
     manifest_counts = manifest.get("counts")
     if isinstance(manifest_counts, dict):
         for event_class, values in manifest_counts.items():
@@ -821,17 +955,17 @@ def _post_session_manifest(
         # producer's events, not the sync tool's. Privacy-safe (host is hashed).
         "producer": manifest.get("producer", {"kind": "sdk"}),
         "sdk_version": manifest.get("sdk_version", "unknown"),
-        "state": "final",
+        "state": state_value,
         "counts": counts,
         "last_sequences": last_sequences,
     }
     resp = _http_request(base_url, api_key, timeout, "PUT", f"/api/runs/{run_id}/sessions/{session_id}", body)
     if resp.ok:
-        report.notes.append("final session manifest posted")
+        report.notes.append(f"{state_value} session manifest posted")
     elif resp.status in (404, 405):
         report.notes.append("session manifest route not available yet (ships in PR-05); skipped")
     else:
-        report.notes.append(f"session manifest not posted ({resp.message}); delivery already complete")
+        report.notes.append(f"session manifest not posted ({resp.message})")
 
 
 # --------------------------------------------------------------------------- #
