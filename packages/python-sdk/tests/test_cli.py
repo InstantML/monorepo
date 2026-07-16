@@ -201,6 +201,13 @@ def test_local_credentials_take_precedence_over_global_login(tmp_path, monkeypat
     assert cli_module.resolve_api_host_from_credentials() == "http://127.0.0.1:8000"
 
 
+def test_write_local_credentials_rejects_non_loopback_before_writing(tmp_path):
+    with pytest.raises(ValueError, match="loopback API host"):
+        cli_module.write_local_credentials(api_host="http://0.0.0.0:8000", root=tmp_path)
+
+    assert not cli_module.local_credentials_path(tmp_path).exists()
+
+
 def test_local_credentials_suppress_auth_only_for_loopback(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("INSTANTML_API_KEY", raising=False)

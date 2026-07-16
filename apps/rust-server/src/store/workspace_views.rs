@@ -406,6 +406,10 @@ pub async fn workspace_view_data(
             .filter_map(|run_id| workspace_view_data_run_for_ctx(&data, ctx, *run_id))
             .collect::<Vec<_>>()
     };
+    // Carry the skip-or-mark result through every downstream read. Using the
+    // original selection here would still fetch metric series for deleted or
+    // inaccessible runs even though their summaries were removed.
+    let run_ids = runs.iter().map(|run| run.id).collect::<Vec<_>>();
     let summaries = summarize_runs_for_metric_keys(store, runs, &metric_key_vec).await?;
     let metric_point_limit = workspace_view_data_effective_point_limit(
         requested_metric_point_limit,

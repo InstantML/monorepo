@@ -110,6 +110,10 @@ def write_local_credentials(
     root: str | os.PathLike[str] | None = None,
 ) -> Path:
     """Write project-local unauthenticated-loopback credentials."""
+    if not _is_loopback_api_host(api_host):
+        raise ValueError(
+            "local credentials require a loopback API host (localhost, 127.0.0.1, or [::1])"
+        )
     path = local_credentials_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     content = "\n".join(

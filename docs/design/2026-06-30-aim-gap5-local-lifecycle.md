@@ -475,6 +475,10 @@ Re-review:
   metrics, summaries, retained-usage tests; Rust lint and format check; the
   targeted SDK credential test plus compile check; and the dashboard shell
   contract test.
+- 2026-07-15: Follow-up review hardening carries the workspace/embed readable
+  run set through metric-series queries, preventing deleted selections from
+  leaking series data, and validates loopback hosts in the direct local
+  credential writer before creating project files.
 
 ## Coverage Exceptions
 
