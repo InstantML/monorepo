@@ -83,8 +83,13 @@ class OwnedRunMixin:
         return self.run
 
     def finish(self, status: str = "finished") -> None:
-        if self.run is not None and (self._owns_run or self._finish_run):
-            self.run.finish(status)
+        run = self.run
+        owned = self._owns_run
+        if run is not None and (owned or self._finish_run):
+            run.finish(status)
+        if owned:
+            self.run = None
+            self._owns_run = False
 
     close = finish
 

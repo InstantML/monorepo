@@ -264,6 +264,45 @@ def test_optuna_multi_objective_values_are_logged(monkeypatch: pytest.MonkeyPatc
     assert run.logs == [({"optuna/value_0": 0.42, "optuna/value_1": 1.5}, 3)]
 
 
+def test_owned_optuna_callback_reopens_a_run_when_reused(monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_module(monkeypatch, "optuna")
+    created_runs = [FakeRun(), FakeRun()]
+    pending_runs = list(created_runs)
+    monkeypatch.setattr(_common, "init", lambda **kwargs: pending_runs.pop(0))
+    callback = optuna_module.InstantMLCallback(project="reused", finish_on_complete=True)
+
+    for number, value in enumerate((0.4, 0.2)):
+        trial = SimpleNamespace(
+            number=number,
+            state=SimpleNamespace(name="COMPLETE"),
+            value=value,
+            params={},
+            intermediate_values={},
+            user_attrs={},
+        )
+        study = SimpleNamespace(trials=[trial])
+        callback(study, trial)
+        callback.study_complete()
+
+    assert not pending_runs
+    assert [run.logs for run in created_runs] == [
+        [({"optuna/value": 0.4}, 0)],
+        [({"optuna/value": 0.2}, 1)],
+    ]
+    assert [run.finished for run in created_runs] == [["finished"], ["finished"]]
+    assert callback.run is None
+
+
+def test_finish_keeps_an_explicit_callback_run_bound() -> None:
+    run = FakeRun()
+    callback = optuna_module.InstantMLCallback(run=run, finish_run=True, check_dependency=False)
+
+    callback.finish()
+
+    assert callback.run is run
+    assert run.finished == ["finished"]
+
+
 def test_optuna_multi_objective_properties_do_not_abort_callback(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_module(monkeypatch, "optuna")
     run = FakeRun()

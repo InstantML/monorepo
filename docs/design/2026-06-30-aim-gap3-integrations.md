@@ -333,6 +333,9 @@ Re-review:
   `git diff --check`. A `python3 -m pytest ...` retry was not used because the
   system `python3` interpreter lacks pytest; the repository `pytest`/`python`
   environment is Python 3.11.5.
+- 2026-07-15: Follow-up review hardening releases callback-owned runs after
+  finish so one callback instance can create a fresh run when reused across
+  trainings. Explicitly supplied runs remain bound.
 
 ## Coverage Exceptions
 

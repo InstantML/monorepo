@@ -724,6 +724,8 @@ log_dvc_metadata(run, repo_path=".")
 Adapters created with an explicit `run=` never finish that user-owned run unless
 `finish_run=True` is passed. Adapters that create a run themselves finish only
 through their documented training-end hook or explicit `finish()`/`close()`.
+After an adapter-owned run finishes, reusing the callback creates a fresh run;
+an explicitly supplied run remains bound to the callback.
 Framework metric collectors accept Python numeric values plus NumPy-style scalar
 objects that expose `.item()`. XGBoost CV `(mean, std)` tuples log the mean
 under the metric key; LightGBM CV logs both `-mean` and `-stdv` keys.
