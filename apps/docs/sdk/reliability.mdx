@@ -118,8 +118,10 @@ run.log({"train/loss": 0.2}, step=1)
 replayed = run.replay_offline()
 ```
 
-Current limitation: `init()` still needs a reachable server because run
-creation is not spooled yet.
+`offline_dir` only replays requests made by an existing `Run`. For a run that
+never reaches the server at all — an egress-blocked HPC node, for example — use
+`mode="offline"` (see below), which reserves run identity locally and writes a
+self-describing run directory. `offline_dir` still requires online `init()`.
 
 ## Isolate uploads with spool mode
 
@@ -146,6 +148,72 @@ python -m instantml.uploader \
 Metric and console-log events send their event ID as `Idempotency-Key`, so a
 compatible server can safely accept retries.
 
+## Run without a server with mode="offline"
+
+`mode="offline"` never touches the network — not even at `init()` — and does not
+require credentials. It reserves the run identity locally and writes a
+self-describing run directory that `instantml sync` uploads later (sync ships in
+a follow-up release).
+
+```python
+run = im.init(project="hpc-job", name="seed-42", mode="offline")
+
+for step in range(1000):
+    run.log_metrics({"train/loss": loss}, step=step)
+run.log_config({"lr": 3e-4})
+run.upload_file("checkpoints/policy.pt", artifact_type="checkpoint", step=1000)
+run.finish()
+```
+
+The directory layout under `<data_root>/offline/<run_id>/` is:
+
+- `run.json` — an atomically-rewritten manifest (schema version 1) with the run
+  id, deterministic producer session id, the verbatim create request, the finish
+  signature, and per-event-class counters.
+- `segments/` — spool-format JSONL event segments with persisted, deterministic
+  idempotency keys so a resumed upload never re-sends or duplicates delivered
+  events.
+- `files/` — staged artifact bytes referenced by `source_path`.
+
+Supported offline: config, tags, notes, scalar and rank metrics, console logs,
+text/histogram attributes, rich objects (tables, histograms, classification
+evals), and small artifact byte uploads via `upload_file`/`log_artifact`/
+`log_checkpoint_file`. Not supported offline: versioned artifact uploads and the
+media helpers (`Image`/`Video`/`Audio`) that need a live upload response — these
+raise `UnsupportedOfflineOperation` naming the online alternative.
+
+If a segment write fails (disk full, read-only filesystem), the event is dropped
+and counted in `run.json` instead of crashing the training loop; drops force an
+`incomplete` state at sync time rather than silent loss. A clean `finish()`
+writes `{"clean": true}`; a SIGTERM/SIGINT interruption writes `{"clean": false}`;
+a hard kill leaves `finish` null.
+
+### Modes and environment variables
+
+| Setting | Env var | Values | Default |
+| --- | --- | --- | --- |
+| `mode` | `INSTANTML_MODE` | `online`, `offline`, `disabled` | `online` |
+| `run_id` | `INSTANTML_RUN_ID` | canonical RFC 4122 UUID | server-generated |
+| `data_dir` | `INSTANTML_DATA_DIR` | offline data root | `./.instantml` |
+| `resume` | – | `never`, `must`, `allow` | `never` |
+
+Precedence for `mode` is `init(mode=...)` > `INSTANTML_MODE` > `online`.
+`upload_mode` only tunes online delivery and is ignored (with a debug notice) in
+offline and disabled modes.
+
+## Turn off logging with mode="disabled"
+
+`mode="disabled"` returns a run whose full logging surface is present but every
+method is an inert no-op. It performs no network and no disk I/O, installs no
+signal/atexit handlers, and generates a local run id for API-shape parity — ideal
+for CI and test runs that import training code unchanged.
+
+```python
+run = im.init(project="ci", mode="disabled")  # or INSTANTML_MODE=disabled
+run.log_metrics({"loss": 1.0}, step=1)  # no-op
+run.finish()
+```
+
 ## Pick a mode
 
 | Need | Mode |
@@ -155,6 +223,8 @@ compatible server can safely accept retries.
 | Fewer HTTP calls | `buffer_size` |
 | Replay failed requests after temporary outage | `offline_dir` |
 | Keep post-init HTTP out of the training process | `upload_mode="spool"` |
+| Run with no server, sync later | `mode="offline"` |
+| No logging at all (CI/tests) | `mode="disabled"` |
 
 Batch many scalar values into one metrics dictionary for high-frequency loops.
 

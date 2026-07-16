@@ -130,13 +130,29 @@ def init(
 ) -> Run:
     del resume, reinit, dir, settings
     selected_mode = _normalized_mode(mode)
+    # Map W&B modes onto native InstantML modes (PR-03): offline/dryrun become a
+    # durable native offline run, and disabled/WANDB_MODE=disabled become the
+    # native inert disabled run. The old hard-raise is obsolete now that offline
+    # is durable rather than a silent drop.
     if selected_mode == "disabled":
-        raise UnsupportedWandbFeature("wandb disabled mode is not implemented by instantml.compat.wandb")
-    if selected_mode in {"offline", "dryrun"}:
-        raise UnsupportedWandbFeature("wandb offline/dryrun modes are not implemented because they would otherwise silently drop logs")
+        native_mode = "disabled"
+    elif selected_mode in {"offline", "dryrun"}:
+        native_mode = "offline"
+    elif selected_mode in (None, "online"):
+        native_mode = "online"
+    else:
+        raise UnsupportedWandbFeature(f"wandb mode {selected_mode!r} is not supported by instantml.compat.wandb")
     metadata = {"wandb_compat": {"id": id, "group": group, "job_type": job_type, "extra": kwargs}}
     globals()["config"] = Config(config or {})
-    inner = instantml_init(project=project, name=name, config=config, tags=tags, notes=notes, metadata=metadata)
+    inner = instantml_init(
+        project=project,
+        name=name,
+        config=config,
+        tags=tags,
+        notes=notes,
+        metadata=metadata,
+        mode=native_mode,
+    )
     globals()["config"].attach(inner)
     wrapped = Run(inner)
     globals()["run"] = wrapped

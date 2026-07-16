@@ -697,11 +697,13 @@ with wandb.init(project="cartpole", config={"seed": 13}) as run:
     run.log_artifact(artifact)
 ```
 
-Unsupported W&B surfaces such as sweeps, `mode="offline"`/`"dryrun"`,
-`WANDB_MODE=offline`/`dryrun`, and batching kwargs such as
-`wandb.log(..., commit=False)` raise `UnsupportedWandbFeature` with a clear
-message. Use the official `wandb` package in parallel when you need full W&B
-behavior during a transition.
+W&B run modes map onto native InstantML modes: `wandb.init(mode="offline")` and
+`mode="dryrun"` (and `WANDB_MODE=offline`/`dryrun`) become a durable native
+offline run, and `mode="disabled"` / `WANDB_MODE=disabled` / `WANDB_DISABLED=true`
+become the native inert disabled run. Truly unsupported surfaces such as sweeps
+and batching kwargs like `wandb.log(..., commit=False)` still raise
+`UnsupportedWandbFeature` with a clear message. Use the official `wandb` package
+in parallel when you need full W&B behavior during a transition.
 
 For pilots where W&B must remain the source of truth, use W&B-primary mirroring
 instead. This is a one-line import swap: the official W&B package still
@@ -737,7 +739,57 @@ run.finish()
 run.replay_offline()
 ```
 
-Important limitation: `init()` still requires a reachable server because run creation is not spooled yet. `offline_dir` only applies to failed requests made by an existing `Run`.
+Important limitation: in **online** mode `init()` still requires a reachable server, because online run creation is not spooled. `offline_dir` only replays failed requests made by an existing `Run`; it does not make `init()` itself offline-capable. When a process cannot reach the server at all, use `mode="offline"` (below), which reserves run identity locally and never touches the network — not even at `init()`.
+
+## Offline and disabled modes
+
+`init(mode=...)` selects the run lifecycle, distinct from `upload_mode` (which only tunes online delivery):
+
+- `mode="online"` (default) — talks to the server as today.
+- `mode="offline"` — never touches the network (no credentials required); writes a self-describing local run directory that `instantml sync` uploads later.
+- `mode="disabled"` — a strictly inert no-op for CI/tests: no network, no disk, no process-level side effects.
+
+Precedence is `init(mode=...)` > `INSTANTML_MODE` > `online`. Environment variables:
+
+| Setting | Env var | Values | Default |
+| --- | --- | --- | --- |
+| `mode` | `INSTANTML_MODE` | `online` / `offline` / `disabled` | `online` |
+| `run_id` | `INSTANTML_RUN_ID` | canonical RFC 4122 UUID (validated + lowercased) | server-generated |
+| `data_dir` | `INSTANTML_DATA_DIR` | offline/local data root | `./.instantml` |
+| `resume` | – | `never` / `must` / `allow` (→ server `create`/`resume`/`auto`) | `never` |
+
+`upload_mode` is ignored (debug-level notice) in `offline`/`disabled`; `offline_dir` is unused in offline mode. In online mode, when `run_id` or `resume` is supplied, `init()` sends `{"id": ..., "mode": ...}` in the create body (server support lands in a follow-up).
+
+```python
+run = im.init(project="hpc-job", name="seed-42", mode="offline")
+for step in range(1000):
+    run.log_metrics({"train/reward": step}, step=step)
+run.log_config({"lr": 3e-4})
+run.upload_file("checkpoints/policy.pt", artifact_type="checkpoint", step=1000)
+run.finish()
+```
+
+Offline directory layout under `<data_root>/offline/<run_id>/`:
+
+```text
+run.json     # atomically-rewritten manifest (schema_version 1): run id,
+             # deterministic session id, verbatim create request, finish
+             # signature, per-event-class counters
+segments/    # spool-format JSONL segments (reuses the process-spool writer),
+             # each envelope carrying session_id, class, and a persisted
+             # deterministic idempotency key; sequence is per-(session, class)
+files/       # staged artifact bytes referenced by source_path
+```
+
+Each spool envelope gains a top-level `session_id` and `class`, and every request carries a persisted `idempotency_key` of the form `instantml-<run_id>-<session_id[:8]>-<class>-<sequence>`. The persisted key in the segment line is the source of truth; on restart against the same run directory the writer resumes each per-class sequence from the last persisted value — including sequences found in crash-left active partial segments (which are fsynced and promoted to visible segments when their writer PID is dead) — so keys are never re-minted, even after a hard kill. `session_id` is a deterministic UUIDv5 over `(run_id, producer kind, rank or "", sha256 of the absolute data-root path)`, so a restarted producer reuses the same session while a genuinely different producer gets a new one. Forked children get their own session and segment files automatically. Caveat: two *concurrent* producers on one machine sharing a run_id, data root, and rank would share a session and mint colliding keys — sequential restarts are safe, and first-class rank identity for concurrent shared-run producers lands with the distributed-producer work (PR-10).
+
+Supported offline: run creation (stored in `run.json`), config, tags, notes, scalar and rank metrics, console logs, text/histogram attributes, rich-object metadata (`Table`/`Histogram`/`ClassificationEval`), traces (fire-and-forget POST batches, recorded under class `traces`), finish state, and small artifact byte uploads via `upload_file`/`log_artifact`/`log_checkpoint_file` (bytes staged under `files/`, read and base64-encoded at sync time). **Not** supported offline: `log_versioned_artifact` (presigned multipart) and the media helpers (`Image`/`Video`/`Audio`) that need a server upload response for object chaining; these raise `UnsupportedOfflineOperation` at call time, naming the online alternative.
+
+Disk-full / write-failure is bounded: on `OSError` the offline writer drops the event, increments the per-class `dropped` counter, and rate-limits a warning, keeping the training loop alive (online `spool` mode keeps its raise-on-write-failure behavior). Drops are visible in `run.json.counts` and force an `incomplete` data-state at sync time — never silent loss. Finish signatures are all local writes: `finish()` writes `run.json.finish = {"status", "at", "clean": true}`; a SIGTERM/SIGINT lifecycle flush writes `{"status": "failed", "clean": false}`; a hard kill leaves `finish` null.
+
+`mode="disabled"` returns a `Run` whose complete logging surface is present but every method is an inert no-op (`upload_status()` returns `{"mode": "disabled"}`). It performs no network and no disk I/O, does not install signal/atexit/fork lifecycle handlers, is never added to the active-run set, works as a context manager, and generates a local run id for API-shape parity.
+
+Uploading offline directories with `instantml sync` ships in a follow-up release; this release writes the directory.
 
 Process-isolated upload mode:
 

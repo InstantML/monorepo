@@ -11,8 +11,8 @@ that advances the roadmap. Status values: `pending`, `in progress`,
 | --- | --- | --- | --- |
 | PR-00 TODO reconciliation | merged | #372 | 20+ checked-off claims re-verified against code |
 | PR-01 offline lifecycle design | merged | #373 | Two fresh reviews (Accept-with-edits); all blockers/should-fixes incorporated |
-| PR-02 client run IDs + resume | in review | – | Implemented + live E2E matrix verified (create/replay/conflict/auto-no-reopen/resume side effects/404 leak rules); fresh review fixes applied (fast-path visibility check, per-org project-create lock) |
-| PR-03 offline/disabled SDK modes | pending | – | Blocked on PR-02 |
+| PR-02 client run IDs + resume | merged | #374 | Live E2E matrix verified; fresh review fixes applied (fast-path visibility check, per-org project-create lock) |
+| PR-03 offline/disabled SDK modes | in review | – | Native `mode="offline"` (local run directory: run.json manifest, spool segments with session/class/persisted deterministic idempotency keys, staged `files/`, bounded drop-on-write-failure, offline finish/SIGTERM signatures) and strict `mode="disabled"`; wandb-compat mapping. Review blockers fixed: crash-resume partial-segment scan (SIGKILL-reproduced), fork safety, finish preservation. Full suite green at 100% coverage |
 | PR-04 resumable `instantml sync` | pending | – | Blocked on PR-03 |
 | PR-05 upload completeness persistence | pending | – | Blocked on PR-01/PR-02 |
 | PR-06 honest run data-state UI | pending | – | Blocked on PR-05 |
