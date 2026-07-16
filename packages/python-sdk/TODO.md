@@ -28,9 +28,13 @@ Remaining lifecycle/offline items below are tracked in `docs/product/2026-07-14-
 - [x] Add ergonomic helpers for replacing tags and updating notes after run creation once Rust exposes safe post-hoc mutation routes.
   - Implemented: `init(notes=...)`, `Run.set_notes(...)`, and `Run.set_tags(...)`.
   - Remaining: append/remove tag helpers after a server-side append/remove route or public API read-modify-write design exists.
-- [ ] Add true offline run creation with a local run directory and later sync. Keep the current post-run-create replay limitation documented until this lands.
-- [ ] Add disabled/no-op mode for tests and scripts that want the API shape without network or disk writes.
-- [ ] Add client-generated run IDs and resume modes that match Rust server semantics.
+- [x] Add true offline run creation with a local run directory and later sync. Keep the current post-run-create replay limitation documented until this lands.
+  - Implemented (PR-03, write side): `init(mode="offline", run_id=, resume=)` writes `<data_root>/offline/<run_id>/` (run.json manifest, spool segments with session/class/persisted deterministic idempotency keys, staged `files/`), bounded drop-on-write-failure, and offline finish/SIGTERM signatures. Design: `docs/design/2026-07-15-offline-lifecycle-upload-completeness.md` §3–§4.
+  - Remaining: resumable `instantml sync` that replays the directory (PR-04).
+- [x] Add disabled/no-op mode for tests and scripts that want the API shape without network or disk writes.
+  - Implemented (PR-03): `init(mode="disabled")` — full inert Run surface, no network/disk/lifecycle-handler side effects, generates a local run id. Design §4.
+- [x] Add client-generated run IDs and resume modes that match Rust server semantics.
+  - Implemented SDK-side (PR-03): `run_id`/`INSTANTML_RUN_ID` (validated canonical UUID) and `resume` (`never`/`must`/`allow` → `create`/`resume`/`auto`), passed as `{id, mode}` in the online create body. Server acceptance is PR-02.
 - [ ] Add config include/exclude handling and clear config mutation rules.
 - [ ] Add `INSTANTML_PROJECT`, `INSTANTML_ENTITY` or org equivalent, `INSTANTML_RUN_ID`, `INSTANTML_RUN_GROUP`, `INSTANTML_MODE`, cache/data/artifact dir variables, and documented precedence with explicit arguments.
 - [ ] Keep context-manager finish behavior and make failed/keyboard-interrupted exits explicit in tests.

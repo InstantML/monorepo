@@ -156,52 +156,82 @@ def test_wandb_compat_module_finish_and_define_metric_are_noops_without_run(monk
     wandb.finish()
 
 
-def test_wandb_compat_rejects_unsupported_modes_and_sweeps(monkeypatch):
+def test_wandb_compat_rejects_sweeps_and_unknown_mode(monkeypatch):
     monkeypatch.setattr(wandb, "run", None)
-    with pytest.raises(wandb.UnsupportedWandbFeature, match="disabled"):
-        wandb.init(mode="disabled")
     with pytest.raises(wandb.UnsupportedWandbFeature, match="sweeps"):
         wandb.sweep({})
     with pytest.raises(RuntimeError, match="before wandb.init"):
         wandb.log({"loss": 1.0})
+    monkeypatch.setattr(wandb, "instantml_init", lambda **kwargs: object())
+    monkeypatch.setattr(wandb, "config", wandb.Config())
+    with pytest.raises(wandb.UnsupportedWandbFeature, match="mode"):
+        wandb.init(project="demo", mode="mirror")
 
 
-def test_wandb_compat_offline_mode_fails_explicitly(monkeypatch):
-    def fail_init(**kwargs):
-        raise AssertionError("offline mode must not initialize InstantML")
+def test_wandb_compat_offline_mode_maps_to_native_offline(monkeypatch):
+    captured = {}
 
-    monkeypatch.setattr(wandb, "instantml_init", fail_init)
+    def fake_init(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(wandb, "instantml_init", fake_init)
     monkeypatch.setattr(wandb, "run", None)
     monkeypatch.setattr(wandb, "config", wandb.Config())
 
-    with pytest.raises(wandb.UnsupportedWandbFeature, match="offline/dryrun"):
-        wandb.init(project="demo", config={"lr": 0.1}, mode="offline")
+    wandb.init(project="demo", config={"lr": 0.1}, mode="offline")
+    assert captured["mode"] == "offline"
+
+    captured.clear()
+    wandb.init(project="demo", mode="dryrun")
+    assert captured["mode"] == "offline"
 
 
-def test_wandb_compat_env_offline_mode_fails_explicitly(monkeypatch):
-    def fail_init(**kwargs):
-        raise AssertionError("WANDB_MODE=offline must not initialize InstantML")
+def test_wandb_compat_env_offline_mode_maps_to_native_offline(monkeypatch):
+    captured = {}
+
+    def fake_init(**kwargs):
+        captured.update(kwargs)
+        return object()
 
     monkeypatch.setenv("WANDB_MODE", "offline")
-    monkeypatch.setattr(wandb, "instantml_init", fail_init)
+    monkeypatch.setattr(wandb, "instantml_init", fake_init)
     monkeypatch.setattr(wandb, "run", None)
     monkeypatch.setattr(wandb, "config", wandb.Config())
 
-    with pytest.raises(wandb.UnsupportedWandbFeature, match="offline/dryrun"):
-        wandb.init(project="demo")
+    wandb.init(project="demo")
+    assert captured["mode"] == "offline"
 
 
-def test_wandb_compat_env_disabled_mode_fails_explicitly(monkeypatch):
-    def fail_init(**kwargs):
-        raise AssertionError("WANDB_DISABLED=true must not initialize InstantML")
+def test_wandb_compat_disabled_mode_maps_to_native_disabled(monkeypatch):
+    captured = {}
+
+    def fake_init(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(wandb, "instantml_init", fake_init)
+    monkeypatch.setattr(wandb, "run", None)
+    monkeypatch.setattr(wandb, "config", wandb.Config())
+
+    wandb.init(project="demo", mode="disabled")
+    assert captured["mode"] == "disabled"
+
+
+def test_wandb_compat_env_disabled_mode_maps_to_native_disabled(monkeypatch):
+    captured = {}
+
+    def fake_init(**kwargs):
+        captured.update(kwargs)
+        return object()
 
     monkeypatch.setenv("WANDB_DISABLED", "true")
-    monkeypatch.setattr(wandb, "instantml_init", fail_init)
+    monkeypatch.setattr(wandb, "instantml_init", fake_init)
     monkeypatch.setattr(wandb, "run", None)
     monkeypatch.setattr(wandb, "config", wandb.Config())
 
-    with pytest.raises(wandb.UnsupportedWandbFeature, match="disabled"):
-        wandb.init(project="demo")
+    wandb.init(project="demo")
+    assert captured["mode"] == "disabled"
 
 
 def test_wandb_compat_rejects_unsupported_log_kwargs(monkeypatch):

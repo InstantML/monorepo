@@ -8,11 +8,14 @@ import functools
 import hashlib
 import importlib.metadata
 import json
+import logging
 import math
 import mimetypes
 import os
 import random
+import shutil
 import signal
+import socket
 import sqlite3
 import sys
 import subprocess
@@ -88,6 +91,7 @@ from .serialization import (
     _validate_optional_json_object,
 )
 from .credentials import _check_credentials_or_raise, _resolve_api_key as _resolve_api_key_from_env
+from .errors import UnsupportedOfflineOperation
 from .http import _error_message, _offline_path, _spool_event
 from .shadow import ShadowWandb, build_shadow as _build_shadow_wandb
 from .source import (
@@ -125,6 +129,131 @@ _SPOOL_SEGMENT_FSYNC_SECONDS = 0.200
 _SPOOL_SEGMENT_ROTATE_EVENTS = 1000
 SNAPSHOT_KEYS = {"metrics", "metadata"}
 _PENDING_RUN_ID = "__instantml_pending__"
+
+_LOGGER = logging.getLogger("instantml")
+
+# Run modes (init(mode=...)). Distinct from ``upload_mode`` (async/sync/spool),
+# which only tunes online delivery.
+RUN_MODES = ("online", "offline", "disabled")
+DEFAULT_DATA_ROOT = ".instantml"
+# resume=... maps to the server create/resume/auto mode selector.
+_RESUME_TO_SERVER_MODE = {"never": "create", "must": "resume", "allow": "auto"}
+_OFFLINE_RUN_JSON_SCHEMA_VERSION = 1
+# Closed, extensible set of event classes (design §3). Classification is by
+# route path via ``_classify_event_class`` so every writer agrees.
+EVENT_CLASSES = (
+    "run_meta",
+    "metrics",
+    "rank_metrics",
+    "logs",
+    "attributes",
+    "objects",
+    "files",
+    "traces",
+)
+_OFFLINE_DROP_WARN_INTERVAL_SECONDS = 5.0
+# Fixed namespace for deterministic session identity (UUIDv5).
+_SESSION_ID_NAMESPACE = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
+
+
+def _resolve_mode(mode: str | None) -> str:
+    """Resolve the effective run mode. Precedence: ``mode=`` > ``INSTANTML_MODE`` > ``online``."""
+    selected = mode if mode is not None else os.environ.get("INSTANTML_MODE")
+    if selected is None:
+        return "online"
+    normalized = str(selected).strip().lower()
+    if normalized == "":
+        return "online"
+    if normalized not in RUN_MODES:
+        raise ValueError(f"mode must be one of: {', '.join(RUN_MODES)} (got {selected!r})")
+    return normalized
+
+
+def _resolve_resume(resume: str | None) -> str:
+    """Map the SDK ``resume`` selector to a server create/resume/auto mode."""
+    if resume is None:
+        return "create"
+    normalized = str(resume).strip().lower()
+    if normalized not in _RESUME_TO_SERVER_MODE:
+        raise ValueError(
+            f"resume must be one of: {', '.join(sorted(_RESUME_TO_SERVER_MODE))} (got {resume!r})"
+        )
+    return _RESUME_TO_SERVER_MODE[normalized]
+
+
+def _validate_run_id(run_id: str) -> str:
+    """Validate and canonicalize a client-supplied run id as a lowercased RFC 4122 UUID."""
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValueError("run_id must be a non-empty canonical RFC 4122 UUID string")
+    candidate = run_id.strip()
+    try:
+        parsed = uuid.UUID(candidate)
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError(f"run_id must be a canonical RFC 4122 UUID string (got {run_id!r})") from exc
+    canonical = str(parsed)
+    # Reject non-canonical spellings (braces, urn:, uppercase, missing dashes)
+    # so the stored id round-trips byte-for-byte with the server contract.
+    if candidate.lower() != canonical:
+        raise ValueError(
+            f"run_id must be a canonical lowercased RFC 4122 UUID string (got {run_id!r}; expected {canonical!r})"
+        )
+    return canonical
+
+
+def _resolve_data_root(data_root: str | None) -> str:
+    """Resolve the offline/local data root. Precedence: arg > ``INSTANTML_DATA_DIR`` > ``./.instantml``."""
+    return data_root or os.environ.get("INSTANTML_DATA_DIR") or DEFAULT_DATA_ROOT
+
+
+def _host_hash() -> str:
+    try:
+        name = socket.gethostname()
+    except Exception:  # noqa: BLE001 - never let hostname resolution stop init
+        name = ""
+    return hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
+
+
+def _classify_event_class(method: str, path: str) -> str:
+    """Classify a request into a closed event class by route path (design §3)."""
+    if path.endswith("/rank-metrics"):
+        return "rank_metrics"
+    if path.endswith("/metrics"):
+        return "metrics"
+    if path.endswith("/logs"):
+        return "logs"
+    if path.endswith("/attributes"):
+        return "attributes"
+    if path.endswith("/objects"):
+        return "objects"
+    if "/traces/" in path:
+        return "traces"
+    if "/artifacts" in path:
+        return "files"
+    if method == "PATCH" and path.startswith("/runs/"):
+        return "run_meta"
+    if path == "/runs" or path.startswith("/runs/"):
+        return "run_meta"
+    return "run_meta"
+
+
+def deterministic_session_id(
+    run_id: str,
+    producer_kind: str,
+    rank: int | None,
+    data_root: str | os.PathLike[str],
+) -> str:
+    """Deterministic producer session id (UUIDv5) that survives restarts.
+
+    Derived from stable producer identity — ``(run_id, producer kind,
+    rank or "", sha256 of the absolute data-root path)`` — so a restarted
+    uploader or re-executed sync reuses the same session row while a genuinely
+    different producer (another rank, another machine, another data root) gets a
+    different one. Raw paths and hostnames never leave the machine.
+    """
+    root_hash = hashlib.sha256(str(Path(data_root).expanduser().resolve()).encode("utf-8")).hexdigest()
+    rank_token = "" if rank is None else str(int(rank))
+    name = "\0".join([str(run_id), str(producer_kind), rank_token, root_hash])
+    return str(uuid.uuid5(_SESSION_ID_NAMESPACE, name))
 _RATE_LIMIT_RETRY_ATTEMPTS = 3
 _RATE_LIMIT_RETRY_BASE_SECONDS = 0.25
 _RATE_LIMIT_RETRY_MAX_SECONDS = 5.0
@@ -246,11 +375,26 @@ class Client:
         shadow_wandb: Any = False,
         queue_dir: str | None = None,
         stop_check_interval_seconds: float = 30.0,
+        mode: str = "online",
+        run_id: str | None = None,
+        resume: str | None = None,
+        data_dir: str | None = None,
     ) -> "Run":
         _validate_upload_mode(upload_mode)
         system_metrics, system_metrics_interval = _resolve_system_metrics(system_metrics, system_metrics_interval)
         if metadata and "_rlobs" in metadata:
             raise ValueError("metadata key '_rlobs' is reserved for SDK-owned metadata")
+        # Effective run id: init(run_id=) > INSTANTML_RUN_ID > generated. Validated
+        # (canonical lowercased UUID) whenever the client supplies one.
+        env_run_id = os.environ.get("INSTANTML_RUN_ID")
+        requested_run_id = run_id if run_id is not None else (env_run_id or None)
+        effective_run_id = _validate_run_id(requested_run_id) if requested_run_id else None
+        server_mode = _resolve_resume(resume)
+        if mode in {"offline", "disabled"} and upload_mode != "async":
+            # upload_mode only tunes online delivery; it is ignored in
+            # offline/disabled with a debug-level notice (design §4).
+            _LOGGER.debug("upload_mode=%r is ignored in mode=%r", upload_mode, mode)
+
         source_settings = _normalize_source_tracking(source_tracking)
         combined_metadata = _environment_metadata(source_settings)
         if source_settings is not None:
@@ -270,6 +414,49 @@ class Client:
             "tags": tags or [],
             "metadata": combined_metadata,
         }
+
+        if mode == "disabled":
+            # Strictly inert: no network, no disk, no lifecycle handlers.
+            return _DisabledRun(run_id=effective_run_id)
+
+        if mode == "offline":
+            offline_run_id = effective_run_id or str(uuid.uuid4())
+            run_client = Client(
+                base_url=self.base_url,
+                timeout=self.timeout,
+                offline_dir=offline_dir or self.offline_dir,
+                api_key=self.api_key,
+            )
+            run = Run(
+                client=run_client,
+                run_id=offline_run_id,
+                buffer_size=buffer_size,
+                upload_mode=upload_mode,
+                stop_check_interval_seconds=stop_check_interval_seconds,
+                mode="offline",
+                offline_root=_resolve_data_root(data_dir),
+                offline_server_mode=server_mode,
+                create_body=create_body,
+            )
+            if system_metrics:
+                try:
+                    run.start_system_metrics(interval=system_metrics_interval)
+                except Exception as exc:  # noqa: BLE001 — optional sampler must not break offline init
+                    warnings.warn(f"system metrics sampler could not start: {exc}", RuntimeWarning, stacklevel=2)
+            if capture_console:
+                try:
+                    run.capture_console()
+                except Exception as exc:  # noqa: BLE001
+                    warnings.warn(f"console capture could not start: {exc}", RuntimeWarning, stacklevel=2)
+            return run
+
+        # Online: when a client run id or resume is requested, pass {id, mode}
+        # in the create body (server support lands in PR-02).
+        if effective_run_id is not None:
+            create_body["id"] = effective_run_id
+        if effective_run_id is not None or resume is not None:
+            create_body["mode"] = server_mode
+
         run_client = Client(
             base_url=self.base_url,
             timeout=self.timeout,
@@ -1616,21 +1803,22 @@ def _active_runs_snapshot() -> list["Run"]:
         return list(_ACTIVE_RUNS)
 
 
-def _flush_active_runs(status: str) -> None:
+def _flush_active_runs(status: str, clean: bool = True) -> None:
     for run in _active_runs_snapshot():
         try:
-            run._finish_from_lifecycle(status)
+            run._finish_from_lifecycle(status, clean=clean)
         except Exception:  # noqa: BLE001 - shutdown must stay best-effort
             pass
 
 
 def _atexit_flush() -> None:
-    _flush_active_runs("finished")
+    # Normal interpreter exit: a clean shutdown of any still-open run.
+    _flush_active_runs("finished", clean=True)
 
 
 def _handle_termination_signal(signum: int, frame: Any) -> None:
-    # A preempted run is interrupted, not cleanly finished.
-    _flush_active_runs("failed")
+    # A preempted run is interrupted, not cleanly finished (offline: clean:false).
+    _flush_active_runs("failed", clean=False)
     previous = _PREVIOUS_SIGNAL_HANDLERS.get(signum, signal.SIG_DFL)
     if callable(previous):
         previous(signum, frame)
@@ -1727,30 +1915,57 @@ class Run:
         stop_check_interval_seconds: float = 30.0,
         _local_store: "_LocalStore | None" = None,
         shadow: "ShadowWandb | None" = None,
+        mode: str = "online",
+        offline_root: str | None = None,
+        offline_server_mode: str = "create",
+        offline_producer: dict[str, Any] | None = None,
+        create_body: dict[str, Any] | None = None,
     ) -> None:
         _validate_upload_mode(upload_mode)
+        self.mode = mode
         self.client = client
         self._run_id = run_id
         self.buffer_size = buffer_size
-        self.upload_mode = upload_mode
+        # Offline runs reuse the spool segment machinery internally, so the
+        # upload_mode is ignored (a debug notice is emitted by init()) and the
+        # spool-format branches in the log methods apply. Online runs keep the
+        # requested upload_mode.
+        self.upload_mode = "spool" if mode == "offline" else upload_mode
         self.spool_dir = spool_dir
         self.queue_dir = queue_dir
         self.media_dir = media_dir
         self.stop_check_interval_seconds = max(0.0, float(stop_check_interval_seconds))
         self._lock = threading.RLock()
-        self._process_spool_run_dir = _process_spool_run_dir(spool_dir, run_id) if upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID else None
+        self._offline: "_OfflineRunDirectory | None" = None
+        if mode == "offline":
+            producer = offline_producer or {"kind": "sdk", "rank": None, "host_hash": _host_hash()}
+            self._offline = _OfflineRunDirectory(
+                _resolve_data_root(offline_root),
+                run_id,
+                producer,
+                create_body or {},
+                offline_server_mode,
+                _sdk_version(),
+            )
+        self._process_spool_run_dir = (
+            _process_spool_run_dir(spool_dir, run_id)
+            if mode != "offline" and upload_mode == "spool" and run_id and run_id != _PENDING_RUN_ID
+            else None
+        )
         if self._process_spool_run_dir is not None:
             self._process_spool_run_dir.mkdir(parents=True, exist_ok=True)
         self._spool_writer: "_SpoolSegmentWriter | None" = None
         self._async_queue: AsyncQueueRepository | None = None
         self._async_process: subprocess.Popen[Any] | None = None
         self._async_process_lock = threading.RLock()
-        self._async_buffer: _AsyncProducerBuffer | None = _AsyncProducerBuffer(self) if upload_mode == "async" else None
+        self._async_buffer: _AsyncProducerBuffer | None = (
+            _AsyncProducerBuffer(self) if mode != "offline" and upload_mode == "async" else None
+        )
         self._async_start_warning_emitted = False
         self._last_async_warning_at = 0.0
         self._async_disabled_reason: str | None = None
         self._async_local_dropped = 0
-        if upload_mode == "async" and run_id and run_id != _PENDING_RUN_ID:
+        if mode != "offline" and upload_mode == "async" and run_id and run_id != _PENDING_RUN_ID:
             if self._open_async_queue_or_warn(run_id):
                 self._start_async_uploader()
         self._queue: list[dict[str, Any]] = []
@@ -1817,6 +2032,16 @@ class Run:
         return self._run_id
 
     def upload_status(self) -> dict[str, Any]:
+        if self.mode == "offline" and self._offline is not None:
+            counts = self._offline.counts_snapshot()
+            dropped = sum(values.get("dropped", 0) for values in counts.values())
+            return {
+                "mode": "offline",
+                "run_dir": str(self._offline.run_dir),
+                "session_id": self._offline.session_id,
+                "counts": counts,
+                "dropped": dropped,
+            }
         buffer_status = self._async_buffer_status()
         if self.upload_mode != "async":
             return {
@@ -2008,6 +2233,9 @@ class Run:
     def stop_request(self, force: bool = False) -> StopRequest | None:
         """Return the active cooperative stop request, if the server has one."""
 
+        if self.mode != "online":
+            # Offline runs never reach a server; cooperative stop is online-only.
+            return self._stop_request
         if self._is_finished():
             return self._stop_request
         if not force and not self._stop_poll_due():
@@ -2513,6 +2741,12 @@ class Run:
         aliases: list[str] | tuple[str, ...] | None = None,
         ttl_days: int | None = None,
     ) -> LoggedArtifact:
+        if self.mode == "offline":
+            raise UnsupportedOfflineOperation(
+                "versioned artifact uploads use presigned multipart flows that require a live server and "
+                "cannot be recorded offline; run in mode='online', or stage the file offline with "
+                "upload_file()/log_artifact()"
+            )
         if self.upload_mode == "spool":
             raise InstantMLError("versioned artifact uploads require upload_mode='sync' or 'async'")
         if not isinstance(artifact, VersionedArtifact):
@@ -2623,6 +2857,11 @@ class Run:
         type: str | None = None,
         project: str | None = None,
     ) -> LoggedArtifact:
+        if self.mode == "offline":
+            raise UnsupportedOfflineOperation(
+                "use_artifact() resolves and links an artifact version through the server and cannot run "
+                "offline; resolve inputs in mode='online'"
+            )
         api = Api(base_url=self.client.base_url, timeout=self.client.timeout, api_key=self.client.api_key)
         artifact = ref if isinstance(ref, LoggedArtifact) else api.artifact(ref, type=type, project=project)
         payload = self.client._request(
@@ -2766,6 +3005,30 @@ class Run:
         source = Path(path).expanduser().resolve()
         file_stats = _hash_file(source)
         payload_metadata = dict(metadata or {})
+        if self.mode == "offline":
+            assert self._offline is not None
+            staged = self._offline.stage_file(source)
+            payload = {
+                "type": artifact_type,
+                "name": name or source.name,
+                # Reference the staged copy under files/; sync reads and
+                # base64-encodes the bytes for the compat upload route later.
+                "source_path": str(staged),
+                "step": step,
+                "mime_type": mimetypes.guess_type(source.name)[0] or "application/octet-stream",
+                "size_bytes": file_stats.size_bytes,
+                "sha256": file_stats.sha256,
+                "metadata": payload_metadata,
+            }
+            self._offline.record(
+                "POST",
+                f"/api/runs/{self.run_id}/artifacts/upload",
+                payload,
+                {"upload_file": payload},
+                step,
+                _utc_timestamp(),
+            )
+            return {"id": "offline", **payload}
         if self.upload_mode == "spool":
             payload = {
                 "type": artifact_type,
@@ -2819,6 +3082,12 @@ class Run:
             payload = _classification_eval_object_payload(object_key, rich_object, step, shared_metadata)
             return self._submit_or_spool_object(payload, {"classification_eval": object_key}, step)
         if isinstance(rich_object, (Image, Video, Audio)):
+            if self.mode == "offline":
+                raise UnsupportedOfflineOperation(
+                    "media helpers (Image/Video/Audio) need a server upload response to link the object "
+                    "and cannot be recorded offline; log them in mode='online' (upload_mode='sync'/'async'), "
+                    "or store the file with upload_file()/log_artifact() offline"
+                )
             if self.upload_mode == "spool":
                 raise InstantMLError("rich media object logging requires upload_mode='sync' until uploader response chaining is supported")
             source = self._materialize_media_source(rich_object)
@@ -3063,6 +3332,10 @@ class Run:
     def flush(self) -> None:
         self._flush_pending_requests()
         self._flush_trace_events()
+        if self.mode == "offline":
+            if self._offline is not None:
+                self._offline.flush()
+            return
         if self.upload_mode == "async":
             self._force_async_buffer_flush(timeout=getattr(self.client, "timeout", 10.0))
         elif self.upload_mode == "spool" and self._spool_writer is not None:
@@ -3084,7 +3357,7 @@ class Run:
         path.unlink()
         return replayed
 
-    def finish(self, status: str = "finished", timeout: float | None = None) -> None:
+    def finish(self, status: str = "finished", timeout: float | None = None, clean: bool = True) -> None:
         with self._lock:
             if self._finished:
                 return
@@ -3105,6 +3378,13 @@ class Run:
         try:
             self._flush_pending_requests()
             self._flush_trace_events()
+            if self.mode == "offline":
+                # All local writes, no PATCH: flush segments and stamp the
+                # finish signature into run.json. clean=True for a normal
+                # finish(); clean=False for a SIGTERM/SIGINT lifecycle flush.
+                if self._offline is not None:
+                    self._offline.finish(status, clean=clean)
+                return
             if self.upload_mode == "spool":
                 self._submit("PATCH", f"/runs/{self.run_id}", {"status": status}, data={"status": status})
                 if self._spool_writer is not None:
@@ -3162,11 +3442,13 @@ class Run:
             if self._shadow is not None:
                 self._shadow.finish(status)
 
-    def _finish_from_lifecycle(self, status: str) -> None:
+    def _finish_from_lifecycle(self, status: str, clean: bool = True) -> None:
         """Best-effort finish triggered by atexit / SIGTERM / SIGINT.
 
         Never blocks shutdown indefinitely: a run whose async init has not yet
         resolved is given a short grace period, then skipped if still pending.
+        ``clean`` distinguishes a normal exit (atexit) from an interruption
+        (SIGTERM/SIGINT) for the offline finish signature.
         """
         with self._lock:
             if self._finished:
@@ -3180,7 +3462,7 @@ class Run:
             if status == "finished" and self._stop_request is not None:
                 self.finish_stopped()
             else:
-                self.finish(status)
+                self.finish(status, clean=clean)
         except Exception:  # noqa: BLE001 - shutdown must stay best-effort
             pass
 
@@ -3215,6 +3497,10 @@ class Run:
         step: int | float | None = None,
         event_timestamp: str | None = None,
     ) -> None:
+        if self.mode == "offline":
+            assert self._offline is not None
+            self._offline.record(method, path, body, data or {}, step, event_timestamp or _utc_timestamp())
+            return
         if self.upload_mode == "async" and _async_request_supported(method, path, body):
             self._enqueue_async_request(method, path, body)
             return
@@ -3284,6 +3570,12 @@ class Run:
         path = f"/api/runs/{self.run_id}/traces/events"
         body = {"events": events}
         idempotency_key = f"instantml-trace-{self.run_id}-{uuid.uuid4().hex}"
+        if self.mode == "offline":
+            assert self._offline is not None
+            # Trace batches are fire-and-forget POSTs (no server response
+            # chaining), so they are recorded offline under class "traces".
+            self._offline.record(method, path, body, {"trace_events": len(events)}, None, _utc_timestamp())
+            return
         if self.upload_mode == "async" and _async_request_supported(method, path, body):
             self._enqueue_async_request(method, path, body, idempotency_key=idempotency_key)
             return
@@ -3355,6 +3647,10 @@ class Run:
         body: dict[str, Any],
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
+        if self.mode == "offline":
+            assert self._offline is not None
+            self._offline.record(method, path, body, {}, None, _utc_timestamp())
+            return {"offline": True, "artifact": {"id": "offline", **body}, "object": {"id": "offline", **body}}
         try:
             if idempotency_key is None:
                 return self.client._request(method, path, body)
@@ -3367,6 +3663,231 @@ class Run:
                 event["idempotency_key"] = idempotency_key
             _spool_event(self.client.offline_dir, self.run_id, event)
             return {"spooled": True, "artifact": {"id": "spooled", **body}}
+
+
+class _NoOpSpan:
+    """Inert trace span/context for ``mode="disabled"``: usable as a context
+    manager, every attribute access returns a no-op callable."""
+
+    def __enter__(self) -> "_NoOpSpan":
+        return self
+
+    def __exit__(self, *_: Any) -> bool:
+        return False
+
+    def __call__(self, *_: Any, **__: Any) -> "_NoOpSpan":
+        return self
+
+    def __getattr__(self, _name: str) -> Callable[..., None]:
+        def _noop(*_args: Any, **_kwargs: Any) -> None:
+            return None
+
+        return _noop
+
+
+class _DisabledRun(Run):
+    """Strictly inert run for ``mode="disabled"`` (design §4).
+
+    The full logging surface is present but every method is a no-op returning an
+    inert value. Performs no network and no disk I/O, does **not** install
+    signal/atexit/fork lifecycle handlers, and is never added to the active-run
+    set. Generates a local run id for API-shape parity and works as a context
+    manager. Subclasses :class:`Run` so ``isinstance(run, Run)`` holds, but does
+    **not** call ``Run.__init__`` (which would open queues and register
+    handlers).
+    """
+
+    def __init__(self, run_id: str | None = None) -> None:
+        self.mode = "disabled"
+        self.client = None
+        self._run_id = run_id or str(uuid.uuid4())
+        self.upload_mode = "disabled"
+        self.buffer_size = 0
+        self.spool_dir = None
+        self.queue_dir = None
+        self.media_dir = None
+        self.stop_check_interval_seconds = 0.0
+        self._lock = threading.RLock()
+        self._offline = None
+        self._finished = False
+        self._shadow = None
+        self._local_store = None
+        self._system_sampler = None
+        self._console_capture = None
+        self._stop_request = None
+        self._stop_acknowledged = False
+
+    @property
+    def run_id(self) -> str:
+        return self._run_id
+
+    # Context manager --------------------------------------------------------
+    def __enter__(self) -> "_DisabledRun":
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self._finished = True
+
+    # Lifecycle / status -----------------------------------------------------
+    def finish(self, status: str = "finished", timeout: float | None = None, clean: bool = True) -> None:
+        self._finished = True
+
+    def finish_stopped(self, message: str | None = None, timeout: float | None = None) -> None:
+        self._finished = True
+
+    def flush(self) -> None:
+        return None
+
+    def upload_status(self) -> dict[str, Any]:
+        return {"mode": "disabled"}
+
+    def wait_for_init(self, timeout: float | None = None) -> str:
+        return self._run_id
+
+    def wait_for_submission(self, timeout: float | None = None) -> bool:
+        return True
+
+    def wait_for_processing(self, timeout: float | None = None) -> bool:
+        return True
+
+    def replay_offline(self) -> int:
+        return 0
+
+    def _finish_from_lifecycle(self, status: str, clean: bool = True) -> None:
+        return None
+
+    def _reset_after_fork(self) -> None:
+        return None
+
+    # Scalars / metrics ------------------------------------------------------
+    def log(self, data: Any, step: Any = None) -> None:
+        return None
+
+    def log_metrics(self, data: Any, step: Any = None, timestamp: Any = None, preview: bool = False, preview_completion: float = 0.0) -> None:
+        return None
+
+    def log_rank_metrics(self, data: Any, step: Any, rank: Any, world_size: Any, local_rank: Any = None, weight: Any = None, timestamp: Any = None) -> None:
+        return None
+
+    def log_snapshot(self, data: Any, step: Any = 0, timestamp: Any = None) -> None:
+        return None
+
+    def log_config(self, data: Any, flatten: bool = True) -> None:
+        return None
+
+    def log_text(self, data: Any, step: Any = None, timestamp: Any = None) -> None:
+        return None
+
+    def log_histogram(self, path: Any, histogram: Any, step: Any, timestamp: Any = None) -> None:
+        return None
+
+    def log_console(self, lines: Any, stream: str = "stdout", timestamp: Any = None) -> None:
+        return None
+
+    def log_stdout(self, lines: Any, timestamp: Any = None) -> None:
+        return None
+
+    def log_stderr(self, lines: Any, timestamp: Any = None) -> None:
+        return None
+
+    # Tags / notes -----------------------------------------------------------
+    def add_tags(self, tags: Any, group_tags: bool = False) -> None:
+        return None
+
+    def set_tags(self, tags: Any) -> None:
+        return None
+
+    def set_notes(self, notes: Any) -> None:
+        return None
+
+    # Rich objects -----------------------------------------------------------
+    def log_objects(self, objects: Any, step: Any = None, metadata: Any = None) -> list[dict[str, Any]]:
+        return []
+
+    def log_classification_eval(self, key: str, **kwargs: Any) -> dict[str, Any]:
+        return {}
+
+    def log_table_object(self, key: str, columns: Any, rows: Any, step: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_image(self, key: str, path: str, step: Any = None, caption: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_audio(self, key: str, path: str, step: Any = None, caption: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_video_object(self, key: str, path: str, step: Any = None, caption: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    # Artifacts / files ------------------------------------------------------
+    def log_artifact(self, name: Any, uri: Any = None, artifact_type: str = "file", step: Any = None, size_bytes: Any = None, metadata: Any = None, aliases: Any = None, ttl_days: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_versioned_artifact(self, artifact: Any, step: Any = None, aliases: Any = None, ttl_days: Any = None) -> None:
+        return None
+
+    def use_artifact(self, ref: Any, type: Any = None, project: Any = None) -> None:
+        return None
+
+    def upload_file(self, path: str, name: Any = None, artifact_type: str = "file", step: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_checkpoint(self, name: Any, uri: Any, step: Any, size_bytes: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_checkpoint_file(self, path: str, step: Any, name: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_rollout(self, name: Any, uri: Any, step: Any, size_bytes: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_video(self, name: Any, uri: Any, step: Any, size_bytes: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_table(self, name: Any, uri: Any, step: Any = None, size_bytes: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_file(self, name: Any, uri: Any, step: Any = None, size_bytes: Any = None, metadata: Any = None) -> dict[str, Any]:
+        return {}
+
+    def log_files(self, files: Any, step: Any, metadata: Any = None) -> list[dict[str, Any]]:
+        return []
+
+    # Model watching / system / console -------------------------------------
+    def watch(self, model: Any, log: str = "gradients", log_freq: int = 1000, bins: int = 64, log_graph: bool = False) -> "_HookHandle":
+        return _HookHandle([])
+
+    def start_system_metrics(self, interval: float = 15.0) -> None:
+        return None
+
+    def capture_console(self) -> None:
+        return None
+
+    # Tracing ----------------------------------------------------------------
+    def trace(self, name: str, **kwargs: Any) -> _NoOpSpan:
+        return _NoOpSpan()
+
+    def start_span(self, name: str, **kwargs: Any) -> _NoOpSpan:
+        return _NoOpSpan()
+
+    def attach_trace_context(self, context: Any) -> _NoOpSpan:
+        return _NoOpSpan()
+
+    def trace_op(self, **kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        def _decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            return func
+
+        return _decorator
+
+    # Cooperative stop -------------------------------------------------------
+    def stop_request(self, force: bool = False) -> StopRequest | None:
+        return None
+
+    def should_stop(self, force: bool = False) -> bool:
+        return False
+
+    def raise_if_stop_requested(self) -> None:
+        return None
 
 
 def init(
@@ -3393,18 +3914,33 @@ def init(
     shadow_wandb: Any = False,
     queue_dir: str | None = None,
     stop_check_interval_seconds: float = 30.0,
+    mode: str | None = None,
+    run_id: str | None = None,
+    resume: str | None = None,
+    data_dir: str | None = None,
 ) -> Run:
     """Start a new run and return a :class:`Run` handle.
 
-    Raises :class:`InstantMLError` immediately if no credentials are available
-    via ``api_key`` kwarg, ``INSTANTML_API_KEY`` env var, or ``~/.instantml/credentials``.
+    ``mode`` selects the run lifecycle: ``"online"`` (default) talks to the
+    server, ``"offline"`` writes a self-describing local run directory that
+    ``instantml sync`` uploads later, and ``"disabled"`` is a strictly inert
+    no-op for tests/CI. Precedence is ``mode=`` > ``INSTANTML_MODE`` >
+    ``"online"``. ``run_id`` (or ``INSTANTML_RUN_ID``) supplies a client-generated
+    canonical RFC 4122 UUID; ``resume`` (``"never"``/``"must"``/``"allow"``) maps
+    to the server ``create``/``resume``/``auto`` selector. ``data_dir`` (or
+    ``INSTANTML_DATA_DIR``, default ``./.instantml``) is the offline data root.
+
+    Online mode still requires a reachable server for run creation. Offline and
+    disabled modes never touch the network and do not require credentials.
 
     Set ``shadow_wandb=True`` (or pass a ``dict`` of wandb.init kwargs, or an
     already-initialized ``wandb.Run``) to mirror scalar ``log`` calls,
     ``finish``, and local-file ``log_artifact("name", "file://path", ...)``
     metadata artifacts to Weights & Biases for shadow→graduate pilots.
     """
-    _check_credentials_or_raise(api_key)
+    resolved_mode = _resolve_mode(mode)
+    if resolved_mode == "online":
+        _check_credentials_or_raise(api_key)
     return Client(base_url=base_url or _default_base_url(), timeout=timeout, offline_dir=offline_dir, api_key=api_key).init(
         project=project,
         name=name,
@@ -3426,6 +3962,10 @@ def init(
         async_init=async_init,
         shadow_wandb=shadow_wandb,
         stop_check_interval_seconds=stop_check_interval_seconds,
+        mode=resolved_mode,
+        run_id=run_id,
+        resume=resume,
+        data_dir=data_dir,
     )
 
 
@@ -4314,8 +4854,9 @@ class _SpoolSegmentWriter:
     reader-visible ``.jsonl`` file only on rotation / finalize.
     """
 
-    def __init__(self, run_dir: Path) -> None:
+    def __init__(self, run_dir: Path, rotate_callback: "Callable[[], None] | None" = None) -> None:
         self._run_dir = run_dir
+        self._rotate_callback = rotate_callback
         self._handle: Any | None = None
         self._active_path: Path | None = None
         self._final_path: Path | None = None
@@ -4372,15 +4913,335 @@ class _SpoolSegmentWriter:
             _fsync_dir(self._run_dir)
         self._active_path = None
         self._final_path = None
+        if self._rotate_callback is not None:
+            self._rotate_callback()
 
 
 def _safe_path_segment(value: str) -> str:
     return "".join(character if character.isalnum() or character in {"-", "_", "."} else "_" for character in value)
 
 
+_FSYNC_DIR_WARNED = False
+
+
 def _fsync_dir(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
+    """Best-effort directory fsync.
+
+    Crash recovery relies on the durability of a directory entry after
+    ``os.replace``. On network filesystems (NFS/Lustre) and on some platforms a
+    directory fsync can raise ``OSError``; per design nit #12 we degrade instead
+    of crashing the training loop, warning at most once per process.
+    """
+    global _FSYNC_DIR_WARNED
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+    except OSError as exc:
+        if not _FSYNC_DIR_WARNED:
+            _FSYNC_DIR_WARNED = True
+            warnings.warn(
+                f"directory fsync could not open {path} ({exc}); durability may be weaker on this filesystem",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return
     try:
         os.fsync(descriptor)
+    except OSError as exc:
+        if not _FSYNC_DIR_WARNED:
+            _FSYNC_DIR_WARNED = True
+            warnings.warn(
+                f"directory fsync failed for {path} ({exc}); durability may be weaker on this filesystem",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     finally:
         os.close(descriptor)
+
+
+def _chmod_quietly(path: Path, mode: int) -> None:
+    """chmod where the OS supports it; a no-op (best effort) on Windows/odd FS."""
+    try:
+        os.chmod(path, mode)
+    except (OSError, NotImplementedError):
+        pass
+
+
+def _offline_event(
+    run_id: str,
+    session_id: str,
+    event_class: str,
+    request: dict[str, Any],
+    data: dict[str, Any],
+    step: int | float | None,
+    timestamp: str,
+    sequence: int,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Build a spool-format envelope with the offline additions (design §3).
+
+    Adds top-level ``session_id`` and ``class`` and a persisted per-request
+    ``idempotency_key``; ``sequence`` is per-``(session_id, class)``.
+    """
+    stamped_request = dict(request)
+    stamped_request["idempotency_key"] = idempotency_key
+    return {
+        "version": 1,
+        "event_id": uuid.uuid4().hex,
+        "session_id": session_id,
+        "class": event_class,
+        "sequence": sequence,
+        "run_id": run_id,
+        "timestamp": timestamp,
+        "step": step,
+        "data": data,
+        "requests": [stamped_request],
+    }
+
+
+class _OfflineRunDirectory:
+    """Self-describing local run directory for ``mode="offline"`` (design §4).
+
+    Layout::
+
+        <data_root>/offline/<run_id>/
+          run.json     # atomically rewritten manifest (schema_version 1)
+          segments/    # spool-format JSONL segments (reuses _SpoolSegmentWriter)
+          files/       # staged artifact bytes referenced by source_path
+
+    Never touches the network. Segment appends are wrapped in a bounded
+    catch-and-drop path: an ``OSError`` (ENOSPC/EROFS/permission loss) drops the
+    event, bumps the per-class ``dropped`` counter, and rate-limits a warning so
+    the training loop never sees the exception. Per-class counters are in-memory
+    and checkpointed into ``run.json`` at segment rotation and finish only.
+    """
+
+    def __init__(
+        self,
+        data_root: str,
+        run_id: str,
+        producer: dict[str, Any],
+        create_request: dict[str, Any],
+        server_mode: str,
+        sdk_version: str,
+    ) -> None:
+        self.data_root = data_root
+        self.run_id = run_id
+        self.producer = producer
+        self.create_request = create_request
+        self.server_mode = server_mode
+        self.sdk_version = sdk_version
+        self.session_id = deterministic_session_id(
+            run_id, producer.get("kind", "sdk"), producer.get("rank"), data_root
+        )
+        root = Path(data_root).expanduser().resolve()
+        self.run_dir = root / "offline" / _safe_path_segment(run_id)
+        self.segments_dir = self.run_dir / "segments"
+        self.files_dir = self.run_dir / "files"
+        self.run_json_path = self.run_dir / "run.json"
+        self._lock = threading.RLock()
+        self._sequences: dict[str, int] = {}
+        self._counts: dict[str, dict[str, int]] = {}
+        self._finish: dict[str, Any] | None = None
+        self._created_at = _utc_timestamp()
+        self._last_drop_warning_at = 0.0
+        self._closed = False
+        self._prepare_dirs()
+        self._recover_state()
+        self._writer = _SpoolSegmentWriter(self.segments_dir, rotate_callback=self._checkpoint)
+        # Write the initial manifest so the directory is valid and inspectable
+        # from the moment init() returns, even before any events are logged.
+        self._checkpoint()
+
+    def _prepare_dirs(self) -> None:
+        for directory in (self.run_dir, self.segments_dir, self.files_dir):
+            directory.mkdir(parents=True, exist_ok=True)
+            _chmod_quietly(directory, 0o700)
+
+    def _recover_state(self) -> None:
+        """Seed per-class sequence counters (and best-effort counts) on restart.
+
+        The persisted key in each segment line is the source of truth; on a
+        restart against an existing offline dir the writer must continue from the
+        last persisted sequence per class so it never re-mints a key for an
+        already-persisted event. Scanning also seeds queued/attempted from the
+        real persisted line count; ``dropped`` is best-effort recovered from the
+        previous run.json checkpoint (drops are never written to segments).
+        """
+        persisted_per_class: dict[str, int] = {}
+        max_seq_per_class: dict[str, int] = {}
+        for segment in sorted(self.segments_dir.glob("*.jsonl")):
+            try:
+                lines = segment.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                event_class = event.get("class")
+                if not isinstance(event_class, str):
+                    continue
+                sequence = event.get("sequence")
+                if isinstance(sequence, int) and sequence > max_seq_per_class.get(event_class, 0):
+                    max_seq_per_class[event_class] = sequence
+                persisted_per_class[event_class] = persisted_per_class.get(event_class, 0) + 1
+        prior_dropped: dict[str, int] = {}
+        prior_created_at: str | None = None
+        if self.run_json_path.exists():
+            try:
+                prior = json.loads(self.run_json_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                prior = None
+            if isinstance(prior, dict):
+                if isinstance(prior.get("created_at"), str):
+                    prior_created_at = prior["created_at"]
+                counts = prior.get("counts")
+                if isinstance(counts, dict):
+                    for event_class, class_counts in counts.items():
+                        if isinstance(class_counts, dict) and isinstance(class_counts.get("dropped"), int):
+                            prior_dropped[event_class] = class_counts["dropped"]
+        if prior_created_at is not None:
+            self._created_at = prior_created_at
+        self._sequences = dict(max_seq_per_class)
+        for event_class in set(persisted_per_class) | set(prior_dropped):
+            queued = persisted_per_class.get(event_class, 0)
+            dropped = prior_dropped.get(event_class, 0)
+            self._counts[event_class] = {
+                "attempted": queued + dropped,
+                "queued": queued,
+                "dropped": dropped,
+            }
+
+    def _deterministic_key(self, event_class: str, sequence: int) -> str:
+        return f"instantml-{self.run_id}-{self.session_id[:8]}-{event_class}-{sequence}"
+
+    def record(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any],
+        data: dict[str, Any],
+        step: int | float | None,
+        timestamp: str,
+    ) -> None:
+        """Append one event to the offline segments, dropping on write failure."""
+        event_class = _classify_event_class(method, path)
+        with self._lock:
+            if self._closed:
+                return
+            sequence = self._sequences.get(event_class, 0) + 1
+            self._sequences[event_class] = sequence
+            counts = self._counts.setdefault(event_class, {"attempted": 0, "queued": 0, "dropped": 0})
+            counts["attempted"] += 1
+            key = self._deterministic_key(event_class, sequence)
+            event = _offline_event(
+                self.run_id,
+                self.session_id,
+                event_class,
+                {"method": method, "path": path, "body": body},
+                data,
+                step,
+                timestamp,
+                sequence,
+                key,
+            )
+            try:
+                self._writer.append(event, _serialize_process_event(event))
+                counts["queued"] += 1
+            except OSError as exc:
+                counts["dropped"] += 1
+                self._warn_drop(event_class, exc)
+
+    def stage_file(self, source: Path) -> Path:
+        """Copy artifact bytes under ``files/`` and return the staged path.
+
+        Sync later reads and base64-encodes the staged bytes for the compat
+        upload route. Staging by content hash de-duplicates repeated uploads of
+        an identical file within the run.
+        """
+        stats = _hash_file(source)
+        staged = self.files_dir / f"{stats.sha256}-{_safe_path_segment(source.name)}"
+        if not staged.exists():
+            tmp = staged.with_name(staged.name + f".tmp-{os.getpid()}-{uuid.uuid4().hex}")
+            shutil.copyfile(source, tmp)
+            _chmod_quietly(tmp, 0o600)
+            os.replace(tmp, staged)
+            _fsync_dir(self.files_dir)
+        else:
+            _chmod_quietly(staged, 0o600)
+        return staged
+
+    def _warn_drop(self, event_class: str, exc: OSError) -> None:
+        now = time.monotonic()
+        if now - self._last_drop_warning_at > _OFFLINE_DROP_WARN_INTERVAL_SECONDS:
+            self._last_drop_warning_at = now
+            warnings.warn(
+                f"offline run {self.run_id}: dropped a {event_class} event because the local "
+                f"segment write failed ({exc}); drop counts are recorded in run.json and force "
+                f"an incomplete data-state at sync time",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    def counts_snapshot(self) -> dict[str, dict[str, int]]:
+        with self._lock:
+            return {event_class: dict(values) for event_class, values in self._counts.items()}
+
+    def flush(self) -> None:
+        """Finalize (rotate) the active segment so its events become visible."""
+        with self._lock:
+            if self._closed:
+                return
+            self._writer.finalize()
+
+    def finish(self, status: str, clean: bool) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._writer.finalize()
+            self._finish = {"status": status, "at": _utc_timestamp(), "clean": clean}
+            self._checkpoint()
+            self._closed = True
+
+    def _manifest(self) -> dict[str, Any]:
+        return {
+            "schema_version": _OFFLINE_RUN_JSON_SCHEMA_VERSION,
+            "run_id": self.run_id,
+            "session_id": self.session_id,
+            "producer": self.producer,
+            "mode": self.server_mode,
+            "create_request": self.create_request,
+            "sdk_version": self.sdk_version,
+            "created_at": self._created_at,
+            "finish": self._finish,
+            "counts": {event_class: dict(values) for event_class, values in self._counts.items()},
+        }
+
+    def _checkpoint(self) -> None:
+        """Atomically rewrite run.json (tmp + os.replace + dir fsync)."""
+        manifest = self._manifest()
+        payload = json.dumps(manifest, separators=(",", ":")).encode("utf-8")
+        tmp = self.run_json_path.with_name(f".run.json.tmp-{os.getpid()}-{uuid.uuid4().hex}")
+        try:
+            descriptor = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(descriptor, payload)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            os.replace(tmp, self.run_json_path)
+            _chmod_quietly(self.run_json_path, 0o600)
+            _fsync_dir(self.run_dir)
+        except OSError as exc:
+            # A manifest-checkpoint failure must not crash the loop; counts are a
+            # checkpoint, not the source of truth (segments are). Warn (rate
+            # limited via the same guard) and continue.
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
+            self._warn_drop("run_meta", exc)

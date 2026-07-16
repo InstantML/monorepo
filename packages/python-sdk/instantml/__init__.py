@@ -30,8 +30,10 @@ from .client import (
     Video,
     VersionedArtifact,
     attach_run,
+    deterministic_session_id,
     init,
 )
+from .errors import UnsupportedOfflineOperation
 from .tracing import AttachedTraceContext, TraceContext, TraceSpan
 
 __all__ = [
@@ -62,9 +64,11 @@ __all__ = [
     "TraceContext",
     "TraceSpan",
     "TransformersCallback",
+    "UnsupportedOfflineOperation",
     "Video",
     "VersionedArtifact",
     "__version__",
+    "deterministic_session_id",
     "drain_spool",
     "attach_run",
     "init",
