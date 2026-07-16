@@ -315,11 +315,10 @@ const ObjectResultButton = memo(function ObjectResultButton({
 }) {
   return (
     <button
-      aria-selected={active}
+      aria-current={active ? "true" : undefined}
       className={`objects-result${active ? " selected" : ""}`}
       id={`object-${object.object_id}`}
       onClick={() => onSelect(object)}
-      role="option"
       type="button"
     >
       <span className="objects-result-icon">{objectIcon(object.kind)}</span>
@@ -390,6 +389,15 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
     replaceObjectUrl({ fromStep, key, kind, runQuery, toStep });
   }, [fromStep, key, kind, runQuery, toStep, urlStateReady]);
 
+  useEffect(() => {
+    // Invalidate pagination as soon as an input changes, before deferred text
+    // filters trigger the next page-1 request.
+    filterEpochRef.current += 1;
+    loadMoreControllerRef.current?.abort();
+    loadMoreControllerRef.current = null;
+    setLoadingMore(false);
+  }, [fromStep, key, kind, project, refreshNonce, runQuery, toStep]);
+
   // Keep the active option visible when it moves via the keyboard, so
   // ArrowDown/End selection never lands on a row scrolled out of the list.
   useEffect(() => {
@@ -418,9 +426,6 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
     if (!urlStateReady) return;
     const controller = new AbortController();
     let cancelled = false;
-    // A fresh filter load invalidates any in-flight "load more" page.
-    filterEpochRef.current += 1;
-    loadMoreControllerRef.current?.abort();
     async function loadObjects() {
       setLoading(true);
       setError("");
@@ -542,7 +547,7 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
       />
 
       <section className="objects-filter-band" aria-label="Object filters">
-        <div className="objects-kind-tabs" role="tablist" aria-label="Object kind">
+        <div className="objects-kind-tabs" role="group" aria-label="Object kind">
           {KIND_OPTIONS.map((option) => (
             <button
               aria-pressed={kind === option.value}
@@ -593,11 +598,10 @@ export function ObjectsTabPane({ api, initialRunQuery = "", project }: Props) {
             <small>{loading ? "Loading..." : `${objects.length} objects`}</small>
           </div>
           <div
-            aria-activedescendant={selected ? `object-${selected.object_id}` : undefined}
             aria-label="Object results"
             className="objects-results"
             onKeyDown={handleListKeyDown}
-            role="listbox"
+            role="group"
             tabIndex={0}
           >
             {loading ? <div className="objects-placeholder">Loading objects...</div> : null}

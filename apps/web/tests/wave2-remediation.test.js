@@ -88,6 +88,17 @@ test("objects workspace filters round-trip through shareable URL params", () => 
   assert.match(objectsSrc, /window\.addEventListener\("popstate", syncFromUrl\)/, "Objects tab should handle browser back/forward filter state");
 });
 
+test("objects workspace invalidates stale pages immediately and uses native button semantics", () => {
+  const objectsSrc = read("app/dashboard/objects/tab-pane.tsx");
+  assert.match(objectsSrc, /filterEpochRef\.current \+= 1/);
+  assert.match(objectsSrc, /loadMoreControllerRef\.current\?\.abort\(\)/);
+  assert.match(objectsSrc, /\[fromStep, key, kind, project, refreshNonce, runQuery, toStep\]/);
+  assert.match(objectsSrc, /scrollIntoView\(\{ block: "nearest" \}\)/);
+  assert.doesNotMatch(objectsSrc, /role="listbox"/);
+  assert.doesNotMatch(objectsSrc, /role="option"/);
+  assert.doesNotMatch(objectsSrc, /role="tablist"/);
+});
+
 // R1 — the runs table is mounted behind a panels/table view toggle.
 test("runs tab offers a persisted panels/table view toggle", () => {
   const paneSrc = read("app/dashboard/runs/tab-pane.tsx");

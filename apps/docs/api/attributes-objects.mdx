@@ -106,8 +106,9 @@ through the rows endpoint.
 
 Use `kind=histogram&key=...&limit=100` to read selected-run logged histogram
 frames for Runs workspace timeline panels. The current API reads one run and
-one explicit object key; multi-run histogram timelines need a separate bounded
-endpoint.
+one exact object key. Unlike the explorer's substring `key` filter, this route
+uses exact matching so neighboring keys cannot mix in a timeline. Multi-run
+histogram timelines need a separate bounded endpoint.
 
 ## Explore objects across runs
 

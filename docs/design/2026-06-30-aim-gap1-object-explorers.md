@@ -361,6 +361,10 @@ Re-review:
 - 2026-06-30: Full `npm run rust:test` was attempted; non-object tests that use
   sqlx Postgres test harness failed because `DATABASE_URL` is not set in this
   local environment. Focused object tests passed.
+- 2026-07-15: Follow-up review hardening now invalidates and aborts pagination
+  immediately when raw filters change, keeps keyboard selection scrolled into
+  view, and uses a native button-group accessibility model for object kinds and
+  results instead of mixing focusable buttons with tab/listbox semantics.
 
 ## Coverage Exceptions
 
