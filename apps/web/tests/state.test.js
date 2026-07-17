@@ -708,6 +708,18 @@ test("chart helpers normalize series and summarize last values", () => {
   assert.deepEqual(chartDomain(zoomedSeries, "step", "eval/return_mean", { min: 8, max: 22 }), { minX: 10, maxX: 20, minY: 50, maxY: 60, yScale: "linear" });
   const zoomedNormalized = normalizeSeries(zoomedSeries, 100, 80, 28, "step", "eval/return_mean", { min: 8, max: 22 });
   assert.deepEqual(zoomedNormalized[0].normalizedPoints.map((point) => point.step), [10, 20]);
+  // A single-point series still zooms: the range clamps to the padded display
+  // window (here 10 ± 5), not the degenerate [10, 10] data extent that used to
+  // discard the gesture.
+  const lonePoint = [{ id: "one", name: "one", points: [{ step: 10, value: 5 }] }];
+  assert.deepEqual(chartDomain(lonePoint, "step", "eval/return_mean", { min: 8, max: 12 }), { minX: 8, maxX: 12, minY: 2.5, maxY: 7.5, yScale: "linear" });
+  const loneZoomed = normalizeSeries(lonePoint, 100, 80, 28, "step", "eval/return_mean", { min: 8, max: 12 });
+  assert.deepEqual(loneZoomed[0].normalizedPoints.map((point) => point.step), [10]);
+  assert.equal(loneZoomed[0].domain.minX, 8);
+  assert.equal(loneZoomed[0].domain.maxX, 12);
+  // A window that excludes the lone point keeps the selected x-domain and
+  // falls back to the full data for y, matching multi-point empty-window zooms.
+  assert.deepEqual(chartDomain(lonePoint, "step", "eval/return_mean", { min: 12.5, max: 14 }), { minX: 12.5, maxX: 14, minY: 2.5, maxY: 7.5, yScale: "linear" });
   assert.deepEqual(axisTicks(0, 10, 3), [0, 5, 10]);
   assert.deepEqual(axisTicks(2, 2, 3), [2]);
   assert.deepEqual(axisTicks(Number.NaN, 10), []);

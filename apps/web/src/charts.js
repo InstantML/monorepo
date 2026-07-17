@@ -13,7 +13,12 @@ export function normalizeSeries(series, width, height, padding = 28, xKey = "ste
   // x and y extents together instead of separate extent/domain scans.
   const full = seriesStats(series, xKey, null, yScale, !yRange);
   if (full.count === 0) return [];
-  const range = boundedXRange(xRange, full.minX, full.maxX);
+  // Clamp the zoom window to the display extent (the stepDomain-padded window
+  // the range overview lets the user drag over), not the raw data extent —
+  // a single-point series has a degenerate [x, x] extent that would silently
+  // discard every zoom gesture.
+  const fullX = stepDomain(full.minX, full.maxX);
+  const range = boundedXRange(xRange, fullX.min, fullX.max);
   const visible = range ? seriesStats(series, xKey, range, yScale, !yRange) : full;
   const visibleExtent = range && visible.count > 1 ? visible : null;
   const rawMinStep = visibleExtent ? visibleExtent.minX : range?.min ?? full.minX;
@@ -128,7 +133,10 @@ export function chartDomain(series, xKey = "step", metricKey = "", xRange = null
   const yRange = sanitizeYAxisRange(yAxis?.range, yScale);
   const full = seriesStats(series, xKey, null, yScale, !yRange);
   if (full.count === 0) return null;
-  const range = boundedXRange(xRange, full.minX, full.maxX);
+  // Same display-extent clamp as normalizeSeries: keep zoom usable on
+  // single-point series whose raw x extent is degenerate.
+  const fullX = stepDomain(full.minX, full.maxX);
+  const range = boundedXRange(xRange, fullX.min, fullX.max);
   const visible = range ? seriesStats(series, xKey, range, yScale, !yRange) : full;
   const visibleExtent = range && visible.count > 1 ? visible : null;
   const yStats = visible.count ? visible : full;
@@ -616,6 +624,8 @@ function seriesStats(series, xKey, range, yScale, trackY) {
   return { count, minX, maxX, minY, maxY };
 }
 
+// minX/maxX arrive stepDomain-padded (strictly minX < maxX for finite input),
+// so a degenerate data extent no longer nulls the range here.
 function boundedXRange(range, minX, maxX) {
   if (!range || !Number.isFinite(minX) || !Number.isFinite(maxX) || minX === maxX) return null;
   const rawMin = Number(range.min);
