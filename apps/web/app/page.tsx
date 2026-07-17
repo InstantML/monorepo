@@ -1,8 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { LandingPage } from "../components/landing/LandingPage";
+import { postAuthRedirectPath } from "../src/routes.js";
+import { serverAuthSession } from "./server-auth";
 
 const LANDING_TITLE = "InstantML — Experiment tracking that keeps up with training";
 const LANDING_DESCRIPTION =
@@ -42,22 +45,26 @@ async function clerkUserIdOrNull() {
  * Home route — auth-aware server component.
  *
  * Routing:
- *   Visitor has a Clerk session → /signin
- *     The /signin page checks for an active InstantML session and
- *     redirects to /dashboard/runs when both sessions are present
- *     and org storage is ready; otherwise it sends the user back to
- *     /onboarding to finish storage setup.
- *     This reuses existing logic without duplicating the InstantML
- *     session check here.
+ *   Visitor has an active InstantML session → /dashboard/runs
+ *     (or /onboarding when org storage setup is pending), via the
+ *     same postAuthRedirectPath used by /signin. The InstantML
+ *     session is checked first because it is what the dashboard
+ *     actually runs on — it can outlive the Clerk session.
  *
- *   No Clerk session → render the landing page.
+ *   Clerk session only → /signin
+ *     The /signin page handles the "Clerk-authenticated but no
+ *     InstantML session" handshake and redirects onward once both
+ *     sessions are active.
  *
- * Follow-up: a direct /dashboard/runs redirect for visitors with a
- * warm InstantML session cookie can be added once the server-side
- * InstantML session check is confirmed reliable in RSC context.
+ *   Neither session → render the landing page.
+ *
  * See docs/design/2026-05-17-landing-merge-into-web.md.
  */
 export default async function Home() {
+  const session = await serverAuthSession((await headers()).get("cookie") ?? "");
+  if (session?.authenticated) {
+    redirect(postAuthRedirectPath(session));
+  }
   const userId = await clerkUserIdOrNull();
   if (userId) {
     redirect("/signin");

@@ -51,7 +51,9 @@ if (userId) {
 return <LandingPage />;
 ```
 
-Rationale for the simplified branch: the existing `/signin` page already checks for an active InstantML session and redirects to `/dashboard/runs` if one exists. Routing all Clerk-signed-in visitors to `/signin` reuses that logic without duplicating the InstantML session check in `page.tsx`. A future design doc can add a direct `/dashboard/runs` redirect for visitors who have a warm InstantML session cookie, measured by whether the latency savings justify the added check.
+Rationale for the simplified branch: the existing `/signin` page already checks for an active InstantML session and redirects to `/dashboard/runs` if one exists. Routing all Clerk-signed-in visitors to `/signin` reuses that logic without duplicating the InstantML session check in `page.tsx`.
+
+Update (2026-07-17): the simplified branch left a gap — the InstantML session can outlive the Clerk session, so a user whose Clerk session had lapsed saw the landing page at `/` even though `/dashboard/runs` still worked for them. `page.tsx` now checks the InstantML session first via `serverAuthSession` (the same cookie-forwarded `/api/auth/session` check `/signin` uses, since proven reliable in RSC context) and redirects through `postAuthRedirectPath` — `/dashboard/runs`, or `/onboarding` when storage setup is pending. The Clerk-only case still routes to `/signin` for the session handshake. `serverAuthSession` short-circuits without a network call when no `instantml_session` cookie is present, so anonymous visitors see no added latency.
 
 `afterSignInUrl` / `afterSignUpUrl` in `layout.tsx` ClerkProvider remain unset here; the sign-in and sign-up pages already set `redirectUrl="/dashboard/runs"` in their Clerk-hosted-UI configuration.
 
