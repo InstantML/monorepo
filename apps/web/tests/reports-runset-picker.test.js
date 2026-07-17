@@ -35,6 +35,17 @@ test("panel grid offers a project multi-select picker, not just raw text", () =>
   assert.match(src, /toggleProject/, "chips must toggle membership on click");
 });
 
+test("project options are deduped so repeated stored names render one chip", () => {
+  const src = read("block-types", "panel-grid-block.tsx");
+  // Duplicate project rows sharing a name (multi-writer races) must not
+  // produce duplicate chips / duplicate React keys.
+  assert.match(
+    src,
+    /options:\s*Array\.from\(new Set\(names\)\)/,
+    "useProjectOptions must dedupe fetched project names",
+  );
+});
+
 test("comma-separated projects input survives only as the fetch-failure fallback", () => {
   const src = read("block-types", "panel-grid-block.tsx");
   // The old always-on label is gone…

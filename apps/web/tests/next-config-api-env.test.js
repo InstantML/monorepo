@@ -44,6 +44,19 @@ test("Next API rewrites allow explicit staging split bases for hosted frontend s
   assertRewriteDestinations(rewrites.filter((rewrite) => rewrite.source === "/api/:path*" || rewrite.source === "/projects"), dataBase);
 });
 
+test("Next rewrites proxy the bare /runs collection route to the data plane", () => {
+  const rewrites = loadConfigList("rewrites", {
+    INSTANTML_WEB_API_ENV: "prod",
+    INSTANTML_API_BASE: "https://api.instantml.ai",
+  });
+  // The wildcard "/runs/:path*" rule alone compiles an empty ":path*" to
+  // "/runs/" in the deployed rewrite layer, which the API 404s. Reports
+  // runset queries depend on an exact "/runs" rule.
+  const exact = rewrites.find((rewrite) => rewrite.source === "/runs");
+  assert.ok(exact, "missing exact /runs rewrite");
+  assert.equal(exact.destination, "https://api.instantml.ai/runs");
+});
+
 test("Next API rewrites reject unknown hosted API environments", () => {
   const result = importConfig("rewrites", {
     INSTANTML_WEB_API_ENV: "qa",

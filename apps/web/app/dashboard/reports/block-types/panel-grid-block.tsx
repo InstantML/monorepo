@@ -302,7 +302,10 @@ function useProjectOptions(api: ApiClient): ProjectOptionsState {
         const names = list
           .map((project: { name?: string }) => project?.name)
           .filter((name: unknown): name is string => typeof name === "string" && name.length > 0);
-        if (!cancelled) setState({ status: "ready", options: names });
+        // Runsets reference projects by name, so two stored rows sharing a
+        // name are one pickable option — dedupe to keep chips (and React
+        // keys) unique.
+        if (!cancelled) setState({ status: "ready", options: Array.from(new Set(names)) });
       } catch {
         // Picker is best-effort — flag the failure so the runset editor
         // falls back to the raw comma-separated text input.
