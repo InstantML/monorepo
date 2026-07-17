@@ -203,6 +203,34 @@ describe("app/page.tsx — auth-aware home route", () => {
       "page.tsx must import LandingPage from the ported component"
     );
   });
+
+  test("page.tsx checks the InstantML session via serverAuthSession", () => {
+    if (!pageSrc) pageSrc = fs.readFileSync(pagePath, "utf8");
+    assert.ok(
+      pageSrc.includes("serverAuthSession("),
+      "page.tsx must check the InstantML session server-side — it can outlive the Clerk session"
+    );
+  });
+
+  test("page.tsx redirects InstantML-authenticated visitors via postAuthRedirectPath", () => {
+    if (!pageSrc) pageSrc = fs.readFileSync(pagePath, "utf8");
+    assert.ok(
+      pageSrc.includes("postAuthRedirectPath("),
+      "page.tsx must reuse postAuthRedirectPath so onboarding-pending orgs land on /onboarding"
+    );
+  });
+
+  test("page.tsx checks the InstantML session before the Clerk session", () => {
+    if (!pageSrc) pageSrc = fs.readFileSync(pagePath, "utf8");
+    const body = pageSrc.slice(pageSrc.indexOf("export default"));
+    const instantmlCheck = body.indexOf("serverAuthSession(");
+    const clerkCheck = body.indexOf("clerkUserIdOrNull(");
+    assert.ok(instantmlCheck !== -1 && clerkCheck !== -1, "Home() must check both sessions");
+    assert.ok(
+      instantmlCheck < clerkCheck,
+      "Home() must check the InstantML session first — a lapsed Clerk session must not strand a dashboard-authenticated visitor on the landing page"
+    );
+  });
 });
 
 // ── MaskingDemo: polyline helper produces valid SVG point strings ─────────────
