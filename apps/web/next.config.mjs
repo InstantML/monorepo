@@ -128,6 +128,11 @@ const nextConfig = {
       { source: "/api/reports", destination: `${apiBases.data}/api/reports` },
       { source: "/api/reports/:path*", destination: `${apiBases.data}/api/reports/:path*` },
       { source: "/api/:path*", destination: `${apiBases.data}/api/:path*` },
+      // Bare "/runs" needs an exact rule like the other collection routes:
+      // the wildcard rule compiles an empty ":path*" to "/runs/" in the
+      // deployed rewrite layer, which the API router rejects as an unknown
+      // route (404). Reports runset queries call "GET /runs?project=…".
+      { source: "/runs", destination: `${apiBases.data}/runs` },
       { source: "/runs/:path*", destination: `${apiBases.data}/runs/:path*` },
       { source: "/projects", destination: `${apiBases.data}/projects` },
       { source: "/health", destination: `${apiBases.default}/health` },
