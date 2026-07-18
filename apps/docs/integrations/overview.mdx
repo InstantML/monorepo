@@ -1,16 +1,22 @@
 ---
 title: "Integrations overview"
-description: "Track training runs from PyTorch Lightning, Hugging Face Transformers, Keras, and Weights & Biases with one-line InstantML adapters."
+description: "Track training runs from common ML frameworks with thin InstantML adapters."
 ---
 
 Pick the adapter for the framework you already train with and wire it in with one line. Every adapter calls the same public `run.log(...)` methods you would call by hand, so you can always drop down to [direct logging](/sdk/logging) for custom loops.
 
 ## Install the adapters
 
-Install the SDK with the `frameworks` extra:
+Install only the adapter families you need:
 
 ```bash
 python -m pip install "instantml[frameworks]"
+python -m pip install "instantml[optuna]"
+python -m pip install "instantml[xgboost]"
+python -m pip install "instantml[lightgbm]"
+python -m pip install "instantml[catboost]"
+python -m pip install "instantml[rl]"
+python -m pip install "instantml[datasets]"
 ```
 
 ## Pick a framework adapter
@@ -24,6 +30,18 @@ python -m pip install "instantml[frameworks]"
   </Card>
   <Card title="Keras" href="/integrations/keras" icon="brain">
     Pass `im.InstantMLKerasCallback(...)` to `model.fit(callbacks=...)`.
+  </Card>
+  <Card title="Optuna" href="/integrations/optuna" icon="target">
+    Log trial values, intermediate values, and trial parameters.
+  </Card>
+  <Card title="Tree boosting" href="/integrations/tree-boosting" icon="trees">
+    Add callbacks for XGBoost, LightGBM, and CatBoost evaluation metrics.
+  </Card>
+  <Card title="Stable Baselines" href="/integrations/stable-baselines" icon="activity">
+    Track episode reward, episode length, and RL logger scalars.
+  </Card>
+  <Card title="Datasets" href="/integrations/datasets" icon="database">
+    Attach bounded Hugging Face Dataset and DVC provenance metadata.
   </Card>
   <Card title="Weights & Biases" href="/integrations/wandb" icon="arrow-left-right">
     Swap the import, shadow, or mirror — three migration modes.

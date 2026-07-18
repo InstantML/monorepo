@@ -66,6 +66,21 @@ PYTHONPATH=packages/python-sdk:examples/rl-cartpole \
 
 Use this example to test scalar logging, status transitions, and spool mode.
 
+## Integrations smoke
+
+Representative framework callback events without installing optional framework
+dependencies.
+
+```bash
+PYTHONPATH=packages/python-sdk \
+  python3 examples/integrations/smoke.py \
+  --server https://api.instantml.ai \
+  --project integrations-smoke
+```
+
+Inspect Optuna, tree-boosting, RL, Hugging Face Dataset, and DVC metadata keys
+on one run.
+
 ## Train a Q-learning gridworld
 
 Run a small tabular Q-learning loop with checkpoints and rollout metadata.

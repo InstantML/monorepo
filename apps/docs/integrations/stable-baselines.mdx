@@ -1,0 +1,42 @@
+---
+title: "Stable Baselines"
+description: "Track Stable Baselines-style RL training loops in InstantML."
+---
+
+# Stable Baselines
+
+Install the RL extra:
+
+```bash
+python -m pip install "instantml[rl]"
+```
+
+Pass the callback to `learn(...)`:
+
+```python
+import instantml as im
+from instantml.integrations.stable_baselines import InstantMLCallback
+
+run = im.init(project="rl-cartpole", config={"algo": "ppo"})
+callback = InstantMLCallback(run=run)
+
+model.learn(total_timesteps=100_000, callback=callback)
+run.finish()
+```
+
+The callback logs episode values from Monitor-style `infos` dictionaries:
+
+| Source | InstantML key |
+| --- | --- |
+| `episode["r"]` | `rl/episode_reward` |
+| `episode["l"]` | `rl/episode_length` |
+| `logger.name_to_value["train/fps"]` | `rl/train/fps` |
+
+Use `log_rollout(...)` for explicit rollout media metadata:
+
+```python
+callback.log_rollout("rollouts/eval.mp4", step=100_000)
+```
+
+Custom RL loops can keep direct `run.log(...)` calls; the callback is only a
+thin bridge for Stable Baselines-style lifecycle hooks.

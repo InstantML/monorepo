@@ -1,0 +1,89 @@
+---
+title: "Tree boosting"
+description: "Log XGBoost, LightGBM, and CatBoost evaluation metrics with InstantML callbacks."
+---
+
+# Tree Boosting
+
+Install the extra for the framework you use:
+
+```bash
+python -m pip install "instantml[xgboost]"
+python -m pip install "instantml[lightgbm]"
+python -m pip install "instantml[catboost]"
+```
+
+## XGBoost
+
+```python
+import xgboost as xgb
+import instantml as im
+from instantml.integrations.xgboost import InstantMLCallback
+
+run = im.init(project="tree-boosting", config=params)
+xgb.train(
+    params,
+    dtrain,
+    evals=[(dtrain, "train"), (dvalid, "valid")],
+    callbacks=[InstantMLCallback(run=run, params=params)],
+)
+run.finish()
+```
+
+The callback reads the latest values from `evals_log` and logs keys like
+`train/rmse` and `valid/auc` at the XGBoost epoch.
+
+## LightGBM
+
+```python
+import lightgbm as lgb
+import instantml as im
+from instantml.integrations.lightgbm import InstantMLCallback
+
+run = im.init(project="tree-boosting", config=params)
+lgb.train(
+    params,
+    train_set,
+    valid_sets=[valid_set],
+    valid_names=["valid"],
+    callbacks=[InstantMLCallback(run=run)],
+)
+run.finish()
+```
+
+Train tuples log as `<dataset>/<metric>`. CV tuples log `<dataset>/<metric>-mean`
+and `<dataset>/<metric>-stdv`.
+
+## CatBoost
+
+```python
+from catboost import CatBoostClassifier
+import instantml as im
+from instantml.integrations.catboost import InstantMLCallback
+
+run = im.init(project="tree-boosting", config=params)
+model = CatBoostClassifier(**params)
+model.fit(
+    train_pool,
+    eval_set=valid_pool,
+    callbacks=[InstantMLCallback(run=run, config=params)],
+)
+run.finish()
+```
+
+CatBoost metrics log from `info.metrics` using keys like `learn/Logloss` and
+`validation/AUC`.
+
+Adapters passed `run=` do not finish the run unless `finish_run=True` is set.
+
+If you let the callback create its own run (omit `run=`), CatBoost never tells
+the callback how many rounds remain — its `after_iteration` info exposes only
+`iteration` and `metrics`. Pass `total_iterations` (the same value as the
+model's `iterations`) so the owned run finishes on the last round, or call
+`callback.close()` yourself when training ends:
+
+```python
+model = CatBoostClassifier(iterations=500)
+callback = InstantMLCallback(project="tree-boosting", total_iterations=500)
+model.fit(train_pool, eval_set=valid_pool, callbacks=[callback])
+```

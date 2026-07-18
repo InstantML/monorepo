@@ -260,12 +260,25 @@ Pass `instantml_project=...`, `instantml_api_key=...`, or
 settings that differ from W&B.
 
 Framework adapters are available from the top-level package and lazily subclass
-installed framework base classes when present:
+installed HF/Lightning/Keras framework base classes when present:
 
 ```python
 trainer.add_callback(im.InstantMLCallback(project="cartpole"))
 logger = im.InstantMLLogger(project="cartpole")
 callbacks = [im.InstantMLKerasCallback(project="cartpole")]
+```
+
+Broader integration adapters live under `instantml.integrations` and use the
+same `Run.log(...)` and `Run.log_config(...)` contract:
+
+```python
+from instantml.integrations.optuna import InstantMLCallback as OptunaCallback
+from instantml.integrations.xgboost import InstantMLCallback as XGBoostCallback
+from instantml.integrations.datasets import log_hf_dataset
+
+study.optimize(objective, callbacks=[OptunaCallback(run=run)])
+xgb.train(params, dtrain, callbacks=[XGBoostCallback(run=run, params=params)])
+log_hf_dataset(run, train_dataset, key="data/train", include_preview=True)
 ```
 
 ## Optional extras
@@ -279,6 +292,12 @@ pip install "instantml[imports]"      # pyarrow for Neptune Exporter imports
 pip install "instantml[wandb]"        # direct local W&B export and dual logging
 pip install "instantml[tensorboard]"  # TensorBoard event parsing
 pip install "instantml[frameworks]"   # HF/Lightning/Keras adapter bases
+pip install "instantml[optuna]"       # Optuna trial callback
+pip install "instantml[xgboost]"      # XGBoost callback base
+pip install "instantml[lightgbm]"     # LightGBM callback dependency
+pip install "instantml[catboost]"     # CatBoost callback dependency
+pip install "instantml[rl]"           # Stable Baselines callback base
+pip install "instantml[datasets]"     # Hugging Face Datasets and DVC metadata helpers
 pip install "instantml[all]"
 ```
 

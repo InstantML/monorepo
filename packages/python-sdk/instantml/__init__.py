@@ -35,6 +35,15 @@ from .client import (
 )
 from .errors import UnsupportedOfflineOperation
 from .tracing import AttachedTraceContext, TraceContext, TraceSpan
+from .integrations import (
+    CatBoostCallback,
+    LightGBMCallback,
+    OptunaCallback,
+    StableBaselinesCallback,
+    XGBoostCallback,
+    log_dvc_metadata,
+    log_hf_dataset,
+)
 
 __all__ = [
     "Api",
@@ -67,11 +76,18 @@ __all__ = [
     "UnsupportedOfflineOperation",
     "Video",
     "VersionedArtifact",
+    "CatBoostCallback",
+    "LightGBMCallback",
+    "OptunaCallback",
+    "StableBaselinesCallback",
+    "XGBoostCallback",
     "__version__",
     "deterministic_session_id",
     "drain_spool",
     "attach_run",
     "init",
+    "log_dvc_metadata",
+    "log_hf_dataset",
 ]
 
 

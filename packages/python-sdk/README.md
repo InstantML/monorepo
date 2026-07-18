@@ -29,7 +29,7 @@ This directory contains the Python SDK used by training scripts to send runs, me
 - Capture metrics-focused timestamp snapshots with a defined dictionary shape.
 - Optionally keep a local SQLite audit store for attempted SDK events.
 - Automatically sample system/hardware metrics during a run (on by default, zero hard dependencies): a stdlib fallback (process RSS, load average, CPU count) with no extras installed, upgrading to full psutil CPU/memory/disk/network + NVML GPU telemetry when the `instantml[system]` extra is present. Opt out with `system_metrics=False` or `INSTANTML_DISABLE_SYSTEM_METRICS=1`.
-- Optionally wrap stdout/stderr and expose lightweight Torch, Hugging Face Trainer, Lightning, and Keras adapters.
+- Optionally wrap stdout/stderr and expose lightweight Torch, Hugging Face Trainer, Lightning, Keras, Optuna, XGBoost, LightGBM, CatBoost, Stable Baselines-style RL, and dataset provenance adapters.
 - Poll cooperative dashboard stop requests when training code calls
   `should_stop()`, `stop_request()`, or `raise_if_stop_requested()`, then
   acknowledge and finish stopped runs without blocking metric logging. Stop
@@ -244,6 +244,12 @@ pip install 'instantml[imports]'       # transformed JSON + Neptune Parquet help
 pip install 'instantml[wandb]'         # direct local W&B export
 pip install 'instantml[tensorboard]'   # TensorBoard event parsing
 pip install 'instantml[frameworks]'    # HF/Lightning/Keras adapter imports
+pip install 'instantml[optuna]'        # Optuna trial callback
+pip install 'instantml[xgboost]'       # XGBoost callback base
+pip install 'instantml[lightgbm]'      # LightGBM callback dependency
+pip install 'instantml[catboost]'      # CatBoost callback dependency
+pip install 'instantml[rl]'            # Stable Baselines callback base
+pip install 'instantml[datasets]'      # Hugging Face Datasets and DVC metadata helpers
 ```
 
 The Import v2 production slice covers runs, scalar metrics, configs, tags,
@@ -595,6 +601,12 @@ Optional extras:
 ```bash
 python3 -m pip install "instantml[media]"
 python3 -m pip install "instantml[system]"
+python3 -m pip install "instantml[optuna]"
+python3 -m pip install "instantml[xgboost]"
+python3 -m pip install "instantml[lightgbm]"
+python3 -m pip install "instantml[catboost]"
+python3 -m pip install "instantml[rl]"
+python3 -m pip install "instantml[datasets]"
 python3 -m pip install "instantml[all]"
 ```
 
@@ -613,11 +625,15 @@ helpers into focused modules:
   video materialization helpers.
 - `instantml.log_payload`: `Run.log()` payload classification and rank-metric
   context validation helpers.
+- `instantml.integrations`: optional, lazy framework adapters for Optuna,
+  tree-boosting libraries, Stable Baselines-style callbacks, and bounded
+  dataset metadata helpers.
 
 Keep new leaf modules free of runtime imports from `instantml.client`. Stateful
 run lifecycle, async queue coordination, console capture, system metrics,
-process spooling, and framework adapters still live in `client.py` until a
-follow-up design splits those collaborator boundaries.
+process spooling, and the original HF/Lightning/Keras framework adapters still
+live in `client.py` until a follow-up design splits those collaborator
+boundaries.
 
 ## Usage
 
@@ -684,6 +700,41 @@ trainer.add_callback(im.InstantMLCallback(run=run))  # alias: TransformersCallba
 logger = im.InstantMLLogger(project="cartpole")      # alias: LightningLogger
 keras_callback = im.InstantMLKerasCallback(project="cartpole")
 ```
+
+Additional adapters live under `instantml.integrations` and keep optional
+framework imports lazy:
+
+```python
+from instantml.integrations.optuna import InstantMLCallback as OptunaCallback
+from instantml.integrations.xgboost import InstantMLCallback as XGBoostCallback
+from instantml.integrations.lightgbm import InstantMLCallback as LightGBMCallback
+from instantml.integrations.catboost import InstantMLCallback as CatBoostCallback
+from instantml.integrations.stable_baselines import InstantMLCallback as SB3Callback
+from instantml.integrations.datasets import log_hf_dataset, log_dvc_metadata
+
+study.optimize(objective, callbacks=[OptunaCallback(run=run)])
+xgb.train(params, dtrain, callbacks=[XGBoostCallback(run=run, params=params)])
+lgb.train(params, train_set, callbacks=[LightGBMCallback(run=run)])
+model.fit(X, y, callbacks=[CatBoostCallback(run=run, config=params)])
+model.learn(total_timesteps=10_000, callback=SB3Callback(run=run))
+log_hf_dataset(run, train_dataset, key="data/train", include_preview=True)
+log_dvc_metadata(run, repo_path=".")
+```
+
+Adapters created with an explicit `run=` never finish that user-owned run unless
+`finish_run=True` is passed. Adapters that create a run themselves finish only
+through their documented training-end hook or explicit `finish()`/`close()`.
+After an adapter-owned run finishes, reusing the callback creates a fresh run;
+an explicitly supplied run remains bound to the callback.
+Framework metric collectors accept Python numeric values plus NumPy-style scalar
+objects that expose `.item()`. XGBoost CV `(mean, std)` tuples log the mean
+under the metric key; LightGBM CV logs both `-mean` and `-stdv` keys.
+CatBoost-owned runs finish from the last `after_iteration` callback when the
+framework exposes total iteration count. Stable Baselines callbacks log episode
+completion metrics from `_on_step()` and logger snapshots from
+`_on_rollout_end()` once per timestep, avoiding duplicate per-environment-step
+logger points. Dataset helpers skip preview selection for empty datasets and
+scan bounded nested `*.dvc` pointer files in addition to root DVC metadata.
 
 W&B compatibility is opt-in and intentionally a small logging subset:
 

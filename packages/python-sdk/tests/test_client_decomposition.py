@@ -66,7 +66,22 @@ import instantml.objects
 import instantml.media
 import instantml.log_payload
 
-optional = {'PIL', 'numpy', 'soundfile', 'imageio', 'moviepy', 'psutil', 'pynvml'}
+optional = {
+    'PIL',
+    'numpy',
+    'soundfile',
+    'imageio',
+    'moviepy',
+    'psutil',
+    'pynvml',
+    'optuna',
+    'xgboost',
+    'lightgbm',
+    'catboost',
+    'stable_baselines3',
+    'datasets',
+    'dvc',
+}
 loaded = optional.intersection(sys.modules)
 assert not loaded, sorted(loaded)
 """
