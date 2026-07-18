@@ -14,7 +14,7 @@ The left rail groups surfaces into three sections:
 | Group | Surfaces |
 | --- | --- |
 | Operate | Runs, Metrics, Distributed |
-| Data | Datasets, Artifacts, Insights |
+| Data | Datasets, Objects, Artifacts, Insights |
 | System | Run Health, Reports, Agent |
 
 Two surfaces are reachable without a rail item:
@@ -132,6 +132,15 @@ The Artifacts workspace shows versioned collections first: aliases such as
 `latest` and `best`, manifest entries, retention/delete controls for owners and
 admins, and bounded producer/consumer lineage. Raw run files and media stay in
 the Run Detail Artifacts tab.
+
+## Objects
+
+The Objects workspace is the cross-run explorer for rich evidence. Use it when
+you want to scan images, audio, video, text, tables, histograms, or
+classification evaluations without opening one run at a time. It supports
+project and run search, object kind, key, and step range filters, then opens a
+bounded inspector for the selected object. Media previews use stored InstantML
+artifact bytes; table rows are fetched only when a table object is selected.
 
 ## Write reports
 

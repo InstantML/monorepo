@@ -23,6 +23,7 @@ import { AccountWorkspaceMenu, DashboardTopbar } from "./chrome/topbar";
 import type { CreateWorkspaceInput, WorkspaceNameAvailability } from "./chrome/topbar";
 import { DetailTabPane } from "./detail/tab-pane";
 import { MetricsTabPane } from "./metrics/tab-pane";
+import { ObjectsTabPane } from "./objects/tab-pane";
 import { RunsTabPane } from "./runs/tab-pane";
 import { RunFilterBar } from "./runs/run-filter-bar";
 import {
@@ -260,7 +261,7 @@ const METRIC_SERIES_M4_BUCKETS = 1_200;
 const compareLayouts = new Set<CompareLayout>(["auto", "columns", "rows"]);
 const compareRowSorts = new Set<CompareRowSort>(["signal", "changed", "missing", "category", "name", "spread"]);
 const compareRunSorts = new Set<CompareRunSort>(["selected", "name", "newest", "status", "duration", "metric-latest", "metric-best", "artifacts", "tags", "notes", "config"]);
-const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts", "traces"]);
+const RUN_LOAD_STATUS_TABS = new Set<ShellTabId>(["runs", "metrics", "detail", "compare", "artifacts", "objects", "traces"]);
 
 const EMPTY_OVERVIEW: Overview = { total_runs: 0, active_runs: 0, failed_runs: 0, best_eval_return: null, metric_points: 0 };
 // The Overview cockpit lives at a static route segment while every other tab is
@@ -4933,6 +4934,12 @@ function dismissTopOverlay() {
               project={project}
               sortedRuns={sortedRuns}
             />
+          ) : null}
+        </section>
+
+        <section className={`tab-pane ${visibleTab === "objects" ? "active" : ""}`} aria-label="Objects">
+          {visibleTab === "objects" ? (
+            <ObjectsTabPane api={api} initialRunQuery={query} project={project} />
           ) : null}
         </section>
 

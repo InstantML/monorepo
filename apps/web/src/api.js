@@ -454,6 +454,9 @@ function safeKnownRouteSegments(segments) {
       return ["api", "imports", "jobs", ":job_id", segments[4]];
     }
   }
+  if (segments.length === 3 && segments[1] === "objects" && segments[2] === "explorer") {
+    return ["api", "objects", "explorer"];
+  }
   if (segments.length === 4 && segments[1] === "objects" && segments[3] === "rows") {
     return ["api", "objects", ":object_id", "rows"];
   }

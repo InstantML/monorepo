@@ -772,6 +772,7 @@ fn known_route_template(segments: &[&str]) -> Option<String> {
             vec!["api", "runs", ":run_id", "artifacts", "upload"]
         }
         ["api", "metrics", "series"] => vec!["api", "metrics", "series"],
+        ["api", "objects", "explorer"] => vec!["api", "objects", "explorer"],
         ["api", "objects", _, "rows"] => vec!["api", "objects", ":object_id", "rows"],
         ["api", "artifacts", _, "download"] => vec!["api", "artifacts", ":artifact_id", "download"],
         ["api", "overview"] => vec!["api", "overview"],

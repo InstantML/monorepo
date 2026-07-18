@@ -3,9 +3,9 @@ title: "Attributes and objects API"
 description: "Write typed attributes, create rich objects, list object envelopes, and page table rows."
 ---
 
-Store typed non-scalar context as attributes, and log first-class table, media,
-histogram, and evaluation payloads as rich objects for Run Detail and
-artifact-style inspection.
+Store typed non-scalar context as attributes, and log first-class table, text,
+media, histogram, and evaluation payloads as rich objects for Run Detail, the
+Objects workspace, and artifact-style inspection.
 
 Authenticate with an `Authorization: Bearer instantml_...` API key or a browser
 session. Writes on this page need the `sdk:ingest` scope; reads need
@@ -106,8 +106,39 @@ through the rows endpoint.
 
 Use `kind=histogram&key=...&limit=100` to read selected-run logged histogram
 frames for Runs workspace timeline panels. The current API reads one run and
-one explicit object key; multi-run histogram timelines need a separate bounded
-endpoint.
+one exact object key. Unlike the explorer's substring `key` filter, this route
+uses exact matching so neighboring keys cannot mix in a timeline. Multi-run
+histogram timelines need a separate bounded endpoint.
+
+## Explore objects across runs
+
+```http
+GET /api/objects/explorer?project=demo&kind=image&key=eval/&limit=50
+Authorization: Bearer instantml_...
+```
+
+`GET /api/objects/explorer` powers the dashboard Objects workspace. It searches
+visible runs first, then returns a cursor-paginated page of object envelopes
+with bounded previews.
+
+Filters:
+
+| Parameter | Meaning |
+| --- | --- |
+| `project` | Optional project name filter. |
+| `project_id` | Optional project UUID filter. If both project filters are present, they are intersected. |
+| `run_id` | Optional run UUID filter. |
+| `q` | Optional shared run-search expression. |
+| `kind` | Optional kind: `image`, `video`, `audio`, `text`, `table`, `histogram`, or `classification_eval`. |
+| `key` | Optional object-key substring filter. |
+| `from_step` / `to_step` | Optional inclusive numeric step range. |
+| `limit` | Default 50, max 100. |
+| `cursor` | Opaque cursor from the previous response. |
+
+The route returns summary data only: text previews are capped, histogram
+previews are capped, classification-eval preview arrays are capped, table rows
+still use the separate rows endpoint, and raw artifact storage keys or paths
+are never exposed.
 
 ## Page table rows
 

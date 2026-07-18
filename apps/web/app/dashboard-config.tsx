@@ -6,6 +6,7 @@ import {
   Database,
   FileBarChart,
   GitBranch,
+  Image as ImageIcon,
   Network,
   Package,
   Settings,
@@ -37,6 +38,7 @@ export const navGroups = [
     id: "data",
     items: [
       { id: "datasets", label: "Datasets", icon: Database },
+      { id: "objects", label: "Objects", icon: ImageIcon },
       { id: "artifacts", label: "Artifacts", icon: Package },
       { id: "insights", label: "Insights", icon: Telescope },
     ],

@@ -105,6 +105,7 @@
               "dashboard/compare-runs",
               "dashboard/research-dashboards",
               "dashboard/artifacts-files",
+              "dashboard/objects",
               "dashboard/alerts",
               "dashboard/datasets",
               "dashboard/checkpoints",

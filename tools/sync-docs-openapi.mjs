@@ -29,6 +29,7 @@ export const publicOpenApiPaths = [
   "/api/runs/{run_id}/stop-ack",
   "/api/runs/{run_id}/attributes",
   "/api/runs/{run_id}/objects",
+  "/api/objects/explorer",
   "/api/runs/{run_id}/artifacts",
   "/api/runs/{run_id}/artifacts/upload",
   "/api/runs/{run_id}/artifact-uploads",

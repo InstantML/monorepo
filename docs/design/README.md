@@ -111,6 +111,9 @@ Current implemented design sequence, continued:
 - `2026-06-30-aim-gap2-query-api.md`: implemented Aim parity slice for a typed,
   bounded Python SDK query API over runs, metric series, rich objects, and table
   previews while keeping the server-backed `q` language authoritative.
+- `2026-06-30-aim-gap1-object-explorers.md`: implemented Aim parity slice for
+  cross-run rich object explorers over images, audio, video, text, tables, and
+  histograms using bounded summary reads and safe media previews.
 
 Current draft designs:
 

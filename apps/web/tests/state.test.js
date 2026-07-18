@@ -1252,6 +1252,7 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(DEFAULT_DASHBOARD_TAB, "runs");
   assert.equal(tabToPath("metrics"), "/dashboard/metrics");
   assert.equal(tabToPath("distributed"), "/dashboard/distributed");
+  assert.equal(tabToPath("objects"), "/dashboard/objects");
   assert.equal(tabToPath("agent"), "/dashboard/agent");
   // CK2: the Checkpoints tab merged into Run Detail; old ids stay routable.
   assert.equal(tabToPath("checkpoints"), "/dashboard/detail");
@@ -1265,6 +1266,7 @@ test("route helpers canonicalize dashboard paths and safe auth redirects", () =>
   assert.equal(tabFromPath("/dashboard/run-health?x=1"), "alerts");
   assert.equal(tabFromPath("/dashboard/health"), "alerts");
   assert.equal(tabToPath("run-health"), "/dashboard/alerts");
+  assert.equal(tabFromPath("/dashboard/objects?kind=image"), "objects");
   assert.equal(tabFromPath("/dashboard/integrations?x=1"), "runs");
   // The Imports tab was removed; old links fall back to Runs.
   assert.equal(tabFromPath("/dashboard/imports?x=1"), "runs");
