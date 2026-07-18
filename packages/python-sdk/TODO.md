@@ -30,7 +30,7 @@ Remaining lifecycle/offline items below are tracked in `docs/product/2026-07-14-
   - Remaining: append/remove tag helpers after a server-side append/remove route or public API read-modify-write design exists.
 - [x] Add true offline run creation with a local run directory and later sync. Keep the current post-run-create replay limitation documented until this lands.
   - Implemented (PR-03, write side): `init(mode="offline", run_id=, resume=)` writes `<data_root>/offline/<run_id>/` (run.json manifest, spool segments with session/class/persisted deterministic idempotency keys, staged `files/`), bounded drop-on-write-failure, and offline finish/SIGTERM signatures. Design: `docs/design/2026-07-15-offline-lifecycle-upload-completeness.md` §3–§4.
-  - Remaining: resumable `instantml sync` that replays the directory (PR-04).
+  - Implemented (PR-04, sync side): resumable `instantml sync <run_dir | offline_root>` with `--status`/`--dry-run`/`--json`, idempotent `mode="auto"` create (never reopens), cursor-journaled delivery through the async-queue drain (`sync-state.json`), deterministic within-segment metric batching, full-class idempotency key attachment, staged-file base64 delivery, final session manifest PUT (graceful 404 until PR-05), and typed exit codes (0/3/4/5). Design §5.
 - [x] Add disabled/no-op mode for tests and scripts that want the API shape without network or disk writes.
   - Implemented (PR-03): `init(mode="disabled")` — full inert Run surface, no network/disk/lifecycle-handler side effects, generates a local run id. Design §4.
 - [x] Add client-generated run IDs and resume modes that match Rust server semantics.

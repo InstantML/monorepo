@@ -377,6 +377,16 @@ def cmd_import(rest: list[str]) -> None:
 
 
 def cmd_sync(rest: list[str]) -> None:
+    # Dispatch resolution: ``tensorboard`` remains a named subcommand; any other
+    # first token is treated as an offline run directory / offline root path and
+    # handled by the resumable offline-directory sync (design §5). We resolve the
+    # known-subcommand token before argparse so a bare path never trips the
+    # subcommand parser.
+    if not rest or rest[0] != "tensorboard":
+        from .offline_sync import run_offline_sync
+
+        sys.exit(run_offline_sync(rest))
+
     parser = argparse.ArgumentParser(prog="instantml sync")
     subparsers = parser.add_subparsers(dest="source", required=True)
     tb = subparsers.add_parser("tensorboard")
@@ -607,6 +617,12 @@ Usage:
 
   instantml sync tensorboard LOGDIR --project NAME [--watch]
       Import or continuously sync scalar TensorBoard events from a local log directory.
+
+  instantml sync RUN_DIR | OFFLINE_ROOT [--status] [--dry-run] [--json] [--assume-dead]
+      Replay an offline run directory (mode="offline") to the server. Resumable:
+      an interrupted sync re-run continues from a per-segment cursor. Exit codes:
+      0 synced+complete, 3 partial (rerun), 4 permanent failure, 5 invalid dir.
+      A directory literally named "tensorboard" must be passed as ./tensorboard.
 
   instantml --help
       Show this message.
