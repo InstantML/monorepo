@@ -9,6 +9,7 @@ mod naming;
 mod projects;
 mod query;
 mod rank_metrics;
+mod run_lifecycle;
 mod search;
 
 use helpers::*;
@@ -24,6 +25,7 @@ pub use metrics::{get_metrics, log_metrics, log_metrics_batch, metrics_series_ba
 pub use projects::{create_project, list_projects};
 pub use query::{list_runs, overview, runs_summary};
 pub use rank_metrics::{log_rank_metrics, rank_metrics_summary};
+pub use run_lifecycle::{archive_run, batch_run_lifecycle, delete_run, restore_run};
 
 // re-exported as pub(super) so export.rs can call it via `use super::*`
 pub(super) use helpers::{is_minimize_metric, validate_run_sort};

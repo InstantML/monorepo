@@ -889,6 +889,8 @@ Query:
 | `project` | Project name, omit or `all` for all projects |
 | `status` | `running`, `finished`, `failed`, omit or `all` for all statuses |
 | `display_status` | Derived UI lifecycle: `running`, `stopping`, `stopped`, `finished`, or `failed` |
+| `lifecycle` | `active`, `archived`, or `all`; default `active` |
+| `include_archived` | Legacy alias for `lifecycle=all` when true |
 | `q` | Run search query over run name, project, tags, notes, config, metadata, status, and ID |
 | `sort_by` | `created`, `name`, `status`, `duration`, `metric-latest`, `metric-best` |
 | `metric_key` | Metric used by metric sorts, default `eval/return_mean` |
@@ -935,6 +937,93 @@ Output:
 
 The returned run is a summary value that includes metric aggregates and artifact
 counts used by the dashboard.
+
+### Run Lifecycle Control
+
+Run lifecycle state is separate from training `status` and cooperative stop
+state. Active runs are returned by default. Archived runs are hidden from
+default list/search/summary/export responses but remain readable by exact run
+ID and can be included through lifecycle filters. Deleted runs are soft-deleted
+tombstones in this slice and are hidden from ordinary product reads.
+
+Control routes require owner/admin/member browser sessions with mutation-origin
+validation, local compatibility access, or API keys with `runs:control`.
+Project-scoped keys can only affect runs in their scoped project.
+
+#### `POST /api/runs/:run_id/archive`
+
+Body:
+
+```json
+{ "reason": "optional audit note" }
+```
+
+Response:
+
+```json
+{ "action": "archive", "run_id": "uuid", "status": "updated", "run": {} }
+```
+
+#### `POST /api/runs/:run_id/restore`
+
+Body:
+
+```json
+{ "reason": "optional audit note" }
+```
+
+Response:
+
+```json
+{ "action": "restore", "run_id": "uuid", "status": "updated", "run": {} }
+```
+
+#### `POST /api/runs/:run_id/delete`
+
+Body:
+
+```json
+{ "confirm": "delete", "reason": "duplicate bad run" }
+```
+
+Response:
+
+```json
+{ "action": "delete", "run_id": "uuid", "status": "updated", "run": {} }
+```
+
+#### `POST /api/runs/batch-lifecycle`
+
+Body:
+
+```json
+{
+  "run_ids": ["uuid"],
+  "action": "delete",
+  "confirm": "delete",
+  "reason": "optional audit note"
+}
+```
+
+`action` is `archive`, `restore`, or `delete`. Batch requests are capped at 100
+run IDs. The delete action requires `confirm: "delete"`; archive and restore
+ignore confirmation. Responses include per-run success/error entries:
+
+```json
+{
+  "action": "archive",
+  "results": [
+    { "run_id": "uuid", "status": "updated", "run": {} }
+  ],
+  "updated": 1,
+  "failed": 0
+}
+```
+
+Repeating archive on archived, restore on active, or delete on deleted is
+idempotent and returns `status: "unchanged"`. Restoring a deleted run returns
+HTTP `409` with `code: "run_lifecycle_conflict"`. Archived and deleted runs
+reject cooperative stop-control writes.
 
 ### Cooperative Stop Control
 
@@ -1494,6 +1583,8 @@ Query accepts the same filters as `GET /runs`, plus cursor pagination:
 | --- | --- |
 | `cursor` | Cursor such as `offset:25`; when present it overrides `offset` |
 | `limit` | Page size, max 1,000 |
+| `lifecycle` | `active`, `archived`, or `all`; default `active` |
+| `include_archived` | Legacy alias for `lifecycle=all` when true |
 
 Output:
 

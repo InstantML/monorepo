@@ -76,26 +76,26 @@ use crate::{
         AbortArtifactUploadRequest, ArtifactAliasRow, ArtifactCollectionRow, ArtifactEdgeRow,
         ArtifactManifestEntriesRecord, ArtifactManifestEntryRow, ArtifactRow, ArtifactUploadFile,
         ArtifactUploadSessionRow, ArtifactVersionRow, AttributeInput, AttributeRow, AuthContext,
-        AuthSessionPayload, BillingAccountProjection, BillingCancelRequest, BillingChangeIntent,
-        BillingCheckoutInfo, BillingCheckoutIntent, BillingCheckoutRequest,
-        BillingCheckoutSyncRequest, BillingEventRecord, BillingPlanChangeRequest,
-        BillingPortalRequest, BillingSeatChangeRequest, BillingSubscriptionRecord,
-        BillingUsageReportRecord, ClerkAuthRequest, ClickHouseConnectionCreateRequest,
-        ClickHouseConnectionRotateCredentialsRequest, ClickHouseConnectionStatus,
-        ClickHouseConnectionValidateRequest, ClickHouseConnectionValidationResponse,
-        CompareMatchingRunsRequest, CompleteArtifactUploadFile, CompleteArtifactUploadRequest,
-        ConsoleLogInput, CreateApiKeyRequest, CreateArtifactInputEdgeRequest,
-        CreateArtifactRequest, CreateAttributesRequest, CreateConsoleLogsRequest,
-        CreateCurrentUserOrganizationRequest, CreateEmbedSessionRequest,
-        CreateEmbedSessionResponse, CreateInvitationRequest, CreateObjectRequest,
-        CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest, CreateRunForkRequest,
-        CreateRunRequest, CreateTraceEventsRequest, CreateUserRequest, CreatedAuthSession,
-        CurrentUserOrganizationCreateResponse, DashboardPreferenceRow, DataCellRow,
-        DataCellWriterLeaseRow, DeleteArtifactAliasRequest, DeleteArtifactVersionRequest,
-        DevGoogleAuthRequest, EmailDeliveryRow, EmbedAuthContext, EmbedCurrentSession,
-        EmbedCurrentSessionResponse, EmbedFramePolicy, EmbedFramePolicyResponse,
-        EmbedRunsDataRequest, EmbedSessionOptions, EmbedSessionRow, ImportWorkspaceViewRequest,
-        InitialInvitationCreateResult, InitialOrganizationInvitation,
+        AuthSessionPayload, BatchRunLifecycleRequest, BillingAccountProjection,
+        BillingCancelRequest, BillingChangeIntent, BillingCheckoutInfo, BillingCheckoutIntent,
+        BillingCheckoutRequest, BillingCheckoutSyncRequest, BillingEventRecord,
+        BillingPlanChangeRequest, BillingPortalRequest, BillingSeatChangeRequest,
+        BillingSubscriptionRecord, BillingUsageReportRecord, ClerkAuthRequest,
+        ClickHouseConnectionCreateRequest, ClickHouseConnectionRotateCredentialsRequest,
+        ClickHouseConnectionStatus, ClickHouseConnectionValidateRequest,
+        ClickHouseConnectionValidationResponse, CompareMatchingRunsRequest,
+        CompleteArtifactUploadFile, CompleteArtifactUploadRequest, ConsoleLogInput,
+        CreateApiKeyRequest, CreateArtifactInputEdgeRequest, CreateArtifactRequest,
+        CreateAttributesRequest, CreateConsoleLogsRequest, CreateCurrentUserOrganizationRequest,
+        CreateEmbedSessionRequest, CreateEmbedSessionResponse, CreateInvitationRequest,
+        CreateObjectRequest, CreateOrganizationRequest, CreateProjectRequest, CreateReportRequest,
+        CreateRunForkRequest, CreateRunRequest, CreateTraceEventsRequest, CreateUserRequest,
+        CreatedAuthSession, CurrentUserOrganizationCreateResponse, DashboardPreferenceRow,
+        DataCellRow, DataCellWriterLeaseRow, DeleteArtifactAliasRequest,
+        DeleteArtifactVersionRequest, DeleteRunRequest, DevGoogleAuthRequest, EmailDeliveryRow,
+        EmbedAuthContext, EmbedCurrentSession, EmbedCurrentSessionResponse, EmbedFramePolicy,
+        EmbedFramePolicyResponse, EmbedRunsDataRequest, EmbedSessionOptions, EmbedSessionRow,
+        ImportWorkspaceViewRequest, InitialInvitationCreateResult, InitialOrganizationInvitation,
         InitiateArtifactUploadRequest, InvitationPreviewPayload, InvitationTokenRequest,
         LifecycleTransition, LogMetricsBatchPoint, LogMetricsBatchRequest, LogMetricsRequest,
         LogRankMetricsRequest, MembershipRow, MetricSeriesRow, OnboardingApiKey, OrgInvitationRow,
@@ -103,9 +103,9 @@ use crate::{
         ProvisioningStatusPayload, PublicApiKeyRow, PublicEmbedSession, PublicInvitationRow,
         RankCoveragePoint, RankHeatmapPoint, RankMetricLimits, RankMetricTruncation,
         RankMetricsSummaryResponse, RankOutlierPoint, RankReducerPoint, RenewArtifactUploadRequest,
-        ReportRow, RequestContext, ReserveSeatRequest, RunControlRow, RunRow,
-        SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow, SessionContext,
-        SetArtifactAliasRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
+        ReportRow, RequestContext, ReserveSeatRequest, RunControlRow, RunLifecycleRequest,
+        RunLifecycleRow, RunRow, SaveWorkspaceViewRequest, SeatRow, SeatUserRow, ServiceAccountRow,
+        SessionContext, SetArtifactAliasRequest, StopAckRequest, StopRunRequest, StopRunsRequest,
         TraceChildrenResponse, TraceDetailResponse, TraceEventInput, TraceIngestResponse,
         TraceListResponse, TraceSpanItem, TraceStepBucket, TraceStepSummaryResponse,
         TraceSummaryItem, UpdateArtifactRetentionRequest, UpdateDashboardPreferencesRequest,
@@ -195,6 +195,7 @@ const MAX_EVAL_PREDICTION_ROW_BYTES: usize = 2_048;
 const MAX_IMPORT_LIST: i64 = 500;
 const DEMO_RUN_COUNT: usize = 1_000;
 const DEMO_STEPS: [i64; 6] = [0, 40, 80, 120, 160, 200];
+const MAX_BATCH_RUN_LIFECYCLE: usize = 100;
 
 #[derive(Clone)]
 pub struct Store {
@@ -1386,6 +1387,7 @@ struct StoreData {
     runs_by_parent_created: BTreeMap<(Uuid, Uuid, DateTime<Utc>, Uuid), Uuid>,
     run_count_by_org: HashMap<Uuid, usize>,
     run_count_by_org_project: HashMap<(Uuid, String), usize>,
+    run_lifecycles: BTreeMap<Uuid, RunLifecycleRow>,
     run_controls: BTreeMap<Uuid, RunControlRow>,
     incomplete_import_runs: HashSet<Uuid>,
     run_search_documents: HashMap<Uuid, Arc<RunSearchDocument>>,
@@ -1486,6 +1488,7 @@ impl StoreData {
             "project" => self.insert_project(parse_payload(payload)?),
             "project_delete" => self.apply_project_delete(parse_payload(payload)?),
             "run" => self.insert_run(parse_payload(payload)?),
+            "run_lifecycle" => self.insert_run_lifecycle(parse_payload(payload)?),
             "run_control" => self.insert_run_control(parse_payload(payload)?),
             "attribute" => self.insert_attribute(parse_payload(payload)?),
             "artifact" => self.insert_artifact(parse_payload(payload)?),
@@ -1713,6 +1716,21 @@ impl StoreData {
     fn insert_run_control(&mut self, control: RunControlRow) {
         self.run_controls.insert(control.run_id, control);
         self.clear_run_filter_cache();
+    }
+
+    fn insert_run_lifecycle(&mut self, lifecycle: RunLifecycleRow) {
+        let should_replace = self
+            .run_lifecycles
+            .get(&lifecycle.run_id)
+            .map(|existing| {
+                lifecycle.created_at > existing.created_at
+                    || (lifecycle.created_at == existing.created_at && lifecycle.id > existing.id)
+            })
+            .unwrap_or(true);
+        if should_replace {
+            self.run_lifecycles.insert(lifecycle.run_id, lifecycle);
+            self.clear_run_filter_cache();
+        }
     }
 
     fn insert_attribute(&mut self, attribute: AttributeRow) {
@@ -1980,6 +1998,7 @@ impl StoreData {
             self.run_search_documents.remove(&run.id);
             self.incomplete_import_runs.remove(&run.id);
             self.run_controls.remove(&run.id);
+            self.run_lifecycles.remove(&run.id);
             self.clear_run_filter_cache();
         }
     }
@@ -2137,6 +2156,7 @@ struct RunFilterCacheKey {
     status: String,
     display_status: String,
     q: String,
+    lifecycle: String,
 }
 
 fn run_has_incomplete_import_metadata(run: &RunRow) -> bool {
@@ -2147,8 +2167,81 @@ fn run_has_incomplete_import_metadata(run: &RunRow) -> bool {
         == Some(false)
 }
 
-fn is_visible_run(data: &StoreData, run: &RunRow) -> bool {
+fn is_retained_run(data: &StoreData, run: &RunRow) -> bool {
     data.incomplete_import_runs.is_empty() || !data.incomplete_import_runs.contains(&run.id)
+}
+
+fn is_readable_run(data: &StoreData, run: &RunRow) -> bool {
+    is_retained_run(data, run)
+        && run_lifecycle_for(data, run)
+            .map(|lifecycle| lifecycle.state.as_str() != "deleted")
+            .unwrap_or(true)
+}
+
+fn is_visible_run(data: &StoreData, run: &RunRow) -> bool {
+    is_readable_run(data, run)
+        && run_lifecycle_for(data, run)
+            .map(|lifecycle| lifecycle.state.as_str() == "active")
+            .unwrap_or(true)
+}
+
+fn run_lifecycle_for<'a>(data: &'a StoreData, run: &RunRow) -> Option<&'a RunLifecycleRow> {
+    data.run_lifecycles
+        .get(&run.id)
+        .filter(|lifecycle| lifecycle.org_id == run.org_id)
+}
+
+fn run_lifecycle_state(data: &StoreData, run: &RunRow) -> &'static str {
+    match run_lifecycle_for(data, run).map(|lifecycle| lifecycle.state.as_str()) {
+        Some("archived") => "archived",
+        Some("deleted") => "deleted",
+        _ => "active",
+    }
+}
+
+fn lifecycle_filter(query: &HashMap<String, String>) -> String {
+    if query
+        .get("include_archived")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+    {
+        return "all".to_string();
+    }
+    match query.get("lifecycle").map(String::as_str) {
+        Some("archived") => "archived".to_string(),
+        Some("all") => "all".to_string(),
+        _ => "active".to_string(),
+    }
+}
+
+fn run_matches_lifecycle_filter(
+    data: &StoreData,
+    query: &HashMap<String, String>,
+    run: &RunRow,
+) -> bool {
+    if !is_readable_run(data, run) {
+        return false;
+    }
+    match lifecycle_filter(query).as_str() {
+        "all" => run_lifecycle_state(data, run) != "deleted",
+        "archived" => run_lifecycle_state(data, run) == "archived",
+        _ => run_lifecycle_state(data, run) == "active",
+    }
+}
+
+fn run_lifecycle_summary(data: &StoreData, run: &RunRow) -> Value {
+    let lifecycle = run_lifecycle_for(data, run);
+    let state = run_lifecycle_state(data, run);
+    json!({
+        "state": state,
+        "updated_at": lifecycle.map(|item| item.created_at),
+        "archived_at": lifecycle
+            .filter(|item| item.state == "archived")
+            .map(|item| item.created_at),
+        "deleted_at": lifecycle
+            .filter(|item| item.state == "deleted")
+            .map(|item| item.created_at),
+    })
 }
 
 fn run_control_for<'a>(data: &'a StoreData, run: &RunRow) -> Option<&'a RunControlRow> {

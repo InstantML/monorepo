@@ -13,9 +13,10 @@ use uuid::Uuid;
 
 use crate::{
     domain::{
-        CompareMatchingRunsRequest, CreateConsoleLogsRequest, CreateProjectRequest,
-        CreateRunForkRequest, CreateRunRequest, LogMetricsRequest, LogRankMetricsRequest,
-        StopAckRequest, StopRunRequest, StopRunsRequest, UpdateRunRequest,
+        BatchRunLifecycleRequest, CompareMatchingRunsRequest, CreateConsoleLogsRequest,
+        CreateProjectRequest, CreateRunForkRequest, CreateRunRequest, DeleteRunRequest,
+        LogMetricsRequest, LogRankMetricsRequest, RunLifecycleRequest, StopAckRequest,
+        StopRunRequest, StopRunsRequest, UpdateRunRequest,
     },
     errors::{AppError, AppResult},
     store,
@@ -309,6 +310,149 @@ pub async fn update_run(
     );
     let run = result?;
     Ok(Json(json!({ "run": run })))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/{run_id}/archive",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate lifecycle retries"),
+    ),
+    request_body = crate::domain::RunLifecycleRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Archived run", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing runs:control scope", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Lifecycle conflict", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn archive_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "runs:control", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) =
+        read_json_with_raw::<RunLifecycleRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    Ok(Json(
+        store::archive_run(&state.store, &ctx, run_id, raw, input, idempotency_key).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/{run_id}/restore",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate lifecycle retries"),
+    ),
+    request_body = crate::domain::RunLifecycleRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Restored archived run", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing runs:control scope", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Lifecycle conflict", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn restore_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "runs:control", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) =
+        read_json_with_raw::<RunLifecycleRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    Ok(Json(
+        store::restore_run(&state.store, &ctx, run_id, raw, input, idempotency_key).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/{run_id}/delete",
+    tag = "runs",
+    params(
+        ("run_id" = String, Path, description = "Run UUID"),
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate lifecycle retries"),
+    ),
+    request_body = crate::domain::DeleteRunRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Soft-deleted run", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing runs:control scope", body = crate::http::openapi::ErrorResponse),
+        (status = 404, description = "Run not found", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Lifecycle conflict", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn delete_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(run_id): Path<String>,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "runs:control", &state)?;
+    let run_id = parse_uuid(&run_id, "run not found")?;
+    let (input, raw) =
+        read_json_with_raw::<DeleteRunRequest>(&headers, bytes, state.config.max_body_bytes)?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    Ok(Json(
+        store::delete_run(&state.store, &ctx, run_id, raw, input, idempotency_key).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/runs/batch-lifecycle",
+    tag = "runs",
+    params(
+        ("Idempotency-Key" = Option<String>, Header, description = "Stable client key used to deduplicate lifecycle retries"),
+    ),
+    request_body = crate::domain::BatchRunLifecycleRequest,
+    security(("bearerApiKey" = []), ("browserSession" = [])),
+    responses(
+        (status = 200, description = "Batch lifecycle result", body = crate::http::openapi::JsonObjectResponse),
+        (status = 400, description = "Validation error", body = crate::http::openapi::ErrorResponse),
+        (status = 403, description = "Missing runs:control scope", body = crate::http::openapi::ErrorResponse),
+        (status = 409, description = "Idempotency conflict", body = crate::http::openapi::ErrorResponse),
+    ),
+)]
+pub async fn batch_run_lifecycle(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    bytes: Bytes,
+) -> AppResult<Json<Value>> {
+    let ctx = context(&state, &headers, true).await?;
+    validate_session_mutation_origin(&state, &headers, &ctx)?;
+    require_scope(&ctx, "runs:control", &state)?;
+    let (input, raw) = read_json_with_raw::<BatchRunLifecycleRequest>(
+        &headers,
+        bytes,
+        state.config.max_body_bytes,
+    )?;
+    let idempotency_key = header_text(&headers, "idempotency-key").map(str::to_string);
+    Ok(Json(
+        store::batch_run_lifecycle(&state.store, &ctx, raw, input, idempotency_key).await?,
+    ))
 }
 
 #[utoipa::path(

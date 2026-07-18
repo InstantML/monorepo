@@ -31,32 +31,33 @@ pub(crate) mod writer_lease;
 
 use handlers::{
     abort_artifact_upload, accept_invitation, admin_change_plan, admin_data_cells, admin_overview,
-    append_import_chunk, artifact_version_lineage, auth_clerk, auth_config, auth_dev_google,
-    auth_logout, auth_session, auth_switch_organization, billing_add_seat, billing_cancel,
-    billing_change_plan, billing_checkout, billing_checkout_sync, billing_portal,
-    billing_report_storage_overage, billing_report_usage_overage, billing_status, billing_webhook,
-    cancel_import_job, commit_import_job, compare_matching_runs, complete_artifact_upload,
-    create_api_key, create_artifact, create_artifact_input_edge, create_attributes,
-    create_current_user_org, create_customer_clickhouse_connection, create_embed_session,
-    create_import_job, create_invitation, create_object, create_org, create_project, create_report,
-    create_run, create_user, create_workspace_view, customer_clickhouse_connection_status,
-    delete_artifact_alias, delete_artifact_version, delete_report, delete_workspace_view,
-    device_code_confirm, device_code_poll, device_code_start, disable_service_account,
-    download_artifact, download_artifact_entry, embed_current_session, embed_frame_policy,
-    embed_runs_data, export_data, export_report_markdown, export_workspace_view, fork_run,
-    get_artifact_collection, get_artifact_version, get_dashboard_preferences, get_import_job,
-    get_metrics, get_report, get_report_by_share_token, get_run, get_run_lineage,
-    get_trace_children, get_trace_detail, get_trace_step_summary, get_workspace_view, health,
-    import_mlflow, import_neptune, import_wandb, import_workspace_view, initiate_artifact_upload,
-    list_api_keys, list_artifact_collection_versions, list_artifact_collections,
-    list_artifact_manifest, list_artifacts, list_attributes, list_console_logs, list_imports,
-    list_invitations, list_object_rows, list_objects, list_org_memberships, list_org_panels,
-    list_orgs, list_projects, list_reports, list_runs, list_seats, list_traces, list_users,
+    append_import_chunk, archive_run, artifact_version_lineage, auth_clerk, auth_config,
+    auth_dev_google, auth_logout, auth_session, auth_switch_organization, batch_run_lifecycle,
+    billing_add_seat, billing_cancel, billing_change_plan, billing_checkout, billing_checkout_sync,
+    billing_portal, billing_report_storage_overage, billing_report_usage_overage, billing_status,
+    billing_webhook, cancel_import_job, commit_import_job, compare_matching_runs,
+    complete_artifact_upload, create_api_key, create_artifact, create_artifact_input_edge,
+    create_attributes, create_current_user_org, create_customer_clickhouse_connection,
+    create_embed_session, create_import_job, create_invitation, create_object, create_org,
+    create_project, create_report, create_run, create_user, create_workspace_view,
+    customer_clickhouse_connection_status, delete_artifact_alias, delete_artifact_version,
+    delete_report, delete_run, delete_workspace_view, device_code_confirm, device_code_poll,
+    device_code_start, disable_service_account, download_artifact, download_artifact_entry,
+    embed_current_session, embed_frame_policy, embed_runs_data, export_data,
+    export_report_markdown, export_workspace_view, fork_run, get_artifact_collection,
+    get_artifact_version, get_dashboard_preferences, get_import_job, get_metrics, get_report,
+    get_report_by_share_token, get_run, get_run_lineage, get_trace_children, get_trace_detail,
+    get_trace_step_summary, get_workspace_view, health, import_mlflow, import_neptune,
+    import_wandb, import_workspace_view, initiate_artifact_upload, list_api_keys,
+    list_artifact_collection_versions, list_artifact_collections, list_artifact_manifest,
+    list_artifacts, list_attributes, list_console_logs, list_imports, list_invitations,
+    list_object_rows, list_objects, list_org_memberships, list_org_panels, list_orgs,
+    list_projects, list_reports, list_runs, list_seats, list_traces, list_users,
     list_workspace_views, log_console_logs, log_metrics, log_metrics_batch, log_rank_metrics,
     log_trace_events, metrics_handler, metrics_series, not_found, openapi_json,
     org_name_availability, overview, preview_invitation, rank_metrics_summary, readyz,
     renew_artifact_upload, resend_invitation, reserve_seat, reset_demo, resolve_artifact_version,
-    revoke_api_key, revoke_invitation, rotate_customer_clickhouse_credentials,
+    restore_run, revoke_api_key, revoke_invitation, rotate_customer_clickhouse_credentials,
     rotate_report_share_token, run_artifact_edges, runs_summary, set_artifact_alias, side_by_side,
     stop_ack, stop_run, stop_runs, stop_signal, system_usage_insights, update_artifact_retention,
     update_dashboard_preferences, update_report, update_run, update_workspace_view,
@@ -263,6 +264,10 @@ fn data_routes(max_upload: usize) -> Router<Arc<AppState>> {
         .route("/projects", post(create_project).get(list_projects))
         .route("/runs", post(create_run).get(list_runs))
         .route("/runs/:run_id", get(get_run).patch(update_run))
+        .route("/api/runs/:run_id/archive", post(archive_run))
+        .route("/api/runs/:run_id/restore", post(restore_run))
+        .route("/api/runs/:run_id/delete", post(delete_run))
+        .route("/api/runs/batch-lifecycle", post(batch_run_lifecycle))
         .route("/api/runs/stop", post(stop_runs))
         .route("/api/runs/:run_id/stop", post(stop_run))
         .route("/api/runs/:run_id/stop-signal", get(stop_signal))

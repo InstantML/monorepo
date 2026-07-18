@@ -73,6 +73,7 @@ type Props = {
   onPinnedMetric: (metric: string) => void;
   onPreviousPage: () => void;
   onRefresh: () => void;
+  onRequestLifecycle: (runIds: string[], action: "archive" | "restore" | "delete") => void;
   onRemovePanel: (sectionId: string, panelId: string) => void;
   onRequestStop: (runIds: string[]) => void;
   onResetWorkspace: () => void;
@@ -119,6 +120,7 @@ type Props = {
   selectedRunIds: string[];
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
+  selectedLifecycleCandidateCounts: { archive: number; restore: number; delete: number };
   selectedStopCandidateCount: number;
   selectedStopDisabledReason: string;
   sortedRuns: RunSummary[];
@@ -181,6 +183,7 @@ export function RunsTabPane({
   onPinnedMetric,
   onPreviousPage,
   onRefresh,
+  onRequestLifecycle,
   onRemovePanel,
   onRequestStop,
   onResetWorkspace,
@@ -216,6 +219,7 @@ export function RunsTabPane({
   selectedRunIds,
   selectedRunExportDisabled,
   selectedRunExportTitle,
+  selectedLifecycleCandidateCounts,
   selectedStopCandidateCount,
   selectedStopDisabledReason,
   sortedRuns,
@@ -347,10 +351,12 @@ export function RunsTabPane({
           onExportSelectedRuns={onExportSelectedRuns}
           onMetricKey={onChangeMetricKey}
           onRefresh={onRefresh}
+          onRequestSelectedLifecycle={(action) => onRequestLifecycle(selectedRunIds, action)}
           onViewMode={changeRunsView}
           selectedRunCount={selectedRunIds.length}
           selectedRunExportDisabled={selectedRunExportDisabled}
           selectedRunExportTitle={selectedRunExportTitle}
+          selectedLifecycleCandidateCounts={selectedLifecycleCandidateCounts}
           selectedStopCandidateCount={selectedStopCandidateCount}
           selectedStopDisabledReason={selectedStopDisabledReason}
           onRequestSelectedStop={() => onRequestStop(selectedRunIds)}
@@ -376,6 +382,7 @@ export function RunsTabPane({
             onPreviousPage={onPreviousPage}
             onPinnedMetric={onPinnedMetric}
             onPinnedMetricFilter={onColumnMetricFilter}
+            onRequestLifecycle={onRequestLifecycle}
             onRequestStop={onRequestStop}
             onSelectAllVisible={onSelectAllVisible}
             onTableColumns={onTableColumns}
@@ -414,6 +421,7 @@ export function RunsTabPane({
         onRefresh={onRefresh}
         onRemovePanel={onRemovePanel}
         onRequestStop={onRequestStop}
+        onRequestLifecycle={onRequestLifecycle}
         onResetWorkspace={onResetWorkspace}
         onResizePanel={onResizePanel}
         onPanelSmoothing={onPanelSmoothing}

@@ -9023,9 +9023,18 @@
           "metric_aggregates",
           "metric_keys",
           "artifact_counts",
-          "run_control"
+          "run_control",
+          "lifecycle",
+          "lifecycle_state"
         ],
         "properties": {
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "artifact_counts": {
             "type": "object",
             "additionalProperties": {
@@ -9041,6 +9050,13 @@
           },
           "created_at": {
             "type": "string",
+            "format": "date-time"
+          },
+          "deleted_at": {
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time"
           },
           "finished_at": {
@@ -9080,6 +9096,19 @@
             "propertyNames": {
               "type": "string"
             }
+          },
+          "lifecycle": {
+            "type": "object"
+          },
+          "lifecycle_state": {
+            "type": "string"
+          },
+          "lifecycle_updated_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
           },
           "metadata": {
             "type": "object"

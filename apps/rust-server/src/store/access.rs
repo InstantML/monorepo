@@ -63,7 +63,7 @@ pub(super) fn fetch_run_in_data(
         .get(&run_id)
         .cloned()
         .ok_or_else(|| AppError::not_found("run not found"))?;
-    if !is_visible_run(data, &run) {
+    if !is_readable_run(data, &run) {
         return Err(AppError::not_found("run not found"));
     }
     ensure_run_access_in_data(ctx, &run)?;
@@ -87,6 +87,21 @@ pub(super) fn ensure_run_visible_in_data(
         return Err(AppError::not_found("run not found"));
     }
     ensure_run_access_in_data(ctx, run)
+}
+
+pub(super) fn maybe_fetch_readable_run_in_data(
+    data: &StoreData,
+    ctx: &RequestContext,
+    run_id: Uuid,
+) -> AppResult<Option<RunRow>> {
+    let Some(run) = data.runs.get(&run_id).cloned() else {
+        return Ok(None);
+    };
+    if !is_readable_run(data, &run) {
+        return Ok(None);
+    }
+    ensure_run_access_in_data(ctx, &run)?;
+    Ok(Some(run))
 }
 
 pub(super) fn ensure_run_access_in_data(ctx: &RequestContext, run: &RunRow) -> AppResult<()> {

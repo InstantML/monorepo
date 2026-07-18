@@ -190,6 +190,84 @@ Returns a bounded direct lineage graph for the selected run: the run, optional
 parent, direct children, optional checkpoint artifact, total child count, and
 whether more children exist beyond the current fixed child limit.
 
+## Archive, restore, and delete runs
+
+Run lifecycle state is separate from training `status` and cooperative stop
+state. Active runs are returned by default. **Archived** runs are hidden from
+default list, search, summary, and export responses but remain readable by
+exact run ID and can be included with a lifecycle filter. **Deleted** runs are
+soft-delete tombstones: they are hidden from ordinary product reads and return
+`404` on exact-ID reads.
+
+```http
+POST /api/runs/{run_id}/archive
+POST /api/runs/{run_id}/restore
+POST /api/runs/{run_id}/delete
+Authorization: Bearer instantml_...
+```
+
+Delete requires a confirmation body; archive and restore ignore it:
+
+```json
+{ "confirm": "delete", "reason": "optional audit note" }
+```
+
+Lifecycle routes require an owner/admin/member browser session with
+mutation-origin validation, local compatibility access, or an API key with
+`runs:control`. Project-scoped keys can only affect runs in their scoped
+project. Archiving or deleting a run still counts archived runs toward retained
+run usage; only delete frees the retained count.
+
+Change many runs at once (capped at 100 IDs, de-duplicated before the cap):
+
+```http
+POST /api/runs/batch-lifecycle
+Authorization: Bearer instantml_...
+
+{
+  "run_ids": ["uuid", "uuid"],
+  "action": "archive",
+  "confirm": "delete",
+  "reason": "optional audit note"
+}
+```
+
+`action` is `archive`, `restore`, or `delete` (delete requires
+`confirm: "delete"`). The response reconciles to the de-duplicated input count
+with per-run entries:
+
+```json
+{
+  "action": "archive",
+  "results": [
+    { "run_id": "uuid", "status": "updated", "run": {} },
+    { "run_id": "uuid", "status": "unchanged" }
+  ],
+  "updated": 1,
+  "unchanged": 1,
+  "failed": 0
+}
+```
+
+Repeating archive on an archived run, restore on an active run, or delete on a
+deleted run is idempotent and returns `status: "unchanged"`. Restoring a
+deleted run returns `409` with `code: "run_lifecycle_conflict"`. Archived and
+deleted runs reject cooperative stop-control writes.
+
+To browse non-active runs, pass a lifecycle filter to the list, summary, and
+export endpoints:
+
+```http
+GET /api/runs?lifecycle=archived
+GET /api/runs/summary?lifecycle=all
+GET /api/export?run_ids=uuid,uuid&include_archived=true
+```
+
+`lifecycle` accepts `active` (default), `archived`, or `all`;
+`include_archived=true` is a legacy alias for `lifecycle=all`. A selected-run
+export silently skips runs the current lifecycle filter excludes rather than
+failing the whole export.
+
 ## Fetch dashboard summaries
 
 Project overview:

@@ -1,10 +1,10 @@
 "use client";
 
-import { Square } from "lucide-react";
+import { Archive, RotateCcw, Square, Trash2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { memo, useMemo, useState } from "react";
 
-import { bestMetric, canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, metricGoal, visibleSelectionState } from "../../../src/state.js";
+import { bestMetric, canRequestStop, displayStatusForRun, formatMetricValue, formatNumber, isInternalInstantMlMetric, lifecycleStateForRun, metricGoal, visibleSelectionState } from "../../../src/state.js";
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { formatRunTime, shortMetricName } from "../../dashboard-models";
 import type { MetricSeries, RunSummary, TableColumns } from "../../dashboard-types";
@@ -124,6 +124,7 @@ const RunsTableRow = memo(function RunsTableRow({
   metricKey,
   onInspectRun,
   onOpenRun,
+  onRequestLifecycle,
   onRequestStop,
   onToggleRun,
   pinnedMetrics,
@@ -139,6 +140,7 @@ const RunsTableRow = memo(function RunsTableRow({
   metricKey: string;
   onInspectRun: (runId: string) => void;
   onOpenRun: (runId: string) => void;
+  onRequestLifecycle: (runIds: string[], action: "archive" | "restore" | "delete") => void;
   onRequestStop: (runIds: string[]) => void;
   onToggleRun: (runId: string) => void;
   pinnedMetrics: string[];
@@ -155,8 +157,12 @@ const RunsTableRow = memo(function RunsTableRow({
   const total = totalSteps(run);
   const owner = runOwner(run);
   const displayStatus = displayStatusForRun(run);
+  const lifecycleState = lifecycleStateForRun(run);
   const running = run.status === "running";
   const canStopRun = canRequestStop(run, canControlRuns);
+  const canArchiveRun = canControlRuns && lifecycleState === "active";
+  const canRestoreRun = canControlRuns && lifecycleState === "archived";
+  const canDeleteRun = canControlRuns && lifecycleState !== "deleted";
   const values = sparkValues(runSeries?.points);
   const sparkColor = running
     ? chartColor(stableChartIndex(run.id || run.name, runIndex))
@@ -207,7 +213,7 @@ const RunsTableRow = memo(function RunsTableRow({
       {pinnedMetrics.map((metric) => (
         <td className="td-num" key={`${run.id}-${metric}`}>{formatNumber(bestMetric(run, metric), 2)}</td>
       ))}
-      <td className="col-stop">
+      <td className="col-stop col-actions">
         {canStopRun ? (
           <button
             aria-label={`Request stop for ${run.name}`}
@@ -217,6 +223,39 @@ const RunsTableRow = memo(function RunsTableRow({
             type="button"
           >
             <Square size={13} />
+          </button>
+        ) : null}
+        {canArchiveRun ? (
+          <button
+            aria-label={`Archive ${run.name}`}
+            className="run-row-action-button"
+            onClick={() => onRequestLifecycle([run.id], "archive")}
+            title="Archive run"
+            type="button"
+          >
+            <Archive size={13} />
+          </button>
+        ) : null}
+        {canRestoreRun ? (
+          <button
+            aria-label={`Restore ${run.name}`}
+            className="run-row-action-button"
+            onClick={() => onRequestLifecycle([run.id], "restore")}
+            title="Restore run"
+            type="button"
+          >
+            <RotateCcw size={13} />
+          </button>
+        ) : null}
+        {canDeleteRun ? (
+          <button
+            aria-label={`Delete ${run.name}`}
+            className="run-row-action-button danger"
+            onClick={() => onRequestLifecycle([run.id], "delete")}
+            title="Delete run"
+            type="button"
+          >
+            <Trash2 size={13} />
           </button>
         ) : null}
       </td>
@@ -240,6 +279,7 @@ export function RunsTable({
   onPreviousPage,
   onPinnedMetric,
   onPinnedMetricFilter,
+  onRequestLifecycle,
   onRequestStop,
   onSelectAllVisible,
   onTableColumns,
@@ -274,6 +314,7 @@ export function RunsTable({
   onPreviousPage: () => void;
   onPinnedMetric: (metric: string) => void;
   onPinnedMetricFilter: (value: string) => void;
+  onRequestLifecycle: (runIds: string[], action: "archive" | "restore" | "delete") => void;
   onRequestStop: (runIds: string[]) => void;
   onSelectAllVisible: () => void;
   onTableColumns: Dispatch<SetStateAction<TableColumns>>;
@@ -359,6 +400,7 @@ export function RunsTable({
         metricKey={metricKey}
         onInspectRun={onInspectRun}
         onOpenRun={onOpenRun}
+        onRequestLifecycle={onRequestLifecycle}
         onRequestStop={onRequestStop}
         onToggleRun={onToggleRun}
         pinnedMetrics={pinnedMetrics}

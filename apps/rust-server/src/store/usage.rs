@@ -441,11 +441,7 @@ async fn usage_counts_for_org(
         .values()
         .filter(|project| project.org_id == org_id)
         .count() as i64;
-    let runs = data
-        .runs
-        .values()
-        .filter(|run| run.org_id == org_id)
-        .count() as i64;
+    let runs = retained_run_usage_count(&data, org_id);
     let artifacts = artifact_usage.artifacts
         + versioned_artifact_usage.active_versions
         + versioned_artifact_usage.pending_delete_versions;
@@ -653,6 +649,13 @@ fn storage_bytes_for_warnings(
 
 fn retained_artifact_backend(storage_backend: &str) -> bool {
     matches!(storage_backend, "local" | "r2")
+}
+
+fn retained_run_usage_count(data: &StoreData, org_id: Uuid) -> i64 {
+    data.runs
+        .values()
+        .filter(|run| run.org_id == org_id && is_readable_run(data, run))
+        .count() as i64
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1463,6 +1466,24 @@ mod tests {
     }
 
     #[test]
+    fn retained_run_usage_count_excludes_deleted_but_counts_archived() {
+        let org_id = Uuid::new_v4();
+        let project_id = Uuid::new_v4();
+        let now = Utc::now();
+        let mut data = StoreData::default();
+        let active = test_run(org_id, project_id, "active", now);
+        let archived = test_run(org_id, project_id, "archived", now);
+        let deleted = test_run(org_id, project_id, "deleted", now);
+        data.insert_run(active);
+        data.insert_run(archived.clone());
+        data.insert_run(deleted.clone());
+        data.insert_run_lifecycle(test_lifecycle(org_id, archived.id, "archived", now));
+        data.insert_run_lifecycle(test_lifecycle(org_id, deleted.id, "deleted", now));
+
+        assert_eq!(retained_run_usage_count(&data, org_id), 2);
+    }
+
+    #[test]
     fn usage_org_value_reports_unknown_artifact_count() {
         let mut counts = test_counts("free");
         counts.artifacts = 3;
@@ -1561,6 +1582,50 @@ mod tests {
             storage_path: None,
             metadata: json!({}),
             created_at: Utc::now(),
+        }
+    }
+
+    fn test_run(org_id: Uuid, project_id: Uuid, name: &str, created_at: DateTime<Utc>) -> RunRow {
+        RunRow {
+            id: Uuid::new_v4(),
+            org_id,
+            project_id,
+            project: "project".to_string(),
+            name: name.to_string(),
+            status: "finished".to_string(),
+            config: json!({}),
+            tags: vec![],
+            metadata: json!({}),
+            created_at,
+            started_at: created_at,
+            finished_at: Some(created_at),
+            parent_run_id: None,
+            forked_from_step: None,
+            forked_from_artifact_id: None,
+            resume_count: 0,
+            resumed_at: None,
+            create_request_hash: None,
+            lifecycle: Vec::new(),
+        }
+    }
+
+    fn test_lifecycle(
+        org_id: Uuid,
+        run_id: Uuid,
+        state: &str,
+        created_at: DateTime<Utc>,
+    ) -> RunLifecycleRow {
+        RunLifecycleRow {
+            kind: "run_lifecycle".to_string(),
+            id: Uuid::new_v4(),
+            org_id,
+            run_id,
+            state: state.to_string(),
+            reason: None,
+            actor_id: None,
+            actor_type: "test".to_string(),
+            idempotency_key: None,
+            created_at,
         }
     }
 

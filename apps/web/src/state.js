@@ -336,6 +336,11 @@ export function displayStatusForRun(run) {
   return run?.run_control?.display_status || run?.status || "";
 }
 
+export function lifecycleStateForRun(run) {
+  const raw = run?.lifecycle_state || run?.lifecycle?.state || "active";
+  return typeof raw === "string" && raw.trim() ? raw.trim().toLowerCase() : "active";
+}
+
 export function dashboardStatusQueryParams(displayStatus, legacyStatus = "") {
   const display = String(displayStatus || "").trim().toLowerCase();
   const legacy = String(legacyStatus || "").trim().toLowerCase();
@@ -357,6 +362,7 @@ export function dashboardStatusQueryParams(displayStatus, legacyStatus = "") {
 
 export function canRequestStop(run, canControl = true) {
   if (!canControl || !run || run.status !== "running") return false;
+  if (lifecycleStateForRun(run) !== "active") return false;
   const state = run.run_control?.stop_state || "none";
   return state !== "requested" && state !== "acknowledged";
 }

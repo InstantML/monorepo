@@ -1,7 +1,7 @@
 "use client";
 
 import { useClerk } from "@clerk/nextjs";
-import { Activity, Square, X } from "lucide-react";
+import { Activity, Archive, RotateCcw, Square, Trash2, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +15,7 @@ import { averageGroupedSeries, chartSummary, smoothSeries } from "../../src/char
 import { adaptiveMetricSeriesLimit, buildRunCategoricalFieldCatalog, buildRunFieldCatalog, categoricalFieldLabel, chunkRunIds, defaultDistributionFields, defaultScatterFields, fieldLabel, histogramFramesFromObjects, mergeMetricSeriesPatches, parseCategoricalFieldId, parseFieldId } from "../../src/dashboard-panels.js";
 import { isEditableElement, matchesShortcut, platformModifierLabel } from "../../src/shortcuts.js";
 import { canManageOrg as roleCanManageOrg, canWriteRuns as roleCanWriteRuns } from "../../src/roles.js";
-import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, DEFAULT_SELECTED_RUNS, MAX_SELECTED_RUNS, canRequestStop, capSelectionToMatching, dashboardStatusQueryParams, defaultRunSelection, deselectVisible, displayStatusForRun, filterMetricKeys, formatNumber, groupKeyForRun, identifierForRun, lifecycleStateForRun, metricFilterIsRegex, metricKeysFromSummary, preferredMetricKey, rangeSelect, runSelectionFromSearch, runSelectionSearchParam, selectAllVisible, toggleSelection, visibleSelectionState } from "../../src/state.js";
 
 import { CustomSelect } from "./ui/select";
 import { DashboardNav } from "./chrome/nav-rail";
@@ -67,7 +67,7 @@ import {
   workspaceStorageKey,
 } from "../dashboard-models";
 import { AppLoadingScreen } from "../loading-screen";
-import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HistogramTimelineState, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunSummary, Summary, TabId, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
+import type { Artifact, CompareLayout, CompareRowSort, CompareRunSort, HistogramTimelineState, HoverPoint, LoggedObject, LoggedObjectRow, MetricSeries, Overview, RunLifecycleState, RunSummary, Summary, TabId, TableColumns, WorkspaceCategoricalFieldOption, WorkspaceFieldOption, WorkspacePanel, WorkspacePanelLayout, WorkspacePanelSettings, WorkspacePanelType, WorkspaceView } from "../dashboard-types";
 import type { RunWorkspaceTabId } from "./components/run-workspace";
 import { LEGACY_SAVED_VIEW_PREFIX, RUNS_RAIL_COLLAPSED_KEY, SAVED_VIEW_PREFIX, THEME_KEY, WORKSPACE_VIEW_PREFIX } from "./state/storage-keys";
 import { useIsMobile } from "./state/use-mobile";
@@ -153,6 +153,24 @@ type StopDialogState = {
   skippedRunCount: number;
   source: "single" | "bulk";
 } | null;
+type RunLifecycleFilter = "active" | "archived" | "all";
+type RunLifecycleAction = "archive" | "restore" | "delete";
+type RunLifecycleDialogSkipCounts = {
+  readOnly: number;
+  deleted: number;
+  unavailable: number;
+  unchanged: number;
+};
+type RunLifecycleDialogState = {
+  action: RunLifecycleAction;
+  confirm: string;
+  idempotencyKey: string;
+  reason: string;
+  runIds: string[];
+  skippedCounts: RunLifecycleDialogSkipCounts;
+  skippedRunCount: number;
+  source: "single" | "bulk";
+} | null;
 type WorkspaceViewImportPreview = {
   action?: string;
   dry_run?: boolean;
@@ -174,7 +192,8 @@ const SHARED_DEMO_EMAIL = "hello@instantml.ai";
 const SHARED_DEMO_ORG = "InstantML Demo";
 const DISPLAY_STATUS_VALUES = new Set(["running", "stopping", "stopped", "finished", "failed"]);
 const MAX_STOP_DIALOG_RUNS = 100;
-const SELECTED_RUN_DETAILS_HYDRATION_LIMIT = Math.max(COMPARE_RUN_LIMIT, MAX_STOP_DIALOG_RUNS);
+const MAX_RUN_LIFECYCLE_DIALOG_RUNS = 100;
+const SELECTED_RUN_DETAILS_HYDRATION_LIMIT = Math.max(COMPARE_RUN_LIMIT, MAX_STOP_DIALOG_RUNS, MAX_RUN_LIFECYCLE_DIALOG_RUNS);
 // Sourced from the generated OpenAPI spec; `list_org_memberships` returns
 // an `OrgMembershipsEnvelope { memberships: OrganizationMembershipSummary[] }`.
 // Rust struct `domain::OrganizationMembershipSummary`.
@@ -404,13 +423,23 @@ function richerRunSummary(primary: RunSummary | null | undefined, fallback: RunS
   const metricAggregates = mergeFreshRecord(primary.metric_aggregates, fallback.metric_aggregates);
   const artifactCounts = primary.artifact_counts ?? fallback.artifact_counts;
   const runControl = primary.run_control ?? fallback.run_control;
+  const lifecycle = primary.lifecycle ?? fallback.lifecycle;
+  const lifecycleState = primary.lifecycle_state ?? fallback.lifecycle_state;
+  const lifecycleUpdatedAt = primary.lifecycle_updated_at ?? fallback.lifecycle_updated_at;
+  const archivedAt = primary.archived_at ?? fallback.archived_at;
+  const deletedAt = primary.deleted_at ?? fallback.deleted_at;
   if (
     config === primary.config &&
     metadata === primary.metadata &&
     latestMetrics === primary.latest_metrics &&
     metricAggregates === primary.metric_aggregates &&
     artifactCounts === primary.artifact_counts &&
-    runControl === primary.run_control
+    runControl === primary.run_control &&
+    lifecycle === primary.lifecycle &&
+    lifecycleState === primary.lifecycle_state &&
+    lifecycleUpdatedAt === primary.lifecycle_updated_at &&
+    archivedAt === primary.archived_at &&
+    deletedAt === primary.deleted_at
   ) return primary;
   return {
     ...fallback,
@@ -421,11 +450,35 @@ function richerRunSummary(primary: RunSummary | null | undefined, fallback: RunS
     metric_aggregates: metricAggregates,
     artifact_counts: artifactCounts,
     run_control: runControl,
+    lifecycle,
+    lifecycle_state: lifecycleState,
+    lifecycle_updated_at: lifecycleUpdatedAt,
+    archived_at: archivedAt,
+    deleted_at: deletedAt,
   };
 }
 
 function mergeRunControl(run: RunSummary, control: GeneratedRunControlSummary): RunSummary {
   return { ...run, run_control: control };
+}
+
+function normalizeRunLifecycleState(value: string | null | undefined): RunLifecycleState {
+  return value === "archived" || value === "deleted" ? value : "active";
+}
+
+function runLifecycleState(run: RunSummary | null | undefined): RunLifecycleState {
+  return normalizeRunLifecycleState(lifecycleStateForRun(run));
+}
+
+function mergeRunLifecycleSummary(run: RunSummary, update: RunSummary): RunSummary {
+  return richerRunSummary(update, run) ?? update;
+}
+
+function runMatchesLifecycleFilter(run: RunSummary, filter: RunLifecycleFilter) {
+  const state = runLifecycleState(run);
+  if (state === "deleted") return false;
+  if (filter === "all") return true;
+  return state === filter;
 }
 
 function normalizeDisplayStatus(value: string | null | undefined) {
@@ -726,6 +779,7 @@ export function DashboardShell({
       : (new URLSearchParams(window.location.search).get("project") ?? "")
   );
   const [status, setStatus] = useState("");
+  const [lifecycleFilter, setLifecycleFilter] = useState<RunLifecycleFilter>("active");
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [searchError, setSearchError] = useState<RunSearchError | null>(null);
@@ -833,6 +887,9 @@ export function DashboardShell({
   const [stopDialog, setStopDialog] = useState<StopDialogState>(null);
   const [stopSubmitting, setStopSubmitting] = useState(false);
   const [stopError, setStopError] = useState("");
+  const [lifecycleDialog, setLifecycleDialog] = useState<RunLifecycleDialogState>(null);
+  const [lifecycleSubmitting, setLifecycleSubmitting] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState("");
   const [workspaceUndoStack, setWorkspaceUndoStack] = useState<WorkspaceView[]>([]);
   const [workspaceRedoStack, setWorkspaceRedoStack] = useState<WorkspaceView[]>([]);
   const [chartZoomRange, setChartZoomRange] = useState<ChartZoomRange>(null);
@@ -928,7 +985,7 @@ export function DashboardShell({
     return metricSeriesRuns;
   }, [activeTab, metricSeriesRunIdSet, metricSeriesRuns, primaryRun]);
   const seriesFetchRunKey = useMemo(() => seriesFetchRuns.map((run) => run.id).join(","), [seriesFetchRuns]);
-  const dashboardSelectionFilterKey = [project, status, queryInput, query, sortBy, metricKey].join("\u0000");
+  const dashboardSelectionFilterKey = [project, status, lifecycleFilter, queryInput, query, sortBy, metricKey].join("\u0000");
   useEffect(() => {
     seriesStateRef.current = series;
     panelSeriesStateRef.current = panelSeries;
@@ -1117,6 +1174,23 @@ export function DashboardShell({
       : selectedRunIds.length
         ? "Selected runs are not running or are already stopping."
         : "Select running runs that are not already stopping.";
+  const selectedLifecycleCandidateCounts = useMemo(() => {
+    if (!canControlRuns) return { archive: 0, restore: 0, delete: 0 };
+    let archive = 0;
+    let restore = 0;
+    let deleteCount = 0;
+    for (const run of selectedRuns) {
+      const state = runLifecycleState(run);
+      if (state === "active") {
+        archive += 1;
+        deleteCount += 1;
+      } else if (state === "archived") {
+        restore += 1;
+        deleteCount += 1;
+      }
+    }
+    return { archive, restore, delete: deleteCount };
+  }, [canControlRuns, selectedRuns]);
   const canEditReports = canWriteWorkspace;
   const activeMembershipSummary = useMemo(
     () => orgMemberships.find((membership) => membership.org_id === activeOrgId)
@@ -1202,6 +1276,11 @@ export function DashboardShell({
     userTouchedDashboardFiltersRef.current = true;
     resetRunPagination();
     setStatus(value);
+  }, [resetRunPagination]);
+  const changeLifecycleFilter = useCallback((value: RunLifecycleFilter) => {
+    userTouchedDashboardFiltersRef.current = true;
+    resetRunPagination();
+    setLifecycleFilter(value);
   }, [resetRunPagination]);
   const changeRunQueryInput = useCallback((value: string) => {
     userTouchedDashboardFiltersRef.current = true;
@@ -1358,6 +1437,11 @@ export function DashboardShell({
     Boolean(stopDialog),
     closeStopDialog,
     "#stop-reason",
+  );
+  const lifecycleDialogRef = useFocusTrap<HTMLDivElement>(
+    Boolean(lifecycleDialog),
+    closeLifecycleDialog,
+    "#run-lifecycle-reason, #run-lifecycle-confirm",
   );
   const quickSearchItems = useMemo<QuickSearchItem[]>(() => {
     // The palette is closed almost always; building ~200 items (each with a
@@ -1529,11 +1613,11 @@ export function DashboardShell({
       const displayStatus = normalizeDisplayStatus(status);
       const statusParams = dashboardStatusQueryParams(displayStatus, status);
       const params = currentPageCursor
-        ? { project, ...statusParams, q: query, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
-        : { project, ...statusParams, q: query, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
+        ? { project, ...statusParams, q: query, lifecycle: lifecycleFilter, limit: pageSize, cursor: currentPageCursor, sort_by: sortBy, metric_key: metricKey }
+        : { project, ...statusParams, q: query, lifecycle: lifecycleFilter, limit: pageSize, offset: pageOffset, sort_by: sortBy, metric_key: metricKey };
       const retryOptions = { signal: options.signal, delays: DASHBOARD_REQUEST_RETRY_DELAYS_MS };
       const overviewResultPromise = retryTransientRequest(
-        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, metric_key: metricKey })}`, requestOptions),
+        () => api.get(`/api/overview${queryString({ project, ...statusParams, q: query, lifecycle: lifecycleFilter, metric_key: metricKey })}`, requestOptions),
         retryOptions,
       ).then(
         (value) => ({ status: "fulfilled" as const, value }),
@@ -1618,7 +1702,7 @@ export function DashboardShell({
         if (!keepInitialRunsLoading && !options.signal?.aborted) setInitialLoadDone(true);
       }
     }
-  }, [api, currentPageCursor, initialLoadDone, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
+  }, [api, currentPageCursor, initialLoadDone, lifecycleFilter, metricKey, pageOffset, pageSize, project, query, sortBy, status]);
 
   useEffect(() => {
     if (initialSession?.authenticated) return undefined;
@@ -3584,6 +3668,7 @@ export function DashboardShell({
           project,
           ...statusParams,
           q: query,
+          lifecycle: lifecycleFilter,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           cursor,
           projection: "selection",
@@ -3593,6 +3678,7 @@ export function DashboardShell({
           project,
           ...statusParams,
           q: query,
+          lifecycle: lifecycleFilter,
           limit: Math.min(pageLimit, BULK_SELECT_MATCHING_LIMIT - matchingRuns.length),
           offset,
           projection: "selection",
@@ -3656,7 +3742,7 @@ export function DashboardShell({
     setExportSelectedBusy(true);
     setMessage(`Exporting ${selectedRunIds.length} selected runs...`);
     try {
-      const { blob, headers } = await api.download(`/api/export${queryString({ format: "csv", run_ids: selectedRunIds.join(",") })}`, {
+      const { blob, headers } = await api.download(`/api/export${queryString({ format: "csv", run_ids: selectedRunIds.join(","), include_archived: lifecycleFilter !== "active" ? "true" : "" })}`, {
         credentials: "same-origin",
       });
       const today = new Date().toISOString().slice(0, 10);
@@ -3942,9 +4028,220 @@ export function DashboardShell({
     }
   }
 
+  function lifecycleCandidatesForIds(runIds: string[], action: RunLifecycleAction) {
+    const seen = new Set<string>();
+    const runs: RunSummary[] = [];
+    const skippedCounts: RunLifecycleDialogSkipCounts = {
+      deleted: 0,
+      readOnly: 0,
+      unchanged: 0,
+      unavailable: 0,
+    };
+    for (const runId of runIds) {
+      if (seen.has(runId)) continue;
+      seen.add(runId);
+      const run = runSummaryForId(runId);
+      if (!run) {
+        skippedCounts.unavailable += 1;
+        continue;
+      }
+      if (!canControlRuns) {
+        skippedCounts.readOnly += 1;
+        continue;
+      }
+      const state = runLifecycleState(run);
+      if (state === "deleted") {
+        skippedCounts.deleted += 1;
+        continue;
+      }
+      if (action === "archive" && state !== "active") {
+        skippedCounts.unchanged += 1;
+        continue;
+      }
+      if (action === "restore" && state !== "archived") {
+        skippedCounts.unchanged += 1;
+        continue;
+      }
+      runs.push(run);
+    }
+    const cappedRuns = runs.slice(0, MAX_RUN_LIFECYCLE_DIALOG_RUNS);
+    return {
+      runs: cappedRuns,
+      skippedCounts,
+      skippedRunCount: Math.max(0, runs.length - cappedRuns.length),
+    };
+  }
+
+  function nextLifecycleIdempotencyKey(action: RunLifecycleAction, source: "single" | "bulk") {
+    const entropy = typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    return `instantml-lifecycle:${action}:${source}:${entropy}`;
+  }
+
+  function openLifecycleDialogForRuns(runIds: string[], action: RunLifecycleAction, source: "single" | "bulk" = "single") {
+    if (!canControlRuns) {
+      setMessage("Read only workspaces can view runs but cannot archive, restore, or delete them.");
+      return;
+    }
+    const { runs: candidates, skippedCounts, skippedRunCount } = lifecycleCandidatesForIds(runIds, action);
+    if (!candidates.length) {
+      const noun = action === "archive" ? "archived" : action === "restore" ? "restored" : "deleted";
+      setMessage(source === "bulk" ? `No selected runs can be ${noun}.` : `This run cannot be ${noun}.`);
+      return;
+    }
+    const dialogSource = source === "bulk" || candidates.length > 1 ? "bulk" : "single";
+    setLifecycleError("");
+    setLifecycleDialog({
+      action,
+      confirm: "",
+      idempotencyKey: nextLifecycleIdempotencyKey(action, dialogSource),
+      reason: "",
+      runIds: candidates.map((run) => run.id),
+      skippedCounts,
+      skippedRunCount,
+      source: dialogSource,
+    });
+  }
+
+  function closeLifecycleDialog() {
+    if (lifecycleSubmitting) return;
+    setLifecycleDialog(null);
+    setLifecycleError("");
+  }
+
+  function setLifecycleDialogReason(reason: string) {
+    setLifecycleDialog((current) => current ? { ...current, reason } : current);
+  }
+
+  function setLifecycleDialogConfirm(confirm: string) {
+    setLifecycleDialog((current) => current ? { ...current, confirm } : current);
+  }
+
+  function lifecycleMutationBody(action: RunLifecycleAction, reason: string, confirm: string) {
+    if (action === "delete") return { confirm, reason: reason || null };
+    return { reason: reason || null };
+  }
+
+  function collectLifecycleRuns(payload: any) {
+    const runs = new Map<string, RunSummary>();
+    const failures: string[] = [];
+    let unchanged = 0;
+    if (Array.isArray(payload?.results)) {
+      for (const result of payload.results) {
+        if ((result.status === "updated" || result.status === "unchanged") && result.run?.id) runs.set(result.run.id, result.run as RunSummary);
+        if (result.status === "unchanged") unchanged += 1;
+        if (result.status === "error") failures.push(result.error || `Unable to update ${result.run_id}.`);
+      }
+    } else {
+      if ((payload?.status === "updated" || payload?.status === "unchanged") && payload?.run?.id) runs.set(payload.run.id, payload.run as RunSummary);
+      if (payload?.status === "unchanged") unchanged += 1;
+    }
+    return { failures, runs, unchanged };
+  }
+
+  async function submitLifecycleDialog() {
+    if (!lifecycleDialog || lifecycleSubmitting) return;
+    const runIds = lifecycleDialog.runIds.slice(0, MAX_RUN_LIFECYCLE_DIALOG_RUNS);
+    if (!runIds.length) {
+      setLifecycleError("No eligible runs remain.");
+      return;
+    }
+    const confirm = lifecycleDialog.action === "delete" ? lifecycleDialog.confirm.trim().toLowerCase() : "";
+    if (lifecycleDialog.action === "delete" && confirm !== "delete") {
+      setLifecycleError('Type "delete" to confirm.');
+      return;
+    }
+    setLifecycleSubmitting(true);
+    setLifecycleError("");
+    try {
+      const reason = lifecycleDialog.reason.trim();
+      const headers = { "Idempotency-Key": lifecycleDialog.idempotencyKey };
+      const payload = lifecycleDialog.source === "single" && runIds.length === 1
+        ? await api.post(
+            `/api/runs/${runIds[0]}/${lifecycleDialog.action}`,
+            lifecycleMutationBody(lifecycleDialog.action, reason, confirm),
+            { headers },
+          )
+        : await api.post(
+            "/api/runs/batch-lifecycle",
+            {
+              action: lifecycleDialog.action,
+              confirm: lifecycleDialog.action === "delete" ? "delete" : null,
+              reason: reason || null,
+              run_ids: runIds,
+            },
+            { headers },
+          );
+      const { failures, runs, unchanged } = collectLifecycleRuns(payload);
+      if (!runs.size && failures.length) throw new Error(failures[0]);
+      const hiddenIds = new Set<string>();
+      const deletedIds = new Set<string>();
+      for (const [runId, run] of runs.entries()) {
+        if (runLifecycleState(run) === "deleted") deletedIds.add(runId);
+        if (!runMatchesLifecycleFilter(run, lifecycleFilter)) hiddenIds.add(runId);
+      }
+      setLifecycleDialog(null);
+      setLifecycleError("");
+      setMessage(failures.length
+        ? `${runs.size} ${runs.size === 1 ? "run" : "runs"} updated. ${failures.length} could not be updated.`
+        : `${runs.size} ${runs.size === 1 ? "run" : "runs"} ${lifecycleDialog.action === "archive" ? "archived" : lifecycleDialog.action === "restore" ? "restored" : "deleted"}${unchanged ? ` (${unchanged} unchanged)` : ""}.`);
+      setSummary((current) => {
+        let removed = 0;
+        const nextRuns = current.runs.flatMap((run) => {
+          const update = runs.get(run.id);
+          if (!update) return [run];
+          const next = mergeRunLifecycleSummary(run, update);
+          if (!runMatchesLifecycleFilter(next, lifecycleFilter)) {
+            removed += 1;
+            return [];
+          }
+          return [next];
+        });
+        return {
+          ...current,
+          runs: nextRuns,
+          total: removed ? Math.max(0, current.total - removed) : current.total,
+        };
+      });
+      setSelectedRunDetails((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [runId, run] of runs.entries()) {
+          const existing = next[runId] ?? runSummaryForId(runId);
+          const merged = existing ? mergeRunLifecycleSummary(existing, run) : run;
+          next[runId] = merged;
+          runDirectoryRef.current.set(runId, merged);
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+      setSelectedRunIds((current) => current.filter((id) => !deletedIds.has(id) && !hiddenIds.has(id)));
+      setSideBySide((current: any) => current ? {
+        ...current,
+        runs: (current.runs ?? []).flatMap((run: RunSummary) => {
+          const update = runs.get(run.id);
+          if (!update) return [run];
+          return runLifecycleState(update) === "deleted" ? [] : [mergeRunLifecycleSummary(run, update)];
+        }),
+      } : current);
+      if (primaryRunId && (deletedIds.has(primaryRunId) || hiddenIds.has(primaryRunId))) {
+        setPrimaryRunId("");
+      }
+      void loadDashboard({ silent: true });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to update run lifecycle.";
+      setLifecycleError(detail);
+      setMessage(detail);
+    } finally {
+      setLifecycleSubmitting(false);
+    }
+  }
+
   function clearFilters() {
     setProject("");
     setStatus("");
+    setLifecycleFilter("active");
     setSortBy("created");
     setQueryInput("");
     setQuery("");
@@ -4348,6 +4645,10 @@ export function DashboardShell({
   }
 
 function dismissTopOverlay() {
+  if (lifecycleDialog) {
+    closeLifecycleDialog();
+    return true;
+  }
   if (stopDialog) {
     closeStopDialog();
     return true;
@@ -4430,7 +4731,7 @@ function dismissTopOverlay() {
       return;
     }
     if (quickSearchOpen || shortcutHelpOpen) return;
-    if (stopDialog) return;
+    if (stopDialog || lifecycleDialog) return;
     if (fullscreenPanelRef && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
       moveFullscreenPanel(event.key === "ArrowLeft" ? -1 : 1);
@@ -4498,6 +4799,39 @@ function dismissTopOverlay() {
   const stopDialogSkippedSummary = stopDialogSkipRows.length
     ? stopDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
     : "";
+  const lifecycleDialogRuns = lifecycleDialog
+    ? lifecycleDialog.runIds.map((runId) => runSummaryForId(runId)).filter(Boolean) as RunSummary[]
+    : [];
+  const lifecycleActionPast = lifecycleDialog?.action === "archive"
+    ? "archived"
+    : lifecycleDialog?.action === "restore"
+      ? "restored"
+      : "deleted";
+  const lifecycleActionLabel = lifecycleDialog?.action === "archive"
+    ? "Archive"
+    : lifecycleDialog?.action === "restore"
+      ? "Restore"
+      : "Delete";
+  const LifecycleDialogIcon = lifecycleDialog?.action === "archive"
+    ? Archive
+    : lifecycleDialog?.action === "restore"
+      ? RotateCcw
+      : Trash2;
+  const lifecycleDialogTitle = lifecycleDialogRuns.length === 1
+    ? `${lifecycleActionLabel} ${lifecycleDialogRuns[0]?.name ?? "run"}`
+    : `${lifecycleActionLabel} ${lifecycleDialogRuns.length} runs`;
+  const lifecycleDialogSkipRows = lifecycleDialog
+    ? [
+        { count: lifecycleDialog.skippedCounts.unchanged, label: "Already in state" },
+        { count: lifecycleDialog.skippedCounts.deleted, label: "Deleted" },
+        { count: lifecycleDialog.skippedCounts.unavailable, label: "Unavailable" },
+        { count: lifecycleDialog.skippedCounts.readOnly, label: "Read only" },
+      ].filter((row) => row.count > 0)
+    : [];
+  const lifecycleDialogSkippedSummary = lifecycleDialogSkipRows.length
+    ? lifecycleDialogSkipRows.map((row) => `${row.label.toLowerCase()}: ${row.count}`).join("; ")
+    : "";
+  const lifecycleConfirmReady = !lifecycleDialog || lifecycleDialog.action !== "delete" || lifecycleDialog.confirm.trim().toLowerCase() === "delete";
 
   // Stable identities for handlers that flow into memo()'d children (workspace
   // panel cards, runs-table rows). The function declarations above are
@@ -4515,6 +4849,7 @@ function dismissTopOverlay() {
   const stableEditPanel = useStableHandler((sectionId: string, panelId: string) => setEditingPanelRef({ sectionId, panelId }));
   const stableFullscreenPanel = useStableHandler((sectionId: string, panelId: string) => setFullscreenPanelRef({ sectionId, panelId }));
   const stableOpenRun = useStableHandler((id: string) => { setPrimaryRunId(id); selectTab("detail"); });
+  const stableRequestLifecycle = useStableHandler((runIds: string[], action: RunLifecycleAction) => openLifecycleDialogForRuns(runIds, action, runIds.length > 1 ? "bulk" : "single"));
   const stableRequestStopRuns = useStableHandler((runIds: string[]) => openStopDialogForRuns(runIds, runIds.length > 1 ? "bulk" : "single"));
 
   if (!dashboardSessionChecked) return <AppLoadingScreen detail="Checking session" />;
@@ -4623,6 +4958,86 @@ function dismissTopOverlay() {
         </div>
       ) : null}
 
+      {lifecycleDialog ? (
+        <div className="workspace-modal checkpoint-fork-modal" role="dialog" aria-modal="true" aria-labelledby="run-lifecycle-dialog-title">
+          <div className="workspace-modal-card checkpoint-fork-card" ref={lifecycleDialogRef} tabIndex={-1}>
+            <div className="drawer-head">
+              <div>
+                <span className="analysis-eyebrow eyebrow--accent">Run lifecycle</span>
+                <h2 id="run-lifecycle-dialog-title">{lifecycleDialogTitle}</h2>
+              </div>
+              <button aria-label="Close lifecycle dialog" className="icon-button framed" disabled={lifecycleSubmitting} onClick={closeLifecycleDialog} type="button">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="checkpoint-fork-body">
+              <p className="checkpoint-fork-notice">
+                {lifecycleDialog.action === "delete"
+                  ? "Deleted runs are hidden from normal read paths and cannot be restored in this version. Metrics and artifacts remain retained until a future purge path exists."
+                  : lifecycleDialog.action === "archive"
+                    ? "Archived runs leave metrics and artifacts intact, stay available from the archived filter, disappear from default active lists, and still count toward retained usage."
+                    : "Restored runs return to the default active run list."}
+              </p>
+              <div className="checkpoint-fork-grid stop-request-grid">
+                <div><span>Eligible runs</span><strong>{lifecycleDialogRuns.length}</strong></div>
+                <div><span>Mode</span><strong>{lifecycleDialog.source === "bulk" ? "bulk" : "single"}</strong></div>
+                {lifecycleDialogSkipRows.map((row) => (
+                  <div key={row.label}><span>{row.label}</span><strong>{row.count}</strong></div>
+                ))}
+                {lifecycleDialog.skippedRunCount > 0 ? <div><span>Skipped</span><strong>{lifecycleDialog.skippedRunCount}</strong></div> : null}
+              </div>
+              {lifecycleDialogSkippedSummary ? (
+                <p className="checkpoint-fork-notice">Skipped selected runs ({lifecycleDialogSkippedSummary}).</p>
+              ) : null}
+              {lifecycleDialog.skippedRunCount > 0 ? (
+                <p className="checkpoint-fork-notice">Only the first {MAX_RUN_LIFECYCLE_DIALOG_RUNS} eligible selected runs are included. {lifecycleDialog.skippedRunCount} more will be left untouched.</p>
+              ) : null}
+              <div className="stop-request-list" aria-label={`Runs to be ${lifecycleActionPast}`}>
+                {lifecycleDialogRuns.slice(0, 6).map((run) => (
+                  <span key={run.id} title={run.name}>{run.name}</span>
+                ))}
+                {lifecycleDialogRuns.length > 6 ? <em>+{lifecycleDialogRuns.length - 6} more</em> : null}
+              </div>
+              <label className="checkpoint-fork-field">
+                <span>Reason</span>
+                <textarea
+                  aria-label="Lifecycle reason"
+                  id="run-lifecycle-reason"
+                  maxLength={500}
+                  onChange={(event) => setLifecycleDialogReason(event.target.value)}
+                  placeholder="Optional note for the run history"
+                  rows={3}
+                  value={lifecycleDialog.reason}
+                />
+              </label>
+              {lifecycleDialog.action === "delete" ? (
+                <label className="checkpoint-fork-field">
+                  <span>Type delete to confirm</span>
+                  <input
+                    aria-label="Delete confirmation"
+                    id="run-lifecycle-confirm"
+                    onChange={(event) => setLifecycleDialogConfirm(event.target.value)}
+                    value={lifecycleDialog.confirm}
+                  />
+                </label>
+              ) : null}
+              {lifecycleError ? <div className="checkpoint-fork-error" role="alert">{lifecycleError}</div> : null}
+            </div>
+            <div className="checkpoint-fork-actions">
+              <button className="secondary" disabled={lifecycleSubmitting} onClick={closeLifecycleDialog} type="button">Cancel</button>
+              <button
+                className={`primary-button stop-dialog-submit${lifecycleDialog.action === "delete" ? " danger-action" : ""}`}
+                disabled={lifecycleSubmitting || !lifecycleDialogRuns.length || !lifecycleConfirmReady}
+                onClick={submitLifecycleDialog}
+                type="button"
+              >
+                <LifecycleDialogIcon size={14} /> {lifecycleSubmitting ? "Updating..." : `${lifecycleActionLabel} ${lifecycleDialogRuns.length === 1 ? "run" : "runs"}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {isMobile && mobileNavOpen ? (
         <div
           className="mobile-nav-scrim"
@@ -4671,6 +5086,8 @@ function dismissTopOverlay() {
                   overview={overview}
                   status={status}
                   onStatus={changeStatus}
+                  lifecycle={lifecycleFilter}
+                  onLifecycle={changeLifecycleFilter}
                   query={queryInput}
                   onQuery={changeRunQueryInput}
                   sortBy={sortBy}
@@ -4755,6 +5172,7 @@ function dismissTopOverlay() {
               onPreviousPage={goToPreviousRunPage}
               onRefresh={loadDashboard}
               onRemovePanel={stableRemoveWorkspacePanel}
+              onRequestLifecycle={stableRequestLifecycle}
               onRequestStop={stableRequestStopRuns}
               onResetWorkspace={resetWorkspaceLayout}
               onResizePanel={stableResizeWorkspacePanel}
@@ -4796,6 +5214,7 @@ function dismissTopOverlay() {
               selectedRunIds={selectedRunIds}
               selectedRunExportDisabled={selectedRunExportDisabled}
               selectedRunExportTitle={selectedRunExportTitle}
+              selectedLifecycleCandidateCounts={selectedLifecycleCandidateCounts}
               selectedStopCandidateCount={selectedStopCandidateCount}
               selectedStopDisabledReason={selectedStopDisabledReason}
               sortedRuns={sortedRuns}
@@ -4895,6 +5314,7 @@ function dismissTopOverlay() {
               onChartPointHover={(point) => { setHoverMetricKey(metricKey); setHover(point); }}
               onChartZoomRangeChange={setPrimaryChartZoomRange}
               onForkCheckpoint={canWriteWorkspace ? forkCheckpointRun : undefined}
+              onRequestLifecycle={stableRequestLifecycle}
               onRequestStop={stableRequestStopRuns}
               onRunMetadataSave={canWriteWorkspace ? updateRunTagsAndNotes : undefined}
               onWorkspaceTabChange={handleRunWorkspaceTabChange}

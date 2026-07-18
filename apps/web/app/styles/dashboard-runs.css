@@ -99,6 +99,18 @@
   color: var(--danger);
 }
 
+.lifecycle-selected-runs-button.danger {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
+  color: var(--danger);
+}
+
+.lifecycle-selected-runs-button.danger:not(:disabled):hover,
+.lifecycle-selected-runs-button.danger:not(:disabled):focus-visible {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .runs-actions-popover .export-selected-runs-help,
 .runs-actions-popover .stop-selected-runs-help {
   display: block;
@@ -738,13 +750,20 @@
   background: radial-gradient(circle at center, var(--blue) 0 34%, #fff 38% 55%, var(--blue) 59% 100%);
 }
 
-.workspace-run-stop {
-  display: inline-grid;
+.workspace-run-actions {
+  display: inline-flex;
   align-self: start;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.workspace-run-stop,
+.workspace-run-lifecycle {
+  display: inline-grid;
   place-items: center;
   width: 28px;
   height: 28px;
-  margin-top: 6px;
+  margin-top: 0;
   border: 1px solid color-mix(in srgb, var(--danger) 32%, var(--line));
   border-radius: var(--control-radius);
   background: var(--surface);
@@ -753,10 +772,24 @@
 }
 
 .workspace-run-stop:hover,
-.workspace-run-stop:focus-visible {
+.workspace-run-stop:focus-visible,
+.workspace-run-lifecycle.danger:hover,
+.workspace-run-lifecycle.danger:focus-visible {
   border-color: color-mix(in srgb, var(--danger) 52%, var(--line));
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.workspace-run-lifecycle:not(.danger) {
+  border-color: var(--line);
+  color: var(--text-2);
+}
+
+.workspace-run-lifecycle:not(.danger):hover,
+.workspace-run-lifecycle:not(.danger):focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 /* Custom hover card for a rail run (portalled to <body>, see RunRailTooltip).

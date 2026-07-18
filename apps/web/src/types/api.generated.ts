@@ -1215,6 +1215,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/batch-lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_run_lifecycle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/compare-query": {
         parameters: {
             query?: never;
@@ -1273,6 +1289,22 @@ export interface paths {
         get: operations["runs_summary"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["archive_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1375,6 +1407,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runs/{run_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["delete_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runs/{run_id}/forks": {
         parameters: {
             query?: never;
@@ -1449,6 +1497,22 @@ export interface paths {
         get: operations["rank_metrics_summary"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runs/{run_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["restore_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2545,6 +2609,12 @@ export interface components {
         AuthSessionWithOnboardingKey: components["schemas"]["AuthSessionPayload"] & {
             onboarding_api_key?: null | components["schemas"]["OnboardingApiKey"];
         };
+        BatchRunLifecycleRequest: {
+            action: string;
+            confirm?: string | null;
+            reason?: string | null;
+            run_ids: string[];
+        };
         BillingAccountProjection: {
             access_state: string;
             cancel_at_period_end: boolean;
@@ -3025,6 +3095,10 @@ export interface components {
         DeleteArtifactVersionRequest: {
             confirm?: string | null;
             delete_aliases?: boolean | null;
+            reason?: string | null;
+        };
+        DeleteRunRequest: {
+            confirm?: string | null;
             reason?: string | null;
         };
         DevGoogleAuthRequest: {
@@ -3850,6 +3924,25 @@ export interface components {
             fork: components["schemas"]["RunForkContext"];
             run: components["schemas"]["RunSummaryRow"];
         };
+        RunLifecycleRequest: {
+            reason?: string | null;
+        };
+        RunLifecycleRow: {
+            actor_id?: string | null;
+            actor_type: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            idempotency_key?: string | null;
+            kind: string;
+            /** Format: uuid */
+            org_id: string;
+            reason?: string | null;
+            /** Format: uuid */
+            run_id: string;
+            state: string;
+        };
         RunLineageEnvelope: {
             checkpoint_artifact?: null | components["schemas"]["PublicArtifactRow"];
             children: components["schemas"]["RunSummaryRow"][];
@@ -3945,12 +4038,16 @@ export interface components {
             run: components["schemas"]["RunSummaryRow"];
         };
         RunSummaryRow: {
+            /** Format: date-time */
+            archived_at?: string | null;
             artifact_counts: {
                 [key: string]: number;
             };
             config: Record<string, never>;
             /** Format: date-time */
             created_at: string;
+            /** Format: date-time */
+            deleted_at?: string | null;
             /** Format: date-time */
             finished_at?: string | null;
             /** Format: uuid */
@@ -3962,6 +4059,10 @@ export interface components {
             latest_metrics: {
                 [key: string]: number | null;
             };
+            lifecycle: Record<string, never>;
+            lifecycle_state: string;
+            /** Format: date-time */
+            lifecycle_updated_at?: string | null;
             metadata: Record<string, never>;
             metric_aggregates: {
                 [key: string]: components["schemas"]["RunMetricAggregate"];
@@ -8121,6 +8222,60 @@ export interface operations {
             };
         };
     };
+    batch_run_lifecycle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate lifecycle retries */
+                "Idempotency-Key"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRunLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Batch lifecycle result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing runs:control scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     compare_matching_runs: {
         parameters: {
             query?: never;
@@ -8314,6 +8469,72 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    archive_run: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate lifecycle retries */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Archived run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing runs:control scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Lifecycle conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8718,6 +8939,72 @@ export interface operations {
             };
         };
     };
+    delete_run: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate lifecycle retries */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Soft-deleted run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing runs:control scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Lifecycle conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     fork_run: {
         parameters: {
             query?: never;
@@ -9097,6 +9384,72 @@ export interface operations {
             };
             /** @description Run not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restore_run: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Stable client key used to deduplicate lifecycle retries */
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                /** @description Run UUID */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunLifecycleRequest"];
+            };
+        };
+        responses: {
+            /** @description Restored archived run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JsonObjectResponse"];
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing runs:control scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Run not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Lifecycle conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

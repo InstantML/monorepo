@@ -11,13 +11,19 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import argparse
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
 _CREDENTIALS_PATH = Path.home() / ".instantml" / "credentials"
+_LOCAL_CONFIG_REL = Path(".instantml") / "local" / "config.toml"
+_LOCAL_CREDENTIALS_REL = Path(".instantml") / "local" / "credentials"
+_LOCAL_API_KEY_SENTINEL = "local"
 _DEFAULT_API_HOST = os.environ.get("INSTANTML_API_BASE_URL") or "https://api.instantml.ai"
+_DEFAULT_LOCAL_API_HOST = "http://127.0.0.1:8000"
+_DEFAULT_LOCAL_WEB_HOST = "http://127.0.0.1:3000"
 _POLL_TIMEOUT_SECS = 120  # how long to poll before giving up (safety cap)
 
 
@@ -29,6 +35,16 @@ _POLL_TIMEOUT_SECS = 120  # how long to poll before giving up (safety cap)
 def credentials_path() -> Path:
     """Return the canonical path to the credentials file."""
     return _CREDENTIALS_PATH
+
+
+def local_config_path(root: str | os.PathLike[str] | None = None) -> Path:
+    """Return the project-local InstantML config path."""
+    return Path(root or ".").expanduser().resolve() / _LOCAL_CONFIG_REL
+
+
+def local_credentials_path(root: str | os.PathLike[str] | None = None) -> Path:
+    """Return the project-local InstantML credentials path."""
+    return Path(root or ".").expanduser().resolve() / _LOCAL_CREDENTIALS_REL
 
 
 def load_credentials() -> dict[str, str]:
@@ -44,6 +60,25 @@ def load_credentials() -> dict[str, str]:
         return _parse_toml_simple(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def load_local_credentials(root: str | os.PathLike[str] | None = None) -> dict[str, str]:
+    """Load .instantml/local/credentials from the current project if present."""
+    path = local_credentials_path(root)
+    if not path.exists():
+        return {}
+    try:
+        return _parse_toml_simple(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def load_effective_credentials() -> dict[str, str]:
+    """Load project-local credentials first, then global login credentials."""
+    local = load_local_credentials()
+    if local.get("api_key") or local.get("api_host"):
+        return local
+    return load_credentials()
 
 
 def write_credentials(
@@ -69,6 +104,32 @@ def write_credentials(
     path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
+def write_local_credentials(
+    *,
+    api_host: str = _DEFAULT_LOCAL_API_HOST,
+    root: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Write project-local unauthenticated-loopback credentials."""
+    if not _is_loopback_api_host(api_host):
+        raise ValueError(
+            "local credentials require a loopback API host (localhost, 127.0.0.1, or [::1])"
+        )
+    path = local_credentials_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = "\n".join(
+        [
+            f'api_key = "{_LOCAL_API_KEY_SENTINEL}"',
+            f'api_host = "{api_host}"',
+            'org_id = "local"',
+            'user_email = "local@instantml"',
+            "",
+        ]
+    )
+    path.write_text(content, encoding="utf-8")
+    path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    return path
+
+
 def delete_credentials() -> bool:
     """Remove the credentials file. Returns True if a file was removed."""
     path = _CREDENTIALS_PATH
@@ -80,7 +141,12 @@ def delete_credentials() -> bool:
 
 def resolve_api_key_from_credentials() -> str | None:
     """Return api_key from ~/.instantml/credentials, or None."""
-    return load_credentials().get("api_key")
+    return load_effective_credentials().get("api_key")
+
+
+def resolve_api_host_from_credentials() -> str | None:
+    """Return api_host from project-local or global credentials, or None."""
+    return load_effective_credentials().get("api_host")
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +191,27 @@ def _post(host: str, path: str, body: dict[str, Any], timeout: float = 10.0) -> 
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body_bytes = exc.read()
+        try:
+            err = json.loads(body_bytes.decode("utf-8"))
+            code = err.get("code", "")
+            message = err.get("error", str(exc))
+        except Exception:
+            code = ""
+            message = str(exc)
+        raise _ApiError(exc.code, code, message) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise _ApiError(0, "network_error", str(exc)) from exc
+
+
+def _get(host: str, path: str, timeout: float = 5.0) -> dict[str, Any]:
+    url = host.rstrip("/") + path
+    req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {}
     except urllib.error.HTTPError as exc:
         body_bytes = exc.read()
         try:
@@ -298,6 +385,181 @@ def cmd_whoami() -> None:
         print(f"api_key:    {key[:14]}...")
     else:
         print("api_key:    (not set)")
+
+
+# ---------------------------------------------------------------------------
+# local command
+# ---------------------------------------------------------------------------
+
+
+def cmd_local(rest: list[str]) -> None:
+    parser = argparse.ArgumentParser(prog="instantml local")
+    subparsers = parser.add_subparsers(dest="action", required=True)
+
+    init_parser = subparsers.add_parser("init")
+    init_parser.add_argument("--root", default=".", help="Project root for .instantml/local state")
+    init_parser.add_argument("--api-host", default=_DEFAULT_LOCAL_API_HOST)
+    init_parser.add_argument("--web-host", default=_DEFAULT_LOCAL_WEB_HOST)
+    init_parser.add_argument("--compose-file", default="docker-compose.yml")
+    init_parser.add_argument("--service", default="instantml")
+    init_parser.add_argument("--no-credentials", action="store_true", help="Do not write project-local SDK credentials")
+
+    for action in ("up", "status", "down"):
+        sub = subparsers.add_parser(action)
+        sub.add_argument("--root", default=".", help="Project root containing .instantml/local/config.toml")
+    up_parser = subparsers.choices["up"]
+    up_parser.add_argument("--no-wait", action="store_true", help="Do not wait for /health after compose up")
+    up_parser.add_argument("--foreground", action="store_true", help="Run compose up in the foreground")
+    down_parser = subparsers.choices["down"]
+    down_parser.add_argument("--volumes", action="store_true", help="Remove compose volumes too")
+
+    args = parser.parse_args(rest)
+    if args.action == "init":
+        cmd_local_init(args)
+    elif args.action == "up":
+        cmd_local_up(args)
+    elif args.action == "status":
+        cmd_local_status(args)
+    elif args.action == "down":
+        cmd_local_down(args)
+
+
+def _is_loopback_api_host(value: str | None) -> bool:
+    """True when the host resolves to loopback. The local workflow writes an
+    unauthenticated `local` credential that only resolves against a loopback
+    API, so a non-loopback host would silently fail closed at run time."""
+    if not value:
+        return False
+    try:
+        parsed = urllib.parse.urlparse(value)
+        host = parsed.hostname if parsed.scheme else urllib.parse.urlparse(f"//{value}").hostname
+    except Exception:
+        return False
+    return (host or "") in {"localhost", "127.0.0.1", "::1"}
+
+
+def cmd_local_init(args: argparse.Namespace) -> None:
+    if not args.no_credentials and not _is_loopback_api_host(args.api_host):
+        _die(
+            f"--api-host must be a loopback address (localhost, 127.0.0.1, or [::1]); got {args.api_host!r}. "
+            "The local workflow writes an unauthenticated 'local' credential that only works against a "
+            "loopback API. Use --no-credentials to write config for a non-loopback host."
+        )
+    root = Path(args.root).expanduser().resolve()
+    config_path = local_config_path(root)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    compose_file = str(Path(args.compose_file))
+    content = "\n".join(
+        [
+            f'api_host = "{args.api_host}"',
+            f'web_host = "{args.web_host}"',
+            f'compose_file = "{compose_file}"',
+            f'service = "{args.service}"',
+            "",
+        ]
+    )
+    config_path.write_text(content, encoding="utf-8")
+    credentials_path = None if args.no_credentials else write_local_credentials(api_host=args.api_host, root=root)
+    print(f"Local InstantML config: {config_path}")
+    if credentials_path:
+        print(f"Local SDK credentials: {credentials_path}")
+    print(f"API: {args.api_host}")
+    print(f"Web: {args.web_host}")
+    print("Next: instantml local up")
+
+
+def cmd_local_up(args: argparse.Namespace) -> None:
+    root = Path(args.root).expanduser().resolve()
+    config = _load_local_config_or_default(root)
+    service = config.get("service", "instantml")
+    compose_args = ["up"]
+    if not args.foreground:
+        compose_args.append("-d")
+    compose_args.append(service)
+    _run_compose(root, config, compose_args)
+    api_host = config.get("api_host", _DEFAULT_LOCAL_API_HOST)
+    if not args.no_wait:
+        _wait_for_local_api(api_host)
+    print(f"InstantML local API: {api_host}")
+    print(f"InstantML web app: {config.get('web_host', _DEFAULT_LOCAL_WEB_HOST)}")
+    print("SDK: import instantml as im; im.init(project='demo')")
+
+
+def cmd_local_status(args: argparse.Namespace) -> None:
+    root = Path(args.root).expanduser().resolve()
+    config = _load_local_config_or_default(root)
+    _run_compose(root, config, ["ps"], check=False)
+    api_host = config.get("api_host", _DEFAULT_LOCAL_API_HOST)
+    try:
+        health = _get(api_host, "/health", timeout=2.0)
+        status = health.get("status") or health.get("ok") or "ok"
+        print(f"API health: {status}")
+    except _ApiError as exc:
+        print(f"API health: unavailable ({exc.message})")
+
+
+def cmd_local_down(args: argparse.Namespace) -> None:
+    root = Path(args.root).expanduser().resolve()
+    config = _load_local_config_or_default(root)
+    compose_args = ["down"]
+    if args.volumes:
+        compose_args.append("--volumes")
+    _run_compose(root, config, compose_args)
+    print("InstantML local stack stopped.")
+
+
+def _load_local_config_or_default(root: Path) -> dict[str, str]:
+    path = local_config_path(root)
+    if path.exists():
+        config = _parse_toml_simple(path.read_text(encoding="utf-8"))
+    else:
+        config = {}
+    config.setdefault("api_host", _DEFAULT_LOCAL_API_HOST)
+    config.setdefault("web_host", _DEFAULT_LOCAL_WEB_HOST)
+    config.setdefault("compose_file", "docker-compose.yml")
+    config.setdefault("service", "instantml")
+    return config
+
+
+def _compose_command() -> list[str]:
+    if _command_succeeds(["docker", "compose", "version"]):
+        return ["docker", "compose"]
+    if _command_succeeds(["docker-compose", "version"]):
+        return ["docker-compose"]
+    _die("Docker Compose was not found. Install Docker Desktop or docker-compose before running `instantml local up`.")
+    return ["docker", "compose"]
+
+
+def _command_succeeds(command: list[str]) -> bool:
+    try:
+        result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        return False
+    return result.returncode == 0
+
+
+def _run_compose(root: Path, config: dict[str, str], args: list[str], *, check: bool = True) -> int:
+    compose_file = Path(config.get("compose_file", "docker-compose.yml"))
+    if not compose_file.is_absolute():
+        compose_file = root / compose_file
+    command = [*_compose_command(), "-f", str(compose_file), *args]
+    result = subprocess.run(command, cwd=root)
+    if check and result.returncode != 0:
+        _die(f"Docker Compose command failed with exit code {result.returncode}: {' '.join(command)}")
+    return result.returncode
+
+
+def _wait_for_local_api(api_host: str, timeout: float = 90.0) -> None:
+    deadline = time.monotonic() + timeout
+    last_error = "not ready"
+    while time.monotonic() < deadline:
+        try:
+            _get(api_host, "/health", timeout=2.0)
+            return
+        except _ApiError as exc:
+            last_error = exc.message
+            time.sleep(1.0)
+    _die(f"Local API did not become healthy at {api_host}: {last_error}")
 
 
 # ---------------------------------------------------------------------------
@@ -581,6 +843,9 @@ def main(argv: list[str] | None = None) -> None:
     elif subcommand == "sync":
         cmd_sync(rest)
 
+    elif subcommand == "local":
+        cmd_local(rest)
+
     else:
         _die(f"Unknown subcommand '{subcommand}'. Run `instantml --help` for usage.")
 
@@ -608,6 +873,12 @@ Usage:
   instantml sync tensorboard LOGDIR --project NAME [--watch]
       Import or continuously sync scalar TensorBoard events from a local log directory.
 
+  instantml local init
+  instantml local up
+  instantml local status
+  instantml local down
+      Configure and manage a local Rust/ClickHouse InstantML stack.
+
   instantml --help
       Show this message.
 """
@@ -625,3 +896,7 @@ def _sdk_version() -> str:
 def _die(message: str) -> None:
     print(f"Error: {message}", file=sys.stderr)
     sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

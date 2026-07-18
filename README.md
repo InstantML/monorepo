@@ -182,6 +182,18 @@ npm ci
 npm run setup
 ```
 
+Source checkouts can also initialize the local Rust/ClickHouse stack through
+the SDK CLI. This writes project-local loopback credentials under
+`.instantml/local/` so `instantml.init(project="...")` can use the local API
+without copying a hosted key:
+
+```bash
+PYTHONPATH=packages/python-sdk instantml local init
+PYTHONPATH=packages/python-sdk instantml local up
+PYTHONPATH=packages/python-sdk instantml local status
+PYTHONPATH=packages/python-sdk instantml local down
+```
+
 Run tests:
 
 ```bash

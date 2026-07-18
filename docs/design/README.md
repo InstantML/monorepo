@@ -112,6 +112,10 @@ Current implemented design sequence, continued:
   bounded Python SDK query API over runs, metric series, rich objects, and table
   previews while keeping the server-backed `q` language authoritative.
 
+- `2026-06-30-aim-gap5-local-lifecycle.md`: Aim parity slice for a
+  source-checkout local CLI workflow plus archive, restore, delete, and batch
+  run lifecycle controls.
+
 Current draft designs:
 
 - `2026-06-30-mcp-oauth.md`: draft MCP OAuth authentication plan; opt-in RFC 9728

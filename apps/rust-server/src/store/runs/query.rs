@@ -25,7 +25,17 @@ pub async fn overview(
         .get("metric_key")
         .map(String::as_str)
         .unwrap_or("eval/return_mean");
-    if project_filter(query).is_none()
+    // The org/project fast paths compute `best_eval_return`/`metric_points`
+    // from raw ClickHouse aggregates that span every run, since lifecycle state
+    // does not live in ClickHouse. If the org has any archived or soft-deleted
+    // runs, those aggregates would leak hidden-run metrics, so fall through to
+    // the run-id-scoped slow path (built from lifecycle-filtered `filtered_runs`).
+    let has_hidden_lifecycle_runs = {
+        let data = store.data.lock().await;
+        org_has_hidden_lifecycle_runs(&data, ctx.org_id)
+    };
+    if !has_hidden_lifecycle_runs
+        && project_filter(query).is_none()
         && !has_text_search(query)
         && !has_status_filter(query)
         && !has_display_status_filter(query)
@@ -35,7 +45,9 @@ pub async fn overview(
             let data = store.data.lock().await;
             data.runs
                 .values()
-                .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
+                .filter(|run| {
+                    run.org_id == ctx.org_id && run_matches_lifecycle_filter(&data, query, run)
+                })
                 .fold(
                     (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
                     |(total, active, failed, stopping, stopped), run| {
@@ -71,7 +83,8 @@ pub async fn overview(
         }));
     }
     if let Some(project) = project_filter(query) {
-        if !has_text_search(query)
+        if !has_hidden_lifecycle_runs
+            && !has_text_search(query)
             && !has_status_filter(query)
             && !has_display_status_filter(query)
             && ctx.auth.as_ref().and_then(|auth| auth.project_id).is_none()
@@ -83,7 +96,7 @@ pub async fn overview(
                     .filter(|run| {
                         run.org_id == ctx.org_id
                             && run.project == project
-                            && is_visible_run(&data, run)
+                            && run_matches_lifecycle_filter(&data, query, run)
                     })
                     .fold(
                         (0_usize, 0_usize, 0_usize, 0_usize, 0_usize),
@@ -246,19 +259,28 @@ pub async fn runs_summary(
     let next_offset = offset + page_runs.len();
     let has_next = next_offset < total;
     if selection_projection {
-        let controls = {
+        let (controls, lifecycles) = {
             let data = store.data.lock().await;
-            page_runs
+            let controls = page_runs
                 .iter()
                 .map(|run| (run.id, run_control_for(&data, run).cloned()))
-                .collect::<HashMap<_, _>>()
+                .collect::<HashMap<_, _>>();
+            let lifecycles = page_runs
+                .iter()
+                .map(|run| (run.id, run_lifecycle_summary(&data, run)))
+                .collect::<HashMap<_, _>>();
+            (controls, lifecycles)
         };
         return Ok(json!({
             "runs": page_runs
                 .into_iter()
                 .map(|run| {
                     let control = controls.get(&run.id).and_then(Option::as_ref);
-                    selection_run_value(run, control)
+                    let lifecycle = lifecycles
+                        .get(&run.id)
+                        .cloned()
+                        .unwrap_or_else(|| json!({ "state": "active" }));
+                    selection_run_value(run, control, lifecycle)
                 })
                 .collect::<AppResult<Vec<_>>>()?,
             "metric_keys": [],
@@ -363,7 +385,9 @@ async fn collect_filtered_runs_map<T>(
         return Ok(data
             .runs
             .values()
-            .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
+            .filter(|run| {
+                run.org_id == ctx.org_id && run_matches_lifecycle_filter(&data, query, run)
+            })
             .filter(|run| {
                 ctx.auth
                     .as_ref()
@@ -382,7 +406,9 @@ async fn collect_filtered_runs_map<T>(
         let data = store.data.lock().await;
         data.runs
             .values()
-            .filter(|run| run.org_id == ctx.org_id && is_visible_run(&data, run))
+            .filter(|run| {
+                run.org_id == ctx.org_id && run_matches_lifecycle_filter(&data, query, run)
+            })
             .filter(|run| {
                 ctx.auth
                     .as_ref()
@@ -693,7 +719,12 @@ fn indexed_run_total(
     query: &HashMap<String, String>,
     search: &CompiledRunSearch,
 ) -> usize {
-    if search.is_empty() && !has_status_filter(query) && !has_display_status_filter(query) {
+    if search.is_empty()
+        && !has_status_filter(query)
+        && !has_display_status_filter(query)
+        && lifecycle_filter(query) == "active"
+        && !org_has_hidden_lifecycle_runs(data, ctx.org_id)
+    {
         if let Some(project_id) = ctx.auth.as_ref().and_then(|auth| auth.project_id) {
             let Some(project) = data.projects.get(&project_id) else {
                 return 0;
@@ -747,6 +778,12 @@ fn indexed_run_total(
     }
 }
 
+fn org_has_hidden_lifecycle_runs(data: &StoreData, org_id: Uuid) -> bool {
+    data.run_lifecycles.values().any(|lifecycle| {
+        lifecycle.org_id == org_id && matches!(lifecycle.state.as_str(), "archived" | "deleted")
+    })
+}
+
 fn run_filter_cache_key(
     ctx: &RequestContext,
     query: &HashMap<String, String>,
@@ -758,6 +795,7 @@ fn run_filter_cache_key(
         status: query.get("status").cloned().unwrap_or_default(),
         display_status: query.get("display_status").cloned().unwrap_or_default(),
         q: query.get("q").cloned().unwrap_or_default(),
+        lifecycle: lifecycle_filter(query),
     }
 }
 
@@ -771,7 +809,7 @@ fn run_matches_indexed_query(
     if run.org_id != ctx.org_id {
         return false;
     }
-    if !is_visible_run(data, run) {
+    if !run_matches_lifecycle_filter(data, query, run) {
         return false;
     }
     if ctx
@@ -912,6 +950,51 @@ mod tests {
     }
 
     #[test]
+    fn created_index_total_is_lifecycle_aware_for_active_default() {
+        let ctx = RequestContext {
+            org_id: Uuid::from_u128(1),
+            auth: None,
+            session: None,
+        };
+        let mut data = StoreData::default();
+        let active = run(1, "active", 1);
+        let archived = run(2, "archived", 2);
+        let deleted = run(3, "deleted", 3);
+        data.insert_run(active.clone());
+        data.insert_run(archived.clone());
+        data.insert_run(deleted.clone());
+        data.insert_run_lifecycle(lifecycle_row(&archived, "archived", 10));
+        data.insert_run_lifecycle(lifecycle_row(&deleted, "deleted", 11));
+        let search = CompiledRunSearch::empty();
+
+        let (active_total, active_page) =
+            created_index_page(&data, &ctx, &HashMap::new(), &search, 0, 25).unwrap();
+        assert_eq!(active_total, 1);
+        assert_eq!(
+            active_page.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![active.id]
+        );
+
+        let all_query = HashMap::from([("lifecycle".to_string(), "all".to_string())]);
+        let (all_total, all_page) =
+            created_index_page(&data, &ctx, &all_query, &search, 0, 25).unwrap();
+        assert_eq!(all_total, 2);
+        assert_eq!(
+            all_page.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![archived.id, active.id]
+        );
+
+        let archived_query = HashMap::from([("lifecycle".to_string(), "archived".to_string())]);
+        let (archived_total, archived_page) =
+            created_index_page(&data, &ctx, &archived_query, &search, 0, 25).unwrap();
+        assert_eq!(archived_total, 1);
+        assert_eq!(
+            archived_page.iter().map(|run| run.id).collect::<Vec<_>>(),
+            vec![archived.id]
+        );
+    }
+
+    #[test]
     fn browser_session_created_index_includes_all_same_workspace_projects() {
         let org_id = Uuid::from_u128(1);
         let other_org_id = Uuid::from_u128(2);
@@ -1034,5 +1117,20 @@ mod tests {
 
         assert_eq!(duration_seconds(&finished), Some(30.0));
         assert_eq!(duration_seconds(&running), None);
+    }
+
+    fn lifecycle_row(run: &RunRow, state: &str, created_offset: i64) -> RunLifecycleRow {
+        RunLifecycleRow {
+            kind: "run_lifecycle".to_string(),
+            id: Uuid::new_v4(),
+            org_id: run.org_id,
+            run_id: run.id,
+            state: state.to_string(),
+            reason: None,
+            actor_id: None,
+            actor_type: "test".to_string(),
+            idempotency_key: None,
+            created_at: run.created_at + ChronoDuration::seconds(created_offset),
+        }
     }
 }

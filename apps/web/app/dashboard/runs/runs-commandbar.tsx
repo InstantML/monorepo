@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Columns3, Download, LayoutGrid, RefreshCw, Search, SlidersHorizontal, Square, Table2 } from "lucide-react";
+import { Archive, ChevronDown, Columns3, Download, LayoutGrid, RefreshCw, RotateCcw, Search, SlidersHorizontal, Square, Table2, Trash2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useRef, useState } from "react";
 
@@ -30,11 +30,13 @@ export function RunsCommandbar({
   onExportSelectedRuns,
   onMetricKey,
   onRefresh,
+  onRequestSelectedLifecycle,
   onRequestSelectedStop,
   onViewMode,
   selectedRunCount,
   selectedRunExportDisabled,
   selectedRunExportTitle,
+  selectedLifecycleCandidateCounts = { archive: 0, delete: 0, restore: 0 },
   selectedStopCandidateCount = 0,
   selectedStopDisabledReason = "",
   viewMode,
@@ -45,11 +47,13 @@ export function RunsCommandbar({
   onExportSelectedRuns: () => void;
   onMetricKey: (value: string) => void;
   onRefresh: () => void;
+  onRequestSelectedLifecycle?: (action: "archive" | "restore" | "delete") => void;
   onRequestSelectedStop?: () => void;
   onViewMode: (view: RunsViewMode) => void;
   selectedRunCount: number;
   selectedRunExportDisabled: boolean;
   selectedRunExportTitle: string;
+  selectedLifecycleCandidateCounts?: { archive: number; restore: number; delete: number };
   selectedStopCandidateCount?: number;
   selectedStopDisabledReason?: string;
   viewMode: RunsViewMode;
@@ -151,6 +155,49 @@ export function RunsCommandbar({
                   <Square size={15} /> Review stop{selectedStopCandidateCount === 1 ? " request" : " requests"}{selectedStopCandidateCount ? ` ${selectedStopCandidateCount}` : ""}
                 </button>
                 {!selectedStopCandidateCount && selectedStopDisabledReason ? <span className="stop-selected-runs-help">{selectedStopDisabledReason}</span> : null}
+              </>
+            ) : null}
+            {onRequestSelectedLifecycle ? (
+              <>
+                <button
+                  aria-label={selectedLifecycleCandidateCounts.archive ? `Archive ${selectedLifecycleCandidateCounts.archive} selected runs` : "No selected active runs can be archived"}
+                  className="secondary compact-button lifecycle-selected-runs-button"
+                  disabled={!selectedLifecycleCandidateCounts.archive}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onRequestSelectedLifecycle("archive");
+                  }}
+                  title={selectedLifecycleCandidateCounts.archive ? `Archive ${selectedLifecycleCandidateCounts.archive} selected runs` : "Select active runs to archive."}
+                  type="button"
+                >
+                  <Archive size={15} /> Archive{selectedLifecycleCandidateCounts.archive ? ` ${selectedLifecycleCandidateCounts.archive}` : ""}
+                </button>
+                <button
+                  aria-label={selectedLifecycleCandidateCounts.restore ? `Restore ${selectedLifecycleCandidateCounts.restore} selected archived runs` : "No selected archived runs can be restored"}
+                  className="secondary compact-button lifecycle-selected-runs-button"
+                  disabled={!selectedLifecycleCandidateCounts.restore}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onRequestSelectedLifecycle("restore");
+                  }}
+                  title={selectedLifecycleCandidateCounts.restore ? `Restore ${selectedLifecycleCandidateCounts.restore} selected archived runs` : "Select archived runs to restore."}
+                  type="button"
+                >
+                  <RotateCcw size={15} /> Restore{selectedLifecycleCandidateCounts.restore ? ` ${selectedLifecycleCandidateCounts.restore}` : ""}
+                </button>
+                <button
+                  aria-label={selectedLifecycleCandidateCounts.delete ? `Delete ${selectedLifecycleCandidateCounts.delete} selected runs` : "No selected runs can be deleted"}
+                  className="secondary compact-button lifecycle-selected-runs-button danger"
+                  disabled={!selectedLifecycleCandidateCounts.delete}
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onRequestSelectedLifecycle("delete");
+                  }}
+                  title={selectedLifecycleCandidateCounts.delete ? `Delete ${selectedLifecycleCandidateCounts.delete} selected runs` : "Select active or archived runs to delete."}
+                  type="button"
+                >
+                  <Trash2 size={15} /> Delete{selectedLifecycleCandidateCounts.delete ? ` ${selectedLifecycleCandidateCounts.delete}` : ""}
+                </button>
               </>
             ) : null}
             <button className="secondary compact-button" type="button" aria-label="Refresh runs" onClick={() => { setActionsOpen(false); onRefresh(); }}><RefreshCw size={15} /> Refresh runs</button>

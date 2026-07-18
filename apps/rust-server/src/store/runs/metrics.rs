@@ -288,12 +288,16 @@ pub async fn metrics_series_batched(
             "run_ids cannot include more than {MAX_METRIC_SERIES_RUN_IDS} runs"
         )));
     }
-    {
+    let run_ids = {
         let data = store.data.lock().await;
-        for run_id in &run_ids {
-            ensure_run_visible_in_data(&data, ctx, *run_id)?;
+        let mut readable = Vec::with_capacity(run_ids.len());
+        for run_id in run_ids {
+            if let Some(run) = maybe_fetch_readable_run_in_data(&data, ctx, run_id)? {
+                readable.push(run.id);
+            }
         }
-    }
+        readable
+    };
     let limit = validate_limit(
         query.get("limit").map(String::as_str),
         DEFAULT_METRIC_LIMIT,

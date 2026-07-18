@@ -1,13 +1,13 @@
 "use client";
 
-import { Activity, ChevronDown, CircleStop, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Search, X } from "lucide-react";
+import { Activity, Archive, ChevronDown, CircleStop, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { CSSProperties, DragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { chartColor, stableChartIndex } from "../../../src/chart-colors.js";
 import { categoricalFieldLabel, fieldLabel } from "../../../src/dashboard-panels.js";
-import { BULK_SELECT_MATCHING_LIMIT, canRequestStop, displayStatusForRun, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
+import { BULK_SELECT_MATCHING_LIMIT, canRequestStop, displayStatusForRun, lifecycleStateForRun, uploadHealthForRun, visibleSelectionState } from "../../../src/state.js";
 import { WORKSPACE_PANEL_TYPES, metricTitle, runConfigSummary, runRailTooltip, shortMetricName, workspacePanelTypeLabel } from "../../dashboard-models";
 import { CustomSelect } from "../ui/select";
 import { Skeleton, SkeletonChartLines } from "../ui/skeleton";
@@ -90,6 +90,7 @@ const WorkspaceRailRow = memo(function WorkspaceRailRow({
   metricKey,
   onInspectRun,
   onOpenRun,
+  onRequestLifecycle,
   onRequestStop,
   onToggleRun,
   run,
@@ -104,6 +105,7 @@ const WorkspaceRailRow = memo(function WorkspaceRailRow({
   metricKey: string;
   onInspectRun: (runId: string) => void;
   onOpenRun: (runId: string) => void;
+  onRequestLifecycle: (runIds: string[], action: "archive" | "restore" | "delete") => void;
   onRequestStop: (runIds: string[]) => void;
   onToggleRun: (runId: string, options?: { shift?: boolean }) => void;
   run: RunSummary;
@@ -118,7 +120,11 @@ const WorkspaceRailRow = memo(function WorkspaceRailRow({
   const configSummary = runConfigSummary(run);
   const compactConfigSummary = compactRailConfigSummary(run);
   const statusLabel = displayStatusForRun(run) || run.status || "unknown";
+  const lifecycleState = lifecycleStateForRun(run);
   const canStop = canRequestStop(run, canControlRuns);
+  const canArchive = canControlRuns && lifecycleState === "active";
+  const canRestore = canControlRuns && lifecycleState === "archived";
+  const canDelete = canControlRuns && lifecycleState !== "deleted";
   const latestMetricValue = metricKey ? run.latest_metrics?.[metricKey] : undefined;
   const hasLatestMetricValue = typeof latestMetricValue === "number" && Number.isFinite(latestMetricValue);
   const runColor = chartColor(stableChartIndex(run.id || run.name, index));
@@ -175,19 +181,65 @@ const WorkspaceRailRow = memo(function WorkspaceRailRow({
               they surface in the hover tooltip (RunRailTooltip). */}
         </span>
       </button>
-      {canStop ? (
-        <button
-          aria-label={`Review stop request for ${run.name}`}
-          className="workspace-run-stop"
-          onClick={(event) => {
-            event.stopPropagation();
-            onRequestStop([run.id]);
-          }}
-          title="Review stop request"
-          type="button"
-        >
-          <CircleStop size={15} />
-        </button>
+      {canStop || canArchive || canRestore || canDelete ? (
+        <span className="workspace-run-actions">
+          {canStop ? (
+            <button
+              aria-label={`Review stop request for ${run.name}`}
+              className="workspace-run-stop"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRequestStop([run.id]);
+              }}
+              title="Review stop request"
+              type="button"
+            >
+              <CircleStop size={15} />
+            </button>
+          ) : null}
+          {canArchive ? (
+            <button
+              aria-label={`Archive ${run.name}`}
+              className="workspace-run-lifecycle"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRequestLifecycle([run.id], "archive");
+              }}
+              title="Archive run"
+              type="button"
+            >
+              <Archive size={15} />
+            </button>
+          ) : null}
+          {canRestore ? (
+            <button
+              aria-label={`Restore ${run.name}`}
+              className="workspace-run-lifecycle"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRequestLifecycle([run.id], "restore");
+              }}
+              title="Restore run"
+              type="button"
+            >
+              <RotateCcw size={15} />
+            </button>
+          ) : null}
+          {canDelete ? (
+            <button
+              aria-label={`Delete ${run.name}`}
+              className="workspace-run-lifecycle danger"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRequestLifecycle([run.id], "delete");
+              }}
+              title="Delete run"
+              type="button"
+            >
+              <Trash2 size={15} />
+            </button>
+          ) : null}
+        </span>
       ) : null}
     </div>
   );
@@ -255,6 +307,7 @@ export function RunsWorkspace({
   onPanelSearch,
   onRefresh,
   onRemovePanel,
+  onRequestLifecycle,
   onRequestStop,
   onResetWorkspace,
   onResizePanel,
@@ -306,6 +359,7 @@ export function RunsWorkspace({
   onPanelSearch: (value: string) => void;
   onRefresh: () => void;
   onRemovePanel: (sectionId: string, panelId: string) => void;
+  onRequestLifecycle: (runIds: string[], action: "archive" | "restore" | "delete") => void;
   onRequestStop: (runIds: string[]) => void;
   onResetWorkspace: () => void;
   onResizePanel: (sectionId: string, panelId: string, layout: import("../../dashboard-types").WorkspacePanelLayout) => void;
@@ -622,6 +676,7 @@ export function RunsWorkspace({
               metricKey={metricKey}
               onInspectRun={onInspectRun}
               onOpenRun={onOpenRun}
+              onRequestLifecycle={onRequestLifecycle}
               onRequestStop={onRequestStop}
               onToggleRun={onToggleRun}
               run={run}
